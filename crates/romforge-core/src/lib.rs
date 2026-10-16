@@ -20,6 +20,8 @@ use sha2::{Digest as _, Sha256};
 
 pub use identify::{Scope, Status};
 pub use report::{DatGame, DatSummary, LibraryFile, LibraryFilter, Summary, SystemInfo};
+pub use scan::ScanOptions;
+use scan::Visit;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,7 +61,20 @@ pub struct ImportedDat {
 pub struct ScanReport {
     pub root: PathBuf,
     pub hashed: usize,
+    pub bytes_hashed: u64,
+    /// Files and archive members without a ROM extension (not hashed).
+    pub skipped: usize,
+    /// Symlinked folders inside the tree (not followed).
+    pub skipped_links: Vec<PathBuf>,
     pub errors: Vec<(PathBuf, String, String)>,
+}
+
+/// Running totals passed to the progress callback after every file or member.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct ScanProgress {
+    pub hashed: usize,
+    pub bytes_hashed: u64,
+    pub skipped: usize,
 }
 
 /// The default database location: `$XDG_DATA_HOME/romforge/romforge.db`.
@@ -203,9 +218,21 @@ impl Library {
         })
     }
 
-    /// Hash everything under `root` and identify it against `scope`.
-    /// Rescanning a folder replaces its previous results.
+    /// [`Library::scan_with`] with default options and no progress.
     pub fn scan(&mut self, root: impl AsRef<Path>, scope: Scope) -> Result<ScanReport, Error> {
+        self.scan_with(root, scope, ScanOptions::default(), |_| {})
+    }
+
+    /// Hash the likely ROMs under `root` (all files with
+    /// [`ScanOptions::all_files`]) and identify them against `scope`.
+    /// Rescanning a folder replaces its previous results.
+    pub fn scan_with(
+        &mut self,
+        root: impl AsRef<Path>,
+        scope: Scope,
+        opts: ScanOptions,
+        mut progress: impl FnMut(ScanProgress),
+    ) -> Result<ScanReport, Error> {
         let root = std::fs::canonicalize(root.as_ref())?;
         let (system_id, dat_id) = match scope {
             Scope::All => (None, None),
@@ -252,10 +279,21 @@ impl Library {
                    stripped_sha1 = excluded.stripped_sha1, scanned_at = excluded.scanned_at",
             )?;
             let mut result = Ok(());
-            scan::walk(&root, &skip, |entry| {
+            scan::walk(&root, &skip, opts, |visit| {
                 if result.is_err() {
                     return;
                 }
+                let entry = match visit {
+                    Visit::Hashed(entry) => entry,
+                    Visit::Skipped { .. } => {
+                        report.skipped += 1;
+                        return;
+                    }
+                    Visit::SkippedLink(path) => {
+                        report.skipped_links.push(path);
+                        return;
+                    }
+                };
                 match entry.hashes {
                     Ok(h) => {
                         let s = h.stripped.as_ref();
@@ -276,9 +314,15 @@ impl Library {
                             ])
                             .map(drop);
                         report.hashed += 1;
+                        report.bytes_hashed += h.raw.size;
                     }
                     Err(e) => report.errors.push((entry.path, entry.member, e)),
                 }
+                progress(ScanProgress {
+                    hashed: report.hashed,
+                    bytes_hashed: report.bytes_hashed,
+                    skipped: report.skipped,
+                });
             })?;
             result?;
         }

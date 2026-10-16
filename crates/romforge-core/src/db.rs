@@ -6,7 +6,13 @@ use rusqlite::{Connection, params};
 use crate::Error;
 use crate::systems::SYSTEMS;
 
-const SCHEMA_VERSION: i64 = 1;
+/// Schema changes after version 1, in order. Entry `i` upgrades to version `i + 2`.
+const MIGRATIONS: &[&str] = &[
+    // 2: file extensions per system (space-separated), from systems.rs
+    "ALTER TABLE systems ADD COLUMN extensions TEXT NOT NULL DEFAULT '';",
+];
+
+const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
 
 const SCHEMA: &str = r#"
 CREATE TABLE systems (
@@ -128,8 +134,13 @@ fn init(mut conn: Connection) -> Result<Connection, Error> {
     let tx = conn.transaction()?;
     if version == 0 {
         tx.execute_batch(SCHEMA)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
+    for (i, sql) in MIGRATIONS.iter().enumerate() {
+        if version < i as i64 + 2 {
+            tx.execute_batch(sql)?;
+        }
+    }
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     seed_systems(&tx)?;
     tx.commit()?;
     Ok(conn)
@@ -137,11 +148,14 @@ fn init(mut conn: Connection) -> Result<Connection, Error> {
 
 fn seed_systems(conn: &Connection) -> Result<(), Error> {
     let mut stmt = conn.prepare(
-        "INSERT INTO systems VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO systems (system_id, key, name, manufacturer, generation, release_year,
+                              preferred_hash, is_disc_based, is_handheld, extensions)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(system_id) DO UPDATE SET key = excluded.key, name = excluded.name,
            manufacturer = excluded.manufacturer, generation = excluded.generation,
            release_year = excluded.release_year, preferred_hash = excluded.preferred_hash,
-           is_disc_based = excluded.is_disc_based, is_handheld = excluded.is_handheld",
+           is_disc_based = excluded.is_disc_based, is_handheld = excluded.is_handheld,
+           extensions = excluded.extensions",
     )?;
     for s in SYSTEMS {
         stmt.execute(params![
@@ -153,7 +167,8 @@ fn seed_systems(conn: &Connection) -> Result<(), Error> {
             s.release_year,
             s.preferred_hash,
             s.is_disc_based,
-            s.is_handheld
+            s.is_handheld,
+            s.extensions.join(" ")
         ])?;
     }
     Ok(())

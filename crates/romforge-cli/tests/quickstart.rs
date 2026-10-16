@@ -45,6 +45,20 @@ fn import_scan_report() {
         "{out}"
     );
 
+    assert!(
+        out.contains("; skipped 12 non-ROM files; skipped 1 symlinked folder"),
+        "{out}"
+    );
+    assert!(!out.contains("CDRomance.url"), "{out}");
+
+    let out = run(&db, &["scan", "roms", "--all-files"]);
+    assert!(
+        out.contains("unknown       archives/Test GBA.zip#CDRomance.url"),
+        "{out}"
+    );
+    let out = run(&db, &["scan", "."]);
+    assert!(out.contains("14 matched"), "{out}");
+
     let out = run(&db, &["report"]);
     assert!(out.contains("files: 14 matched"), "{out}");
 

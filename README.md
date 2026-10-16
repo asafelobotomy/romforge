@@ -28,8 +28,15 @@ matched       roms/archives/Mixed.7z#Test MD.md  Test MD
 candidate     roms/gb/CRC Only.gb  CRC Only
 duplicate     roms/gb/Test GB.gb  Test GB
 unknown       roms/unknown.bin
-scanned 17 entries in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate
+scanned 17 entries (19.8 KiB) in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate; skipped 12 non-ROM files; skipped 1 symlinked folder
 ```
+
+Only files whose extension some system uses (the `extensions` column in
+`crates/romforge-core/src/systems.rs`) are hashed, plus `.zip`/`.7z`; the
+same rule applies to archive members, so a `.url` or `.nfo` in a zip is
+skipped. `--all-files` hashes everything. The folder you name may be a
+symlink, but symlinked folders inside it are never followed. Long scans show
+progress on stderr; `-q` keeps it quiet.
 
 On your own collection, import real No-Intro/Redump DATs and scan a folder.
 Use `--system NES` (keys: `romforge-cli dat systems`) or `--dat ID` to say

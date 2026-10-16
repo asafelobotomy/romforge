@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
-use romforge_core::{Library, LibraryFilter, Scope, Status, systems};
+use std::io::{IsTerminal, Write};
+use std::time::{Duration, Instant};
+
+use romforge_core::{Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, systems};
 
 #[derive(Parser)]
 #[command(version, about = "Scan and identify retro ROM collections (read-only)")]
@@ -22,11 +25,17 @@ enum Command {
     #[command(subcommand)]
     Dat(DatCommand),
     /// Hash a folder (and zip/7z members) and identify it. Never changes files.
+    ///
+    /// Only files with a known ROM extension are hashed. Symlinked folders
+    /// inside DIR are not followed (DIR itself may be a symlink).
     Scan {
         dir: PathBuf,
         #[command(flatten)]
         scope: ScopeArgs,
-        /// Print only the summary, not every file
+        /// Hash every file, not only known ROM extensions
+        #[arg(long)]
+        all_files: bool,
+        /// Print only the summary: no per-file lines, no progress
         #[arg(long, short)]
         quiet: bool,
     },
@@ -106,7 +115,12 @@ fn main() -> Result<()> {
         }
         Command::Dat(DatCommand::List) => print_dats(&lib)?,
         Command::Dat(DatCommand::Systems) => unreachable!(),
-        Command::Scan { dir, scope, quiet } => {
+        Command::Scan {
+            dir,
+            scope,
+            all_files,
+            quiet,
+        } => {
             let scope = match (scope.system, scope.dat) {
                 (Some(key), _) => match systems::by_key(&key) {
                     Some(s) => Scope::System(s.id),
@@ -115,7 +129,10 @@ fn main() -> Result<()> {
                 (None, Some(id)) => Scope::Dat(id),
                 (None, None) => Scope::All,
             };
-            let report = lib.scan(&dir, scope)?;
+            let opts = ScanOptions { all_files };
+            let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
+            let report = lib.scan_with(&dir, scope, opts, |p| meter.update(p))?;
+            meter.finish();
             for (path, member, err) in &report.errors {
                 let at = if member.is_empty() {
                     String::new()
@@ -158,11 +175,25 @@ fn main() -> Result<()> {
                 .iter()
                 .map(|(s, n)| format!("{n} {}", s.as_str()))
                 .collect();
-            println!(
-                "scanned {} entries in {root}: {}",
+            let mut line = format!(
+                "scanned {} entries ({}) in {root}: {}",
                 report.hashed,
+                bytes(report.bytes_hashed),
                 counts.join(", ")
             );
+            if report.skipped > 0 {
+                line += &format!("; skipped {} non-ROM files", report.skipped);
+            }
+            if !report.skipped_links.is_empty() {
+                let n = report.skipped_links.len();
+                line += &format!("; skipped {n} symlinked folder{}", if n == 1 { "" } else { "s" });
+            }
+            println!("{line}");
+            if !quiet {
+                for link in &report.skipped_links {
+                    eprintln!("not followed: symlinked folder {}", link.display());
+                }
+            }
         }
         Command::Report {
             dat: Some(id),
@@ -208,4 +239,63 @@ fn print_dats(lib: &Library) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn bytes(n: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut v = n as f64;
+    let mut unit = 0;
+    while v >= 1024.0 && unit < UNITS.len() - 1 {
+        v /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{n} B")
+    } else {
+        format!("{v:.1} {}", UNITS[unit])
+    }
+}
+
+/// A one-line progress meter on stderr, redrawn at most every 200 ms.
+struct Progress {
+    enabled: bool,
+    last: Option<Instant>,
+    drawn: bool,
+}
+
+impl Progress {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            last: None,
+            drawn: false,
+        }
+    }
+
+    fn update(&mut self, p: ScanProgress) {
+        if !self.enabled
+            || self
+                .last
+                .is_some_and(|t| t.elapsed() < Duration::from_millis(200))
+        {
+            return;
+        }
+        self.last = Some(Instant::now());
+        self.drawn = true;
+        let mut err = std::io::stderr().lock();
+        let _ = write!(
+            err,
+            "\r\x1b[2Khashed {} files, {}; skipped {}",
+            p.hashed,
+            bytes(p.bytes_hashed),
+            p.skipped
+        );
+        let _ = err.flush();
+    }
+
+    fn finish(&mut self) {
+        if self.drawn {
+            eprint!("\r\x1b[2K");
+        }
+    }
 }

@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use romforge_core::hash::hash_stream;
-use romforge_core::{Library, LibraryFilter, Scope, Status, systems};
+use romforge_core::{Library, LibraryFilter, ScanOptions, Scope, Status, systems};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
@@ -42,6 +42,20 @@ fn header(magic_at: usize, magic: &[u8], len: usize) -> Vec<u8> {
     h[magic_at..magic_at + magic.len()].copy_from_slice(magic);
     h
 }
+
+/// Files a scan must skip by default (no ROM extension). `#` = archive member.
+const NON_ROMS: &[(&str, &[u8])] = &[
+    ("extras/Episode 01.mkv", b"\x1a\x45\xdf\xa3 not really a video"),
+    ("extras/readme.nfo", b"release notes"),
+    (
+        "archives/Test GBA.zip#CDRomance.url",
+        b"[InternetShortcut]\nURL=https://example.invalid/\n",
+    ),
+    ("archives/Mixed.7z#notes.txt", b"some notes"),
+];
+
+/// A symlinked folder inside the tree, pointing at a sibling. Never followed.
+const LINKED_DIR: (&str, &str) = ("linked-gb", "gb");
 
 struct Fixture {
     /// Path under fixtures/roms; `archive.zip#member` for archive members.
@@ -265,12 +279,15 @@ fn regenerate_fixtures() {
 
     let (fixtures, dats) = layout();
     let mut archives: BTreeMap<&str, Vec<(&str, Vec<u8>)>> = BTreeMap::new();
-    for f in &fixtures {
-        let data = [f.header.as_slice(), f.body.as_slice()].concat();
-        match f.path.split_once('#') {
+    let files = fixtures
+        .iter()
+        .map(|f| (f.path, [f.header.as_slice(), f.body.as_slice()].concat()))
+        .chain(NON_ROMS.iter().map(|(p, d)| (*p, d.to_vec())));
+    for (path, data) in files {
+        match path.split_once('#') {
             Some((archive, member)) => archives.entry(archive).or_default().push((member, data)),
             None => {
-                let p = roms.join(f.path);
+                let p = roms.join(path);
                 std::fs::create_dir_all(p.parent().unwrap()).unwrap();
                 std::fs::write(p, data).unwrap();
             }
@@ -298,6 +315,7 @@ fn regenerate_fixtures() {
             sz.finish().unwrap();
         }
     }
+    std::os::unix::fs::symlink(LINKED_DIR.1, roms.join(LINKED_DIR.0)).unwrap();
     for dat in &dats {
         std::fs::write(root.join("dats").join(dat.file), dat_xml(dat)).unwrap();
     }
@@ -604,4 +622,88 @@ fn scanning_writes_nothing_next_to_the_roms() {
     import_all(&mut lib);
     lib.scan(fixtures(), Scope::All).unwrap();
     assert_eq!(before, listing(&fixtures()));
+}
+
+#[test]
+fn non_rom_files_and_members_are_skipped() {
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let report = lib.scan(fixtures().join("roms"), Scope::All).unwrap();
+    assert_eq!(report.skipped, NON_ROMS.len());
+    let files = by_path(&lib);
+    for (path, _) in NON_ROMS {
+        assert!(!files.contains_key(*path), "{path} was hashed");
+    }
+    assert_eq!(lib.summary().unwrap().files_by_status[2], (Status::Unknown, 1));
+
+    // --all-files hashes them; they are unknown, everything else is unchanged.
+    let opts = ScanOptions { all_files: true };
+    let report = lib
+        .scan_with(fixtures().join("roms"), Scope::All, opts, |_| {})
+        .unwrap();
+    assert_eq!(report.skipped, 0);
+    let files = by_path(&lib);
+    for (path, _) in NON_ROMS {
+        assert_eq!(files[*path].status, Status::Unknown, "{path}");
+    }
+    assert_eq!(files["nes/Test NES (iNES).nes"].status, Status::Matched);
+}
+
+#[test]
+fn nested_symlinked_folder_is_not_followed() {
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let report = lib.scan(fixtures(), Scope::All).unwrap();
+    let link = std::fs::canonicalize(fixtures())
+        .unwrap()
+        .join("roms")
+        .join(LINKED_DIR.0);
+    assert_eq!(report.skipped_links, [link]);
+    for f in lib.files(&LibraryFilter::default()).unwrap() {
+        assert!(!f.path.contains(LINKED_DIR.0), "{} followed the link", f.path);
+    }
+}
+
+#[test]
+fn symlinked_root_is_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("my-gb");
+    std::os::unix::fs::symlink(fixtures().join("roms/gb"), &root).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let report = lib.scan(&root, Scope::All).unwrap();
+    assert_eq!(report.hashed, 4);
+    assert!(report.skipped_links.is_empty());
+}
+
+#[test]
+fn symlink_loop_cannot_run_away() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        fixtures().join("roms/gb/Test GB.gb"),
+        dir.path().join("Test GB.gb"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(".", dir.path().join("loop")).unwrap();
+    std::os::unix::fs::symlink(dir.path(), dir.path().join("abs-loop")).unwrap();
+
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let report = lib.scan(dir.path(), Scope::All).unwrap();
+    assert_eq!(report.hashed, 1);
+    assert_eq!(report.skipped_links.len(), 2);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+}
+
+#[test]
+fn progress_reports_running_totals() {
+    let mut lib = Library::open_in_memory().unwrap();
+    let mut seen = Vec::new();
+    let report = lib
+        .scan_with(fixtures(), Scope::All, ScanOptions::default(), |p| seen.push(p))
+        .unwrap();
+    let last = seen.last().unwrap();
+    assert_eq!(last.hashed, report.hashed);
+    assert_eq!(last.bytes_hashed, report.bytes_hashed);
+    assert!(seen.windows(2).all(|w| w[0].bytes_hashed <= w[1].bytes_hashed));
 }
