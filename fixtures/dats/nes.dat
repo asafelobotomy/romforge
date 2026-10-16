@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo - Nintendo Entertainment System</name>
+		<description>Nintendo - Nintendo Entertainment System (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+		<clrmamepro header="No-Intro_NES.xml"/>
+	</header>
+	<game name="Test NES (iNES)">
+		<description>Test NES (iNES)</description>
+		<rom name="Test NES (iNES).nes" size="1024" crc="5bb202d2" md5="551b3ce5e65587c2729da1862d4ebeb0" sha1="c9a4a252bdef738a055504036bf0cebea30e5b2e"/>
+	</game>
+	<game name="Test NES 2.0">
+		<description>Test NES 2.0</description>
+		<rom name="Test NES 2.0.nes" size="1024" crc="9ab7b174" md5="84c7c670453b005bc6cf3a0d1fb53a18" sha1="b5bcf2a95f7abffc293a78ac3ba35b46ab78e3d8"/>
+	</game>
+	<game name="Test NES (in 7z)">
+		<description>Test NES (in 7z)</description>
+		<rom name="Test NES (in 7z).nes" size="1024" crc="08d19ae7" md5="480b0aef73f7f2506eb31b8970bf8ea0" sha1="ff3424a4a5fe21378dd42e92f2606b02d3dec9b3"/>
+	</game>
+	<game name="Missing NES Game">
+		<description>Missing NES Game</description>
+		<rom name="Missing NES Game.nes" size="1024" crc="d70c3354" md5="aec80b2fa445a3dc7da37db75bc1a473" sha1="66cea25458f4815d5ba0ab2b430be4522314bb4e"/>
+	</game>
+</datafile>

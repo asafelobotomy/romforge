@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo - Super Nintendo Entertainment System</name>
+		<description>Nintendo - Super Nintendo Entertainment System (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+	</header>
+	<game name="Test SNES (copier)">
+		<description>Test SNES (copier)</description>
+		<rom name="Test SNES (copier).sfc" size="2048" crc="1b356949" md5="5f5cb24755c6738173ba422a9e869854" sha1="77d900ac139f1abab28f283b928d4ac3669f3610"/>
+	</game>
+	<game name="Test SNES (clean)">
+		<description>Test SNES (clean)</description>
+		<rom name="Test SNES (clean).sfc" size="2048" crc="81451f2a" md5="ede586e6447b11b46fc75b2f3148385b" sha1="d0e6919bacbbeb84556674623b7f2cbccc9df34d"/>
+	</game>
+</datafile>

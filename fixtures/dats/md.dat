@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Sega - Mega Drive - Genesis</name>
+		<description>Sega - Mega Drive - Genesis (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+	</header>
+	<game name="Test MD">
+		<description>Test MD</description>
+		<rom name="Test MD.md" size="1024" crc="ad096b2d" md5="8456c8adeb9f4f77bc51459eb6acb146" sha1="40389ab40e349c99e231141eb7f09c29a97fe2ec"/>
+	</game>
+</datafile>

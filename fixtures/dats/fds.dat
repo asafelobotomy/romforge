@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo - Family Computer Disk System (FDS)</name>
+		<description>Nintendo - Family Computer Disk System (FDS) (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+		<clrmamepro header="No-Intro_FDS.xml"/>
+	</header>
+	<game name="Test FDS">
+		<description>Test FDS</description>
+		<rom name="Test FDS.fds" size="1024" crc="a44a18bb" md5="387c1d2a0ea12fd0f32562927932d8c6" sha1="0f70997a8cee0f80d8c74df490a44daf943b7975"/>
+	</game>
+</datafile>

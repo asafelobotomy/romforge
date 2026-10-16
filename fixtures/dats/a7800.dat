@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Atari - Atari 7800 (BIN)</name>
+		<description>Atari - Atari 7800 (BIN) (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+		<clrmamepro header="No-Intro_A7800.xml"/>
+	</header>
+	<game name="Test 7800">
+		<description>Test 7800</description>
+		<rom name="Test 7800.a78" size="1024" crc="63d27212" md5="949406fb3881770fb14a1fb062dfe91e" sha1="d262bfcce2b2d7bfd4efe83c8de0cf3640309b56"/>
+	</game>
+</datafile>

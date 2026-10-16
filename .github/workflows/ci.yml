@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: Quick start from the README
+        run: |
+          export ROMFORGE_DB="$RUNNER_TEMP/quickstart.db"
+          cargo run -q -p romforge-cli -- dat import fixtures/dats/*.dat
+          cargo run -q -p romforge-cli -- scan fixtures/ | tee scan.txt
+          grep -q '^matched .*Test NES' scan.txt

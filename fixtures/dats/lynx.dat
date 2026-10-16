@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Atari - Atari Lynx (LYX)</name>
+		<description>Atari - Atari Lynx (LYX) (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+		<clrmamepro header="No-Intro_LNX.xml"/>
+	</header>
+	<game name="Test Lynx (headered)">
+		<description>Test Lynx (headered)</description>
+		<rom name="Test Lynx (headered).lyx" size="1024" crc="d0616445" md5="e57122707e223c052bc45c04f3b32567" sha1="6753d981b5bb4f7ef8b467483808fa1c22c5c7dd"/>
+	</game>
+	<game name="Test Lynx (no header)">
+		<description>Test Lynx (no header)</description>
+		<rom name="Test Lynx (no header).lyx" size="1088" crc="c30b3e12" md5="b7b33b8e30ce55771158caf95e1f0835" sha1="09b9332462739469e6a82373a53ecf7e17398da0"/>
+	</game>
+</datafile>

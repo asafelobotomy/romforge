@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo - Game Boy</name>
+		<description>Nintendo - Game Boy (romforge test fixture)</description>
+		<version>1</version>
+		<author>romforge fixtures</author>
+	</header>
+	<game name="Test GB">
+		<description>Test GB</description>
+		<rom name="Test GB.gb" size="1024" crc="92aaac7e" md5="16924ce3439b39cebc124175fae0329c" sha1="845d41d57c6f24ccb31ce71acd35cc74638acd19"/>
+	</game>
+	<game name="CRC Only">
+		<description>CRC Only</description>
+		<rom name="CRC Only.gb" size="1024" crc="84198d6f"/>
+	</game>
+	<game name="Shared Hash (Rev A)">
+		<description>Shared Hash (Rev A)</description>
+		<rom name="Shared Hash (Rev A).gb" size="1024" crc="f638e477" md5="b8d0cae49b37cb1a234e8ed394526113" sha1="6cc7224470ecf04190b1fabfcd2431d2e1b33704"/>
+	</game>
+	<game name="Shared Hash (Rev B)">
+		<description>Shared Hash (Rev B)</description>
+		<rom name="Shared Hash (Rev B).gb" size="1024" crc="f638e477" md5="b8d0cae49b37cb1a234e8ed394526113" sha1="6cc7224470ecf04190b1fabfcd2431d2e1b33704"/>
+	</game>
+	<game name="MD5 Only">
+		<description>MD5 Only</description>
+		<rom name="MD5 Only.gb" size="1024" crc="849d60ae" md5="9a1861e9268d4558fe9dea67792daaf1"/>
+	</game>
+</datafile>
