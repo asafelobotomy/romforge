@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/romforge-core", "crates/romforge-cli"]
+members = ["crates/romforge-core", "crates/romforge-cli", "app/src-tauri"]
 # The Tauri app needs the built web UI and webkit2gtk; build it with `npm run tauri build` in app/.
 default-members = ["crates/romforge-core", "crates/romforge-cli"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 rust-version = "1.93"
 
 [workspace.dependencies]
