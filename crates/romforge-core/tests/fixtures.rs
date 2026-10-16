@@ -790,9 +790,93 @@ fn nointro_status_compares_versions_by_dat_name() {
 }
 
 #[test]
-fn download_refuses_systems_without_redump() {
+fn download_refuses_systems_without_a_source() {
     let mut lib = Library::open_in_memory().unwrap();
-    let err = lib.download_redump("SNES").unwrap_err().to_string();
-    assert!(err.contains("No-Intro"), "{err}");
-    assert!(lib.download_redump("nope").is_err());
+    let mut called = false;
+    let err = lib
+        .download_dats("Arcade", |_, _| called = true)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no DAT source"), "{err}");
+    assert!(lib.download_dats("nope", |_, _| called = true).is_err());
+    assert!(!called, "nothing fetched");
+}
+
+#[test]
+fn clrmamepro_dat_imports_and_matches() {
+    // The gb fixture DAT rewritten in clrmamepro text, as libretro and
+    // Redump BIOS DATs come.
+    let xml = std::fs::read(fixtures().join("dats/gb.dat")).unwrap();
+    let dat = romforge_core::dat::parse_any(&xml).unwrap();
+    let mut cmp = format!("clrmamepro (\n\tname \"{}\"\n\tversion 2026.10.07\n)\n", dat.name);
+    for g in &dat.games {
+        cmp += &format!("game (\n\tname \"{}\"\n", g.name);
+        for r in &g.roms {
+            cmp += &format!("\trom ( name \"{}\" size {}", r.name, r.size.unwrap());
+            for (k, v) in [("crc", &r.crc32), ("md5", &r.md5), ("sha1", &r.sha1)] {
+                if let Some(v) = v {
+                    cmp += &format!(" {k} {}", v.to_ascii_uppercase());
+                }
+            }
+            cmp += " )\n";
+        }
+        cmp += ")\n";
+    }
+    let mut lib = Library::open_in_memory().unwrap();
+    let d = lib
+        .import_dat_bytes(cmp.as_bytes(), "test", Some("Game Boy"))
+        .unwrap();
+    assert_eq!(d.games, dat.games.len());
+    lib.scan(fixtures().join("roms/gb"), Scope::Dat(d.dat_id))
+        .unwrap();
+    let have = lib.summary().unwrap().dats[0].have;
+    assert_eq!(have, 4);
+}
+
+#[test]
+fn mirror_dat_counts_for_the_no_intro_main_set() {
+    use romforge_core::DatState;
+    use romforge_core::fetch::{ProfileEntry, Source};
+
+    let mut lib = Library::open_in_memory().unwrap();
+    let xml = std::fs::read(fixtures().join("dats/gb.dat")).unwrap();
+    let url = Source::NoIntro("Nintendo - Game Boy").url();
+    lib.import_dat_bytes(&xml, &url, Some("Game Boy")).unwrap();
+    let profile = [
+        ProfileEntry {
+            name: "Nintendo - Game Boy".into(),
+            version: "20261001-000000".into(),
+        },
+        ProfileEntry {
+            name: "Nintendo - Game Boy (Private)".into(),
+            version: "20261001-000000".into(),
+        },
+    ];
+    let st: Vec<_> = lib
+        .nointro_status(&profile)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.state)
+        .collect();
+    assert_eq!(st, [DatState::Mirror, DatState::Missing]);
+}
+
+#[test]
+fn same_name_from_another_source_is_kept() {
+    let xml = std::fs::read_to_string(fixtures().join("dats/gb.dat")).unwrap();
+    let v2 = xml.replace("<version>1</version>", "<version>2</version>");
+    let v3 = xml.replace("<version>1</version>", "<version>3</version>");
+    let mut lib = Library::open_in_memory().unwrap();
+    let a = lib
+        .import_dat_bytes(xml.as_bytes(), "https://a.example/gb.dat", None)
+        .unwrap();
+    let b = lib
+        .import_dat_bytes(v2.as_bytes(), "https://b.example/gb.dat", None)
+        .unwrap();
+    assert_eq!(b.replaced, None, "different URL, both kept");
+    let a2 = lib
+        .import_dat_bytes(v3.as_bytes(), "https://a.example/gb.dat", None)
+        .unwrap();
+    assert_eq!(a2.replaced, Some(a.dat_id), "same URL, newer version replaces");
+    assert_eq!(lib.summary().unwrap().dats.len(), 2);
 }

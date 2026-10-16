@@ -1,13 +1,15 @@
 //! Downloading DATs.
 //!
-//! Redump serves each system's DAT as a public zip at
-//! `http://redump.org/datfile/<code>/` (the codes are the `redump` column in
-//! [`crate::systems`]). No-Intro's data is free to reuse, but DAT-o-MATIC
-//! serves DATs only through its download form, so romforge does not fetch
-//! them: it reads the public `profile.xml` version list to say which No-Intro
-//! DATs are missing or out of date, and the user downloads those by hand.
+//! Where each system's DATs come from is in [`crate::systems`]:
+//! - `redump`: Redump serves DATs at `http://redump.org/datfile/<code>/`
+//!   (game DATs as zips, BIOS DATs as plain clrmamepro text).
+//! - `nointro`: No-Intro's data may be reused freely, but DAT-o-MATIC hands
+//!   DATs out only through its download form, so romforge takes them from
+//!   libretro-database's public mirror on GitHub instead. For DATs downloaded
+//!   from DAT-o-MATIC by hand, the public `profile.xml` says which are out of
+//!   date.
 //!
-//! Requests to one host are at least [`POLITE_DELAY`] apart (DAT-o-MATIC's
+//! Requests to one host are spaced out ([`delay_for`]; DAT-o-MATIC's
 //! robots.txt asks for 5 s). Downloads stay in memory and are never written
 //! to disk.
 
@@ -25,19 +27,68 @@ use crate::systems::System;
 
 pub const USER_AGENT: &str = concat!("romforge/", env!("CARGO_PKG_VERSION"));
 pub const REDUMP_BASE: &str = "http://redump.org";
+pub const LIBRETRO_NOINTRO_BASE: &str =
+    "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro";
 pub const NOINTRO_PROFILE_URL: &str = "https://datomatic.no-intro.org/profile.xml";
 pub const NOINTRO_DOWNLOAD_PAGE: &str = "https://datomatic.no-intro.org/index.php?page=download";
-pub const POLITE_DELAY: Duration = Duration::from_secs(5);
-/// No DAT zip is near this; it only stops a runaway response.
+/// No DAT is near this; it only stops a runaway response.
 const MAX_BODY: u64 = 256 << 20;
 
-/// The URL of a system's Redump DAT zip, if Redump has one.
-pub fn redump_url(system: &System) -> Option<String> {
-    system.redump.map(|code| format!("{REDUMP_BASE}/datfile/{code}/"))
+/// Minimum time between two requests to `host`.
+pub fn delay_for(host: &str) -> Duration {
+    if host == "datomatic.no-intro.org" {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(1)
+    }
+}
+
+/// One downloadable DAT for a system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", content = "name", rename_all = "snake_case")]
+pub enum Source {
+    /// A Redump DAT code, e.g. `psx` or `psx-bios`.
+    Redump(&'static str),
+    /// A file in libretro-database's No-Intro mirror, without `.dat`.
+    NoIntro(&'static str),
+}
+
+impl Source {
+    pub fn url(&self) -> String {
+        match self {
+            Source::Redump(code) => format!("{REDUMP_BASE}/datfile/{code}/"),
+            Source::NoIntro(name) => format!("{LIBRETRO_NOINTRO_BASE}/{}.dat", percent_encode(name)),
+        }
+    }
+
+    /// Whether `source_path` (as stored for an imported DAT) came from here.
+    pub fn is_mirror_url(source_path: &str) -> bool {
+        source_path.starts_with(LIBRETRO_NOINTRO_BASE)
+    }
+}
+
+/// Every DAT `dat download` fetches for `system`: No-Intro first, then
+/// Redump games and BIOS.
+pub fn sources(system: &System) -> Vec<Source> {
+    let nointro = system.nointro.iter().copied().map(Source::NoIntro);
+    let redump = system.redump.iter().copied().map(Source::Redump);
+    nointro.chain(redump).collect()
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// GET `url` into memory, waiting first if the same host was asked less than
-/// [`POLITE_DELAY`] ago.
+/// [`delay_for`] ago.
 pub fn get(url: &str) -> Result<Vec<u8>, Error> {
     wait_for_host(url);
     let agent = ureq::Agent::config_builder()
@@ -68,9 +119,9 @@ fn wait_for_host(url: &str) {
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     let last = last.get_or_insert_with(HashMap::new);
     if let Some(t) = last.get(&host) {
-        let since = t.elapsed();
-        if since < POLITE_DELAY {
-            std::thread::sleep(POLITE_DELAY - since);
+        let (since, delay) = (t.elapsed(), delay_for(&host));
+        if since < delay {
+            std::thread::sleep(delay - since);
         }
     }
     last.insert(host, Instant::now());
@@ -185,10 +236,22 @@ mod tests {
     use crate::systems;
 
     #[test]
-    fn redump_urls_come_from_the_systems_table() {
+    fn sources_come_from_the_systems_table() {
         let psx = systems::by_key("PlayStation").unwrap();
-        assert_eq!(redump_url(psx).as_deref(), Some("http://redump.org/datfile/psx/"));
-        assert_eq!(redump_url(systems::by_key("SNES").unwrap()), None);
+        let urls: Vec<_> = sources(psx).iter().map(Source::url).collect();
+        assert_eq!(
+            urls,
+            [
+                "http://redump.org/datfile/psx/",
+                "http://redump.org/datfile/psx-bios/"
+            ]
+        );
+        let gba = sources(systems::by_key("Game Boy Advance").unwrap());
+        assert_eq!(
+            gba[0].url(),
+            "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat"
+        );
+        assert!(sources(systems::by_key("Arcade").unwrap()).is_empty());
     }
 
     #[test]

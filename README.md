@@ -41,16 +41,20 @@ progress on stderr; `-q` keeps it quiet.
 On your own collection, get DATs first, then scan a folder.
 
 ```bash
-romforge-cli dat download PlayStation Saturn   # Redump, fetched for you
-romforge-cli dat check                         # which No-Intro DATs are missing or outdated
-romforge-cli dat import ~/Downloads/No-Intro*.zip
+romforge-cli dat download SNES PlayStation    # or --all for every system
 ```
 
-Redump DATs (systems marked `[redump]` in `dat systems`) are downloaded
-straight from redump.org. No-Intro only serves DATs through DAT-o-MATIC's
-download form, so download those there yourself; `dat import` takes the zip
-as is (one DAT or a whole pack), reading it in memory. Downloads are spaced
-5 s apart per site and never saved to disk; the DAT ends up in the database.
+Cartridge systems (`[no-intro]` in `dat systems`) get No-Intro DATs from
+[libretro-database](https://github.com/libretro/libretro-database)'s mirror,
+because DAT-o-MATIC only hands DATs out through its download form. Disc
+systems (`[redump]`) get Redump's game and BIOS DATs from redump.org. Run
+it again to update; an unchanged DAT is left alone. Downloads are spaced
+out per site and never saved to disk; the DAT ends up in the database.
+
+DATs you downloaded yourself import too, as `.dat` or as a zip of one or
+many (read in memory): `romforge-cli dat import ~/Downloads/No-Intro*.zip`.
+`romforge-cli dat check` compares imported No-Intro DATs with DAT-o-MATIC's
+latest versions.
 
 Use `--system NES` (keys: `romforge-cli dat systems`) or `--dat ID` to say
 what a folder should contain; without it, every DAT is tried. Without

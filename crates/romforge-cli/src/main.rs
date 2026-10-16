@@ -62,15 +62,19 @@ enum DatCommand {
         #[arg(long)]
         system: Option<String>,
     },
-    /// Download and import Redump DATs for disc systems (see `dat systems`)
+    /// Download and import the DATs of systems (see `dat systems`)
     ///
-    /// No-Intro DATs can't be downloaded automatically; get them from
-    /// DAT-o-MATIC and `dat import` the zip. `dat check` says which.
+    /// Cartridge systems get No-Intro DATs from libretro-database's mirror;
+    /// disc systems get Redump game and BIOS DATs from redump.org. Run it
+    /// again to update.
     Download {
-        #[arg(required = true)]
+        #[arg(required_unless_present = "all")]
         systems: Vec<String>,
+        /// Every system that has a DAT source
+        #[arg(long, conflicts_with = "systems")]
+        all: bool,
     },
-    /// Compare imported DATs with No-Intro's latest versions
+    /// Compare imported DATs with No-Intro's latest versions on DAT-o-MATIC
     Check {
         /// Also list No-Intro DATs you haven't imported
         #[arg(long)]
@@ -99,8 +103,14 @@ fn main() -> Result<()> {
 
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
-            let redump = if s.redump.is_some() { "  [redump]" } else { "" };
-            println!("{:<24} {}{redump}", s.key, s.name);
+            let mut sources = String::new();
+            if !s.nointro.is_empty() {
+                sources += "  [no-intro]";
+            }
+            if !s.redump.is_empty() {
+                sources += "  [redump]";
+            }
+            println!("{:<24} {}{sources}", s.key, s.name);
         }
         return Ok(());
     }
@@ -115,12 +125,29 @@ fn main() -> Result<()> {
                 dats.into_iter().for_each(print_imported);
             }
         }
-        Command::Dat(DatCommand::Download { systems }) => {
-            for key in systems {
-                let d = lib
-                    .download_redump(&key)
-                    .with_context(|| format!("downloading the {key} DAT"))?;
-                print_imported(d);
+        Command::Dat(DatCommand::Download { systems, all }) => {
+            let keys: Vec<String> = if all {
+                systems::SYSTEMS
+                    .iter()
+                    .filter(|s| !fetch::sources(s).is_empty())
+                    .map(|s| s.key.to_owned())
+                    .collect()
+            } else {
+                systems
+            };
+            let mut failed = 0;
+            for key in keys {
+                lib.download_dats(&key, |source, result| match result {
+                    Ok(d) => print_imported(d),
+                    Err(e) => {
+                        failed += 1;
+                        eprintln!("error: {key}: {}: {e}", source.url());
+                    }
+                })
+                .with_context(|| format!("downloading DATs for {key}"))?;
+            }
+            if failed > 0 {
+                bail!("{failed} DAT downloads failed");
             }
         }
         Command::Dat(DatCommand::Check { all }) => {
@@ -137,6 +164,12 @@ fn main() -> Result<()> {
                         format!("missing   {:<60} latest {}", s.name, s.latest)
                     }
                     DatState::Current => format!("current   {:<60} {}", s.name, s.latest),
+                    DatState::Mirror => format!(
+                        "mirror    {:<60} libretro {} (No-Intro {})",
+                        s.name,
+                        s.imported.as_deref().unwrap_or("?"),
+                        s.latest
+                    ),
                     DatState::Outdated => format!(
                         "outdated  {:<60} have {} latest {}",
                         s.name,
@@ -150,7 +183,7 @@ fn main() -> Result<()> {
                 println!("{missing} No-Intro DATs for known systems not imported (--all lists them)");
             }
             println!(
-                "No-Intro DATs are downloaded by hand: {}",
+                "`dat download` refreshes mirror DATs; others come from {}",
                 fetch::NOINTRO_DOWNLOAD_PAGE
             );
         }

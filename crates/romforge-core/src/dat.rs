@@ -1,4 +1,5 @@
-//! Logiqx XML DAT parsing (No-Intro, Redump, TOSEC and MAME-style `<machine>`).
+//! DAT parsing: Logiqx XML (No-Intro, Redump, TOSEC and MAME-style
+//! `<machine>`) and the older clrmamepro text format (`game ( rom ( ... ) )`).
 
 use std::io::BufRead;
 
@@ -39,6 +40,18 @@ pub struct Rom {
     pub status: Option<String>,
 }
 
+/// Parse either format, telling them apart by the first non-blank byte.
+pub fn parse_any(bytes: &[u8]) -> Result<Dat, Error> {
+    let start = bytes.iter().position(|b| !b.is_ascii_whitespace());
+    match start.map(|i| bytes[i]) {
+        Some(b'<') => parse(bytes),
+        // Skip a UTF-8 BOM.
+        Some(0xef) if bytes[start.unwrap_or(0)..].starts_with(b"\xef\xbb\xbf<") => parse(bytes),
+        _ => parse_cmp(&String::from_utf8_lossy(bytes)),
+    }
+}
+
+/// Parse a Logiqx XML DAT.
 pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
     let mut reader = quick_xml::Reader::from_reader(input);
     // Text is trimmed per element at `End`; trimming fragments would eat the
@@ -122,6 +135,162 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
     Ok(dat)
 }
 
+/// A clrmamepro value: a word or quoted string, or a `( ... )` block of
+/// key/value pairs.
+enum Cmp<'a> {
+    Atom(&'a str),
+    Block(Vec<(&'a str, Cmp<'a>)>),
+}
+
+impl<'a> Cmp<'a> {
+    fn get(&self, key: &str) -> Option<&'a str> {
+        match self {
+            Cmp::Block(items) => items.iter().find_map(|(k, v)| match v {
+                Cmp::Atom(a) if k.eq_ignore_ascii_case(key) => Some(*a),
+                _ => None,
+            }),
+            Cmp::Atom(_) => None,
+        }
+    }
+
+    fn get_owned(&self, key: &str) -> Option<String> {
+        self.get(key).map(str::to_owned).filter(|s| !s.is_empty())
+    }
+
+    fn blocks(&self, key: &'static str) -> impl Iterator<Item = &Cmp<'a>> {
+        let items = match self {
+            Cmp::Block(items) => &items[..],
+            Cmp::Atom(_) => &[],
+        };
+        items
+            .iter()
+            .filter(move |(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v)
+            .filter(|v| matches!(v, Cmp::Block(_)))
+    }
+}
+
+/// Splits clrmamepro text into `(`, `)`, quoted strings and bare words.
+/// Quoted strings have no escapes in this format.
+struct Tokens<'a> {
+    s: &'a str,
+}
+
+impl<'a> Iterator for Tokens<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        self.s = self.s.trim_start();
+        let first = self.s.chars().next()?;
+        let (token, rest) = match first {
+            '(' | ')' => self.s.split_at(1),
+            '"' => {
+                let body = &self.s[1..];
+                match body.find('"') {
+                    Some(end) => (&body[..end], &body[end + 1..]),
+                    None => (body, ""),
+                }
+            }
+            // A bare word runs to whitespace and may hold balanced parens
+            // (`name ps-22j(v).bin`); an unmatched `)` ends it.
+            _ => {
+                let mut depth = 0usize;
+                let end = self
+                    .s
+                    .char_indices()
+                    .find(|&(_, c)| match c {
+                        '(' => {
+                            depth += 1;
+                            false
+                        }
+                        ')' if depth == 0 => true,
+                        ')' => {
+                            depth -= 1;
+                            false
+                        }
+                        c => c.is_whitespace(),
+                    })
+                    .map_or(self.s.len(), |(i, _)| i);
+                self.s.split_at(end)
+            }
+        };
+        self.s = rest;
+        Some(token)
+    }
+}
+
+fn cmp_block<'a>(tokens: &mut std::iter::Peekable<Tokens<'a>>, top: bool) -> Result<Cmp<'a>, Error> {
+    let mut items = Vec::new();
+    loop {
+        let Some(key) = tokens.next() else {
+            return if top {
+                Ok(Cmp::Block(items))
+            } else {
+                Err(Error::Dat("clrmamepro: unclosed (".into()))
+            };
+        };
+        if key == ")" {
+            return if top {
+                Err(Error::Dat("clrmamepro: unbalanced )".into()))
+            } else {
+                Ok(Cmp::Block(items))
+            };
+        }
+        let value = match tokens.next() {
+            Some("(") => cmp_block(tokens, false)?,
+            Some(")") | None => return Err(Error::Dat(format!("clrmamepro: {key:?} has no value"))),
+            Some(v) => Cmp::Atom(v),
+        };
+        items.push((key, value));
+    }
+}
+
+/// Parse a clrmamepro text DAT.
+pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let header = root
+        .blocks("clrmamepro")
+        .next()
+        .ok_or_else(|| Error::Dat("not a DAT (no <datafile> or clrmamepro header)".into()))?;
+    let mut dat = Dat {
+        name: header.get_owned("name").unwrap_or_default(),
+        description: header.get_owned("description"),
+        version: header.get_owned("version"),
+        author: header.get_owned("author"),
+        homepage: header.get_owned("homepage"),
+        url: header.get_owned("url"),
+        header_hint: header.get_owned("header"),
+        games: Vec::new(),
+    };
+    let games = root
+        .blocks("game")
+        .chain(root.blocks("machine"))
+        .chain(root.blocks("resource"));
+    for g in games {
+        dat.games.push(Game {
+            name: g.get_owned("name").unwrap_or_default(),
+            description: g.get_owned("description"),
+            roms: g
+                .blocks("rom")
+                .map(|r| Rom {
+                    name: r.get_owned("name").unwrap_or_default(),
+                    size: r.get("size").and_then(parse_size),
+                    crc32: cmp_hash(r.get("crc")),
+                    md5: cmp_hash(r.get("md5")),
+                    sha1: cmp_hash(r.get("sha1")),
+                    status: r.get_owned("status").or_else(|| r.get_owned("flags")),
+                })
+                .collect(),
+        });
+    }
+    Ok(dat)
+}
+
+fn cmp_hash(h: Option<&str>) -> Option<String> {
+    h.map(str::to_ascii_lowercase)
+        .filter(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 fn xml_err(e: impl std::fmt::Display) -> Error {
     Error::Dat(e.to_string())
 }
@@ -190,5 +359,58 @@ mod tests {
     #[test]
     fn rejects_non_dat() {
         assert!(parse("<html></html>".as_bytes()).is_err());
+        assert!(parse_any(b"<!DOCTYPE html><html></html>").is_err());
+        assert!(parse_any(b"hello ( world )").is_err());
+        assert!(parse_any(b"clrmamepro ( name \"x\" ").is_err());
+    }
+
+    const CMP: &str = r#"clrmamepro (
+	name "Sony - PlayStation - BIOS Images"
+	description "Sony - PlayStation - BIOS Images (24) (2016-10-21)"
+	version 2016-10-21
+	author "MESS & redump.org"
+)
+
+game (
+	name "ps-10j"
+	description "SCPH-1000/DTL-H1000 (Version 1.0 J)"
+	rom ( name ps-22j(v).bin size 524288 crc 3b601fc8 md5 239665B1a3dade1b5a52c06338011044 sha1 343883a7b555646da8cee54aadd2795b6e7dd070 )
+)
+game (
+	name "Super Mario Bros. (World)"
+	region "World"
+	rom ( name "Super Mario Bros. (World).nes" size 40976 crc 393A432F flags baddump )
+	rom ( name "second (rom).bin" size 0x10 )
+)
+"#;
+
+    #[test]
+    fn parses_clrmamepro_text() {
+        let dat = parse_any(CMP.as_bytes()).unwrap();
+        assert_eq!(dat.name, "Sony - PlayStation - BIOS Images");
+        assert_eq!(dat.version.as_deref(), Some("2016-10-21"));
+        assert_eq!(dat.author.as_deref(), Some("MESS & redump.org"));
+        assert_eq!(dat.games.len(), 2);
+        let bios = &dat.games[0];
+        assert_eq!(
+            bios.description.as_deref(),
+            Some("SCPH-1000/DTL-H1000 (Version 1.0 J)")
+        );
+        assert_eq!(bios.roms[0].name, "ps-22j(v).bin");
+        assert_eq!(
+            bios.roms[0].md5.as_deref(),
+            Some("239665b1a3dade1b5a52c06338011044")
+        );
+        let smb = &dat.games[1];
+        assert_eq!(smb.roms.len(), 2);
+        assert_eq!(smb.roms[0].name, "Super Mario Bros. (World).nes");
+        assert_eq!(smb.roms[0].crc32.as_deref(), Some("393a432f"));
+        assert_eq!(smb.roms[0].status.as_deref(), Some("baddump"));
+        assert_eq!(smb.roms[1].size, Some(16));
+    }
+
+    #[test]
+    fn xml_still_detected() {
+        assert_eq!(parse_any(DAT.as_bytes()).unwrap().games.len(), 2);
     }
 }

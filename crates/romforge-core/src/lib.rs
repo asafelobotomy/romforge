@@ -44,7 +44,7 @@ pub enum Error {
     UnknownDat(i64),
     #[error("download: {0}")]
     Http(String),
-    #[error("{0} has no Redump DAT; No-Intro DATs are downloaded by hand from DAT-o-MATIC")]
+    #[error("no DAT source is known for {0}")]
     NoDownload(&'static str),
 }
 
@@ -89,6 +89,8 @@ pub enum DatState {
     Current,
     Outdated,
     Missing,
+    /// Imported from libretro's No-Intro mirror; update with `dat download`.
+    Mirror,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -139,7 +141,7 @@ impl Library {
         })
     }
 
-    /// Import a Logiqx XML DAT. The system is taken from `system_key` when
+    /// Import a DAT (Logiqx XML or clrmamepro text). The system is taken from `system_key` when
     /// given, else guessed from the DAT name; if neither works the DAT has no
     /// system (it still matches when a folder is scanned without a scope).
     pub fn import_dat(
@@ -180,17 +182,14 @@ impl Library {
             .collect()
     }
 
-    /// Download a system's DAT from Redump and import it. Downloading the
-    /// same DAT again changes nothing; a newer one replaces the old.
-    pub fn download_redump(&mut self, system_key: &str) -> Result<ImportedDat, Error> {
-        let system =
-            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
-        let url = fetch::redump_url(system).ok_or(Error::NoDownload(system.key))?;
+    /// Download one DAT and import it for `system_key`. Downloading the same
+    /// DAT again changes nothing; a newer one replaces the old.
+    pub fn download_dat(&mut self, system_key: &str, source: fetch::Source) -> Result<ImportedDat, Error> {
+        let url = source.url();
         let body = fetch::get(&url)?;
-        if !body.starts_with(b"PK\x03\x04") {
-            return Err(Error::Http(format!(
-                "{url}: not a zip (Redump may need a login for this DAT)"
-            )));
+        let head = String::from_utf8_lossy(&body[..body.len().min(512)]).to_ascii_lowercase();
+        if head.contains("<html") || head.contains("<!doctype html") {
+            return Err(Error::Http(format!("{url}: got a web page, not a DAT")));
         }
         let mut dats = fetch::dats_in(&body)?;
         if dats.len() != 1 {
@@ -200,27 +199,62 @@ impl Library {
             )));
         }
         let dat = dats.remove(0);
-        self.import_dat_bytes(&dat.bytes, &url, Some(system.key))
+        self.import_dat_bytes(&dat.bytes, &url, Some(system_key))
+    }
+
+    /// Download and import every DAT of a system ([`fetch::sources`]),
+    /// reporting each one as it finishes; one failing does not stop the
+    /// rest.
+    pub fn download_dats(
+        &mut self,
+        system_key: &str,
+        mut each: impl FnMut(fetch::Source, Result<ImportedDat, Error>),
+    ) -> Result<(), Error> {
+        let system =
+            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+        let sources = fetch::sources(system);
+        if sources.is_empty() {
+            return Err(Error::NoDownload(system.key));
+        }
+        for source in sources {
+            let result = self.download_dat(system.key, source);
+            each(source, result);
+        }
+        Ok(())
     }
 
     /// Compare imported DATs with No-Intro's `profile.xml` (from
     /// [`fetch::nointro_profile`]). Lists every profile entry for a known
-    /// system, by name.
+    /// system. A system's main DAT counts as [`DatState::Mirror`] when it
+    /// came from libretro's mirror, whose names and version format differ.
     pub fn nointro_status(&self, profile: &[fetch::ProfileEntry]) -> Result<Vec<DatStatus>, Error> {
-        let mut stmt = self
+        let mut by_name = self
             .conn
-            .prepare("SELECT dat_id, version FROM dats WHERE name = ?1")?;
+            .prepare("SELECT dat_id, version, source_path FROM dats WHERE name = ?1")?;
+        let mut mirror_of = self.conn.prepare(
+            "SELECT dat_id, version, source_path FROM dats WHERE system_id = ?1 AND source_path LIKE ?2
+             ORDER BY dat_id LIMIT 1",
+        )?;
+        let mirror_like = format!("{}%", fetch::LIBRETRO_NOINTRO_BASE);
         let mut out = Vec::new();
         for entry in profile {
             let Some(system) = systems::from_dat_name(&entry.name) else {
                 continue;
             };
-            let imported: Option<(i64, Option<String>)> = stmt
-                .query_row([&entry.name], |r| Ok((r.get(0)?, r.get(1)?)))
-                .optional()?;
+            let row = |r: &rusqlite::Row| -> rusqlite::Result<(i64, Option<String>, String)> {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            };
+            let mut imported = by_name.query_row([&entry.name], row).optional()?;
+            let main_set = !entry.name.ends_with(')');
+            if imported.is_none() && main_set {
+                imported = mirror_of
+                    .query_row(params![system.id, mirror_like], row)
+                    .optional()?;
+            }
             let state = match &imported {
                 None => DatState::Missing,
-                Some((_, v)) if v.as_deref() == Some(entry.version.as_str()) => DatState::Current,
+                Some((_, _, src)) if fetch::Source::is_mirror_url(src) => DatState::Mirror,
+                Some((_, v, _)) if v.as_deref() == Some(entry.version.as_str()) => DatState::Current,
                 Some(_) => DatState::Outdated,
             };
             out.push(DatStatus {
@@ -244,7 +278,7 @@ impl Library {
         system_key: Option<&str>,
     ) -> Result<ImportedDat, Error> {
         let sha256: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
-        let dat = dat::parse(bytes)?;
+        let dat = dat::parse_any(bytes)?;
 
         let system = match system_key {
             Some(key) => Some(systems::by_key(key).ok_or_else(|| Error::UnknownSystem(key.to_owned()))?),
@@ -252,13 +286,19 @@ impl Library {
         };
 
         let tx = self.conn.transaction()?;
-        // The same file again is a no-op; a new version of a DAT (same name)
-        // replaces the old one, and folders scoped to it follow along.
+        // The same file again is a no-op; a new version of a DAT (same name,
+        // and same URL for downloads) replaces the old one, and folders
+        // scoped to it follow along. No-Intro and Redump both name a DAT
+        // "Sony - PlayStation Portable", so a download never replaces a
+        // same-named DAT from elsewhere.
         let existing: Option<(i64, String)> = tx
             .query_row(
-                "SELECT dat_id, source_sha256 FROM dats WHERE name = ?1 OR source_sha256 = ?2
+                "SELECT dat_id, source_sha256 FROM dats
+                 WHERE source_sha256 = ?2
+                    OR (name = ?1 AND (source_path = ?3
+                        OR (?3 NOT LIKE 'http%' AND source_path NOT LIKE 'http%')))
                  ORDER BY source_sha256 = ?2 DESC LIMIT 1",
-                params![dat.name, sha256],
+                params![dat.name, sha256, source],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
