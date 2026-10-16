@@ -1,0 +1,211 @@
+//! Thin command-line shell over romforge-core.
+
+use std::path::PathBuf;
+
+use anyhow::{Context, Result, bail};
+use clap::{Args, Parser, Subcommand};
+use romforge_core::{Library, LibraryFilter, Scope, Status, systems};
+
+#[derive(Parser)]
+#[command(version, about = "Scan and identify retro ROM collections (read-only)")]
+struct Cli {
+    /// SQLite database [default: $XDG_DATA_HOME/romforge/romforge.db]
+    #[arg(long, global = true, env = "ROMFORGE_DB")]
+    db: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Manage DATs
+    #[command(subcommand)]
+    Dat(DatCommand),
+    /// Hash a folder (and zip/7z members) and identify it. Never changes files.
+    Scan {
+        dir: PathBuf,
+        #[command(flatten)]
+        scope: ScopeArgs,
+        /// Print only the summary, not every file
+        #[arg(long, short)]
+        quiet: bool,
+    },
+    /// Show file statuses and have/missing per DAT
+    Report {
+        /// List the games of one DAT
+        #[arg(long)]
+        dat: Option<i64>,
+        /// With --dat: only missing games
+        #[arg(long, requires = "dat")]
+        missing: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum DatCommand {
+    /// Import Logiqx XML DATs (No-Intro, Redump, ...)
+    Import {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// System key (see `romforge-cli dat systems`); guessed from the DAT name if omitted
+        #[arg(long)]
+        system: Option<String>,
+    },
+    /// List imported DATs
+    List,
+    /// List known system keys
+    Systems,
+}
+
+#[derive(Args)]
+#[group(multiple = false)]
+struct ScopeArgs {
+    /// Only identify against DATs of this system
+    #[arg(long)]
+    system: Option<String>,
+    /// Only identify against this DAT id
+    #[arg(long)]
+    dat: Option<i64>,
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let db = cli.db.unwrap_or_else(romforge_core::default_db_path);
+
+    if let Command::Dat(DatCommand::Systems) = cli.command {
+        for s in systems::SYSTEMS {
+            println!("{:<24} {}", s.key, s.name);
+        }
+        return Ok(());
+    }
+
+    let mut lib = Library::open(&db).with_context(|| format!("opening {}", db.display()))?;
+    match cli.command {
+        Command::Dat(DatCommand::Import { files, system }) => {
+            for file in files {
+                let d = lib
+                    .import_dat(&file, system.as_deref())
+                    .with_context(|| format!("importing {}", file.display()))?;
+                let system = d.system.unwrap_or("no system (pass --system to set one)");
+                let note = match (d.unchanged, d.replaced) {
+                    (true, _) => " (already imported)".to_owned(),
+                    (false, Some(old)) => format!(" (replaces DAT #{old})"),
+                    _ => String::new(),
+                };
+                println!(
+                    "DAT #{}: {} [{}] {} games, {} roms{}{}",
+                    d.dat_id,
+                    d.name,
+                    system,
+                    d.games,
+                    d.roms,
+                    d.header_hint.map(|h| format!(", header {h}")).unwrap_or_default(),
+                    note
+                );
+            }
+        }
+        Command::Dat(DatCommand::List) => print_dats(&lib)?,
+        Command::Dat(DatCommand::Systems) => unreachable!(),
+        Command::Scan { dir, scope, quiet } => {
+            let scope = match (scope.system, scope.dat) {
+                (Some(key), _) => match systems::by_key(&key) {
+                    Some(s) => Scope::System(s.id),
+                    None => bail!("unknown system {key:?}; see `romforge-cli dat systems`"),
+                },
+                (None, Some(id)) => Scope::Dat(id),
+                (None, None) => Scope::All,
+            };
+            let report = lib.scan(&dir, scope)?;
+            for (path, member, err) in &report.errors {
+                let at = if member.is_empty() {
+                    String::new()
+                } else {
+                    format!("#{member}")
+                };
+                eprintln!("error: {}{at}: {err}", path.display());
+            }
+            let root = report.root.to_string_lossy();
+            let files = lib.files(&LibraryFilter::default())?;
+            let files: Vec<_> = files
+                .iter()
+                .filter(|f| f.path.starts_with(root.as_ref()))
+                .collect();
+            if !quiet {
+                for f in &files {
+                    let shown = f.display_path();
+                    let shown = shown
+                        .strip_prefix(root.as_ref())
+                        .unwrap_or(&shown)
+                        .trim_start_matches('/');
+                    let games = if f.games.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  {}", f.games.join(" | "))
+                    };
+                    let header = f
+                        .header_kind
+                        .as_deref()
+                        .map(|h| format!(" [{h}]"))
+                        .unwrap_or_default();
+                    println!("{:<13} {shown}{header}{games}", f.status.as_str());
+                }
+            }
+            let mut counts = Status::ALL.map(|s| (s, 0));
+            for f in &files {
+                counts.iter_mut().find(|(s, _)| *s == f.status).unwrap().1 += 1;
+            }
+            let counts: Vec<_> = counts
+                .iter()
+                .map(|(s, n)| format!("{n} {}", s.as_str()))
+                .collect();
+            println!(
+                "scanned {} entries in {root}: {}",
+                report.hashed,
+                counts.join(", ")
+            );
+        }
+        Command::Report {
+            dat: Some(id),
+            missing,
+        } => {
+            for g in lib.dat_games(id)? {
+                if missing && g.have {
+                    continue;
+                }
+                let mark = if g.have { "have" } else { "missing" };
+                println!("{mark:<8} {}  ({}/{} roms)", g.name, g.roms_have, g.roms_total);
+                for f in &g.files {
+                    println!("         <- {f}");
+                }
+            }
+        }
+        Command::Report { dat: None, .. } => {
+            let s = lib.summary()?;
+            let counts: Vec<_> = s
+                .files_by_status
+                .iter()
+                .map(|(st, n)| format!("{n} {}", st.as_str()))
+                .collect();
+            println!("files: {}", counts.join(", "));
+            print_dats(&lib)?;
+        }
+    }
+    Ok(())
+}
+
+fn print_dats(lib: &Library) -> Result<()> {
+    for d in lib.summary()?.dats {
+        println!(
+            "#{:<3} {:<55} {:<16} have {:>5} / {:<5} missing {:<5} imported {} from {}",
+            d.dat_id,
+            d.name,
+            d.system.unwrap_or_else(|| "-".into()),
+            d.have,
+            d.games,
+            d.missing,
+            d.imported_at,
+            d.source_path
+        );
+    }
+    Ok(())
+}

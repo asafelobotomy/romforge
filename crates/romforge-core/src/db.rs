@@ -1,0 +1,160 @@
+//! SQLite schema. Hash columns are indexed but never UNIQUE: one hash can
+//! belong to many games, in one DAT or across DATs.
+
+use rusqlite::{Connection, params};
+
+use crate::Error;
+use crate::systems::SYSTEMS;
+
+const SCHEMA_VERSION: i64 = 1;
+
+const SCHEMA: &str = r#"
+CREATE TABLE systems (
+    system_id      INTEGER PRIMARY KEY,
+    key            TEXT NOT NULL UNIQUE,
+    name           TEXT NOT NULL,
+    manufacturer   TEXT NOT NULL,
+    generation     INTEGER NOT NULL,
+    release_year   INTEGER NOT NULL,
+    preferred_hash TEXT NOT NULL,
+    is_disc_based  INTEGER NOT NULL,
+    is_handheld    INTEGER NOT NULL
+);
+
+-- One row per imported DAT file: where it came from and when.
+CREATE TABLE dats (
+    dat_id        INTEGER PRIMARY KEY,
+    system_id     INTEGER REFERENCES systems(system_id),
+    name          TEXT NOT NULL,
+    description   TEXT,
+    version       TEXT,
+    author        TEXT,
+    homepage      TEXT,
+    url           TEXT,
+    header_hint   TEXT,
+    source_path   TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL,
+    imported_at   TEXT NOT NULL
+);
+
+CREATE TABLE games (
+    game_id     INTEGER PRIMARY KEY,
+    dat_id      INTEGER NOT NULL REFERENCES dats(dat_id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT
+);
+CREATE INDEX games_dat ON games(dat_id);
+
+CREATE TABLE roms (
+    rom_id  INTEGER PRIMARY KEY,
+    game_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    name    TEXT NOT NULL,
+    size    INTEGER,
+    crc32   TEXT,
+    md5     TEXT,
+    sha1    TEXT,
+    status  TEXT
+);
+CREATE INDEX roms_game ON roms(game_id);
+CREATE INDEX roms_sha1 ON roms(sha1);
+CREATE INDEX roms_md5 ON roms(md5);
+CREATE INDEX roms_crc32 ON roms(crc32);
+
+-- A scanned folder and the identification scope chosen for it.
+-- Both NULL means "all DATs"; there is no default system.
+CREATE TABLE scan_roots (
+    root_id   INTEGER PRIMARY KEY,
+    path      TEXT NOT NULL UNIQUE,
+    system_id INTEGER REFERENCES systems(system_id),
+    dat_id    INTEGER REFERENCES dats(dat_id) ON DELETE SET NULL,
+    scanned_at TEXT NOT NULL
+);
+
+-- One row per hashed file or archive member. `member` is '' for plain files.
+CREATE TABLE files (
+    file_id        INTEGER PRIMARY KEY,
+    root_id        INTEGER NOT NULL REFERENCES scan_roots(root_id) ON DELETE CASCADE,
+    path           TEXT NOT NULL,
+    member         TEXT NOT NULL DEFAULT '',
+    size           INTEGER NOT NULL,
+    crc32          TEXT NOT NULL,
+    md5            TEXT NOT NULL,
+    sha1           TEXT NOT NULL,
+    header_kind    TEXT,
+    stripped_size  INTEGER,
+    stripped_crc32 TEXT,
+    stripped_md5   TEXT,
+    stripped_sha1  TEXT,
+    status         TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (status IN ('matched', 'candidate', 'unknown', 'wrong_system', 'duplicate')),
+    scanned_at     TEXT NOT NULL,
+    UNIQUE (path, member)
+);
+CREATE INDEX files_root ON files(root_id);
+
+-- Every hit for a file; a file may hit many ROMs.
+CREATE TABLE matches (
+    file_id INTEGER NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
+    rom_id  INTEGER NOT NULL REFERENCES roms(rom_id) ON DELETE CASCADE,
+    -- 'sha1', 'md5' or 'crc32'
+    via     TEXT NOT NULL,
+    -- 1 when the stripped (headerless) hashes matched
+    stripped INTEGER NOT NULL,
+    -- 1 when the ROM is outside the file's scan scope
+    out_of_scope INTEGER NOT NULL,
+    PRIMARY KEY (file_id, rom_id)
+);
+CREATE INDEX matches_rom ON matches(rom_id);
+"#;
+
+pub fn open(path: &std::path::Path) -> Result<Connection, Error> {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
+    init(Connection::open(path)?)
+}
+
+pub fn open_in_memory() -> Result<Connection, Error> {
+    init(Connection::open_in_memory()?)
+}
+
+fn init(mut conn: Connection) -> Result<Connection, Error> {
+    conn.pragma_update(None, "foreign_keys", true)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if version > SCHEMA_VERSION {
+        return Err(Error::Schema(version));
+    }
+    let tx = conn.transaction()?;
+    if version == 0 {
+        tx.execute_batch(SCHEMA)?;
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    }
+    seed_systems(&tx)?;
+    tx.commit()?;
+    Ok(conn)
+}
+
+fn seed_systems(conn: &Connection) -> Result<(), Error> {
+    let mut stmt = conn.prepare(
+        "INSERT INTO systems VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(system_id) DO UPDATE SET key = excluded.key, name = excluded.name,
+           manufacturer = excluded.manufacturer, generation = excluded.generation,
+           release_year = excluded.release_year, preferred_hash = excluded.preferred_hash,
+           is_disc_based = excluded.is_disc_based, is_handheld = excluded.is_handheld",
+    )?;
+    for s in SYSTEMS {
+        stmt.execute(params![
+            s.id,
+            s.key,
+            s.name,
+            s.manufacturer,
+            s.generation,
+            s.release_year,
+            s.preferred_hash,
+            s.is_disc_based,
+            s.is_handheld
+        ])?;
+    }
+    Ok(())
+}
