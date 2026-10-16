@@ -5,6 +5,7 @@
 
 pub mod dat;
 mod db;
+pub mod fetch;
 pub mod hash;
 pub mod headers;
 mod identify;
@@ -41,6 +42,10 @@ pub enum Error {
     UnknownSystem(String),
     #[error("no DAT with id {0}")]
     UnknownDat(i64),
+    #[error("download: {0}")]
+    Http(String),
+    #[error("{0} has no Redump DAT; No-Intro DATs are downloaded by hand from DAT-o-MATIC")]
+    NoDownload(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -75,6 +80,31 @@ pub struct ScanProgress {
     pub hashed: usize,
     pub bytes_hashed: u64,
     pub skipped: usize,
+}
+
+/// How an imported DAT compares with the latest one upstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatState {
+    Current,
+    Outdated,
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DatStatus {
+    pub name: String,
+    pub system: &'static str,
+    pub latest: String,
+    pub dat_id: Option<i64>,
+    pub imported: Option<String>,
+    pub state: DatState,
+}
+
+fn read_file(path: &Path) -> Result<Vec<u8>, Error> {
+    let mut buf = Vec::new();
+    BufReader::new(std::fs::File::open(path)?).read_to_end(&mut buf)?;
+    Ok(buf)
 }
 
 /// The default database location: `$XDG_DATA_HOME/romforge/romforge.db`.
@@ -118,16 +148,103 @@ impl Library {
         system_key: Option<&str>,
     ) -> Result<ImportedDat, Error> {
         let path = std::path::absolute(path.as_ref())?;
-        let bytes = {
-            let mut buf = Vec::new();
-            BufReader::new(std::fs::File::open(&path)?).read_to_end(&mut buf)?;
-            buf
-        };
-        let sha256: String = Sha256::digest(&bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        let dat = dat::parse(&bytes[..])?;
+        let bytes = read_file(&path)?;
+        self.import_dat_bytes(&bytes, &path.to_string_lossy(), system_key)
+    }
+
+    /// Import a DAT file, or every DAT inside a `.zip` of DATs (as No-Intro
+    /// and Redump hand them out). `system_key` is refused for a zip holding
+    /// more than one DAT, since they are for different systems.
+    pub fn import_dats(
+        &mut self,
+        path: impl AsRef<Path>,
+        system_key: Option<&str>,
+    ) -> Result<Vec<ImportedDat>, Error> {
+        let path = std::path::absolute(path.as_ref())?;
+        let dats = fetch::dats_in(&read_file(&path)?)?;
+        if system_key.is_some() && dats.len() > 1 {
+            return Err(Error::Dat(format!(
+                "{} holds {} DATs; --system applies to one",
+                path.display(),
+                dats.len()
+            )));
+        }
+        dats.into_iter()
+            .map(|fetch::DatBytes { member, bytes }| {
+                let source = match member {
+                    Some(m) => format!("{}#{m}", path.display()),
+                    None => path.to_string_lossy().into_owned(),
+                };
+                self.import_dat_bytes(&bytes, &source, system_key)
+            })
+            .collect()
+    }
+
+    /// Download a system's DAT from Redump and import it. Downloading the
+    /// same DAT again changes nothing; a newer one replaces the old.
+    pub fn download_redump(&mut self, system_key: &str) -> Result<ImportedDat, Error> {
+        let system =
+            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+        let url = fetch::redump_url(system).ok_or(Error::NoDownload(system.key))?;
+        let body = fetch::get(&url)?;
+        if !body.starts_with(b"PK\x03\x04") {
+            return Err(Error::Http(format!(
+                "{url}: not a zip (Redump may need a login for this DAT)"
+            )));
+        }
+        let mut dats = fetch::dats_in(&body)?;
+        if dats.len() != 1 {
+            return Err(Error::Dat(format!(
+                "{url}: expected one DAT, found {}",
+                dats.len()
+            )));
+        }
+        let dat = dats.remove(0);
+        self.import_dat_bytes(&dat.bytes, &url, Some(system.key))
+    }
+
+    /// Compare imported DATs with No-Intro's `profile.xml` (from
+    /// [`fetch::nointro_profile`]). Lists every profile entry for a known
+    /// system, by name.
+    pub fn nointro_status(&self, profile: &[fetch::ProfileEntry]) -> Result<Vec<DatStatus>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT dat_id, version FROM dats WHERE name = ?1")?;
+        let mut out = Vec::new();
+        for entry in profile {
+            let Some(system) = systems::from_dat_name(&entry.name) else {
+                continue;
+            };
+            let imported: Option<(i64, Option<String>)> = stmt
+                .query_row([&entry.name], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?;
+            let state = match &imported {
+                None => DatState::Missing,
+                Some((_, v)) if v.as_deref() == Some(entry.version.as_str()) => DatState::Current,
+                Some(_) => DatState::Outdated,
+            };
+            out.push(DatStatus {
+                name: entry.name.clone(),
+                system: system.key,
+                latest: entry.version.clone(),
+                dat_id: imported.as_ref().map(|i| i.0),
+                imported: imported.and_then(|i| i.1),
+                state,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Import one DAT from memory. `source` is recorded as where it came
+    /// from (a path, `zip#member` or URL).
+    pub fn import_dat_bytes(
+        &mut self,
+        bytes: &[u8],
+        source: &str,
+        system_key: Option<&str>,
+    ) -> Result<ImportedDat, Error> {
+        let sha256: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+        let dat = dat::parse(bytes)?;
 
         let system = match system_key {
             Some(key) => Some(systems::by_key(key).ok_or_else(|| Error::UnknownSystem(key.to_owned()))?),
@@ -172,7 +289,7 @@ impl Library {
                 dat.homepage,
                 dat.url,
                 dat.header_hint,
-                path.to_string_lossy(),
+                source,
                 sha256,
             ],
         )?;

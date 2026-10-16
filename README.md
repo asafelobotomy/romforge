@@ -38,7 +38,20 @@ skipped. `--all-files` hashes everything. The folder you name may be a
 symlink, but symlinked folders inside it are never followed. Long scans show
 progress on stderr; `-q` keeps it quiet.
 
-On your own collection, import real No-Intro/Redump DATs and scan a folder.
+On your own collection, get DATs first, then scan a folder.
+
+```bash
+romforge-cli dat download PlayStation Saturn   # Redump, fetched for you
+romforge-cli dat check                         # which No-Intro DATs are missing or outdated
+romforge-cli dat import ~/Downloads/No-Intro*.zip
+```
+
+Redump DATs (systems marked `[redump]` in `dat systems`) are downloaded
+straight from redump.org. No-Intro only serves DATs through DAT-o-MATIC's
+download form, so download those there yourself; `dat import` takes the zip
+as is (one DAT or a whole pack), reading it in memory. Downloads are spaced
+5 s apart per site and never saved to disk; the DAT ends up in the database.
+
 Use `--system NES` (keys: `romforge-cli dat systems`) or `--dat ID` to say
 what a folder should contain; without it, every DAT is tried. Without
 `ROMFORGE_DB` the database lives at `~/.local/share/romforge/romforge.db`.

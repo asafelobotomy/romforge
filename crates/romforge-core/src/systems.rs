@@ -4,7 +4,8 @@
 //! header names (No-Intro / Redump style, without trailing `(...)` groups)
 //! used to guess a DAT's system on import. `preferred_hash` is informational
 //! only: matching always needs size + SHA1 or size + MD5. `extensions` decide
-//! which files a scan hashes.
+//! which files a scan hashes. `redump` is the system's code on redump.org,
+//! used to download its DAT.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct System {
@@ -21,6 +22,8 @@ pub struct System {
     /// Lower-case file extensions (without the dot) this system's ROMs use.
     /// The scanner hashes only these, plus `.zip` and `.7z`.
     pub extensions: &'static [&'static str],
+    /// Redump's code for the system (`http://redump.org/datfile/<code>/`).
+    pub redump: Option<&'static str>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -49,6 +52,14 @@ const fn s(
         is_handheld: handheld == 1,
         dat_names,
         extensions,
+        redump: None,
+    }
+}
+
+impl System {
+    const fn redump(mut self, code: &'static str) -> Self {
+        self.redump = Some(code);
+        self
     }
 }
 
@@ -57,26 +68,26 @@ pub const SYSTEMS: &[System] = &[
     s(1, "NES", "Nintendo Entertainment System", "Nintendo", 3, 1983, "CRC32", 0, 0, &["Nintendo - Nintendo Entertainment System"], &["nes", "unf", "unif"]),
     s(2, "SNES", "Super Nintendo Entertainment System", "Nintendo", 4, 1990, "CRC32", 0, 0, &["Nintendo - Super Nintendo Entertainment System"], &["sfc", "smc", "swc", "fig", "bs", "st"]),
     s(3, "N64", "Nintendo 64", "Nintendo", 5, 1996, "CRC32", 0, 0, &["Nintendo - Nintendo 64"], &["n64", "z64", "v64"]),
-    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]),
-    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]),
+    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]).redump("gc"),
+    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]).redump("wii"),
     s(6, "Game Boy", "Nintendo Game Boy", "Nintendo", 4, 1989, "CRC32", 0, 1, &["Nintendo - Game Boy"], &["gb", "sgb"]),
     s(7, "Game Boy Color", "Nintendo Game Boy Color", "Nintendo", 5, 1998, "CRC32", 0, 1, &["Nintendo - Game Boy Color"], &["gbc"]),
     s(8, "Game Boy Advance", "Nintendo Game Boy Advance", "Nintendo", 6, 2001, "CRC32", 0, 1, &["Nintendo - Game Boy Advance"], &["gba", "agb"]),
     s(9, "Nintendo DS", "Nintendo DS", "Nintendo", 7, 2004, "CRC32", 0, 1, &["Nintendo - Nintendo DS"], &["nds", "dsi"]),
     s(10, "Genesis", "Sega Genesis / Mega Drive", "Sega", 4, 1988, "CRC32", 0, 0, &["Sega - Mega Drive - Genesis"], &["md", "gen", "smd", "bin"]),
     s(11, "Master System", "Sega Master System", "Sega", 3, 1985, "CRC32", 0, 0, &["Sega - Master System - Mark III"], &["sms"]),
-    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]),
-    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]),
-    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]),
-    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]),
-    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]),
+    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]).redump("ss"),
+    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]).redump("dc"),
+    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]).redump("psx"),
+    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]).redump("ps2"),
+    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]).redump("psp"),
     s(17, "Atari 2600", "Atari 2600", "Atari", 2, 1977, "CRC32", 0, 0, &["Atari - Atari 2600", "Atari - 2600"], &["a26", "bin"]),
     s(18, "Atari 7800", "Atari 7800 ProSystem", "Atari", 3, 1986, "CRC32", 0, 0, &["Atari - Atari 7800", "Atari - 7800"], &["a78", "bin"]),
     s(19, "Lynx", "Atari Lynx", "Atari", 4, 1989, "CRC32", 0, 1, &["Atari - Atari Lynx", "Atari - Lynx"], &["lnx", "lyx", "o"]),
     s(20, "TurboGrafx-16", "TurboGrafx-16 / PC Engine", "NEC", 4, 1987, "CRC32", 0, 0, &["NEC - PC Engine - TurboGrafx-16"], &["pce"]),
-    s(21, "TurboGrafx-CD", "TurboGrafx-CD / PC Engine CD", "NEC", 4, 1988, "MD5", 1, 0, &["NEC - PC Engine CD & TurboGrafx CD"], &["cue", "bin", "chd"]),
+    s(21, "TurboGrafx-CD", "TurboGrafx-CD / PC Engine CD", "NEC", 4, 1988, "MD5", 1, 0, &["NEC - PC Engine CD & TurboGrafx CD"], &["cue", "bin", "chd"]).redump("pce"),
     s(22, "Neo Geo", "SNK Neo Geo", "SNK", 4, 1990, "CRC32", 0, 0, &[], &["neo"]),
-    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]),
+    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]).redump("mcd"),
     s(24, "Game Gear", "Sega Game Gear", "Sega", 4, 1990, "CRC32", 0, 1, &["Sega - Game Gear"], &["gg"]),
     s(25, "Sega 32X", "Sega 32X", "Sega", 5, 1994, "CRC32", 0, 0, &["Sega - 32X"], &["32x"]),
     s(26, "Atari Jaguar", "Atari Jaguar", "Atari", 5, 1993, "CRC32", 0, 0, &["Atari - Atari Jaguar", "Atari - Jaguar"], &["j64", "jag", "rom", "abs", "cof"]),
@@ -90,11 +101,11 @@ pub const SYSTEMS: &[System] = &[
     s(34, "Amiga", "Commodore Amiga", "Commodore", 3, 1985, "CRC32", 0, 0, &[], &["adf", "ipf", "hdf", "lha"]),
     s(35, "ZX Spectrum", "Sinclair ZX Spectrum", "Sinclair", 2, 1982, "CRC32", 0, 0, &[], &["tzx", "tap", "z80", "sna", "dsk"]),
     s(36, "SuperGrafx", "NEC PC Engine SuperGrafx", "NEC", 4, 1989, "CRC32", 0, 0, &["NEC - PC Engine SuperGrafx"], &["sgx", "pce"]),
-    s(37, "Xbox", "Microsoft Xbox", "Microsoft", 6, 2001, "MD5", 1, 0, &[], &["iso", "xiso"]),
-    s(38, "Xbox 360", "Microsoft Xbox 360", "Microsoft", 7, 2005, "MD5", 1, 0, &[], &["iso", "xex"]),
+    s(37, "Xbox", "Microsoft Xbox", "Microsoft", 6, 2001, "MD5", 1, 0, &[], &["iso", "xiso"]).redump("xbox"),
+    s(38, "Xbox 360", "Microsoft Xbox 360", "Microsoft", 7, 2005, "MD5", 1, 0, &[], &["iso", "xex"]).redump("xbox360"),
     s(39, "Arcade", "Arcade / MAME", "Various", 0, 1970, "CRC32", 0, 0, &[], &[]),
-    s(40, "3DO", "3DO Interactive Multiplayer", "Panasonic", 5, 1993, "MD5", 1, 0, &[], &["iso", "cue", "bin", "chd"]),
-    s(41, "Neo Geo CD", "SNK Neo Geo CD", "SNK", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
+    s(40, "3DO", "3DO Interactive Multiplayer", "Panasonic", 5, 1993, "MD5", 1, 0, &[], &["iso", "cue", "bin", "chd"]).redump("3do"),
+    s(41, "Neo Geo CD", "SNK Neo Geo CD", "SNK", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump("ngcd"),
     s(42, "FDS", "Nintendo Famicom Disk System", "Nintendo", 3, 1986, "CRC32", 0, 0, &["Nintendo - Family Computer Disk System"], &["fds", "qd"]),
     s(43, "Atari 5200", "Atari 5200", "Atari", 2, 1982, "CRC32", 0, 0, &["Atari - Atari 5200", "Atari - 5200"], &["a52", "bin"]),
     s(44, "Atari 8-bit", "Atari 8-bit Family", "Atari", 2, 1979, "CRC32", 0, 0, &[], &["atr", "xex", "xfd", "car", "cas", "rom"]),
@@ -103,14 +114,14 @@ pub const SYSTEMS: &[System] = &[
     s(47, "Intellivision", "Mattel Intellivision", "Mattel", 2, 1979, "CRC32", 0, 0, &["Mattel - Intellivision"], &["int", "rom", "bin"]),
     s(48, "MSX", "MSX", "Microsoft", 3, 1983, "CRC32", 0, 0, &["Microsoft - MSX"], &["rom", "mx1", "mx2", "dsk", "cas"]),
     s(49, "MSX2", "MSX2", "Microsoft", 3, 1985, "CRC32", 0, 0, &["Microsoft - MSX2"], &["rom", "mx2", "dsk", "cas"]),
-    s(50, "PC-FX", "NEC PC-FX", "NEC", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
-    s(51, "CD-i", "Philips CD-i", "Philips", 4, 1991, "MD5", 1, 0, &[], &["chd", "iso", "cue", "bin"]),
-    s(52, "CD32", "Commodore Amiga CD32", "Commodore", 5, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]),
-    s(53, "Naomi", "Sega Naomi", "Sega", 6, 1998, "MD5", 1, 0, &[], &["chd"]),
+    s(50, "PC-FX", "NEC PC-FX", "NEC", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump("pc-fx"),
+    s(51, "CD-i", "Philips CD-i", "Philips", 4, 1991, "MD5", 1, 0, &[], &["chd", "iso", "cue", "bin"]).redump("cdi"),
+    s(52, "CD32", "Commodore Amiga CD32", "Commodore", 5, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump("cd32"),
+    s(53, "Naomi", "Sega Naomi", "Sega", 6, 1998, "MD5", 1, 0, &[], &["chd"]).redump("naomi"),
     s(54, "SG-1000", "Sega SG-1000", "Sega", 3, 1983, "CRC32", 0, 0, &["Sega - SG-1000"], &["sg"]),
-    s(55, "Atari Jaguar CD", "Atari Jaguar CD", "Atari", 5, 1995, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
+    s(55, "Atari Jaguar CD", "Atari Jaguar CD", "Atari", 5, 1995, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump("ajcd"),
     s(56, "Wii U", "Nintendo Wii U", "Nintendo", 8, 2012, "SHA1", 1, 0, &[], &["wud", "wux", "rpx"]),
-    s(57, "PlayStation 3", "Sony PlayStation 3", "Sony", 7, 2006, "SHA1", 1, 0, &[], &["iso", "pkg"]),
+    s(57, "PlayStation 3", "Sony PlayStation 3", "Sony", 7, 2006, "SHA1", 1, 0, &[], &["iso", "pkg"]).redump("ps3"),
     s(58, "Amstrad CPC", "Amstrad CPC", "Amstrad", 3, 1984, "CRC32", 0, 0, &[], &["dsk", "sna", "cdt"]),
     s(59, "Enterprise 128", "Enterprise 64/128", "Intelligent Software", 3, 1985, "CRC32", 0, 0, &[], &["img", "dsk"]),
     s(60, "ZX 81", "Sinclair ZX 81", "Sinclair", 2, 1981, "CRC32", 0, 0, &[], &["p", "81"]),
@@ -136,19 +147,19 @@ pub const SYSTEMS: &[System] = &[
     s(80, "Casio Loopy", "Casio Loopy", "Casio", 5, 1995, "CRC32", 0, 0, &[], &["bin"]),
     s(81, "Sharp X1", "Sharp X1", "Sharp", 3, 1982, "CRC32", 0, 0, &[], &["2d", "d88", "tap"]),
     s(82, "X68000", "Sharp X68000", "Sharp", 4, 1987, "CRC32", 0, 0, &[], &["dim", "xdf", "hdf", "d88"]),
-    s(83, "PC", "IBM PC Compatible", "IBM", 5, 1981, "MD5", 1, 0, &[], &["iso", "img"]),
+    s(83, "PC", "IBM PC Compatible", "IBM", 5, 1981, "MD5", 1, 0, &[], &["iso", "img"]).redump("pc"),
     s(84, "PlayStation 4", "Sony PlayStation 4", "Sony", 8, 2013, "SHA1", 1, 0, &[], &["pkg"]),
     s(85, "Xbox One", "Microsoft Xbox One", "Microsoft", 8, 2013, "SHA1", 1, 0, &[], &[]),
-    s(86, "Mac", "Apple Macintosh", "Apple", 3, 1984, "MD5", 1, 0, &[], &["dsk", "img", "hfv"]),
-    s(87, "FM Towns", "Fujitsu FM Towns", "Fujitsu", 4, 1989, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]),
+    s(86, "Mac", "Apple Macintosh", "Apple", 3, 1984, "MD5", 1, 0, &[], &["dsk", "img", "hfv"]).redump("mac"),
+    s(87, "FM Towns", "Fujitsu FM Towns", "Fujitsu", 4, 1989, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump("fmt"),
     s(88, "PC-88", "NEC PC-8801", "NEC", 3, 1981, "CRC32", 0, 0, &[], &["d88", "t88"]),
-    s(89, "CDTV", "Commodore CDTV", "Commodore", 4, 1991, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]),
-    s(90, "Amiga CD", "Amiga CD", "Commodore", 4, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]),
-    s(91, "Archimedes", "Acorn Archimedes", "Acorn", 4, 1987, "MD5", 1, 0, &[], &["adf", "apd"]),
-    s(92, "Triforce", "Sega Triforce", "Sega", 6, 2002, "MD5", 1, 0, &[], &["iso"]),
-    s(93, "Chihiro", "Sega Chihiro", "Sega", 6, 2002, "MD5", 1, 0, &[], &["chd"]),
-    s(94, "VIS", "Tandy VIS", "Tandy", 5, 1992, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
-    s(95, "Lindbergh", "Sega Lindbergh", "Sega", 7, 2005, "MD5", 1, 0, &[], &[]),
+    s(89, "CDTV", "Commodore CDTV", "Commodore", 4, 1991, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump("cdtv"),
+    s(90, "Amiga CD", "Amiga CD", "Commodore", 4, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump("acd"),
+    s(91, "Archimedes", "Acorn Archimedes", "Acorn", 4, 1987, "MD5", 1, 0, &[], &["adf", "apd"]).redump("arch"),
+    s(92, "Triforce", "Sega Triforce", "Sega", 6, 2002, "MD5", 1, 0, &[], &["iso"]).redump("trf"),
+    s(93, "Chihiro", "Sega Chihiro", "Sega", 6, 2002, "MD5", 1, 0, &[], &["chd"]).redump("chihiro"),
+    s(94, "VIS", "Tandy VIS", "Tandy", 5, 1992, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump("vis"),
+    s(95, "Lindbergh", "Sega Lindbergh", "Sega", 7, 2005, "MD5", 1, 0, &[], &[]).redump("lindbergh"),
     s(96, "Palm OS", "Palm OS", "Palm", 6, 1996, "CRC32", 0, 1, &[], &["prc", "pdb"]),
     s(97, "Playdia", "Bandai Playdia", "Bandai", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
     s(98, "Apple II", "Apple II / IIe / IIc / IIGS", "Apple", 2, 1977, "CRC32", 0, 0, &[], &["dsk", "do", "po", "nib", "woz", "2mg"]),
@@ -156,7 +167,7 @@ pub const SYSTEMS: &[System] = &[
     s(100, "Commodore 16", "Commodore 16 / Plus/4", "Commodore", 3, 1984, "CRC32", 0, 0, &[], &["prg", "d64", "tap"]),
     s(101, "Mega Duck", "Mega Duck / Cougar Boy", "Welback", 4, 1993, "CRC32", 0, 1, &["Welback - Mega Duck"], &["bin"]),
     s(102, "Microvision", "Milton Bradley Microvision", "Milton Bradley", 1, 1979, "CRC32", 0, 1, &[], &["bin"]),
-    s(103, "Nuon", "VM Labs Nuon", "VM Labs", 6, 1999, "MD5", 1, 0, &[], &["iso"]),
+    s(103, "Nuon", "VM Labs Nuon", "VM Labs", 6, 1999, "MD5", 1, 0, &[], &["iso"]).redump("nuon"),
     s(104, "V.Smile", "VTech V.Smile", "VTech", 6, 2004, "CRC32", 0, 0, &[], &["bin"]),
     s(105, "Leapster", "LeapFrog Leapster", "LeapFrog", 6, 2003, "CRC32", 0, 1, &[], &["bin"]),
     s(106, "LeapPad", "LeapFrog LeapPad", "LeapFrog", 5, 1999, "CRC32", 0, 0, &[], &["bin"]),

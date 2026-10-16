@@ -7,7 +7,9 @@ use clap::{Args, Parser, Subcommand};
 use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
 
-use romforge_core::{Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, systems};
+use romforge_core::{
+    DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, fetch, systems,
+};
 
 #[derive(Parser)]
 #[command(version, about = "Scan and identify retro ROM collections (read-only)")]
@@ -52,13 +54,27 @@ enum Command {
 
 #[derive(Subcommand)]
 enum DatCommand {
-    /// Import Logiqx XML DATs (No-Intro, Redump, ...)
+    /// Import Logiqx XML DATs (No-Intro, Redump, ...), or zips of them
     Import {
         #[arg(required = true)]
         files: Vec<PathBuf>,
         /// System key (see `romforge-cli dat systems`); guessed from the DAT name if omitted
         #[arg(long)]
         system: Option<String>,
+    },
+    /// Download and import Redump DATs for disc systems (see `dat systems`)
+    ///
+    /// No-Intro DATs can't be downloaded automatically; get them from
+    /// DAT-o-MATIC and `dat import` the zip. `dat check` says which.
+    Download {
+        #[arg(required = true)]
+        systems: Vec<String>,
+    },
+    /// Compare imported DATs with No-Intro's latest versions
+    Check {
+        /// Also list No-Intro DATs you haven't imported
+        #[arg(long)]
+        all: bool,
     },
     /// List imported DATs
     List,
@@ -83,7 +99,8 @@ fn main() -> Result<()> {
 
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
-            println!("{:<24} {}", s.key, s.name);
+            let redump = if s.redump.is_some() { "  [redump]" } else { "" };
+            println!("{:<24} {}{redump}", s.key, s.name);
         }
         return Ok(());
     }
@@ -92,26 +109,50 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Dat(DatCommand::Import { files, system }) => {
             for file in files {
-                let d = lib
-                    .import_dat(&file, system.as_deref())
+                let dats = lib
+                    .import_dats(&file, system.as_deref())
                     .with_context(|| format!("importing {}", file.display()))?;
-                let system = d.system.unwrap_or("no system (pass --system to set one)");
-                let note = match (d.unchanged, d.replaced) {
-                    (true, _) => " (already imported)".to_owned(),
-                    (false, Some(old)) => format!(" (replaces DAT #{old})"),
-                    _ => String::new(),
-                };
-                println!(
-                    "DAT #{}: {} [{}] {} games, {} roms{}{}",
-                    d.dat_id,
-                    d.name,
-                    system,
-                    d.games,
-                    d.roms,
-                    d.header_hint.map(|h| format!(", header {h}")).unwrap_or_default(),
-                    note
-                );
+                dats.into_iter().for_each(print_imported);
             }
+        }
+        Command::Dat(DatCommand::Download { systems }) => {
+            for key in systems {
+                let d = lib
+                    .download_redump(&key)
+                    .with_context(|| format!("downloading the {key} DAT"))?;
+                print_imported(d);
+            }
+        }
+        Command::Dat(DatCommand::Check { all }) => {
+            let profile = fetch::nointro_profile()?;
+            let status = lib.nointro_status(&profile)?;
+            let mut missing = 0;
+            for s in &status {
+                let line = match s.state {
+                    DatState::Missing => {
+                        missing += 1;
+                        if !all {
+                            continue;
+                        }
+                        format!("missing   {:<60} latest {}", s.name, s.latest)
+                    }
+                    DatState::Current => format!("current   {:<60} {}", s.name, s.latest),
+                    DatState::Outdated => format!(
+                        "outdated  {:<60} have {} latest {}",
+                        s.name,
+                        s.imported.as_deref().unwrap_or("?"),
+                        s.latest
+                    ),
+                };
+                println!("{line}");
+            }
+            if missing > 0 && !all {
+                println!("{missing} No-Intro DATs for known systems not imported (--all lists them)");
+            }
+            println!(
+                "No-Intro DATs are downloaded by hand: {}",
+                fetch::NOINTRO_DOWNLOAD_PAGE
+            );
         }
         Command::Dat(DatCommand::List) => print_dats(&lib)?,
         Command::Dat(DatCommand::Systems) => unreachable!(),
@@ -156,6 +197,9 @@ fn main() -> Result<()> {
                         .trim_start_matches('/');
                     let games = if f.games.is_empty() {
                         String::new()
+                    } else if f.games.len() > 3 {
+                        // e.g. a short audio track shared by hundreds of discs
+                        format!("  {} | … (+{} more)", f.games[..3].join(" | "), f.games.len() - 3)
                     } else {
                         format!("  {}", f.games.join(" | "))
                     };
@@ -222,6 +266,25 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_imported(d: ImportedDat) {
+    let system = d.system.unwrap_or("no system (pass --system to set one)");
+    let note = match (d.unchanged, d.replaced) {
+        (true, _) => " (already imported)".to_owned(),
+        (false, Some(old)) => format!(" (replaces DAT #{old})"),
+        _ => String::new(),
+    };
+    println!(
+        "DAT #{}: {} [{}] {} games, {} roms{}{}",
+        d.dat_id,
+        d.name,
+        system,
+        d.games,
+        d.roms,
+        d.header_hint.map(|h| format!(", header {h}")).unwrap_or_default(),
+        note
+    );
 }
 
 fn print_dats(lib: &Library) -> Result<()> {

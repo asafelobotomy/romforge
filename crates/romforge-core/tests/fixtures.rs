@@ -707,3 +707,92 @@ fn progress_reports_running_totals() {
     assert_eq!(last.bytes_hashed, report.bytes_hashed);
     assert!(seen.windows(2).all(|w| w[0].bytes_hashed <= w[1].bytes_hashed));
 }
+
+#[test]
+fn zip_of_dats_imports_each_dat_from_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let pack = dir.path().join("pack.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&pack).unwrap());
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for (name, file) in [
+        ("b/nes.dat", "nes.dat"),
+        ("a/gb.dat", "gb.dat"),
+        ("readme.txt", "md.dat"),
+    ] {
+        zip.start_file(name, opts).unwrap();
+        let data = std::fs::read(fixtures().join("dats").join(file)).unwrap();
+        std::io::Write::write_all(&mut zip, &data).unwrap();
+    }
+    zip.finish().unwrap();
+    let before: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+
+    let mut lib = Library::open_in_memory().unwrap();
+    let got = lib.import_dats(&pack, None).unwrap();
+    let systems: Vec<_> = got.iter().map(|d| d.system).collect();
+    assert_eq!(systems, [Some("Game Boy"), Some("NES")], "sorted, .txt ignored");
+    let s = lib.summary().unwrap();
+    assert!(s.dats.iter().all(|d| d.source_path.contains("pack.zip#")));
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        before.len(),
+        "nothing extracted"
+    );
+
+    assert!(
+        lib.import_dats(&pack, Some("NES")).is_err(),
+        "one --system for many DATs"
+    );
+    assert!(lib.import_dats(fixtures().join("dats/gb.dat"), None).unwrap()[0].unchanged);
+}
+
+#[test]
+fn nointro_status_compares_versions_by_dat_name() {
+    use romforge_core::DatState;
+    use romforge_core::fetch::ProfileEntry;
+
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let gb = lib
+        .summary()
+        .unwrap()
+        .dats
+        .into_iter()
+        .find(|d| d.name == "Nintendo - Game Boy")
+        .unwrap();
+    let nes = lib
+        .summary()
+        .unwrap()
+        .dats
+        .into_iter()
+        .find(|d| d.name.contains("Entertainment"))
+        .unwrap();
+    let entry = |name: &str, version: &str| ProfileEntry {
+        name: name.into(),
+        version: version.into(),
+    };
+    let profile = [
+        entry(&gb.name, gb.version.as_deref().unwrap()),
+        entry(&nes.name, "29990101-000000"),
+        entry("Nintendo - Virtual Boy", "20250101-000000"),
+        entry("Some - Unknown Thing", "1"),
+    ];
+    let st = lib.nointro_status(&profile).unwrap();
+    let states: Vec<_> = st.iter().map(|s| (s.system, s.state)).collect();
+    assert_eq!(
+        states,
+        [
+            ("Game Boy", DatState::Current),
+            ("NES", DatState::Outdated),
+            ("Virtual Boy", DatState::Missing),
+        ]
+    );
+    assert_eq!(st[1].dat_id, Some(nes.dat_id));
+}
+
+#[test]
+fn download_refuses_systems_without_redump() {
+    let mut lib = Library::open_in_memory().unwrap();
+    let err = lib.download_redump("SNES").unwrap_err().to_string();
+    assert!(err.contains("No-Intro"), "{err}");
+    assert!(lib.download_redump("nope").is_err());
+}
