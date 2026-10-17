@@ -1,6 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
   // Which screen: the library (default), DATs, or organize.
@@ -49,19 +49,96 @@
     }
   }
 
-  // Search queue dialog.
+  // Cleanup and rename dialog: a plan first, applied on confirmation.
+  let cleanOpen = $state(false);
+  let cleanOnly = $state(false); // just the selected game
+  let cleanPlan = $state(null);
+  let cleanBatches = $state([]);
+  let cleanError = $state("");
+  let confirmCleanUndo = $state(false);
+
+  async function openCleanup() {
+    cleanOnly = false;
+    confirmCleanUndo = false;
+    cleanOpen = true;
+    await planCleanup();
+  }
+
+  async function planCleanup() {
+    cleanError = "";
+    try {
+      cleanPlan = await invoke("cleanup_plan", { only: cleanOnly && selected ? [selected] : null });
+    } catch (e) {
+      cleanPlan = null;
+      cleanError = String(e).replace(/^settings: /, "");
+    }
+    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at);
+  }
+
+  async function applyCleanup() {
+    cleanError = "";
+    busy = `Repacking ${cleanPlan.items.length} games…`;
+    try {
+      const r = await invoke("cleanup_apply", { only: cleanOnly && selected ? [selected] : null });
+      note = r.batch_id
+        ? `Batch #${r.batch_id}: wrote ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals to .romforge-trash`}` +
+          (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "")
+        : "Nothing was written" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
+      cleanOpen = false;
+    } catch (e) {
+      cleanError = String(e);
+    }
+    busy = "";
+    await load();
+  }
+
+  async function undoCleanup() {
+    confirmCleanUndo = false;
+    cleanError = "";
+    busy = "Undoing the last cleanup…";
+    try {
+      const r = await invoke("cleanup_undo");
+      note = `Batch #${r.batch_id}: removed ${r.removed} new files, restored ${r.restored} originals` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
+      cleanOpen = false;
+    } catch (e) {
+      cleanError = String(e);
+    }
+    busy = "";
+    await load();
+  }
+
+  const base = (p) => p.split("/").pop();
+
+  // Search dialog, after tinyMediaManager's: one queue item at a time, a
+  // scraper and search text on top, results | picture | details, then what
+  // to fetch once a result is taken.
   let searchOpen = $state(false);
   let queue = $state([]);
   let qi = $state(0);
   let qDetail = $state(null);
-  let suggestions = $state([]);
+  let scraper = $state("dat");
   let sText = $state("");
+  let sSystem = $state("");
+  let results = $state([]);
+  let picked = $state(-1);
+  let preview = $state(null);
+  let searching = $state(false);
   let ownTitle = $state("");
-  let ownSystem = $state("");
-  let wdCands = $state([]);
-  let qid = $state("");
   let qError = $state("");
   let allSystems = $state([]);
+  const fetchItems = [
+    ["wikidata", "Wikidata details"],
+    ["boxart", "Box art"],
+    ["title", "Title screen"],
+    ["snap", "Screenshot"],
+    ["box3d", "3D box"],
+    ["hero", "Hero"],
+    ["logo", "Logo"],
+    ["icon", "Icon"],
+  ];
+  let fetchOn = $state(["wikidata", "boxart", "title", "snap"]);
+  let noOverwrite = $state(true);
+  let searchSeq = 0;
 
   async function openSearch() {
     qError = "";
@@ -81,19 +158,41 @@
     qError = "";
     const item = queue[qi];
     if (!item) return;
-    qDetail = await call("game_detail", { id: item.row_id });
+    scraper = item.need === "wikidata" ? "wikidata" : "dat";
+    sSystem = item.system ?? "";
     sText = "";
-    ownTitle = item.need === "identify" ? "" : item.title;
-    ownSystem = item.system ?? "";
-    qid = "";
-    suggestions = [];
-    wdCands = [];
-    if (item.need === "identify") suggestions = (await call("title_suggestions", { rowId: item.row_id, text: null })) ?? [];
-    else wdCands = (await call("wikidata_candidates", { rowId: item.row_id })) ?? [];
+    ownTitle = "";
+    results = [];
+    preview = null;
+    searching = true;
+    qDetail = await call("game_detail", { id: item.row_id });
+    await doSearch();
   }
 
-  async function refine() {
-    suggestions = (await call("title_suggestions", { rowId: queue[qi].row_id, text: sText || null })) ?? [];
+  async function doSearch() {
+    const seq = ++searchSeq;
+    qError = "";
+    searching = true;
+    results = [];
+    picked = -1;
+    preview = null;
+    try {
+      const r = await invoke("search_find", { rowId: queue[qi].row_id, scraper, text: sText || null, system: sSystem || null });
+      if (seq !== searchSeq) return;
+      results = r;
+      if (r.length) await pick(0);
+    } catch (e) {
+      if (seq === searchSeq) qError = String(e);
+    }
+    if (seq === searchSeq) searching = false;
+  }
+
+  async function pick(i) {
+    picked = i;
+    preview = null;
+    const found = results[i];
+    const p = await call("search_preview", { rowId: queue[qi].row_id, found });
+    if (results[picked] === found) preview = p;
   }
 
   async function step(d) {
@@ -115,32 +214,40 @@
     await loadItem();
   }
 
-  async function useTitle(system, title) {
+  async function take(found) {
     qError = "";
+    busy = `Taking ${found.title}…`;
     try {
-      await invoke("identify_as", { rowId: queue[qi].row_id, system, title });
-      await answered(`Named ${title} [${system}], identified by you.`);
+      const r = await invoke("search_choose", {
+        rowId: queue[qi].row_id,
+        found,
+        system: sSystem || null,
+        art: fetchOn.filter((k) => k !== "wikidata"),
+        wikidata: fetchOn.includes("wikidata"),
+        overwrite: !noOverwrite,
+      });
+      busy = "";
+      const e = r.enrich;
+      const fetched = e.art_saved ? `; ${e.art_saved} images saved` : "";
+      const what = found.scraper === "wikidata" ? `matched to ${found.id}` : "identified by you";
+      await answered(`${found.title}: ${what}${fetched}.` + (e.errors?.length ? ` Fetching: ${e.errors.join("; ")}` : ""));
     } catch (e) {
+      busy = "";
       qError = String(e);
     }
   }
 
-  async function useQid(id) {
-    qError = "";
-    try {
-      busy = "Fetching from Wikidata…";
-      await invoke("settle_wikidata", { rowId: queue[qi].row_id, qid: id });
-      busy = "";
-      await answered(`Matched ${queue[qi].title} to ${id}.`);
-    } catch (e) {
-      busy = "";
-      qError = String(e);
-    }
+  function takeOwn() {
+    take({ scraper: "dat", id: ownTitle.trim(), title: ownTitle.trim(), system: sSystem || null, year: null, score: 1, description: null });
   }
 
-  function wikidataSearch() {
-    const t = queue[qi]?.title ?? "";
-    openUrl(`https://www.wikidata.org/w/index.php?search=${encodeURIComponent(t.replace(/\s*[([].*$/, ""))}`).catch((e) => (qError = String(e)));
+  function toggleFetch(k) {
+    fetchOn = fetchOn.includes(k) ? fetchOn.filter((x) => x !== k) : [...fetchOn, k];
+  }
+
+  function reveal() {
+    const f = qDetail?.files?.[0]?.path;
+    if (f) revealItemInDir(f.split("#")[0]).catch((e) => (qError = String(e)));
   }
 
   let summary = $state({ files_by_status: [], dats: [] });
@@ -332,6 +439,7 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === "Escape" && settingsOpen) settingsOpen = false;
+    else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
     else listKeys(e);
   }}
@@ -351,7 +459,7 @@
     <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
       <span class="glyph">✦</span>Enrich
     </button>
-    <button class="tool" disabled title="Repack and rename with art and details inside (milestone 10)">
+    <button class="tool" onclick={openCleanup} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
       <span class="glyph">✎</span>Cleanup and rename
     </button>
     <span class="spacer"></span>
@@ -396,8 +504,8 @@
           <p class="hint">
             {#if draft.library_dir}
               {draft.keep_originals
-                ? "Source files stay untouched. Cleanup copies each game into the staging folder, extracts, renames and repacks it there, then moves the result into the Library."
-                : "Cleanup processes games from the Source and moves them into the Library; the originals go to the trash once the new file is verified."}
+                ? "Source files stay untouched. Cleanup writes each repacked game into the Library."
+                : "Cleanup writes each repacked game into the Library; the originals go to .romforge-trash next to them once the new file is verified."}
             {:else}
               Needs a Library folder for the processed copies.
             {/if}
@@ -406,7 +514,7 @@
 
         <section class="setting">
           <label for="staging">Staging folder</label>
-          <p class="hint">Scratch space for cleanup. Must be outside the Source and Library.</p>
+          <p class="hint">Scratch space for cleanup (tracks inside 7z archives are unpacked here). Must be outside the Source and Library.</p>
           <div class="pick">
             <input id="staging" bind:value={draft.staging_dir} placeholder={defaultStaging} />
             <button onclick={() => browse("staging_dir")}>Browse…</button>
@@ -434,7 +542,6 @@
           <p class="hint">Stored in romforge's database on this computer.</p>
         </section>
 
-        <p class="hint">Cleanup and rename itself arrives in milestone 10; these folders are used by Refresh and Play now.</p>
         {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
         <div class="actions">
           <button onclick={() => (settingsOpen = false)}>Cancel</button>
@@ -444,90 +551,168 @@
     </div>
   {/if}
 
+  {#if cleanOpen}
+    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (cleanOpen = false)}>
+      <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="clean-title">
+        <h2 id="clean-title">Cleanup and rename</h2>
+        <p class="hint">
+          Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
+          details in a folder beside it). Every new file is read back and checked against the original hashes before anything
+          else happens. Nothing is ever overwritten.
+        </p>
+        <label class="toggle">
+          <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
+          Only the selected game
+        </label>
+        {#if cleanPlan}
+          <p class="meta">
+            Into <bdi>{cleanPlan.dest}</bdi> ·
+            {cleanPlan.keep_originals ? "originals stay untouched" : "originals go to .romforge-trash next to them, until you undo or empty it"}
+          </p>
+          {#if cleanPlan.items.length}
+            <ul class="choices">
+              {#each cleanPlan.items as it}
+                <li title={it.parts.map((p) => p.name).join("\n")}>
+                  <span class="ctitle">{base(it.target)}</span>
+                  <span class="sys">{it.system} · {it.parts.length} file{it.parts.length === 1 ? "" : "s"}{it.kept.length ? " · original stays (holds other files)" : ""}</span>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="hint">Nothing to do: no identified game in the Source that isn't processed yet.</p>
+          {/if}
+          {#if cleanPlan.skipped.length}
+            <details>
+              <summary class="hint">{cleanPlan.skipped.length} skipped</summary>
+              <ul class="files">
+                {#each cleanPlan.skipped as [t, why]}<li>{t}: {why}</li>{/each}
+              </ul>
+            </details>
+          {/if}
+        {/if}
+        {#if cleanError}<p class="err" role="alert">{cleanError}</p>{/if}
+        <div class="actions">
+          {#if cleanBatches.length}
+            {#if confirmCleanUndo}
+              <button onclick={undoCleanup} disabled={!!busy}>Yes, undo batch #{cleanBatches[cleanBatches.length - 1].batch_id}</button>
+            {:else}
+              <button onclick={() => (confirmCleanUndo = true)} disabled={!!busy} title="Remove the last batch's new files and put its originals back">Undo last…</button>
+            {/if}
+          {/if}
+          <span class="spacer"></span>
+          <button onclick={() => (cleanOpen = false)} disabled={!!busy}>Close</button>
+          <button class="primary" onclick={applyCleanup} disabled={!cleanPlan?.items.length || !!busy}>
+            {busy || `Repack ${cleanPlan?.items.length ?? 0}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if searchOpen && queue[qi]}
     {@const item = queue[qi]}
-    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (searchOpen = false)}>
-      <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
+    {@const chosen = results[picked]}
+    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (searchOpen = false)}>
+      <div class="dialog search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
         <div class="qhead">
           <h2 id="search-title">Search</h2>
-          <span class="hint">{qi + 1} of {queue.length}</span>
+          <span class="qnav">
+            <button class="mini" onclick={() => step(-1)} disabled={qi === 0 || !!busy} aria-label="Previous">‹</button>
+            <span class="hint">{qi + 1} of {queue.length}</span>
+            <button class="mini" onclick={() => step(1)} disabled={qi >= queue.length - 1 || !!busy} aria-label="Next">›</button>
+          </span>
         </div>
-        <h3 class="sub">{item.title}</h3>
-        <p class="meta">
-          {item.system ?? "Unknown platform"} ·
-          <span class="badge {item.status}">{item.status.replace("_", " ")}</span>
-          {#if item.need === "wikidata"}· Wikidata: {item.wikidata === "ambiguous" ? "several games match" : "no match found"}{/if}
-        </p>
-        {#if qDetail}
-          <ul class="files">
-            {#each qDetail.files.slice(0, 4) as file}
-              <li title={file.sha1}><span class="fpath"><bdi>{file.path}</bdi></span></li>
-            {/each}
-          </ul>
-        {/if}
+        <div class="spath">
+          <span class="fpath" title={qDetail?.files?.[0]?.path}><bdi>{qDetail?.files?.[0]?.path ?? item.title}</bdi></span>
+          <span class="badge {item.status}">{item.need === "wikidata" ? (item.wikidata === "ambiguous" ? "Wikidata: several match" : "Wikidata: no match") : item.status.replace("_", " ")}</span>
+          <button class="mini" onclick={reveal} title="Show in the file manager" aria-label="Show in the file manager">📂</button>
+        </div>
 
-        {#if item.need === "identify"}
-          <section class="setting">
-            <label for="refine">DAT titles like this</label>
-            <div class="pick">
-              <input id="refine" bind:value={sText} placeholder="Words from the title" onkeydown={(e) => e.key === "Enter" && refine()} />
-              <button onclick={refine}>Search</button>
-            </div>
-            {#if suggestions.length}
-              <ul class="choices">
-                {#each suggestions as s}
-                  <li>
-                    <span class="score" title="Shared words">{Math.round(s.score * 100)}%</span>
-                    <span class="ctitle">{s.title}</span><span class="sys">{s.system}</span>
-                    <button onclick={() => useTitle(s.system, s.title)}>Use</button>
-                  </li>
-                {/each}
-              </ul>
+        <div class="sform">
+          <label for="scraper">Scraper</label>
+          <div class="pick">
+            <select id="scraper" bind:value={scraper} onchange={doSearch}>
+              <option value="dat">DAT titles (offline)</option>
+              <option value="wikidata">Wikidata</option>
+            </select>
+            <input bind:value={sText} placeholder={qDetail ? (item.need === "identify" ? qDetail.row.title.split("#").pop() : item.title) : ""} aria-label="Search text" onkeydown={(e) => e.key === "Enter" && doSearch()} />
+            <button onclick={doSearch} disabled={searching}>⌕ Search</button>
+          </div>
+          <label for="splat">Platform</label>
+          <div class="pick">
+            <select id="splat" bind:value={sSystem} onchange={doSearch}>
+              <option value="">{scraper === "dat" ? "Any that fits the file" : "Pick one…"}</option>
+              {#each allSystems as s}<option value={s.key}>{s.name}</option>{/each}
+            </select>
+          </div>
+        </div>
+
+        <div class="sgrid">
+          <div class="stable" role="listbox" aria-label="Search results">
+            <div class="srow shead"><span>Search result</span><span>Year</span><span>Platform</span><span>ID</span><span title="How well it fits">%</span></div>
+            {#each results as r, i}
+              <div
+                class="srow"
+                class:sel={i === picked}
+                role="option"
+                aria-selected={i === picked}
+                tabindex="0"
+                onclick={() => pick(i)}
+                ondblclick={() => take(r)}
+                onkeydown={(e) => e.key === "Enter" && take(r)}
+              >
+                <span class="ctitle" title={r.title}>{r.title}</span>
+                <span>{r.year ?? ""}</span>
+                <span class="sys">{r.system ?? ""}</span>
+                <span class="sys">{r.scraper === "wikidata" ? r.id : ""}</span>
+                <span class="score">{Math.round(r.score * 100)}%</span>
+              </div>
             {:else}
-              <p class="hint">No DAT title shares a word with it.</p>
+              <p class="hint empty">{searching ? "Searching…" : scraper === "dat" ? "No DAT title shares a word with it." : "Wikidata knows nothing by that name."}</p>
+            {/each}
+          </div>
+          <div class="sposter">
+            {#if preview?.image}<img src={preview.image} alt="Box art of {preview.title}" />{:else}<span class="hint">{chosen ? (preview ? "No box art" : "…") : ""}</span>{/if}
+          </div>
+          <div class="sinfo">
+            {#if chosen}
+              <h3 class="sub">{chosen.title}{chosen.year ? ` (${chosen.year})` : ""}</h3>
+              {#if preview?.system_name}<p class="meta">{preview.system_name}</p>{/if}
+              {#if preview?.description}<p class="desc">{preview.description}</p>{/if}
+              {#if preview?.facts?.length}
+                <dl class="facts">
+                  {#each preview.facts as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}
+                </dl>
+              {/if}
             {/if}
-          </section>
-          <section class="setting">
-            <label for="own">Or your own title</label>
-            <p class="hint">For translations, hacks and anything no DAT lists. Shown as "identified by you", never as verified.</p>
-            <div class="pick">
-              <input id="own" bind:value={ownTitle} placeholder="Dragon Quest III (English translation)" />
-              <select bind:value={ownSystem} aria-label="Platform">
-                <option value="">Platform…</option>
-                {#each allSystems as s}<option value={s.key}>{s.name}</option>{/each}
-              </select>
-              <button onclick={() => useTitle(ownSystem, ownTitle)} disabled={!ownTitle.trim() || !ownSystem}>Use</button>
+            <div class="own">
+              <label for="own">Not listed?</label>
+              <div class="pick">
+                <input id="own" bind:value={ownTitle} placeholder="Your own title (e.g. a translation)" />
+                <button onclick={takeOwn} disabled={!ownTitle.trim() || !sSystem || !!busy} title={sSystem ? "Name it yourself: shown as identified by you, never as verified" : "Pick a platform first"}>Use</button>
+              </div>
             </div>
-          </section>
-        {:else}
-          <section class="setting">
-            {#if wdCands.length}
-              <label for="cands">Which one is it?</label>
-              <ul class="choices" id="cands">
-                {#each wdCands as c}
-                  <li>
-                    <span class="ctitle">{c.label}</span>
-                    <span class="sys">{[...c.years].join(", ") || "—"}</span>
-                    <a href="https://www.wikidata.org/wiki/{c.qid}" onclick={(e) => { e.preventDefault(); openUrl(`https://www.wikidata.org/wiki/${c.qid}`); }}>{c.qid}</a>
-                    <button onclick={() => useQid(c.qid)}>Use</button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-            <label for="qid">Wikidata item</label>
-            <div class="pick">
-              <input id="qid" bind:value={qid} placeholder="Q12345" />
-              <button onclick={() => useQid(qid)} disabled={!qid.trim()}>Use</button>
-              <button onclick={wikidataSearch}>Search Wikidata…</button>
-            </div>
-          </section>
-        {/if}
+          </div>
+        </div>
+
+        <section class="setting">
+          <span class="flabel">Fetch after choosing</span>
+          <div class="chips">
+            {#each fetchItems as [k, label]}
+              <button class="chip" class:on={fetchOn.includes(k)} aria-pressed={fetchOn.includes(k)} onclick={() => toggleFetch(k)}>
+                {label}{#if fetchOn.includes(k)} <span aria-hidden="true">×</span>{/if}
+              </button>
+            {/each}
+          </div>
+          <label class="toggle"><input type="checkbox" bind:checked={noOverwrite} /> Do not overwrite existing data</label>
+        </section>
 
         {#if qError}<p class="err" role="alert">{qError}</p>{/if}
         <div class="actions">
-          <button onclick={() => step(-1)} disabled={qi === 0}>Previous</button>
-          <button onclick={() => step(1)} disabled={qi >= queue.length - 1}>Skip</button>
-          <button class="primary" onclick={() => (searchOpen = false)}>Close</button>
+          <button onclick={() => step(1)} disabled={qi >= queue.length - 1 || !!busy}>Skip</button>
+          <span class="spacer"></span>
+          <button onclick={() => (searchOpen = false)} disabled={!!busy}>Cancel</button>
+          <button class="primary" onclick={() => take(chosen)} disabled={!chosen || !!busy}>{busy || "OK"}</button>
         </div>
       </div>
     </div>
@@ -943,6 +1128,39 @@
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
   button.primary { background: var(--accent); border-color: var(--accent); color: white; }
   .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
+  .search-dialog { width: min(64rem, calc(100vw - 2rem)); }
+  .qnav { display: flex; gap: 0.4rem; align-items: center; }
+  .mini { padding: 0.1rem 0.45rem; }
+  .spath { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
+  .spath .fpath { flex: 1; font-size: 0.85rem; }
+  .sform { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.6rem; align-items: center; margin-bottom: 0.6rem; }
+  .sform label { font-weight: 600; font-size: 0.9rem; }
+  .sform .pick select { max-width: 16rem; }
+  .sgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) 9.5rem minmax(0, 1fr); gap: 0.75rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
+  .stable { border: 1px solid var(--line); border-radius: 4px; height: 17rem; overflow-y: auto; font-size: 0.85rem; }
+  .srow { display: grid; grid-template-columns: minmax(0, 1fr) 3rem 5.5rem 5.5rem 2.6rem; gap: 0.4rem; padding: 0.2rem 0.5rem; cursor: default; align-items: baseline; }
+  .srow:nth-child(even):not(.shead) { background: color-mix(in srgb, var(--line) 35%, transparent); }
+  .srow.sel { background: var(--accent-bg); }
+  .srow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .shead { position: sticky; top: 0; background: var(--panel); color: var(--muted); border-bottom: 1px solid var(--line); font-size: 0.8rem; }
+  .stable .empty { padding: 0.5rem; }
+  .sposter { height: 13rem; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .sposter img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .sinfo { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; max-height: 17rem; overflow-y: auto; }
+  .sinfo .desc { font-size: 0.85rem; color: var(--muted); }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; margin: 0; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .own { margin-top: auto; padding-top: 0.4rem; }
+  .own label { font-size: 0.85rem; font-weight: 600; }
+  .flabel { font-weight: 600; font-size: 0.9rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0; }
+  .chip { padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.8rem; opacity: 0.6; }
+  .chip.on { opacity: 1; background: var(--accent-bg); }
+  @media (max-width: 52rem) {
+    .sgrid { grid-template-columns: 1fr; }
+    .sposter { height: 10rem; }
+  }
   .qhead { display: flex; justify-content: space-between; align-items: baseline; }
   .choices { list-style: none; padding: 0; margin: 0.4rem 0 0; max-height: 16rem; overflow-y: auto; }
   .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }

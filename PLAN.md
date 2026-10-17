@@ -110,6 +110,14 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    picked by hand are "identified by you" (status `manual`, house rule 8),
    stored by SHA1 + size so they survive moves and rescans; they get
    metadata, art and Play like any game. CLI: `romforge-cli search`.
+   Laid out after tinyMediaManager's search window (2026-10-17): a
+   scraper (DAT titles offline, or Wikidata's entity search, plus the
+   candidates Enrich kept) with search text and platform; a results table
+   (title, year, platform, id, fit %), box art (art cache, else libretro's
+   thumbnail) and details (DAT ROMs set against your file's size); "Not
+   listed?" for your own title; chips for what to fetch for that game once
+   a result is taken, and "Do not overwrite existing data". Later: the
+   keyed sources (ScreenScraper, IGDB) as scrapers too.
 9. **Deeper enrich** — Wikidata *(built)*: per platform, one SPARQL query
    lists its video games; a game is matched when exactly one has the same
    title (narrowed by release year), ambiguous ones are kept for Search.
@@ -129,13 +137,25 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    again). Their system ids (`screenscraper`, `igdb` columns) are from
    memory and must be checked once keys are entered. A source that answers
    "rate limited" is left alone for the rest of the run.
-10. **Cleanup & rename** — repack each game into one archive named by the
+10. **Cleanup & rename** *(built)* — repack each game into one archive named by the
     owner's title preferences, with a `romforge/` folder inside holding the
     art and a `.romforge.md` / `.nfo` with its details, under the guardrails
     of house rule 7. Decided 2026-10-17: archives are named by the DAT name
     as is ("Super Mario World (USA).zip"); cartridge games are repacked as
     zip; disc games become CHD (CHD can't hold extra files) with art and
     details in a sidecar folder named like the game next to it.
+    Built: hash-verified and identified-by-you games with a file in Source
+    go to `<Library or Source>/<system>/`. ROMs stream from the old file or
+    zip into the new one; only 7z members (one compressed stream) and zip
+    members over 64 MiB are unpacked into staging. CD CHDs take `.bin`
+    tracks (type from the first sector, pregaps from the game's own cue);
+    DVD CHDs one `.iso`. Each new file is read back and re-hashed before
+    anything else; originals (and other verified copies in Source) go to
+    `.romforge-trash/<batch>/` next to them only when everything in them
+    was written, never with Keep originals. Journaled; undo removes the new
+    files and moves the originals back. Not yet: `.nfo` (only
+    `.romforge.md`), GDI/Dreamcast and `.img`/`.ccd` discs, emptying the
+    trash from the app, multi-disc `.m3u`.
 
 ## Later ideas (parked, do not build yet)
 

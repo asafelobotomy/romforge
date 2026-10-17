@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use romforge_core::{
     DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, enrich, fetch,
-    launch, organize, settings, systems,
+    launch, organize, search, settings, systems,
 };
 
 #[derive(Parser)]
@@ -52,6 +52,14 @@ enum Command {
     /// Rename and move identified files into a tidy folder (milestone 2)
     #[command(subcommand)]
     Organize(OrganizeCommand),
+    /// Repack identified games from the Source folder as one file each,
+    /// named by the DAT, with art and details inside (milestone 10)
+    ///
+    /// Cartridges become zips, discs CHDs with a sidecar folder, in the
+    /// Library folder (else Source). Without "keep originals" the old files
+    /// go to .romforge-trash next to them, for `cleanup undo`.
+    #[command(subcommand)]
+    Cleanup(CleanupCommand),
     /// Fetch metadata and art for the games you have (milestone 3)
     ///
     /// From libretro's database and thumbnail server; art is saved under
@@ -94,7 +102,7 @@ enum Command {
         /// Folder processed games are sorted into ("" to clear)
         #[arg(long)]
         library: Option<String>,
-        /// Keep the Source files; cleanup works on copies in staging
+        /// Keep the Source files (cleanup writes new copies into the Library)
         #[arg(long)]
         keep_originals: Option<bool>,
         /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
@@ -198,11 +206,45 @@ enum OrganizeCommand {
 }
 
 #[derive(Subcommand)]
+enum CleanupCommand {
+    /// Show what would be written; changes nothing
+    Plan {
+        /// Also list each game's files and what happens to them
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Write the files as `plan` shows, journaled for `undo`
+    Apply {
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Remove the latest batch's (or --batch N's) files and restore the
+    /// originals
+    Undo {
+        #[arg(long)]
+        batch: Option<i64>,
+    },
+    /// List applied batches
+    History,
+}
+
+#[derive(Subcommand)]
 enum SearchCommand {
     /// What needs you, with each row's id
     Queue,
-    /// DAT titles like the row's file name (or TEXT)
-    Suggest { row: String, text: Option<String> },
+    /// Search for a row: DAT titles (offline) or Wikidata items like its
+    /// title or file name (or TEXT)
+    #[command(alias = "suggest")]
+    Find {
+        row: String,
+        text: Option<String>,
+        /// dat or wikidata
+        #[arg(long, default_value = "dat")]
+        scraper: String,
+        /// Only this platform (system key)
+        #[arg(long)]
+        system: Option<String>,
+    },
     /// Name a row's files yourself ("identified by you")
     Name {
         row: String,
@@ -544,6 +586,74 @@ fn main() -> Result<()> {
                 bail!("{} files could not be moved back", undone.failed.len());
             }
         }
+        Command::Cleanup(CleanupCommand::Plan { verbose }) => {
+            let plan = lib.cleanup_plan(None)?;
+            print_cleanup(&plan, verbose);
+            println!(
+                "{} to write, {} skipped; nothing changed (run `cleanup apply` to write)",
+                plan.items.len(),
+                plan.skipped.len()
+            );
+        }
+        Command::Cleanup(CleanupCommand::Apply { verbose }) => {
+            let plan = lib.cleanup_plan(None)?;
+            print_cleanup(&plan, verbose);
+            if plan.items.is_empty() {
+                println!("nothing to write ({} skipped)", plan.skipped.len());
+                return Ok(());
+            }
+            let total = plan.items.len();
+            let r = lib.cleanup_apply(&plan, |n, title| {
+                eprintln!("[{}/{total}] {title}", n + 1);
+            })?;
+            for (t, e) in &r.failed {
+                eprintln!("error: {t}: {e}");
+            }
+            println!(
+                "batch #{}: wrote {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
+                r.batch_id,
+                r.done,
+                r.trashed,
+                r.failed.len(),
+                r.batch_id
+            );
+            if !r.failed.is_empty() {
+                bail!("{} games failed", r.failed.len());
+            }
+        }
+        Command::Cleanup(CleanupCommand::Undo { batch }) => {
+            let u = lib.cleanup_undo(batch)?;
+            for e in &u.failed {
+                eprintln!("error: {e}");
+            }
+            println!(
+                "batch #{}: removed {}, restored {}, failed {}",
+                u.batch_id,
+                u.removed,
+                u.restored,
+                u.failed.len()
+            );
+            if !u.failed.is_empty() {
+                bail!("{} steps could not be undone", u.failed.len());
+            }
+        }
+        Command::Cleanup(CleanupCommand::History) => {
+            for b in lib.cleanup_batches()? {
+                let state = match &b.undone_at {
+                    Some(t) => format!("undone {t}"),
+                    None => "applied".into(),
+                };
+                let keep = if b.keep_originals {
+                    "kept originals"
+                } else {
+                    "trashed originals"
+                };
+                println!(
+                    "#{:<4} {}  {:>5} written  {:>5} trashed  {keep}  {state}",
+                    b.batch_id, b.created_at, b.outputs, b.trashed
+                );
+            }
+        }
         Command::Organize(OrganizeCommand::History) => {
             for b in lib.organize_batches()? {
                 let state = match &b.undone_at {
@@ -805,9 +915,39 @@ fn main() -> Result<()> {
             }
             println!("{} need you", q.len());
         }
-        Command::Search(SearchCommand::Suggest { row, text }) => {
-            for s in lib.title_suggestions(&row, text.as_deref(), 15)? {
-                println!("{:>4.0}%  {:<16} {}", s.score * 100.0, s.system, s.title);
+        Command::Search(SearchCommand::Find {
+            row,
+            text,
+            scraper,
+            system,
+        }) => {
+            let scraper = match scraper.as_str() {
+                "dat" => search::Scraper::Dat,
+                "wikidata" => search::Scraper::Wikidata,
+                s => bail!("unknown scraper {s:?} (dat or wikidata)"),
+            };
+            let found = lib.search_find(
+                &row,
+                scraper,
+                text.as_deref(),
+                system.as_deref(),
+                search::WIKIDATA_API,
+            )?;
+            for f in found {
+                let year = f.year.map_or("    ".into(), |y| y.to_string());
+                let id = if scraper == search::Scraper::Wikidata {
+                    f.id.as_str()
+                } else {
+                    ""
+                };
+                println!(
+                    "{:>4.0}%  {year}  {:<16} {:<10} {}{}",
+                    f.score * 100.0,
+                    f.system.as_deref().unwrap_or(""),
+                    id,
+                    f.title,
+                    f.description.map(|d| format!("  ({d})")).unwrap_or_default()
+                );
             }
         }
         Command::Search(SearchCommand::Name { row, system, title }) => {
@@ -876,6 +1016,37 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_cleanup(plan: &romforge_core::cleanup::CleanupPlan, verbose: bool) {
+    let what = if plan.keep_originals {
+        "originals kept"
+    } else {
+        "originals to .romforge-trash"
+    };
+    println!("into {} ({what})", plan.dest.display());
+    for it in &plan.items {
+        println!("  {}  <-  {} file(s)", it.target.display(), it.parts.len());
+        if verbose {
+            for p in &it.parts {
+                let from = if p.member.is_empty() {
+                    p.path.display().to_string()
+                } else {
+                    format!("{}#{}", p.path.display(), p.member)
+                };
+                println!("      {}  <-  {from}", p.name);
+            }
+            for t in &it.trash {
+                println!("      trash: {}", t.display());
+            }
+            for k in &it.kept {
+                println!("      stays (holds other files): {}", k.display());
+            }
+        }
+    }
+    for (t, why) in &plan.skipped {
+        println!("  skip {t}: {why}");
+    }
 }
 
 fn print_plan(plan: &organize::Plan, verbose: bool) {

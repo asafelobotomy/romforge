@@ -94,6 +94,9 @@ pub struct EnrichOptions {
     pub art: Vec<ArtKind>,
     /// Only this system key.
     pub system: Option<String>,
+    /// Only the game with this title (with `system`, one game: Search
+    /// fetches what you asked for right after you pick a result).
+    pub title: Option<String>,
     /// Fetch again what was fetched (or found missing) before.
     pub refresh: bool,
     /// libretro-database's `metadat` URL ([`fetch::LIBRETRO_BASE`]).
@@ -114,6 +117,7 @@ impl EnrichOptions {
             cache_dir: cache_dir.into(),
             art: vec![ArtKind::Boxart],
             system: None,
+            title: None,
             refresh: false,
             metadata_base: fetch::LIBRETRO_BASE.to_owned(),
             thumbnails_base: THUMBNAILS_BASE.to_owned(),
@@ -269,7 +273,10 @@ pub fn enrich(
         ),
         None => None,
     };
-    let have = games_you_have(conn, only)?;
+    let mut have = games_you_have(conn, only)?;
+    if let Some(t) = &opts.title {
+        have.retain(|(_, game), _| game == t);
+    }
     let mut by_system: BTreeMap<i64, Vec<(&String, &Vec<String>)>> = BTreeMap::new();
     for ((system, game), crcs) in &have {
         by_system.entry(*system).or_default().push((game, crcs));

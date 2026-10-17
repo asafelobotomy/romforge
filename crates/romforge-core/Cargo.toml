@@ -19,7 +19,7 @@ thiserror = "2"
 walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "ppmd"] }
 ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier", "gzip"] }
-chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector"] }
+chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }
 
 [dev-dependencies]
 chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }

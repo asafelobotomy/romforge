@@ -107,3 +107,83 @@ fn queue_suggest_identify_forget() {
             .is_err()
     );
 }
+
+#[test]
+fn find_preview_and_choose_a_dat_title() {
+    use romforge_core::enrich::EnrichOptions;
+    use romforge_core::search::Scraper;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("Test GB Deluxe Hack.gb"), vec![42u8; 1024]).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let row = lib.search_queue(None).unwrap()[0].row_id.clone();
+
+    let found = lib
+        .search_find(&row, Scraper::Dat, None, None, "http://127.0.0.1:1")
+        .unwrap();
+    assert_eq!(found[0].title, "Test GB", "{found:?}");
+    assert_eq!(found[0].system.as_deref(), Some("Game Boy"));
+
+    // Nothing to fetch the picture from: the preview still comes, with the
+    // DAT's ROMs set against the file.
+    let cache = tmp.path().join("cache");
+    let p = lib
+        .search_preview(&row, &found[0], &cache, "http://127.0.0.1:1")
+        .unwrap();
+    assert!(p.image.is_none());
+    assert!(
+        p.facts
+            .iter()
+            .any(|(k, v)| k == "ROM" && v.starts_with("Test GB.gb · 1024")),
+        "{p:?}"
+    );
+    let mine = p.facts.iter().find(|(k, _)| k == "Your file").unwrap();
+    assert!(
+        mine.1.contains("same size as Test GB.gb, different contents"),
+        "{mine:?}"
+    );
+
+    let mut opts = EnrichOptions::new(&cache);
+    opts.art = Vec::new();
+    opts.wikidata = None;
+    opts.metadata_base = "http://127.0.0.1:1".into();
+    let chosen = lib.search_choose(&row, &found[0], None, &opts).unwrap();
+    assert_eq!(
+        chosen.row_id,
+        format!(
+            "m:{}:Test GB",
+            romforge_core::systems::by_key("Game Boy").unwrap().id
+        )
+    );
+    assert_eq!(chosen.enrich.games, 1, "fetches for that one game only");
+    let d = lib.game_detail(&chosen.row_id).unwrap();
+    assert_eq!(d.row.status, RowStatus::ByYou);
+
+    // A Wikidata pick on an unidentified row needs a platform.
+    let other = tmp.path().join("other");
+    std::fs::create_dir(&other).unwrap();
+    std::fs::write(other.join("mystery.bin"), vec![7u8; 64]).unwrap();
+    lib.scan(&other, Scope::All).unwrap();
+    let row = lib
+        .search_queue(None)
+        .unwrap()
+        .into_iter()
+        .find(|q| q.title.contains("mystery"))
+        .unwrap()
+        .row_id;
+    let wd = romforge_core::search::Found {
+        scraper: Scraper::Wikidata,
+        id: "Q1".into(),
+        title: "Mystery".into(),
+        system: None,
+        year: None,
+        score: 1.0,
+        description: None,
+    };
+    let err = lib.search_choose(&row, &wd, None, &opts).unwrap_err().to_string();
+    assert!(err.contains("platform"), "{err}");
+}

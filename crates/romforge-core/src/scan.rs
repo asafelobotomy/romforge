@@ -123,10 +123,14 @@ pub fn walk(
     mut each: impl FnMut(Visit),
 ) -> Result<(), Error> {
     let mut units: Vec<(u64, Option<Stamp>, Unit)> = Vec::new();
+    // Cleanup's trash folders hold originals waiting for undo: not part of
+    // the library.
     let walker = walkdir::WalkDir::new(root)
         .follow_links(false)
         .follow_root_links(true)
-        .sort_by_file_name();
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.file_name() != crate::cleanup::TRASH_DIR);
     for item in walker {
         let item = match item {
             Ok(item) => item,

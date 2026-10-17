@@ -4,8 +4,8 @@ Catalog, identify, organize, enrich and launch retro ROM collections. Rust
 core, SQLite, a CLI, and a Tauri 2 + Svelte desktop app.
 
 Scanning and identifying only read your files. Only `organize apply` moves
-and renames them, after a dry run, journaled for undo. Nothing ever rewrites
-or extracts a ROM. See [PLAN.md](PLAN.md) for the milestones and what is
+and renames them, and only `cleanup apply` repacks them, each after a dry
+run and journaled for undo. See [PLAN.md](PLAN.md) for the milestones and what is
 still open.
 
 ## Quick start
@@ -154,6 +154,29 @@ Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
 
+## Cleanup and rename (dry run, apply, undo)
+
+```bash
+romforge-cli cleanup plan -v      # changes nothing
+romforge-cli cleanup apply
+romforge-cli cleanup undo         # latest batch, or --batch N
+romforge-cli cleanup history
+```
+
+Every game in the Source folder that is verified by hash (or identified by
+you) becomes one file named by its DAT, in `<Library>/<system>/` (the
+Source when no Library is set): a zip for cartridges, holding the ROMs and
+a `romforge/` folder with the art and `<name>.romforge.md`; a CHD for discs
+(`.bin` tracks or one `.iso`), with the art and details in a folder of the
+same name next to it. ROM data is streamed from the old file or zip; only
+7z members and big zip members are unpacked, into the staging folder. Each
+new file is read back and every ROM re-hashed before anything else
+happens, and nothing is ever overwritten. Without Keep originals, the old
+files (and other verified copies in Source) then move to `.romforge-trash/`
+next to them, but only when everything in them was repacked; an archive
+holding anything else stays. `undo` deletes the new files and puts the
+originals back. Refresh never scans `.romforge-trash`.
+
 ## Desktop app
 
 Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
@@ -164,10 +187,14 @@ for what has been gathered (identified, metadata, box art, title screen,
 snap), and a detail panel with Details, Development, Series and Links tabs.
 DATs and Organize are at the foot of the platform list.
 
-**Search** (toolbar, or `romforge-cli search queue|suggest|name|forget|wikidata`)
+**Search** (toolbar, or `romforge-cli search queue|find|name|forget|wikidata`)
 goes through what needs you, one game at a time: files no hash identified
 (pick a DAT title it resembles, or give your own title and platform, e.g.
-for a translation) and games Wikidata couldn't match on its own. Titles you
+for a translation) and games Wikidata couldn't match on its own. Like
+tinyMediaManager's search window: pick a scraper (DAT titles offline, or
+Wikidata), search, compare results by year, platform and fit with box art
+and the DAT's ROMs against your file, and choose what to fetch for the game
+once you take one. Titles you
 pick show as "identified by you" and are never counted as verified.
 
 **Enrich** also asks Wikidata (free, no account) for developer, publisher,
@@ -181,10 +208,9 @@ then SteamGridDB, then IGDB, each only asked for what's still missing.
 
 **Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
 unprocessed ROMs, an optional **Library** folder that Cleanup and rename
-(milestone 10) sorts processed games into, **Keep originals** (Source files
-stay untouched; cleanup works on copies in the staging folder and moves the
-results into the Library), and the **staging** folder (default
-`~/.cache/romforge/staging`). Refresh scans the Source and Library.
+sorts processed games into, **Keep originals** (Source files stay
+untouched; cleanup only writes new files into the Library), and the
+**staging** folder (default `~/.cache/romforge/staging`). Refresh scans the Source and Library.
 Source and Library can't be inside one another, and staging stays outside
 both.
 
@@ -202,7 +228,7 @@ cd app && npm install && npm run tauri dev
 ## Layout
 
 - `crates/romforge-core` — all logic (library): `scan`, `identify`, `dat`,
-  `fetch`, `organize`, `enrich`, `disc`, `launch`; one table of systems
+  `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`; one table of systems
   (`systems.rs`) and one of copier headers (`headers.rs`)
 - `crates/romforge-cli` — thin CLI
 - `app/` — Tauri 2 + Svelte shell

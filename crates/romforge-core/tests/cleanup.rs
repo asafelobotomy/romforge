@@ -1,0 +1,294 @@
+//! Milestone 10: cleanup & rename, on copies in temp folders. Every new
+//! file is read back before an original is touched; undo puts everything
+//! back.
+
+use std::io::Read as _;
+use std::path::{Path, PathBuf};
+
+use romforge_core::cleanup::{Format, TRASH_DIR};
+use romforge_core::hash::hash_stream;
+use romforge_core::settings::Settings;
+use romforge_core::view::RowStatus;
+use romforge_core::{Library, Scope};
+
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
+}
+
+struct Setup {
+    _dir: tempfile::TempDir,
+    source: PathBuf,
+    library: PathBuf,
+    lib: Library,
+}
+
+/// A Source folder with copies of some fixtures, an empty Library, and the
+/// DATs imported.
+fn setup(keep_originals: bool, files: &[(&str, &str)], dats: &[&str]) -> Setup {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let library = dir.path().join("library");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    for (from, to) in files {
+        let to = source.join(to);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(fixtures().join("roms").join(from), to).unwrap();
+    }
+    let mut lib = Library::open_in_memory().unwrap();
+    for d in dats {
+        lib.import_dat(fixtures().join("dats").join(d), None).unwrap();
+    }
+    lib.save_settings(&Settings {
+        source_dir: Some(source.clone()),
+        library_dir: Some(library.clone()),
+        keep_originals,
+        staging_dir: Some(dir.path().join("staging")),
+        ..Settings::default()
+    })
+    .unwrap();
+    lib.scan(&source, Scope::All).unwrap();
+    let (source, library) = (source.canonicalize().unwrap(), library.canonicalize().unwrap());
+    Setup {
+        _dir: dir,
+        source,
+        library,
+        lib,
+    }
+}
+
+fn zip_names(path: &Path) -> Vec<String> {
+    let mut z = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+    let mut names: Vec<String> = (0..z.len())
+        .map(|i| z.by_index(i).unwrap().name().unwrap().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn row_status(lib: &Library, title: &str) -> Vec<(RowStatus, String)> {
+    let v = lib.library_view().unwrap();
+    v.rows
+        .iter()
+        .filter(|r| r.title == title)
+        .map(|r| {
+            let d = lib.game_detail(&r.id).unwrap();
+            (
+                r.status,
+                d.files.first().map(|f| f.path.clone()).unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn cartridges_are_zipped_under_their_dat_names_and_undo_restores() {
+    let mut s = setup(
+        false,
+        &[
+            ("gb/Test GB.gb", "loose/tgb.gb"),
+            ("archives/Test GBA.zip", "Test GBA.zip"),
+            ("archives/Mixed.7z", "Mixed.7z"),
+        ],
+        &["gb.dat", "gba.dat", "md.dat", "nes.dat"],
+    );
+    let plan = s.lib.cleanup_plan(None).unwrap();
+    let titles: Vec<&str> = plan.items.iter().map(|i| i.title.as_str()).collect();
+    assert!(
+        titles.contains(&"Test GB") && titles.contains(&"Test MD"),
+        "{titles:?} {:?}",
+        plan.skipped
+    );
+    assert!(plan.items.iter().all(|i| i.format == Format::Zip));
+    // Mixed.7z holds notes.txt too, so it stays; Test GBA.zip has a .url.
+    let md = plan.items.iter().find(|i| i.title == "Test MD").unwrap();
+    assert!(
+        md.trash.is_empty() && md.kept == [s.source.join("Mixed.7z")],
+        "{md:?}"
+    );
+    let gb = plan.items.iter().find(|i| i.title == "Test GB").unwrap();
+    assert_eq!(gb.target, s.library.join("Game Boy/Test GB.zip"));
+    assert_eq!(gb.trash, [s.source.join("loose/tgb.gb")]);
+    let original = std::fs::read(s.source.join("loose/tgb.gb")).unwrap();
+
+    let report = s.lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert_eq!(report.done, plan.items.len());
+    assert_eq!(report.trashed, 1);
+
+    // The new zip: the ROM under its DAT name and the details file.
+    let zip = s.library.join("Game Boy/Test GB.zip");
+    assert_eq!(zip_names(&zip), ["Test GB.gb", "romforge/Test GB.romforge.md"]);
+    let mut z = zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
+    let mut md_text = String::new();
+    z.by_name("romforge/Test GB.romforge.md")
+        .unwrap()
+        .read_to_string(&mut md_text)
+        .unwrap();
+    assert!(
+        md_text.starts_with("# Test GB\n") && md_text.contains("verified by hash"),
+        "{md_text}"
+    );
+    let mut rom = Vec::new();
+    z.by_name("Test GB.gb").unwrap().read_to_end(&mut rom).unwrap();
+    assert_eq!(rom, original);
+    // A 7z member came out whole too.
+    let md_zip = s.library.join("Genesis/Test MD.zip");
+    assert!(zip_names(&md_zip).contains(&"Test MD.md".to_owned()));
+
+    // The original is in the trash, not gone; the library now shows the
+    // new copy, verified, and nothing from the trash.
+    assert!(!s.source.join("loose/tgb.gb").exists());
+    let trashed = s
+        .source
+        .join("loose")
+        .join(TRASH_DIR)
+        .join(report.batch_id.to_string())
+        .join("tgb.gb");
+    assert_eq!(std::fs::read(&trashed).unwrap(), original);
+    assert!(s.source.join("Mixed.7z").exists());
+    let rows = row_status(&s.lib, "Test GB");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, RowStatus::Verified);
+    assert!(rows[0].1.starts_with(&*zip.to_string_lossy()), "{rows:?}");
+    // Nothing left to do for it.
+    let again = s.lib.cleanup_plan(None).unwrap();
+    assert!(again.items.iter().all(|i| i.title != "Test GB"), "{again:?}");
+    assert_eq!(s.lib.cleanup_batches().unwrap().len(), 1);
+
+    let undone = s.lib.cleanup_undo(None).unwrap();
+    assert!(undone.failed.is_empty(), "{:?}", undone.failed);
+    assert_eq!(undone.restored, 1);
+    assert_eq!(std::fs::read(s.source.join("loose/tgb.gb")).unwrap(), original);
+    assert!(!zip.exists() && !md_zip.exists());
+    assert!(
+        !s.source.join("loose").join(TRASH_DIR).exists(),
+        "empty trash folders go"
+    );
+    let rows = row_status(&s.lib, "Test GB");
+    assert!(rows[0].1.ends_with("loose/tgb.gb"), "{rows:?}");
+    assert!(s.lib.cleanup_batches().unwrap()[0].undone_at.is_some());
+}
+
+#[test]
+fn keep_originals_leaves_source_alone_and_nothing_is_overwritten() {
+    let mut s = setup(
+        true,
+        &[("gb/Test GB.gb", "Test GB.gb"), ("gb/MD5 Only.gb", "MD5 Only.gb")],
+        &["gb.dat"],
+    );
+    // Something already has MD5 Only's name in the Library.
+    std::fs::create_dir_all(s.library.join("Game Boy")).unwrap();
+    std::fs::write(s.library.join("Game Boy/MD5 Only.zip"), b"mine").unwrap();
+    let plan = s.lib.cleanup_plan(None).unwrap();
+    assert!(plan.keep_originals);
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    assert!(
+        plan.skipped
+            .iter()
+            .any(|(t, why)| t == "MD5 Only" && why.contains("already exists"))
+    );
+    let report = s.lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert_eq!((report.done, report.trashed), (1, 0));
+    assert!(s.source.join("Test GB.gb").exists());
+    assert!(!s.source.join(TRASH_DIR).exists());
+    assert_eq!(
+        std::fs::read(s.library.join("Game Boy/MD5 Only.zip")).unwrap(),
+        b"mine"
+    );
+    assert!(s.library.join("Game Boy/Test GB.zip").exists());
+    // Staging is cleaned up after the batch.
+    let staging = s.source.parent().unwrap().join("staging");
+    assert!(!staging.exists() || std::fs::read_dir(&staging).unwrap().next().is_none());
+}
+
+fn pattern(seed: u8, len: usize) -> Vec<u8> {
+    (0..len)
+        .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+        .collect()
+}
+
+#[test]
+fn cd_tracks_become_a_chd_with_a_sidecar() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let library = dir.path().join("library");
+    std::fs::create_dir_all(source.join("Game")).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    // A MODE2 data track and an audio track with its 2-second pregap stored.
+    let mut data = pattern(1, 6 * 2352);
+    data[..12].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0]);
+    data[15] = 2;
+    let audio = pattern(2, 155 * 2352);
+    let cue = "FILE \"Game (USA) (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (USA) (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n";
+    std::fs::write(source.join("Game/Game (USA) (Track 1).bin"), &data).unwrap();
+    std::fs::write(source.join("Game/Game (USA) (Track 2).bin"), &audio).unwrap();
+    std::fs::write(source.join("Game/Game (USA).cue"), cue).unwrap();
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let rom = |name: &str, d: &[u8]| {
+        let x = h(d);
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        )
+    };
+    let dat = dir.path().join("psx.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Sony - PlayStation</name></header><game name="Game (USA)">{}{}{}</game></datafile>"#,
+            rom("Game (USA) (Track 1).bin", &data),
+            rom("Game (USA) (Track 2).bin", &audio),
+            rom("Game (USA).cue", cue.as_bytes()),
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.save_settings(&Settings {
+        source_dir: Some(source.clone()),
+        library_dir: Some(library.clone()),
+        staging_dir: Some(dir.path().join("staging")),
+        ..Settings::default()
+    })
+    .unwrap();
+    lib.scan(&source, Scope::All).unwrap();
+    let library = library.canonicalize().unwrap();
+
+    let plan = lib.cleanup_plan(None).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    let item = &plan.items[0];
+    assert_eq!(item.format, Format::ChdCd);
+    assert_eq!(item.target, library.join("PlayStation/Game (USA).chd"));
+    assert_eq!(item.trash.len(), 3, "both tracks and the cue: {item:?}");
+    let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+
+    let chd = library.join("PlayStation/Game (USA).chd");
+    let members = romforge_core::disc::chd_members(&chd).unwrap();
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0].1.raw, h(&data));
+    assert_eq!(members[1].1.raw, h(&audio));
+    let side = library.join("PlayStation/Game (USA)");
+    assert!(side.join("Game (USA).romforge.md").exists());
+    let rows = row_status(&lib, "Game (USA)");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, RowStatus::Verified);
+
+    lib.cleanup_undo(None).unwrap();
+    assert!(!chd.exists() && !side.exists());
+    assert_eq!(
+        std::fs::read(source.join("Game/Game (USA) (Track 2).bin")).unwrap(),
+        audio
+    );
+    assert_eq!(
+        std::fs::read_to_string(source.join("Game/Game (USA).cue")).unwrap(),
+        cue
+    );
+}
+
+#[test]
+fn cleanup_needs_a_source_folder() {
+    let lib = Library::open_in_memory().unwrap();
+    assert!(lib.cleanup_plan(None).is_err());
+}

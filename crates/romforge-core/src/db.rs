@@ -139,6 +139,25 @@ const MIGRATIONS: &[&str] = &[
         checked_at TEXT NOT NULL,
         PRIMARY KEY (system_id, title, provider)
     );",
+    // 11: cleanup & rename journal (milestone 10)
+    "CREATE TABLE cleanup_batches (
+        batch_id       INTEGER PRIMARY KEY,
+        created_at     TEXT NOT NULL,
+        keep_originals INTEGER NOT NULL,
+        undone_at      TEXT
+    );
+    CREATE TABLE cleanup_outputs (
+        batch_id INTEGER NOT NULL REFERENCES cleanup_batches(batch_id),
+        path     TEXT NOT NULL,
+        kind     TEXT NOT NULL CHECK (kind IN ('file', 'dir')),
+        PRIMARY KEY (batch_id, path)
+    );
+    CREATE TABLE cleanup_trash (
+        batch_id INTEGER NOT NULL REFERENCES cleanup_batches(batch_id),
+        original TEXT NOT NULL,
+        trashed  TEXT NOT NULL,
+        PRIMARY KEY (batch_id, trashed)
+    );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

@@ -463,7 +463,7 @@ fn common_game(matched: &[&Member], is_archive: bool) -> Result<GameRef, String>
 }
 
 /// A name safe as one path component on Linux, macOS and Windows.
-fn sanitize(name: &str) -> String {
+pub(crate) fn sanitize(name: &str) -> String {
     let s: String = name
         .chars()
         .map(|c| match c {
@@ -747,7 +747,7 @@ fn remove_empty_dirs(moved_out_of: &Path, dest: &Path) {
 
 /// Move `from` to `to` without ever replacing an existing file. Returns the
 /// size moved.
-fn move_file(from: &Path, to: &Path) -> std::io::Result<u64> {
+pub(crate) fn move_file(from: &Path, to: &Path) -> std::io::Result<u64> {
     use std::io::{Error as IoError, ErrorKind};
     let size = std::fs::symlink_metadata(from)?.len();
     if let Some(parent) = to.parent() {

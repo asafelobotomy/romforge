@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
-use romforge_core::search::{QueueItem, TitleSuggestion};
+use romforge_core::search::{Chosen, Found, Preview, QueueItem, Scraper};
 use romforge_core::settings::{Settings, default_staging_dir};
 use romforge_core::view::{GameDetail, LibraryView};
-use romforge_core::wikidata::Candidate;
 use romforge_core::{
     DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
 };
@@ -119,6 +119,31 @@ async fn organize_undo(db: tauri::State<'_, Db>) -> Res<Undone> {
     with(&db, |lib| lib.organize_undo(None))
 }
 
+/// `only`: these library row ids, else every identified game in Source.
+#[tauri::command]
+async fn cleanup_plan(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupPlan> {
+    with(&db, |lib| lib.cleanup_plan(only.as_deref()))
+}
+
+/// Plans again here rather than trusting a plan sent back from the window.
+#[tauri::command]
+async fn cleanup_apply(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupReport> {
+    with(&db, |lib| {
+        let plan = lib.cleanup_plan(only.as_deref())?;
+        lib.cleanup_apply(&plan, |_, _| {})
+    })
+}
+
+#[tauri::command]
+async fn cleanup_undo(db: tauri::State<'_, Db>) -> Res<CleanupUndone> {
+    with(&db, |lib| lib.cleanup_undo(None))
+}
+
+#[tauri::command]
+async fn cleanup_batches(db: tauri::State<'_, Db>) -> Res<Vec<CleanupBatch>> {
+    with(&db, |lib| lib.cleanup_batches())
+}
+
 #[tauri::command]
 async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichReport> {
     let opts = EnrichOptions {
@@ -157,34 +182,8 @@ async fn search_queue(db: tauri::State<'_, Db>) -> Res<Vec<QueueItem>> {
 }
 
 #[tauri::command]
-async fn title_suggestions(
-    db: tauri::State<'_, Db>,
-    row_id: String,
-    text: Option<String>,
-) -> Res<Vec<TitleSuggestion>> {
-    with(&db, |lib| lib.title_suggestions(&row_id, text.as_deref(), 12))
-}
-
-#[tauri::command]
-async fn identify_as(db: tauri::State<'_, Db>, row_id: String, system: String, title: String) -> Res<()> {
-    with(&db, |lib| lib.identify_as(&row_id, &system, &title))
-}
-
-#[tauri::command]
 async fn forget_identity(db: tauri::State<'_, Db>, row_id: String) -> Res<()> {
     with(&db, |lib| lib.forget_identity(&row_id))
-}
-
-#[tauri::command]
-async fn wikidata_candidates(db: tauri::State<'_, Db>, row_id: String) -> Res<Vec<Candidate>> {
-    with(&db, |lib| lib.wikidata_candidates(&row_id))
-}
-
-#[tauri::command]
-async fn settle_wikidata(db: tauri::State<'_, Db>, row_id: String, qid: String) -> Res<()> {
-    with(&db, |lib| {
-        lib.settle_wikidata(romforge_core::wikidata::ENDPOINT, &row_id, &qid)
-    })
 }
 
 #[derive(serde::Serialize)]
@@ -224,6 +223,66 @@ async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
     }
     d.art.retain(|_, v| !v.is_empty());
     Ok(d)
+}
+
+#[tauri::command]
+async fn search_find(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    scraper: Scraper,
+    text: Option<String>,
+    system: Option<String>,
+) -> Res<Vec<Found>> {
+    with(&db, |lib| {
+        lib.search_find(
+            &row_id,
+            scraper,
+            text.as_deref(),
+            system.as_deref(),
+            romforge_core::search::WIKIDATA_API,
+        )
+    })
+}
+
+/// The preview with its picture as a data: URL (in `image`).
+#[tauri::command]
+async fn search_preview(db: tauri::State<'_, Db>, row_id: String, found: Found) -> Res<Preview> {
+    let mut p = with(&db, |lib| {
+        lib.search_preview(
+            &row_id,
+            &found,
+            &default_cache_dir(),
+            romforge_core::enrich::THUMBNAILS_BASE,
+        )
+    })?;
+    p.image = p
+        .image
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|img| PathBuf::from(data_url(&img)));
+    Ok(p)
+}
+
+/// Take a result, then fetch `art` kinds (and Wikidata) for that game;
+/// `overwrite` fetches again what is already there.
+#[tauri::command]
+async fn search_choose(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    found: Found,
+    system: Option<String>,
+    art: Vec<String>,
+    wikidata: bool,
+    overwrite: bool,
+) -> Res<Chosen> {
+    let opts = EnrichOptions {
+        art: art.iter().filter_map(|k| ArtKind::parse(k)).collect(),
+        wikidata: wikidata.then(|| romforge_core::wikidata::ENDPOINT.to_owned()),
+        refresh: overwrite,
+        ..EnrichOptions::new(default_cache_dir())
+    };
+    with(&db, |lib| {
+        lib.search_choose(&row_id, &found, system.as_deref(), &opts)
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -341,6 +400,10 @@ fn main() {
             organize_plan,
             organize_apply,
             organize_undo,
+            cleanup_plan,
+            cleanup_apply,
+            cleanup_undo,
+            cleanup_batches,
             enrich,
             game_info,
             launch,
@@ -351,11 +414,10 @@ fn main() {
             save_settings,
             settings_info,
             search_queue,
-            title_suggestions,
-            identify_as,
+            search_find,
+            search_preview,
+            search_choose,
             forget_identity,
-            wikidata_candidates,
-            settle_wikidata,
             all_systems
         ])
         .run(tauri::generate_context!())

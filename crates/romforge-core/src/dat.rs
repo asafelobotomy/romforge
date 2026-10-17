@@ -318,6 +318,16 @@ pub struct Record {
     pub serials: Vec<String>,
 }
 
+/// libretro writes some lists as several quoted strings
+/// (`developer "Ape", "HAL Laboratory"`), which the tokenizer keeps as one
+/// atom with the inner quotes: make that a plain `Ape, HAL Laboratory`.
+fn list_value(a: &str) -> String {
+    a.replace("\", \"", ", ")
+        .replace("\", ", ", ")
+        .trim_matches('"')
+        .to_owned()
+}
+
 /// Parse a clrmamepro metadata file into [`Record`]s.
 pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
     let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
@@ -333,7 +343,7 @@ pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
                 && !matches!(*k, "name" | "comment")
                 && !a.is_empty()
             {
-                rec.fields.push((k.to_ascii_lowercase(), (*a).to_owned()));
+                rec.fields.push((k.to_ascii_lowercase(), list_value(a)));
             }
         }
         for r in g.blocks("rom") {
@@ -493,15 +503,21 @@ game (
 	comment "2 Games in 1"
 	developer ""Natsume", Vicarious Visions"
 	rom ( crc 9FF018F9 )
+)
+game (
+	comment "EarthBound (USA)"
+	developer "Ape", "HAL Laboratory"
 )"#;
         let r = parse_cmp_records(text).unwrap();
-        assert_eq!(r.len(), 3);
+        assert_eq!(r.len(), 4);
+        // Lists written as several quoted strings come out plain.
         assert_eq!(
             r[2].fields,
-            [(
-                "developer".to_owned(),
-                "\"Natsume\", Vicarious Visions".to_owned()
-            )]
+            [("developer".to_owned(), "Natsume, Vicarious Visions".to_owned())]
+        );
+        assert_eq!(
+            r[3].fields,
+            [("developer".to_owned(), "Ape, HAL Laboratory".to_owned())]
         );
         assert_eq!(r[2].crcs, ["9ff018f9"]);
         assert_eq!(r[0].title.as_deref(), Some("Super Mario World (USA)"));

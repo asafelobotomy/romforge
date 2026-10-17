@@ -1,10 +1,11 @@
 //! romforge core: DAT import, scanning, hashing and identification.
 //!
 //! Scanning and identifying never touch ROM files. Only [`organize`]
-//! (milestone 2) moves and renames them, after a dry run, journaled for
-//! undo; nothing ever rewrites or extracts a ROM.
+//! (milestone 2) moves and renames them, and only [`cleanup`] (milestone
+//! 10) repacks them, each after a dry run and journaled for undo.
 
 pub mod artsources;
+pub mod cleanup;
 pub mod dat;
 mod db;
 pub mod disc;
@@ -66,6 +67,8 @@ pub enum Error {
     Settings(String),
     #[error("search: {0}")]
     Search(String),
+    #[error("cleanup: {0}")]
+    Cleanup(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -771,6 +774,36 @@ impl Library {
         organize::batches(&self.conn)
     }
 
+    /// What cleanup & rename would do (milestone 10); nothing is touched.
+    /// `only`: limit to these library row ids.
+    pub fn cleanup_plan(&self, only: Option<&[String]>) -> Result<cleanup::CleanupPlan, Error> {
+        cleanup::plan(&self.conn, only)
+    }
+
+    /// Carry out a cleanup plan, then refresh so the library shows the new
+    /// files.
+    pub fn cleanup_apply(
+        &mut self,
+        plan: &cleanup::CleanupPlan,
+        progress: impl FnMut(usize, &str),
+    ) -> Result<cleanup::CleanupReport, Error> {
+        let r = cleanup::apply(&mut self.conn, plan, progress)?;
+        self.refresh(ScanOptions::default(), |_, _| {})?;
+        Ok(r)
+    }
+
+    /// Remove a cleanup batch's new files and put its originals back (the
+    /// latest batch by default), then refresh.
+    pub fn cleanup_undo(&mut self, batch_id: Option<i64>) -> Result<cleanup::CleanupUndone, Error> {
+        let u = cleanup::undo(&mut self.conn, batch_id)?;
+        self.refresh(ScanOptions::default(), |_, _| {})?;
+        Ok(u)
+    }
+
+    pub fn cleanup_batches(&self) -> Result<Vec<cleanup::Batch>, Error> {
+        cleanup::batches(&self.conn)
+    }
+
     /// Fetch metadata and art for the games you have (milestone 3).
     pub fn enrich(
         &mut self,
@@ -881,6 +914,42 @@ impl Library {
         limit: usize,
     ) -> Result<Vec<search::TitleSuggestion>, Error> {
         search::title_suggestions(&self.conn, row_id, text, limit)
+    }
+
+    /// Search one scraper for a row (the Search dialog's results table).
+    /// `api`: Wikidata's entity search ([`search::WIKIDATA_API`]).
+    pub fn search_find(
+        &self,
+        row_id: &str,
+        scraper: search::Scraper,
+        text: Option<&str>,
+        system: Option<&str>,
+        api: &str,
+    ) -> Result<Vec<search::Found>, Error> {
+        search::find(&self.conn, row_id, scraper, text, system, api)
+    }
+
+    /// The preview pane for a result: details, DAT ROMs against your file,
+    /// box art.
+    pub fn search_preview(
+        &self,
+        row_id: &str,
+        found: &search::Found,
+        cache_dir: &Path,
+        thumbnails_base: &str,
+    ) -> Result<search::Preview, Error> {
+        search::preview(&self.conn, row_id, found, cache_dir, thumbnails_base)
+    }
+
+    /// Take a result for a row, then fetch for that game what `opts` asks.
+    pub fn search_choose(
+        &mut self,
+        row_id: &str,
+        found: &search::Found,
+        system: Option<&str>,
+        opts: &enrich::EnrichOptions,
+    ) -> Result<search::Chosen, Error> {
+        search::choose(&mut self.conn, row_id, found, system, opts)
     }
 
     /// Name a row's files yourself ("identified by you").
