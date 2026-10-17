@@ -481,7 +481,7 @@ pub fn details_md(d: &view::GameDetail) -> String {
         ("Serial", "serial"),
     ];
     for (label, key) in show {
-        if let Some(v) = d.fields.get(key).filter(|v| !v.contains("???")) {
+        if let Some(v) = d.fields.get(key) {
             s += &format!("- {label}: {v}\n");
         }
     }

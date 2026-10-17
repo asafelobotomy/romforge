@@ -243,8 +243,9 @@ fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, St
         .and_then(|g| g["id"].as_u64());
     let Some(id) = id else { return Ok(Vec::new()) };
     let mut out = Vec::new();
+    // No grids: they are Steam library capsules people design, not the
+    // game's box, so they never stand in for box art.
     for (kind, path) in [
-        (ArtKind::Boxart, format!("grids/game/{id}?dimensions=600x900")),
         (ArtKind::Hero, format!("heroes/game/{id}")),
         (ArtKind::Logo, format!("logos/game/{id}")),
         (ArtKind::Icon, format!("icons/game/{id}")),
@@ -323,7 +324,9 @@ fn igdb(
             .map(|i| format!("{}/{size}/{i}.jpg", bases.igdb_images))
     };
     let mut out = Vec::new();
-    if let Some(u) = image("t_cover_big", &g["cover"]["image_id"]) {
+    // The largest sizes IGDB serves without scaling past the original
+    // (cover 528x748, artwork 1920x1080, screenshot 1280x720).
+    if let Some(u) = image("t_cover_big_2x", &g["cover"]["image_id"]) {
         out.push((ArtKind::Boxart, u));
     }
     if let Some(u) = g["artworks"]
@@ -336,7 +339,7 @@ fn igdb(
     if let Some(u) = g["screenshots"]
         .as_array()
         .and_then(|a| a.first())
-        .and_then(|a| image("t_screenshot_big", &a["image_id"]))
+        .and_then(|a| image("t_screenshot_huge", &a["image_id"]))
     {
         out.push((ArtKind::Snap, u));
     }

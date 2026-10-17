@@ -88,7 +88,9 @@ description, players, genre), Development (developer, publisher, country,
 credits), Series (related games in order, with years) and Links (MobyGames,
 RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 
-6. **Layout** *(built)* — the layout above on the data romforge already has;
+6. **Layout** *(built; Details reorganized 2026-10-17: fanart, box +
+   logo + facts, overview, Media; true aspect and size; empty boxes hidden
+   unless Settings shows them)* — the layout above on the data romforge already has;
    Refresh rescans every source folder; Links as plain search links (opened
    with Tauri's opener plugin, https only). Search and Cleanup & rename are
    in the toolbar but disabled until milestones 8 and 10; art libretro

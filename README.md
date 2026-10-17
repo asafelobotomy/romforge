@@ -202,9 +202,26 @@ country, director, composer, the series in order, and IDs that make the
 Links tab point at each game's own MobyGames, RetroAchievements, Wikipedia,
 IGDB and HowLongToBeat page.
 
-With keys in Settings, Enrich also fills art libretro lacks (hero, logo,
+With keys in Settings, Enrich also fills art libretro lacks (fanart, logo,
 icon, 3D box, and any missing box art or screenshots) from ScreenScraper,
 then SteamGridDB, then IGDB, each only asked for what's still missing.
+SteamGridDB's grids are never used as box art (they are Steam capsules),
+and IGDB images come at their largest sizes.
+
+**Details** shows fanart on top, the box beside the facts (with the logo),
+the overview, then Media (3D box, title screen, in-game, icon). Every image
+keeps its own aspect ratio and is never blown up; captions give its size in
+pixels and its source, and a click opens it full size (small screenshots
+scaled by whole steps, pixels kept sharp). Kinds with no art are hidden;
+Settings → "Show empty media boxes" shows a box for each.
+
+**Development** groups what is known into Studios, Credits, Release and
+Identification (status, DATs, Wikidata item), leaving out anything empty.
+**Series** is a table (#, year, title, platform) in Wikidata's series order
+or, without it, the libretro franchise oldest first; games you have open
+with a click. **Links** separates the game's own pages (from Wikidata IDs)
+from plain site searches. libretro's `???` for an unknown value is hidden,
+and "Nintendo ???" shows as "Nintendo (unconfirmed)".
 
 **Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
 unprocessed ROMs, an optional **Library** folder that Cleanup and rename

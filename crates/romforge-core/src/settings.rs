@@ -30,6 +30,10 @@ pub struct Settings {
     /// 3). Stored in the local database; never shown in full.
     #[serde(default)]
     pub keys: Keys,
+    /// Details shows a box for every kind of art, even ones with nothing
+    /// in them (off: only the art there is).
+    #[serde(default)]
+    pub show_empty_media: bool,
 }
 
 /// Credentials for the online sources that need them. All optional.
@@ -193,6 +197,7 @@ impl Settings {
             keep_originals: self.keep_originals,
             staging_dir: staging,
             keys,
+            show_empty_media: self.show_empty_media,
         })
     }
 }
@@ -217,6 +222,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
             igdb_client_id: get("igdb_client_id")?,
             igdb_client_secret: get("igdb_client_secret")?,
         },
+        show_empty_media: get("show_empty_media")?.as_deref() == Some("1"),
     })
 }
 
@@ -238,6 +244,10 @@ pub fn save(conn: &mut Connection, s: &Settings) -> Result<Settings, Error> {
             (
                 "keep_originals",
                 Some(if s.keep_originals { "1" } else { "0" }.to_owned()),
+            ),
+            (
+                "show_empty_media",
+                Some(if s.show_empty_media { "1" } else { "0" }.to_owned()),
             ),
         ]
         .into_iter()

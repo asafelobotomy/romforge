@@ -95,6 +95,8 @@ pub struct GameDetail {
     pub fields: BTreeMap<String, String>,
     /// kind -> cached file
     pub art: BTreeMap<String, String>,
+    /// kind -> where it came from ("libretro", "screenscraper", …)
+    pub art_sources: BTreeMap<String, String>,
     pub files: Vec<RowFile>,
     /// DATs listing the game.
     pub dats: Vec<String>,
@@ -414,6 +416,19 @@ pub fn search_title(name: &str) -> String {
 
 /// Links for a game: its own pages where Wikidata gave an ID (in
 /// `fields`), plain searches otherwise (house rule 10, tier 1).
+/// A metadata value as shown. libretro writes `???` for what it doesn't
+/// know: alone it means nothing is known; next to a name ("Nintendo ???")
+/// the name is a guess, and says so. Wikidata replaces such values when it
+/// matches the game.
+pub fn shown_value(v: &str) -> Option<String> {
+    if !v.contains("???") {
+        return Some(v.to_owned()).filter(|v| !v.trim().is_empty());
+    }
+    let rest = v.replace("???", "");
+    let rest = rest.trim().trim_matches(',').trim();
+    (!rest.is_empty()).then(|| format!("{rest} (unconfirmed)"))
+}
+
 pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, String>) -> Vec<Link> {
     let q = search_title(title);
     let enc = |s: &str| fetch::encode_segment(s);
@@ -492,6 +507,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
         .ok_or_else(|| Error::Dat(format!("no library row {id:?}")))?;
     let mut fields = BTreeMap::new();
     let mut art = BTreeMap::new();
+    let mut art_sources = BTreeMap::new();
     let mut dats = Vec::new();
     if let Some(system_id) = row.system_id {
         for r in conn
@@ -501,15 +517,25 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
             })?
         {
             let (k, v) = r?;
-            fields.insert(k, v);
+            if let Some(v) = shown_value(&v) {
+                fields.insert(k, v);
+            }
         }
         for r in conn
-            .prepare("SELECT kind, path FROM art WHERE system_id = ?1 AND title = ?2 AND path IS NOT NULL")?
+            .prepare(
+                "SELECT kind, path, coalesce(source, 'libretro') FROM art
+                 WHERE system_id = ?1 AND title = ?2 AND path IS NOT NULL",
+            )?
             .query_map(params![system_id, row.title], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             })?
         {
-            let (k, p) = r?;
+            let (k, p, src) = r?;
+            art_sources.insert(k.clone(), src);
             art.insert(k, p);
         }
         dats = conn
@@ -615,6 +641,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
         row,
         fields,
         art,
+        art_sources,
         files,
         dats,
         links,
@@ -624,6 +651,22 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::shown_value;
+
+    #[test]
+    fn libretro_unknowns() {
+        assert_eq!(
+            shown_value("Nintendo ???").as_deref(),
+            Some("Nintendo (unconfirmed)")
+        );
+        assert_eq!(shown_value("???"), None);
+        assert_eq!(shown_value("  "), None);
+        assert_eq!(
+            shown_value("Ape, HAL Laboratory").as_deref(),
+            Some("Ape, HAL Laboratory")
+        );
+    }
+
     use super::*;
 
     #[test]

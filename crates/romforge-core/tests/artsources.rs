@@ -171,6 +171,21 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         Some("Bearer tok")
     );
     assert!(
+        !requests.iter().any(|(p, _)| p.contains("/grids/")),
+        "SteamGridDB grids are Steam capsules, never box art"
+    );
+    let igdb_img: Vec<&String> = requests
+        .iter()
+        .map(|(p, _)| p)
+        .filter(|p| p.starts_with("/igimg/"))
+        .collect();
+    assert!(
+        igdb_img
+            .iter()
+            .all(|p| p.contains("/t_screenshot_huge/") || p.contains("/t_cover_big_2x/")),
+        "IGDB at its full sizes: {igdb_img:?}"
+    );
+    assert!(
         !requests.iter().any(|(p, _)| p.contains("box-jp")),
         "the US box was preferred, the Japanese one never downloaded"
     );

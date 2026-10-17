@@ -20,7 +20,7 @@
 
   // Settings panel: a working copy, saved on "Save".
   let settingsOpen = $state(false);
-  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {} });
+  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {}, show_empty_media: false });
   let defaultStaging = $state("");
   let settingsError = $state("");
 
@@ -42,6 +42,7 @@
     settingsError = "";
     try {
       draft = await invoke("save_settings", { settings: draft });
+      showEmpty = draft.show_empty_media;
       settingsOpen = false;
       note = "Settings saved. Refresh scans the Source and Library folders.";
     } catch (e) {
@@ -287,7 +288,9 @@
 
   async function open(id) {
     selected = id;
-    detail = await call("game_detail", { id });
+    const d = await call("game_detail", { id });
+    if (d?.row?.id !== detail?.row?.id) dims = {};
+    detail = d;
   }
 
   function show(v) {
@@ -373,15 +376,67 @@
     by_you: "Identified by you",
     unknown: "Unknown",
   };
-  const artKinds = [
-    ["boxart", "Box art"],
-    ["box3d", "3D box"],
-    ["title", "Title screen"],
-    ["snap", "In-game"],
-    ["hero", "Hero"],
-    ["logo", "Logo"],
-    ["icon", "Icon"],
-  ];
+  const artLabel = {
+    boxart: "Box art",
+    box3d: "3D box",
+    title: "Title screen",
+    snap: "In-game",
+    hero: "Fanart",
+    logo: "Logo",
+    icon: "Icon",
+  };
+  // Box art, fanart and logo have their own places; the rest sit under Media.
+  const mediaKinds = ["box3d", "title", "snap", "icon"];
+  const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB" };
+
+  // Details: empty media boxes only when Settings says so.
+  let showEmpty = $state(false);
+  // kind -> [width, height] of the image as loaded (its real resolution).
+  let dims = $state({});
+  // The image open at full size, if any.
+  let viewer = $state(null);
+  let winW = $state(1200);
+  let winH = $state(800);
+
+  function sized(kind, e) {
+    dims[kind] = [e.currentTarget.naturalWidth, e.currentTarget.naturalHeight];
+  }
+
+  function caption(kind) {
+    const d = dims[kind];
+    const src = detail?.art_sources?.[kind];
+    return [artLabel[kind], d ? `${d[0]}×${d[1]}` : "", src ? sourceLabel[src] ?? src : ""].filter(Boolean).join(" · ");
+  }
+
+  // Full size: its own pixels, smaller only to fit the window. Title screens
+  // and screenshots of old systems are tiny, so they are scaled up by whole
+  // steps with sharp pixels instead of a blur.
+  function viewerScale(kind) {
+    const d = dims[kind];
+    if (!d) return 1;
+    const fit = Math.min((winW * 0.92) / d[0], (winH * 0.82) / d[1]);
+    if (fit < 1) return fit;
+    return ["title", "snap"].includes(kind) ? Math.max(1, Math.floor(fit)) : 1;
+  }
+
+  // The Development tab: groups of (label, value, link?) with only what is
+  // known; an empty group isn't shown.
+  function devGroups(f, d) {
+    const g = [
+      ["Studios", [["Developer", f.developer], ["Publisher", f.publisher], ["Country", f.country]]],
+      ["Credits", [["Director", f.director], ["Designer", f.designer], ["Composer", f.composer]]],
+      ["Release", [["Released", released(f)], ["Serial", f.serial], ["Rating", f.esrb]]],
+      [
+        "Identification",
+        [
+          ["Status", statusLabel[d.row.status]],
+          ["DATs", d.dats.join(", ")],
+          ["Wikidata", f.wikidata, f.wikidata ? `https://www.wikidata.org/wiki/${f.wikidata}` : null],
+        ],
+      ],
+    ];
+    return g.map(([h, rows]) => [h, rows.filter((r) => r[1])]).filter(([, rows]) => rows.length);
+  }
 
   // 1991, 1991-08 or 1991-08-21.
   function released(f) {
@@ -434,11 +489,15 @@
   let currentDat = $derived(summary.dats.find((d) => d.dat_id === datId));
 
   load();
+  call("get_settings").then((s) => s && (showEmpty = s.show_empty_media));
 </script>
 
 <svelte:window
+  bind:innerWidth={winW}
+  bind:innerHeight={winH}
   onkeydown={(e) => {
-    if (e.key === "Escape" && settingsOpen) settingsOpen = false;
+    if (e.key === "Escape" && viewer) viewer = null;
+    else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
     else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
     else listKeys(e);
@@ -520,6 +579,14 @@
             <button onclick={() => browse("staging_dir")}>Browse…</button>
             {#if draft.staging_dir}<button onclick={() => (draft.staging_dir = null)}>Use default</button>{/if}
           </div>
+        </section>
+
+        <section class="setting">
+          <label class="toggle">
+            <input type="checkbox" bind:checked={draft.show_empty_media} />
+            Show empty media boxes
+          </label>
+          <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
         </section>
 
         <section class="setting">
@@ -718,6 +785,23 @@
     </div>
   {/if}
 
+  {#if viewer}
+    {@const k = viewer.kind}
+    {@const scale = viewerScale(k)}
+    <div class="scrim viewer" role="presentation" onclick={() => (viewer = null)}>
+      <figure>
+        <img
+          src={viewer.src}
+          alt="{artLabel[k]} of {row?.title}"
+          class:pixels={scale > 1}
+          style:width={dims[k] ? `${Math.round(dims[k][0] * scale)}px` : null}
+          style:height={dims[k] ? `${Math.round(dims[k][1] * scale)}px` : null}
+        />
+        <figcaption>{caption(k)}{scale > 1 ? ` · shown ×${scale}` : scale < 1 ? ` · shown at ${Math.round(scale * 100)}%` : " · actual size"}</figcaption>
+      </figure>
+    </div>
+  {/if}
+
   {#if adding}
     <div class="addbar">
       <input placeholder="/home/me/roms" bind:value={addDir} onkeydown={(e) => e.key === "Enter" && addDir && addFolder()} />
@@ -808,34 +892,71 @@
           </div>
 
           {#if tab === "details"}
-            <div class="hero">
-              {#if detail.art.hero}<img src={detail.art.hero} alt="Hero art of {row.title}" />
-              {:else if detail.art.snap}<img src={detail.art.snap} alt="In-game screenshot of {row.title}" />
-              {:else}<span>No hero art. Keys for SteamGridDB, ScreenScraper or IGDB in Settings can fill it.</span>{/if}
-            </div>
-            <div class="overview">
-              <div class="cover">
-                {#if detail.art.boxart}<img src={detail.art.boxart} alt="Box art of {row.title}" />{:else}<span>No box art</span>{/if}
-              </div>
-              <dl class="facts">
-                {#if f.releaseyear}<dt>Released</dt><dd>{released(f)}</dd>{/if}
-                {#if f.genre}<dt>Genre</dt><dd>{f.genre}</dd>{/if}
-                {#if f.users}<dt>Players</dt><dd>{f.users}</dd>{/if}
-                {#if f.publisher}<dt>Publisher</dt><dd>{f.publisher}</dd>{/if}
-                {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
-                <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
-              </dl>
-            </div>
-            {#if f.description}<p class="desc">{f.description}</p>{/if}
-            <div class="gallery">
-              {#each artKinds as [k, label]}
-                <figure class:missing={!detail.art[k]}>
-                  {#if detail.art[k]}<img src={detail.art[k]} alt="{label} of {row.title}" />{:else}<span>—</span>{/if}
-                  <figcaption>{label}</figcaption>
-                </figure>
-              {/each}
+            {#snippet shot(kind, cls)}
+              <button class="shot {cls}" onclick={() => (viewer = { kind, src: detail.art[kind] })} title="{caption(kind)} — click for full size">
+                <img src={detail.art[kind]} alt="{artLabel[kind]} of {row.title}" onload={(e) => sized(kind, e)} />
+              </button>
+            {/snippet}
+            {#if detail.art.hero}
+              <figure class="fanart">
+                {@render shot("hero", "")}
+                <figcaption>{caption("hero")}</figcaption>
+              </figure>
+            {:else if showEmpty}
+              <figure class="fanart empty"><span>No fanart. Keys for SteamGridDB, ScreenScraper or IGDB in Settings can fill it.</span><figcaption>Fanart</figcaption></figure>
+            {/if}
 
+            <div class="overview">
+              {#if detail.art.boxart}
+                <figure class="cover">
+                  {@render shot("boxart", "")}
+                  <figcaption>{caption("boxart")}</figcaption>
+                </figure>
+              {:else if showEmpty}
+                <figure class="cover empty"><span>No box art</span><figcaption>Box art</figcaption></figure>
+              {/if}
+              <div class="about">
+                {#if detail.art.logo}
+                  <figure class="logo">
+                    {@render shot("logo", "")}
+                    <figcaption>{caption("logo")}</figcaption>
+                  </figure>
+                {:else if showEmpty}
+                  <figure class="logo empty"><span>No logo</span><figcaption>Logo</figcaption></figure>
+                {/if}
+                <dl class="facts">
+                  {#if f.releaseyear}<dt>Released</dt><dd>{released(f)}</dd>{/if}
+                  {#if f.genre}<dt>Genre</dt><dd>{f.genre}</dd>{/if}
+                  {#if f.users}<dt>Players</dt><dd>{f.users}</dd>{/if}
+                  {#if f.game_mode}<dt>Modes</dt><dd>{f.game_mode}</dd>{/if}
+                  {#if f.developer}<dt>Developer</dt><dd>{f.developer}</dd>{/if}
+                  {#if f.publisher}<dt>Publisher</dt><dd>{f.publisher}</dd>{/if}
+                  {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
+                  <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
+                </dl>
+              </div>
             </div>
+
+            {#if f.description}
+              <h3>Overview</h3>
+              <p class="desc">{f.description}</p>
+            {/if}
+
+            {#if mediaKinds.some((k) => detail.art[k]) || showEmpty}
+              <h3>Media</h3>
+              <div class="gallery">
+                {#each mediaKinds as k}
+                  {#if detail.art[k]}
+                    <figure class="media">
+                      {@render shot(k, "")}
+                      <figcaption>{caption(k)}</figcaption>
+                    </figure>
+                  {:else if showEmpty}
+                    <figure class="media empty"><span>—</span><figcaption>{artLabel[k]}</figcaption></figure>
+                  {/if}
+                {/each}
+              </div>
+            {/if}
             <h3>Files</h3>
             <ul class="files">
               {#each detail.files as file}
@@ -846,46 +967,65 @@
               {/each}
             </ul>
           {:else if tab === "development"}
-            <dl class="facts wide">
-              <dt>Developer</dt><dd>{f.developer ?? "—"}</dd>
-              <dt>Publisher</dt><dd>{f.publisher ?? "—"}</dd>
-              <dt>Released</dt><dd>{released(f) || "—"}</dd>
-              {#if f.country}<dt>Country</dt><dd>{f.country}</dd>{/if}
-              {#if f.director}<dt>Director</dt><dd>{f.director}</dd>{/if}
-              {#if f.designer}<dt>Designer</dt><dd>{f.designer}</dd>{/if}
-              {#if f.composer}<dt>Composer</dt><dd>{f.composer}</dd>{/if}
-              {#if f.game_mode}<dt>Modes</dt><dd>{f.game_mode}</dd>{/if}
-              {#if f.serial}<dt>Serial</dt><dd>{f.serial}</dd>{/if}
-              {#if f.series}<dt>Series</dt><dd>{f.series}{f.series_ordinal ? ` (#${f.series_ordinal})` : ""}</dd>{:else if f.franchise}<dt>Franchise</dt><dd>{f.franchise}</dd>{/if}
-              <dt>DATs</dt><dd>{detail.dats.join(", ") || "—"}</dd>
-            </dl>
-            {#if !f.wikidata}<p class="hint">Not matched on Wikidata yet: Enrich looks it up; Search settles games it can't tell apart.</p>{/if}
+            {@const groups = devGroups(f, detail)}
+            {#each groups as [heading, rows]}
+              <section class="group">
+                <h3>{heading}</h3>
+                <dl class="facts wide">
+                  {#each rows as [k, v, url]}
+                    <dt>{k}</dt>
+                    <dd>{#if url}<a href={url} onclick={(e) => { e.preventDefault(); openUrl(url).catch((err) => (error = String(err))); }}>{v}</a>{:else}{v}{/if}</dd>
+                  {/each}
+                </dl>
+              </section>
+            {/each}
+            {#if !f.wikidata}
+              <p class="hint">Not matched on Wikidata yet, so studios and credits are what libretro knows. Enrich looks it up; Search settles games it can't tell apart.</p>
+            {/if}
           {:else if tab === "series"}
             {#if detail.series.length}
-              <ol class="series">
-                {#each detail.series as s}
-                  <li class:current={s.current}>
-                    <span class="year">{s.ordinal ? `#${s.ordinal}` : ""}</span>
-                    <span class="year">{s.year ?? "—"}</span>
-                    {s.title}
-                    <span class="sys">{s.in_library ? (s.system || "in your library") : ""}</span>
-                  </li>
-                {/each}
-              </ol>
-              <p class="hint">
-                {f.series ? `The ${f.series} series on Wikidata, in order.` : `Games in the “${f.franchise}” franchise that romforge has metadata for.`}
+              <p class="meta">
+                {f.series ? `${f.series} · from Wikidata, in series order` : `${f.franchise} franchise · the games romforge has metadata for, oldest first`}
               </p>
+              <table class="series">
+                <thead><tr><th class="num">#</th><th class="num">Year</th><th>Title</th><th>In your library</th></tr></thead>
+                <tbody>
+                  {#each detail.series as s}
+                    {@const mine = s.in_library && !s.current ? lib.rows.find((r) => r.system === s.system && r.title === s.title) : null}
+                    <tr class:current={s.current}>
+                      <td class="num">{s.ordinal ?? ""}</td>
+                      <td class="num">{s.year ?? "—"}</td>
+                      <td>
+                        {#if mine}<button class="linkish" onclick={() => open(mine.id)} title="Show this game">{s.title}</button>
+                        {:else}{s.title}{#if s.current} <span class="badge">this game</span>{/if}{/if}
+                      </td>
+                      <td class="sys">{s.in_library ? (lib.platforms.find((p) => p.system === s.system)?.name ?? s.system ?? "yes") : ""}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
             {:else}
-              <p class="hint">No series known for this game yet.</p>
+              <p class="hint">No series known for this game yet. Enrich fills it from Wikidata (series) or libretro (franchise).</p>
             {/if}
           {:else}
             {#if detail.links.length}
-              <ul class="links">
-                {#each detail.links as l}
-                  <li><a href={l.url} onclick={(e) => { e.preventDefault(); openUrl(l.url).catch((err) => (error = String(err))); }}>{l.label}</a><span class="hint">{l.direct ? "game page" : "search"}</span></li>
-                {/each}
-              </ul>
-              <p class="hint">Game pages come from Wikidata's IDs; the rest are searches.</p>
+              {#each [[true, "Game pages", "This game's own page, from the IDs Wikidata keeps."], [false, "Searches", "No ID known yet: these search the site for the title."]] as [direct, heading, hint]}
+                {@const ls = detail.links.filter((l) => l.direct === direct)}
+                {#if ls.length}
+                  <section class="group">
+                    <h3>{heading}</h3>
+                    <p class="hint">{hint}</p>
+                    <ul class="links">
+                      {#each ls as l}
+                        <li>
+                          <a href={l.url} onclick={(e) => { e.preventDefault(); openUrl(l.url).catch((err) => (error = String(err))); }}>{l.label}</a>
+                          <span class="hint host">{new URL(l.url).host}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  </section>
+                {/if}
+              {/each}
             {:else}
               <p class="hint">Identify this file first to get links.</p>
             {/if}
@@ -1058,34 +1198,59 @@
   .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-bottom: 0.75rem; }
   .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.7rem; color: var(--muted); }
   .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
-  .hero { height: 9rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; display: grid; place-items: center; color: var(--muted); font-size: 0.85rem; }
-  .hero img { width: 100%; height: 100%; object-fit: cover; }
-  .overview { display: flex; gap: 1rem; margin-top: 0.75rem; }
-  .cover { width: 8rem; flex: none; min-height: 6rem; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; color: var(--muted); font-size: 0.8rem; overflow: hidden; }
-  .cover img { width: 100%; display: block; }
+  /* Every image keeps its own aspect ratio and is never scaled past its
+     own pixels in Details; click one for full size. */
+  .shot { display: block; padding: 0; border: none; background: none; cursor: zoom-in; border-radius: 0; line-height: 0; }
+  .shot img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figure { margin: 0; }
+  figcaption { font-size: 0.72rem; color: var(--muted); padding: 0.2rem 0.1rem 0; line-height: 1.3; }
+  figure.empty span { display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); font-size: 0.8rem; border: 1px dashed var(--line); border-radius: 6px; }
+  .fanart { margin-bottom: 0.75rem; }
+  .fanart .shot img { max-height: 16rem; border-radius: 6px; }
+  .fanart.empty span { height: 5rem; }
+  .overview { display: flex; gap: 1rem; align-items: flex-start; }
+  /* Portrait (most boxes) and landscape (SNES, N64) both fit: the cover
+     takes the width its own aspect needs, up to 45% of the panel. */
+  .cover { flex: 0 1 auto; max-width: 45%; }
+  .cover .shot img { border-radius: 4px; max-height: 15rem; margin: 0; }
+  .cover.empty span { height: 14rem; }
+  .about { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  .logo { align-self: flex-start; }
+  .logo .shot img { max-height: 4.5rem; max-width: 16rem; margin: 0; }
+  .logo.empty span { height: 3rem; width: 10rem; }
   .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; align-content: start; font-size: 0.9rem; }
   .facts.wide { max-width: 40rem; }
   dt { color: var(--muted); }
   dd { margin: 0; }
-  .desc { line-height: 1.55; }
-  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 0.5rem; margin-top: 0.75rem; }
-  figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
-  figure img { width: 100%; height: 5.5rem; object-fit: contain; display: block; background: #0002; }
-  figure.missing span { height: 5.5rem; display: grid; place-items: center; color: var(--muted); }
-  figcaption { font-size: 0.72rem; color: var(--muted); padding: 0.15rem 0.35rem; }
+  .detail h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+  .desc { line-height: 1.55; margin: 0; }
+  .gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; }
+  .media .shot img { max-height: 10rem; max-width: min(100%, 18rem); background: #0002; }
+  .media.empty span { height: 6rem; width: 8rem; }
+  .viewer { cursor: zoom-out; }
+  .viewer figure { display: flex; flex-direction: column; align-items: center; }
+  .viewer img { max-width: 92vw; max-height: 82vh; object-fit: contain; box-shadow: 0 8px 30px #0008; }
+  .viewer img.pixels { image-rendering: pixelated; max-width: none; max-height: none; }
+  .viewer figcaption { color: #ddd; font-size: 0.85rem; padding-top: 0.5rem; }
   .files { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
   .files li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.15rem 0; overflow: hidden; }
   /* rtl on the box and <bdi> inside: long paths are cut at the start, the
      file name stays visible, and the text itself keeps its order */
   .fpath { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; min-width: 0; }
-  .series { padding-left: 0; list-style: none; }
-  .series li { display: flex; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }
-  .series li.current { font-weight: 600; }
-  .series .year { color: var(--muted); width: 3rem; }
-  .series .sys { margin-left: auto; }
-  .links { list-style: none; padding: 0; }
-  .links li { display: flex; gap: 0.5rem; padding: 0.3rem 0; }
-  .links a { color: var(--accent); }
+  .group h3 { margin-top: 0.5rem; }
+  .group + .group { border-top: 1px solid var(--line); margin-top: 0.75rem; }
+  .group .hint { margin: 0 0 0.3rem; }
+  table.series { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .series th { text-align: left; font-weight: 500; color: var(--muted); font-size: 0.8rem; border-bottom: 1px solid var(--line); padding: 0.2rem 0.4rem; }
+  .series td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--line); }
+  .series .num { width: 3rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .series tr.current td { background: var(--accent-bg); font-weight: 600; }
+  .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; font: inherit; }
+  .linkish:hover { text-decoration: underline; }
+  .links { list-style: none; padding: 0; margin: 0; }
+  .links li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.25rem 0; }
+  .links a { color: var(--accent); min-width: 9rem; }
+  .links .host { font-size: 0.8rem; }
   .hint { color: var(--muted); font-size: 0.85rem; }
   .empty { padding: 2rem 1rem; color: var(--muted); text-align: center; }
   .empty h2 { color: var(--text); }
@@ -1148,9 +1313,8 @@
   .sposter img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .sinfo { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; max-height: 17rem; overflow-y: auto; }
   .sinfo .desc { font-size: 0.85rem; color: var(--muted); }
-  .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; margin: 0; }
-  .facts dt { color: var(--muted); }
-  .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .sinfo .facts { gap: 0.15rem 0.6rem; font-size: 0.8rem; }
+  .sinfo .facts dd { overflow-wrap: anywhere; }
   .own { margin-top: auto; padding-top: 0.4rem; }
   .own label { font-size: 0.85rem; font-weight: 600; }
   .flabel { font-weight: 600; font-size: 0.9rem; }
