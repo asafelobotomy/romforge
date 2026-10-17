@@ -47,8 +47,12 @@ romforge-cli dat download SNES PlayStation    # or --all for every system
 Cartridge systems (`[no-intro]` in `dat systems`) get No-Intro DATs from
 [libretro-database](https://github.com/libretro/libretro-database)'s mirror,
 because DAT-o-MATIC only hands DATs out through its download form. Disc
-systems (`[redump]`) get Redump's game and BIOS DATs from redump.org. Run
-it again to update; an unchanged DAT is left alone. Downloads are spaced
+systems (`[redump]`) get Redump's game and BIOS DATs from redump.org. Home
+computers (`[tosec]`) get TOSEC's DATs from the latest pack on
+[tosecdev.org](https://www.tosecdev.org) (one ~100 MB download, skipped once
+that release is imported). `--extras` adds libretro's ROM hack and homebrew
+DATs (`[hacks]`, `[homebrew]`). Run it again to update; an unchanged DAT is
+left alone. Downloads are spaced
 out per site and never saved to disk; the DAT ends up in the database.
 
 DATs you downloaded yourself import too, as `.dat` or as a zip of one or

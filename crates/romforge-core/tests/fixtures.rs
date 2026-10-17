@@ -794,11 +794,11 @@ fn download_refuses_systems_without_a_source() {
     let mut lib = Library::open_in_memory().unwrap();
     let mut called = false;
     let err = lib
-        .download_dats("Arcade", |_, _| called = true)
+        .download_dats("Arcade", true, |_, _| called = true)
         .unwrap_err()
         .to_string();
     assert!(err.contains("no DAT source"), "{err}");
-    assert!(lib.download_dats("nope", |_, _| called = true).is_err());
+    assert!(lib.download_dats("nope", true, |_, _| called = true).is_err());
     assert!(!called, "nothing fetched");
 }
 
@@ -840,7 +840,7 @@ fn mirror_dat_counts_for_the_no_intro_main_set() {
 
     let mut lib = Library::open_in_memory().unwrap();
     let xml = std::fs::read(fixtures().join("dats/gb.dat")).unwrap();
-    let url = Source::NoIntro("Nintendo - Game Boy").url();
+    let url = Source::NoIntro("Nintendo - Game Boy").url().unwrap();
     lib.import_dat_bytes(&xml, &url, Some("Game Boy")).unwrap();
     let profile = [
         ProfileEntry {
@@ -878,5 +878,20 @@ fn same_name_from_another_source_is_kept() {
         .import_dat_bytes(v3.as_bytes(), "https://a.example/gb.dat", None)
         .unwrap();
     assert_eq!(a2.replaced, Some(a.dat_id), "same URL, newer version replaces");
+    assert_eq!(lib.summary().unwrap().dats.len(), 2);
+}
+
+#[test]
+fn newer_tosec_release_replaces_older_one() {
+    let xml = std::fs::read_to_string(fixtures().join("dats/gb.dat")).unwrap();
+    let v2 = xml.replace("<version>1</version>", "<version>2</version>");
+    let mut lib = Library::open_in_memory().unwrap();
+    let old = "https://www.tosecdev.org/downloads/category/58-2024-03-31?download=1#TOSEC/Nintendo Game Boy - Games (TOSEC-v2024).dat";
+    let new = "https://www.tosecdev.org/downloads/category/59-2025-03-13?download=2#TOSEC/Nintendo Game Boy - Games (TOSEC-v2025).dat";
+    let a = lib.import_dat_bytes(xml.as_bytes(), old, None).unwrap();
+    let b = lib.import_dat_bytes(v2.as_bytes(), new, None).unwrap();
+    assert_eq!(b.replaced, Some(a.dat_id));
+    let file = lib.import_dat_bytes(xml.as_bytes(), "/tmp/gb.dat", None).unwrap();
+    assert_eq!(file.replaced, None, "a hand import never replaces a download");
     assert_eq!(lib.summary().unwrap().dats.len(), 2);
 }

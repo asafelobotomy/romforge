@@ -182,10 +182,41 @@ impl Library {
             .collect()
     }
 
-    /// Download one DAT and import it for `system_key`. Downloading the same
-    /// DAT again changes nothing; a newer one replaces the old.
-    pub fn download_dat(&mut self, system_key: &str, source: fetch::Source) -> Result<ImportedDat, Error> {
-        let url = source.url();
+    /// Download a source's DATs and import them for `system_key`: one DAT,
+    /// or every DAT of a TOSEC system. Downloading the same DAT again changes
+    /// nothing; a newer one replaces the old. An empty result means the
+    /// TOSEC release is already imported for this system, so the pack was not
+    /// fetched.
+    pub fn download_dat(
+        &mut self,
+        system_key: &str,
+        source: fetch::Source,
+    ) -> Result<Vec<ImportedDat>, Error> {
+        if let fetch::Source::Tosec(name) = source {
+            let url = fetch::tosec_pack_url()?;
+            let prefix = format!("{url}#TOSEC/{name} - ");
+            let have: bool = self.conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM dats WHERE substr(source_path, 1, length(?1)) = ?1)",
+                [&prefix],
+                |r| r.get(0),
+            )?;
+            if have {
+                return Ok(Vec::new());
+            }
+            let pack = fetch::tosec_pack(&url)?;
+            let dats = fetch::tosec_dats(&pack, name)?;
+            if dats.is_empty() {
+                return Err(Error::Dat(format!("the TOSEC pack has no {name} DATs")));
+            }
+            return dats
+                .into_iter()
+                .map(|d| {
+                    let source = format!("{url}#{}", d.member.unwrap_or_default());
+                    self.import_dat_bytes(&d.bytes, &source, Some(system_key))
+                })
+                .collect();
+        }
+        let url = source.url().unwrap_or_default();
         let body = fetch::get(&url)?;
         let head = String::from_utf8_lossy(&body[..body.len().min(512)]).to_ascii_lowercase();
         if head.contains("<html") || head.contains("<!doctype html") {
@@ -199,20 +230,21 @@ impl Library {
             )));
         }
         let dat = dats.remove(0);
-        self.import_dat_bytes(&dat.bytes, &url, Some(system_key))
+        Ok(vec![self.import_dat_bytes(&dat.bytes, &url, Some(system_key))?])
     }
 
-    /// Download and import every DAT of a system ([`fetch::sources`]),
-    /// reporting each one as it finishes; one failing does not stop the
-    /// rest.
+    /// Download and import every DAT of a system ([`fetch::sources`]; hacks
+    /// and homebrew with `extras`), reporting each source as it finishes;
+    /// one failing does not stop the rest.
     pub fn download_dats(
         &mut self,
         system_key: &str,
-        mut each: impl FnMut(fetch::Source, Result<ImportedDat, Error>),
+        extras: bool,
+        mut each: impl FnMut(fetch::Source, Result<Vec<ImportedDat>, Error>),
     ) -> Result<(), Error> {
         let system =
             systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
-        let sources = fetch::sources(system);
+        let sources = fetch::sources(system, extras);
         if sources.is_empty() {
             return Err(Error::NoDownload(system.key));
         }
@@ -287,21 +319,34 @@ impl Library {
 
         let tx = self.conn.transaction()?;
         // The same file again is a no-op; a new version of a DAT (same name,
-        // and same URL for downloads) replaces the old one, and folders
-        // scoped to it follow along. No-Intro and Redump both name a DAT
+        // and same source family: see `fetch::source_family`) replaces the
+        // old one, and folders scoped to it follow along. No-Intro and Redump both name a DAT
         // "Sony - PlayStation Portable", so a download never replaces a
         // same-named DAT from elsewhere.
-        let existing: Option<(i64, String)> = tx
-            .query_row(
-                "SELECT dat_id, source_sha256 FROM dats
-                 WHERE source_sha256 = ?2
-                    OR (name = ?1 AND (source_path = ?3
-                        OR (?3 NOT LIKE 'http%' AND source_path NOT LIKE 'http%')))
-                 ORDER BY source_sha256 = ?2 DESC LIMIT 1",
-                params![dat.name, sha256, source],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
+        let existing: Option<(i64, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT dat_id, source_sha256, source_path FROM dats
+                 WHERE source_sha256 = ?2 OR name = ?1
+                 ORDER BY source_sha256 = ?2 DESC, dat_id",
+            )?;
+            let rows = stmt.query_map(params![dat.name, sha256], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?;
+            let family = fetch::source_family(source);
+            let mut found = None;
+            for row in rows {
+                let (id, sha, path) = row?;
+                if sha == sha256 || fetch::source_family(&path) == family {
+                    found = Some((id, sha));
+                    break;
+                }
+            }
+            found
+        };
         if let Some((old_id, old_sha)) = &existing
             && *old_sha == sha256
         {

@@ -1,13 +1,19 @@
 //! Downloading DATs.
 //!
 //! Where each system's DATs come from is in [`crate::systems`]:
-//! - `redump`: Redump serves DATs at `http://redump.org/datfile/<code>/`
-//!   (game DATs as zips, BIOS DATs as plain clrmamepro text).
 //! - `nointro`: No-Intro's data may be reused freely, but DAT-o-MATIC hands
 //!   DATs out only through its download form, so romforge takes them from
 //!   libretro-database's public mirror on GitHub instead. For DATs downloaded
 //!   from DAT-o-MATIC by hand, the public `profile.xml` says which are out of
 //!   date.
+//! - `redump`: Redump serves DATs at `http://redump.org/datfile/<code>/`
+//!   (game DATs as zips, BIOS DATs as plain clrmamepro text).
+//! - `tosec`: TOSEC publishes one zip of all its DATs per release (about
+//!   100 MB). The latest release is found on tosecdev.org's download page;
+//!   the pack is fetched at most once per run and not at all when its DATs
+//!   for a system are already imported.
+//! - `hacks`, `homebrew`: libretro-database's own small DATs, fetched only
+//!   when asked for ([`sources`] with `extras`).
 //!
 //! Requests to one host are spaced out ([`delay_for`]; DAT-o-MATIC's
 //! robots.txt asks for 5 s). Downloads stay in memory and are never written
@@ -15,7 +21,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, Cursor, Read};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use quick_xml::XmlVersion;
@@ -27,12 +33,14 @@ use crate::systems::System;
 
 pub const USER_AGENT: &str = concat!("romforge/", env!("CARGO_PKG_VERSION"));
 pub const REDUMP_BASE: &str = "http://redump.org";
+pub const LIBRETRO_BASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat";
 pub const LIBRETRO_NOINTRO_BASE: &str =
     "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro";
+pub const TOSEC_BASE: &str = "https://www.tosecdev.org";
 pub const NOINTRO_PROFILE_URL: &str = "https://datomatic.no-intro.org/profile.xml";
 pub const NOINTRO_DOWNLOAD_PAGE: &str = "https://datomatic.no-intro.org/index.php?page=download";
-/// No DAT is near this; it only stops a runaway response.
-const MAX_BODY: u64 = 256 << 20;
+/// No DAT pack is near this; it only stops a runaway response.
+const MAX_BODY: u64 = 512 << 20;
 
 /// Minimum time between two requests to `host`.
 pub fn delay_for(host: &str) -> Duration {
@@ -43,36 +51,80 @@ pub fn delay_for(host: &str) -> Duration {
     }
 }
 
-/// One downloadable DAT for a system.
+/// One downloadable DAT (or, for TOSEC, group of DATs) for a system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", content = "name", rename_all = "snake_case")]
 pub enum Source {
-    /// A Redump DAT code, e.g. `psx` or `psx-bios`.
-    Redump(&'static str),
     /// A file in libretro-database's No-Intro mirror, without `.dat`.
     NoIntro(&'static str),
+    /// A Redump DAT code, e.g. `psx` or `psx-bios`.
+    Redump(&'static str),
+    /// A TOSEC system name; every `<name> - ...` DAT in the pack.
+    Tosec(&'static str),
+    /// A file in libretro-database's `hacks` folder.
+    Hacks(&'static str),
+    /// A file in libretro-database's `homebrew` folder.
+    Homebrew(&'static str),
 }
 
 impl Source {
-    pub fn url(&self) -> String {
-        match self {
-            Source::Redump(code) => format!("{REDUMP_BASE}/datfile/{code}/"),
-            Source::NoIntro(name) => format!("{LIBRETRO_NOINTRO_BASE}/{}.dat", percent_encode(name)),
+    /// The DAT's URL; `None` for TOSEC, whose pack URL changes per release
+    /// ([`tosec_pack_url`]).
+    pub fn url(&self) -> Option<String> {
+        let libretro = |dir: &str, name: &str| format!("{LIBRETRO_BASE}/{dir}/{}.dat", percent_encode(name));
+        match *self {
+            Source::NoIntro(name) => Some(libretro("no-intro", name)),
+            Source::Redump(code) => Some(format!("{REDUMP_BASE}/datfile/{code}/")),
+            Source::Tosec(_) => None,
+            Source::Hacks(name) => Some(libretro("hacks", name)),
+            Source::Homebrew(name) => Some(libretro("homebrew", name)),
         }
     }
 
-    /// Whether `source_path` (as stored for an imported DAT) came from here.
+    /// Whether `source_path` (as stored for an imported DAT) came from the
+    /// No-Intro mirror.
     pub fn is_mirror_url(source_path: &str) -> bool {
         source_path.starts_with(LIBRETRO_NOINTRO_BASE)
     }
 }
 
-/// Every DAT `dat download` fetches for `system`: No-Intro first, then
-/// Redump games and BIOS.
-pub fn sources(system: &System) -> Vec<Source> {
-    let nointro = system.nointro.iter().copied().map(Source::NoIntro);
-    let redump = system.redump.iter().copied().map(Source::Redump);
-    nointro.chain(redump).collect()
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Source::NoIntro(n) => write!(f, "No-Intro (libretro) {n}"),
+            Source::Redump(c) => write!(f, "Redump {c}"),
+            Source::Tosec(n) => write!(f, "TOSEC {n}"),
+            Source::Hacks(n) => write!(f, "hacks (libretro) {n}"),
+            Source::Homebrew(n) => write!(f, "homebrew (libretro) {n}"),
+        }
+    }
+}
+
+/// Every DAT `dat download` fetches for `system`: No-Intro, Redump games
+/// and BIOS, TOSEC, and with `extras` the hacks and homebrew DATs.
+pub fn sources(system: &System, extras: bool) -> Vec<Source> {
+    let mut out: Vec<Source> = (system.nointro.iter().copied().map(Source::NoIntro))
+        .chain(system.redump.iter().copied().map(Source::Redump))
+        .chain(system.tosec.iter().copied().map(Source::Tosec))
+        .collect();
+    if extras {
+        out.extend(system.hacks.iter().copied().map(Source::Hacks));
+        out.extend(system.homebrew.iter().copied().map(Source::Homebrew));
+    }
+    out
+}
+
+/// Which earlier import a downloaded or imported DAT of the same name
+/// replaces: one from the same URL, from any TOSEC release, or (for files)
+/// any file.
+pub(crate) fn source_family(source_path: &str) -> &str {
+    if source_path.starts_with(TOSEC_BASE) {
+        "tosec"
+    } else if source_path.starts_with("http://") || source_path.starts_with("https://") {
+        source_path
+    } else {
+        "file"
+    }
 }
 
 fn percent_encode(s: &str) -> String {
@@ -87,13 +139,103 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
+/// The URL of the newest TOSEC DAT pack, read from tosecdev.org's download
+/// pages (each release is a `/downloads/category/<n>-<yyyy-mm-dd>` page with
+/// a "TOSEC - DAT Pack - Complete" link). Looked up once per run.
+pub fn tosec_pack_url() -> Result<String, Error> {
+    static URL: Mutex<Option<String>> = Mutex::new(None);
+    let mut cached = URL.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(url) = &*cached {
+        return Ok(url.clone());
+    }
+    let index = String::from_utf8_lossy(&get(&format!("{TOSEC_BASE}/downloads"))?).into_owned();
+    let release = latest_tosec_release(&index)
+        .ok_or_else(|| Error::Http("tosecdev.org: no release found on the downloads page".into()))?;
+    let page = String::from_utf8_lossy(&get(&format!("{TOSEC_BASE}{release}"))?).into_owned();
+    let url = tosec_pack_link(&page)
+        .map(|href| format!("{TOSEC_BASE}{href}"))
+        .ok_or_else(|| Error::Http(format!("tosecdev.org{release}: no DAT pack link")))?;
+    *cached = Some(url.clone());
+    Ok(url)
+}
+
+/// The `/downloads/category/<n>-<date>` link with the latest date.
+fn latest_tosec_release(html: &str) -> Option<String> {
+    const PREFIX: &str = "href=\"/downloads/category/";
+    html.match_indices(PREFIX)
+        .filter_map(|(i, _)| {
+            let rest = &html[i + PREFIX.len()..];
+            let slug = &rest[..rest.find('"')?];
+            let (_, date) = slug.split_once('-')?;
+            let is_date = date.len() == 10
+                && date.bytes().enumerate().all(|(i, b)| match i {
+                    4 | 7 => b == b'-',
+                    _ => b.is_ascii_digit(),
+                });
+            is_date.then(|| (date.to_owned(), format!("/downloads/category/{slug}")))
+        })
+        .max()
+        .map(|(_, path)| path)
+}
+
+/// The "DAT Pack - Complete" download link on a release page.
+fn tosec_pack_link(html: &str) -> Option<String> {
+    html.match_indices("href=\"")
+        .filter_map(|(i, m)| {
+            let rest = &html[i + m.len()..];
+            Some(&rest[..rest.find('"')?])
+        })
+        .find(|href| href.contains("?download=") && href.contains("tosec-dat-pack-complete"))
+        .map(|href| href.replace("&amp;", "&"))
+}
+
+/// The TOSEC pack at `url`, downloaded once per run and shared.
+pub fn tosec_pack(url: &str) -> Result<Arc<Vec<u8>>, Error> {
+    static PACK: Mutex<Option<(String, Arc<Vec<u8>>)>> = Mutex::new(None);
+    let mut cached = PACK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((u, bytes)) = &*cached
+        && u == url
+    {
+        return Ok(bytes.clone());
+    }
+    let bytes = Arc::new(get(url)?);
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Err(Error::Http(format!("{url}: not a zip")));
+    }
+    *cached = Some((url.to_owned(), bytes.clone()));
+    Ok(bytes)
+}
+
+/// The DATs in a TOSEC pack for system `name`: `TOSEC/<name> - *.dat`,
+/// sorted. Only the main `TOSEC/` folder; `TOSEC-ISO`, `TOSEC-PIX` and the
+/// cue sheets are left out.
+pub fn tosec_dats(pack: &[u8], name: &str) -> Result<Vec<DatBytes>, Error> {
+    let prefix = format!("TOSEC/{name} - ");
+    let mut zip = zip::ZipArchive::new(Cursor::new(pack))?;
+    let mut out = Vec::new();
+    for i in 0..zip.len() {
+        let mut member = zip.by_index(i)?;
+        let member_name = member.name()?.into_owned();
+        if member.is_file() && member_name.starts_with(&prefix) && member_name.ends_with(".dat") {
+            let mut buf = Vec::new();
+            member.read_to_end(&mut buf)?;
+            out.push(DatBytes {
+                member: Some(member_name),
+                bytes: buf,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.member.cmp(&b.member));
+    Ok(out)
+}
+
 /// GET `url` into memory, waiting first if the same host was asked less than
 /// [`delay_for`] ago.
 pub fn get(url: &str) -> Result<Vec<u8>, Error> {
     wait_for_host(url);
     let agent = ureq::Agent::config_builder()
         .user_agent(USER_AGENT)
-        .timeout_global(Some(Duration::from_secs(120)))
+        .timeout_global(Some(Duration::from_secs(900)))
         .tls_config(
             TlsConfig::builder()
                 .root_certs(RootCerts::PlatformVerifier)
@@ -238,7 +380,7 @@ mod tests {
     #[test]
     fn sources_come_from_the_systems_table() {
         let psx = systems::by_key("PlayStation").unwrap();
-        let urls: Vec<_> = sources(psx).iter().map(Source::url).collect();
+        let urls: Vec<_> = sources(psx, false).iter().map(|s| s.url().unwrap()).collect();
         assert_eq!(
             urls,
             [
@@ -246,12 +388,50 @@ mod tests {
                 "http://redump.org/datfile/psx-bios/"
             ]
         );
-        let gba = sources(systems::by_key("Game Boy Advance").unwrap());
+        assert_eq!(sources(psx, true).len(), 3, "plus the PlayStation hacks DAT");
+        let gba = sources(systems::by_key("Game Boy Advance").unwrap(), false);
         assert_eq!(
-            gba[0].url(),
+            gba[0].url().unwrap(),
             "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat"
         );
-        assert!(sources(systems::by_key("Arcade").unwrap()).is_empty());
+        let c64 = sources(systems::by_key("Commodore 64").unwrap(), false);
+        assert_eq!(c64.last(), Some(&Source::Tosec("Commodore C64")));
+        assert_eq!(c64.last().unwrap().url(), None);
+        assert!(sources(systems::by_key("Arcade").unwrap(), true).is_empty());
+    }
+
+    #[test]
+    fn finds_latest_tosec_release_and_pack_link() {
+        let index = r#"<a href="/downloads/category/22-datfiles">x</a>
+            <a href="/downloads/category/59-2025-03-13">x</a>
+            <a href="/downloads/category/58-2024-03-31">x</a>
+            <a href="/downloads/category/8-tosec-dat-explorer">x</a>"#;
+        assert_eq!(
+            latest_tosec_release(index).as_deref(),
+            Some("/downloads/category/59-2025-03-13")
+        );
+        let page = r#"<a href="/downloads/category/22-datfiles">x</a>
+            <a href="/downloads/category/59-2025-03-13?download=117:tosec-dat-pack-complete-4743-tosec-v2025-03-13&amp;x=1">DAT</a>"#;
+        assert_eq!(
+            tosec_pack_link(page).as_deref(),
+            Some(
+                "/downloads/category/59-2025-03-13?download=117:tosec-dat-pack-complete-4743-tosec-v2025-03-13&x=1"
+            )
+        );
+        assert_eq!(latest_tosec_release("<html></html>"), None);
+    }
+
+    #[test]
+    fn source_families() {
+        assert_eq!(
+            source_family("https://www.tosecdev.org/a?download=1#TOSEC/x.dat"),
+            "tosec"
+        );
+        assert_eq!(
+            source_family("http://redump.org/datfile/psx/"),
+            "http://redump.org/datfile/psx/"
+        );
+        assert_eq!(source_family("/home/me/x.dat"), "file");
     }
 
     #[test]

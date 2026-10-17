@@ -64,15 +64,18 @@ enum DatCommand {
     },
     /// Download and import the DATs of systems (see `dat systems`)
     ///
-    /// Cartridge systems get No-Intro DATs from libretro-database's mirror;
-    /// disc systems get Redump game and BIOS DATs from redump.org. Run it
-    /// again to update.
+    /// Cartridge systems get No-Intro DATs from libretro-database's mirror,
+    /// disc systems Redump game and BIOS DATs from redump.org, and home
+    /// computers TOSEC DATs from tosecdev.org's pack. Run it again to update.
     Download {
         #[arg(required_unless_present = "all")]
         systems: Vec<String>,
         /// Every system that has a DAT source
         #[arg(long, conflicts_with = "systems")]
         all: bool,
+        /// Also libretro's ROM hack and homebrew DATs
+        #[arg(long)]
+        extras: bool,
     },
     /// Compare imported DATs with No-Intro's latest versions on DAT-o-MATIC
     Check {
@@ -104,11 +107,16 @@ fn main() -> Result<()> {
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
             let mut sources = String::new();
-            if !s.nointro.is_empty() {
-                sources += "  [no-intro]";
-            }
-            if !s.redump.is_empty() {
-                sources += "  [redump]";
+            for (has, tag) in [
+                (!s.nointro.is_empty(), "no-intro"),
+                (!s.redump.is_empty(), "redump"),
+                (!s.tosec.is_empty(), "tosec"),
+                (!s.hacks.is_empty(), "hacks"),
+                (!s.homebrew.is_empty(), "homebrew"),
+            ] {
+                if has {
+                    sources += &format!("  [{tag}]");
+                }
             }
             println!("{:<24} {}{sources}", s.key, s.name);
         }
@@ -125,11 +133,11 @@ fn main() -> Result<()> {
                 dats.into_iter().for_each(print_imported);
             }
         }
-        Command::Dat(DatCommand::Download { systems, all }) => {
+        Command::Dat(DatCommand::Download { systems, all, extras }) => {
             let keys: Vec<String> = if all {
                 systems::SYSTEMS
                     .iter()
-                    .filter(|s| !fetch::sources(s).is_empty())
+                    .filter(|s| !fetch::sources(s, extras).is_empty())
                     .map(|s| s.key.to_owned())
                     .collect()
             } else {
@@ -137,11 +145,12 @@ fn main() -> Result<()> {
             };
             let mut failed = 0;
             for key in keys {
-                lib.download_dats(&key, |source, result| match result {
-                    Ok(d) => print_imported(d),
+                lib.download_dats(&key, extras, |source, result| match result {
+                    Ok(dats) if dats.is_empty() => println!("{key}: {source}: already imported"),
+                    Ok(dats) => dats.into_iter().for_each(print_imported),
                     Err(e) => {
                         failed += 1;
-                        eprintln!("error: {key}: {}: {e}", source.url());
+                        eprintln!("error: {key}: {source}: {e}");
                     }
                 })
                 .with_context(|| format!("downloading DATs for {key}"))?;

@@ -25,6 +25,10 @@ end to end on the real collection, not just on fixtures.
      (`metadat/no-intro`, clrmamepro format, updated about weekly). Hand
      downloads from DAT-o-MATIC still import, and `dat check` compares them
      with the public `profile.xml`.
+   - **TOSEC**: home computers (and other systems neither covers), from the
+     complete DAT pack of the latest release on tosecdev.org (~100 MB zip,
+     read in memory; skipped when that release is already imported).
+   - **Extras** (`--extras`): libretro-database's ROM hack and homebrew DATs.
    Requests to one host are kept 1 s apart (5 s for DAT-o-MATIC, per its
    robots.txt).
 2. **Organize** — rename/move, 1G1R, always with a dry run and undo.
