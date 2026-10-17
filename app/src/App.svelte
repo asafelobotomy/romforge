@@ -20,7 +20,7 @@
 
   // Settings panel: a working copy, saved on "Save".
   let settingsOpen = $state(false);
-  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null });
+  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {} });
   let defaultStaging = $state("");
   let settingsError = $state("");
 
@@ -200,6 +200,31 @@
     ),
   );
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
+
+  // Virtual list: row height in px must match .tr in the styles.
+  const ROW = 32;
+  let scroller = $state(null);
+  let scrollTop = $state(0);
+  let viewH = $state(600);
+  let first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - 10));
+  let last = $derived(Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW) + 10));
+
+  // Up/Down move through the list when no text field has focus.
+  function listKeys(e) {
+    if (view !== "library" || settingsOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    e.preventDefault();
+    const i = rows.findIndex((r) => r.id === selected);
+    const j = Math.max(0, Math.min(rows.length - 1, e.key === "ArrowDown" ? i + 1 : i < 0 ? 0 : i - 1));
+    if (!rows[j]) return;
+    open(rows[j].id);
+    if (scroller) {
+      const top = j * ROW;
+      const head = 28;
+      if (top < scroller.scrollTop) scroller.scrollTop = top;
+      else if (top + ROW + head > scroller.scrollTop + viewH) scroller.scrollTop = top + ROW + head - viewH;
+    }
+  }
   let f = $derived(detail?.fields ?? {});
   let visibleGames = $derived(datGames.filter((g) => gameFilter === "all" || (gameFilter === "have") === g.have));
   let currentDat = $derived(summary.dats.find((d) => d.dat_id === datId));
@@ -207,7 +232,12 @@
   load();
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && settingsOpen && (settingsOpen = false)} />
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape" && settingsOpen) settingsOpen = false;
+    else listKeys(e);
+  }}
+/>
 
 <div class="app">
   <header class="toolbar">
@@ -286,6 +316,26 @@
           </div>
         </section>
 
+        <section class="setting">
+          <h3 class="sub">Online sources <span class="hint">(optional)</span></h3>
+          <p class="hint">Free sources that need no account are always used first. These fill only what they leave empty.</p>
+          <label for="sgdb">SteamGridDB API key</label>
+          <input id="sgdb" type="password" autocomplete="off" bind:value={draft.keys.steamgriddb_key} placeholder="Not set" />
+          <div class="two">
+            <div><label for="igdb-id">IGDB client ID</label><input id="igdb-id" autocomplete="off" bind:value={draft.keys.igdb_client_id} placeholder="Twitch app" /></div>
+            <div><label for="igdb-secret">IGDB client secret</label><input id="igdb-secret" type="password" autocomplete="off" bind:value={draft.keys.igdb_client_secret} /></div>
+          </div>
+          <div class="two">
+            <div><label for="ss-dev">ScreenScraper developer ID</label><input id="ss-dev" autocomplete="off" bind:value={draft.keys.screenscraper_dev_id} /></div>
+            <div><label for="ss-devpw">Developer password</label><input id="ss-devpw" type="password" autocomplete="off" bind:value={draft.keys.screenscraper_dev_password} /></div>
+          </div>
+          <div class="two">
+            <div><label for="ss-user">ScreenScraper user</label><input id="ss-user" autocomplete="off" bind:value={draft.keys.screenscraper_user} placeholder="Optional" /></div>
+            <div><label for="ss-pw">Password</label><input id="ss-pw" type="password" autocomplete="off" bind:value={draft.keys.screenscraper_password} /></div>
+          </div>
+          <p class="hint">Stored in romforge's database on this computer.</p>
+        </section>
+
         <p class="hint">Cleanup and rename itself arrives in milestone 10; these folders are used by Refresh and Play now.</p>
         {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
         <div class="actions">
@@ -338,7 +388,7 @@
             <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
           </div>
         {:else}
-          <div class="table">
+          <div class="table" bind:this={scroller} bind:clientHeight={viewH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
             <div class="thead">
               <span>Title</span>
               {#if platform === "*"}<span>Platform</span>{/if}
@@ -348,7 +398,10 @@
               <span class="ind" title="Title screen">Title</span>
               <span class="ind" title="In-game screenshot">Snap</span>
             </div>
-            {#each rows as r (r.id)}
+            <!-- Only the rows in view are drawn (fixed row height), so a list of
+                 tens of thousands stays quick. -->
+            <div style="height: {first * ROW}px"></div>
+            {#each rows.slice(first, last) as r (r.id)}
               <button class="tr" class:sel={r.id === selected} onclick={() => open(r.id)}>
                 <span class="title">{r.title}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
@@ -359,6 +412,7 @@
                 {/each}
               </button>
             {/each}
+            <div style="height: {(rows.length - last) * ROW}px"></div>
           </div>
           <p class="foot">{rows.length} of {lib.rows.length}</p>
         {/if}
@@ -607,7 +661,7 @@
   .table { flex: 1; overflow-y: auto; }
   .thead, .tr { display: grid; grid-template-columns: minmax(0, 1fr) auto repeat(5, 2.4rem); align-items: center; gap: 0.25rem; padding: 0.3rem 0.6rem; }
   .thead { position: sticky; top: 0; background: var(--panel); font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); }
-  .tr { width: 100%; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; }
+  .tr { width: 100%; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; }
   .tr:hover { background: var(--accent-bg); }
   .tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 var(--accent); }
   .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -684,6 +738,11 @@
   .pick { display: flex; gap: 0.4rem; }
   .pick input { flex: 1; min-width: 0; }
   .toggle { display: flex; gap: 0.5rem; align-items: center; }
+  .setting label { display: block; font-size: 0.85rem; margin-top: 0.4rem; }
+  .setting > input { width: 100%; box-sizing: border-box; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .two input { width: 100%; box-sizing: border-box; }
+  h3.sub { color: var(--text); margin: 0; }
   .err { color: var(--bad); }
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
   button.primary { background: var(--accent); border-color: var(--accent); color: white; }

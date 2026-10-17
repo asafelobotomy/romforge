@@ -8,6 +8,8 @@
 //!   and leaves the Source files where they are; without it the originals
 //!   go to the trash once the processed file is verified (house rule 7).
 //! - **Staging**: scratch space for cleanup, `<cache>/staging` by default.
+//! - **Keys**: optional credentials for ScreenScraper, SteamGridDB and IGDB
+//!   (house rule 10). Kept in the local database, shown masked.
 //!
 //! Stored in the database, so the CLI and the app share them.
 
@@ -24,6 +26,81 @@ pub struct Settings {
     pub keep_originals: bool,
     /// `None` means [`default_staging_dir`].
     pub staging_dir: Option<PathBuf>,
+    /// Optional credentials for online sources (house rule 10, tiers 2 and
+    /// 3). Stored in the local database; never shown in full.
+    #[serde(default)]
+    pub keys: Keys,
+}
+
+/// Credentials for the online sources that need them. All optional.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Keys {
+    /// ScreenScraper developer credentials (issued to an app).
+    pub screenscraper_dev_id: Option<String>,
+    pub screenscraper_dev_password: Option<String>,
+    /// ScreenScraper user account (optional; raises the request limits).
+    pub screenscraper_user: Option<String>,
+    pub screenscraper_password: Option<String>,
+    pub steamgriddb_key: Option<String>,
+    /// IGDB goes through a Twitch application.
+    pub igdb_client_id: Option<String>,
+    pub igdb_client_secret: Option<String>,
+}
+
+impl Keys {
+    /// (setting key, value) pairs, in a fixed order.
+    fn fields(&self) -> [(&'static str, Option<String>); 7] {
+        [
+            ("screenscraper_dev_id", self.screenscraper_dev_id.clone()),
+            (
+                "screenscraper_dev_password",
+                self.screenscraper_dev_password.clone(),
+            ),
+            ("screenscraper_user", self.screenscraper_user.clone()),
+            ("screenscraper_password", self.screenscraper_password.clone()),
+            ("steamgriddb_key", self.steamgriddb_key.clone()),
+            ("igdb_client_id", self.igdb_client_id.clone()),
+            ("igdb_client_secret", self.igdb_client_secret.clone()),
+        ]
+    }
+
+    fn trimmed(&self) -> Keys {
+        let t = |v: &Option<String>| v.as_ref().map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        Keys {
+            screenscraper_dev_id: t(&self.screenscraper_dev_id),
+            screenscraper_dev_password: t(&self.screenscraper_dev_password),
+            screenscraper_user: t(&self.screenscraper_user),
+            screenscraper_password: t(&self.screenscraper_password),
+            steamgriddb_key: t(&self.steamgriddb_key),
+            igdb_client_id: t(&self.igdb_client_id),
+            igdb_client_secret: t(&self.igdb_client_secret),
+        }
+    }
+
+    pub fn screenscraper(&self) -> bool {
+        self.screenscraper_dev_id.is_some() && self.screenscraper_dev_password.is_some()
+    }
+
+    pub fn steamgriddb(&self) -> bool {
+        self.steamgriddb_key.is_some()
+    }
+
+    pub fn igdb(&self) -> bool {
+        self.igdb_client_id.is_some() && self.igdb_client_secret.is_some()
+    }
+}
+
+/// `abc…xyz` for display: enough to recognize a key, not to use it.
+pub fn mask(secret: &str) -> String {
+    let n = secret.chars().count();
+    if n <= 8 {
+        "•".repeat(n.max(4))
+    } else {
+        let head: String = secret.chars().take(3).collect();
+        let tail: String = secret.chars().skip(n - 3).collect();
+        format!("{head}…{tail}")
+    }
 }
 
 /// `<cache>/staging`, the cleanup scratch folder unless one is set.
@@ -87,11 +164,35 @@ impl Settings {
         if self.keep_originals && library.is_none() {
             return bad("Keep originals needs a Library folder for the processed copies".into());
         }
+        let keys = self.keys.trimmed();
+        let pair = |a: &Option<String>, b: &Option<String>, what: &str| {
+            if a.is_some() != b.is_some() {
+                Err(Error::Settings(format!("{what} needs both fields")))
+            } else {
+                Ok(())
+            }
+        };
+        pair(
+            &keys.screenscraper_dev_id,
+            &keys.screenscraper_dev_password,
+            "ScreenScraper developer login",
+        )?;
+        pair(
+            &keys.screenscraper_user,
+            &keys.screenscraper_password,
+            "ScreenScraper user login",
+        )?;
+        pair(
+            &keys.igdb_client_id,
+            &keys.igdb_client_secret,
+            "IGDB (Twitch client ID and secret)",
+        )?;
         Ok(Settings {
             source_dir: source,
             library_dir: library,
             keep_originals: self.keep_originals,
             staging_dir: staging,
+            keys,
         })
     }
 }
@@ -107,6 +208,15 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         library_dir: get("library_dir")?.map(PathBuf::from),
         keep_originals: get("keep_originals")?.as_deref() == Some("1"),
         staging_dir: get("staging_dir")?.map(PathBuf::from),
+        keys: Keys {
+            screenscraper_dev_id: get("screenscraper_dev_id")?,
+            screenscraper_dev_password: get("screenscraper_dev_password")?,
+            screenscraper_user: get("screenscraper_user")?,
+            screenscraper_password: get("screenscraper_password")?,
+            steamgriddb_key: get("steamgriddb_key")?,
+            igdb_client_id: get("igdb_client_id")?,
+            igdb_client_secret: get("igdb_client_secret")?,
+        },
     })
 }
 
@@ -129,7 +239,10 @@ pub fn save(conn: &mut Connection, s: &Settings) -> Result<Settings, Error> {
                 "keep_originals",
                 Some(if s.keep_originals { "1" } else { "0" }.to_owned()),
             ),
-        ] {
+        ]
+        .into_iter()
+        .chain(s.keys.fields())
+        {
             match value {
                 Some(v) => put.execute(params![key, v])?,
                 None => del.execute([key])?,
@@ -164,6 +277,7 @@ mod tests {
                 library_dir: Some(l.clone()),
                 keep_originals: true,
                 staging_dir: Some(t.path().join("stage")),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -181,6 +295,24 @@ mod tests {
         assert_eq!(load(&conn).unwrap(), cleared);
         assert_eq!(cleared.library_dir, None);
         assert!(!cleared.keep_originals);
+    }
+
+    #[test]
+    fn keys_are_trimmed_paired_and_masked() {
+        let mut conn = crate::db::open_in_memory().unwrap();
+        let mut s = Settings::default();
+        s.keys.steamgriddb_key = Some("  abcdef0123456789  ".into());
+        s.keys.igdb_client_id = Some("id".into());
+        assert!(save(&mut conn, &s).unwrap_err().to_string().contains("IGDB"));
+        s.keys.igdb_client_secret = Some("secret".into());
+        s.keys.screenscraper_user = Some("".into());
+        let stored = save(&mut conn, &s).unwrap();
+        assert_eq!(stored.keys.steamgriddb_key.as_deref(), Some("abcdef0123456789"));
+        assert_eq!(stored.keys.screenscraper_user, None, "empty means unset");
+        assert!(stored.keys.igdb() && stored.keys.steamgriddb() && !stored.keys.screenscraper());
+        assert_eq!(load(&conn).unwrap(), stored);
+        assert_eq!(mask("abcdef0123456789"), "abc…789");
+        assert_eq!(mask("short"), "•••••");
     }
 
     #[test]
@@ -233,7 +365,7 @@ mod tests {
                 source_dir: Some(s),
                 library_dir: Some(l),
                 keep_originals: true,
-                staging_dir: None
+                ..Default::default()
             }
             .validated()
             .is_ok()

@@ -68,6 +68,10 @@ Use `--system NES` (keys: `romforge-cli dat systems`) or `--dat ID` to say
 what a folder should contain; without it, every DAT is tried. Without
 `ROMFORGE_DB` the database lives at `~/.local/share/romforge/romforge.db`.
 
+Rescans are incremental: a file whose size and modification time haven't
+changed since it was hashed keeps its hashes (`--rehash` reads everything
+again). `romforge-cli games` lists games the way the app does.
+
 ## How identification works
 
 - Every file, and every member of a `.zip` or `.7z`, is hashed as a stream

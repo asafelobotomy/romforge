@@ -162,17 +162,17 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         g.1.insert(file);
     }
 
-    // A file belongs to the first complete game it provides. Only complete
-    // games count, so a short audio track shared by hundreds of discs goes
-    // with the one disc you actually have.
-    let mut owner: HashMap<i64, (i64, String)> = HashMap::new();
+    // A file belongs to every complete game it provides (two revisions with
+    // identical data are two rows). Only complete games count, so a short
+    // audio track shared by hundreds of discs goes with the disc you have.
+    let mut owner: HashMap<i64, Vec<(i64, String)>> = HashMap::new();
     for (key, (_, ids)) in &games {
         for f in ids {
-            owner.entry(*f).or_insert_with(|| key.clone());
+            owner.entry(*f).or_default().push(key.clone());
         }
     }
     // Members of an archive holding a game stay with that game.
-    let mut by_path: HashMap<&str, (i64, String)> = HashMap::new();
+    let mut by_path: HashMap<&str, Vec<(i64, String)>> = HashMap::new();
     for f in &files {
         if let Some(k) = owner.get(&f.id)
             && !f.member.is_empty()
@@ -240,54 +240,60 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         }
     };
     for f in &files {
-        let home = owner.get(&f.id).or_else(|| {
+        let homes = owner.get(&f.id).or_else(|| {
             (!f.member.is_empty())
                 .then(|| by_path.get(f.path.as_str()))
                 .flatten()
         });
-        let row = match home {
-            Some((system_id, title)) => rows
-                .entry(format!("g:{system_id}:{title}"))
-                .or_insert_with(|| game_row(*system_id, title)),
-            None => {
-                let named: Vec<&(Option<i64>, String)> =
-                    seen_as.get(&f.id).map(|s| s.iter().collect()).unwrap_or_default();
-                let (system_id, title) = match named.as_slice() {
-                    [(s, g)] => (*s, g.clone()),
-                    _ => {
-                        let shown = if f.member.is_empty() { &f.path } else { &f.member };
-                        let name = shown.rsplit('/').next().unwrap_or(shown).to_owned();
-                        let systems: BTreeSet<Option<i64>> = named.iter().map(|n| n.0).collect();
-                        (
-                            systems.into_iter().next().flatten().filter(|_| named.len() < 2),
-                            name,
-                        )
-                    }
-                };
-                let status = match f.status.as_str() {
-                    "matched" => RowStatus::Incomplete,
-                    "candidate" => RowStatus::Candidate,
-                    "wrong_system" => RowStatus::WrongSystem,
-                    "duplicate" => RowStatus::Duplicate,
-                    _ => RowStatus::Unknown,
-                };
-                let sys = system_id.and_then(systems::by_id);
-                let key = system_id.map(|s| (s, title.clone()));
-                rows.entry(format!("f:{}", f.id)).or_insert(GameRow {
-                    id: format!("f:{}", f.id),
-                    title,
-                    system: sys.map(|s| s.key.to_owned()),
-                    system_name: sys.map(|s| s.name.to_owned()),
-                    status,
-                    cue_differs: false,
-                    files: 0,
-                    size: 0,
-                    metadata: key.as_ref().is_some_and(|k| meta.contains(k)),
-                    art: key.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
-                    system_id,
-                    file_ids: Vec::new(),
-                })
+        if let Some(homes) = homes {
+            for (system_id, title) in homes {
+                let row = rows
+                    .entry(format!("g:{system_id}:{title}"))
+                    .or_insert_with(|| game_row(*system_id, title));
+                row.files += 1;
+                row.size += f.size;
+                row.file_ids.push(f.id);
             }
+            continue;
+        }
+        let row = {
+            let named: Vec<&(Option<i64>, String)> =
+                seen_as.get(&f.id).map(|s| s.iter().collect()).unwrap_or_default();
+            let (system_id, title) = match named.as_slice() {
+                [(s, g)] => (*s, g.clone()),
+                _ => {
+                    let shown = if f.member.is_empty() { &f.path } else { &f.member };
+                    let name = shown.rsplit('/').next().unwrap_or(shown).to_owned();
+                    let systems: BTreeSet<Option<i64>> = named.iter().map(|n| n.0).collect();
+                    (
+                        systems.into_iter().next().flatten().filter(|_| named.len() < 2),
+                        name,
+                    )
+                }
+            };
+            let status = match f.status.as_str() {
+                "matched" => RowStatus::Incomplete,
+                "candidate" => RowStatus::Candidate,
+                "wrong_system" => RowStatus::WrongSystem,
+                "duplicate" => RowStatus::Duplicate,
+                _ => RowStatus::Unknown,
+            };
+            let sys = system_id.and_then(systems::by_id);
+            let key = system_id.map(|s| (s, title.clone()));
+            rows.entry(format!("f:{}", f.id)).or_insert(GameRow {
+                id: format!("f:{}", f.id),
+                title,
+                system: sys.map(|s| s.key.to_owned()),
+                system_name: sys.map(|s| s.name.to_owned()),
+                status,
+                cue_differs: false,
+                files: 0,
+                size: 0,
+                metadata: key.as_ref().is_some_and(|k| meta.contains(k)),
+                art: key.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
+                system_id,
+                file_ids: Vec::new(),
+            })
         };
         row.files += 1;
         row.size += f.size;

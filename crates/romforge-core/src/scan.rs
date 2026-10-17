@@ -2,6 +2,9 @@
 //! including zip/7z members and CHD tracks (see `disc.rs`), as streams.
 //! Nothing is extracted to disk and no external tool is run.
 //!
+//! A file whose size and modification time match the last scan isn't read
+//! again ([`Visit::Unchanged`]; `rehash` turns this off).
+//!
 //! Files and archives are hashed on several threads, largest first; members
 //! of one archive are read in order on one thread (a solid 7z is a single
 //! stream). Results reach the caller on the calling thread.
@@ -21,6 +24,8 @@ pub struct ScanOptions {
     pub all_files: bool,
     /// Hashing threads; 0 picks one per CPU, at most 8.
     pub jobs: usize,
+    /// Hash every file again, even ones unchanged since the last scan.
+    pub rehash: bool,
 }
 
 impl ScanOptions {
@@ -48,6 +53,29 @@ pub struct Entry {
     /// Path inside the archive, or empty for plain files.
     pub member: String,
     pub hashes: Result<Hashes, String>,
+    /// Size and modification time of the file on disk when it was read.
+    pub stamp: Option<Stamp>,
+}
+
+/// A file on disk as it was when hashed: unchanged size and modification
+/// time mean its hashes can be kept (incremental rescans).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Stamp {
+    pub size: u64,
+    /// Nanoseconds since the Unix epoch.
+    pub mtime: i64,
+}
+
+impl Stamp {
+    pub fn of(path: &Path) -> Option<Stamp> {
+        let m = std::fs::metadata(path).ok()?;
+        let mtime = m
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos() as i64);
+        Some(Stamp { size: m.len(), mtime })
+    }
 }
 
 #[derive(Debug)]
@@ -60,6 +88,9 @@ pub enum Visit {
     },
     /// A symlinked folder inside the tree; never followed.
     SkippedLink(PathBuf),
+    /// A file (or archive) whose size and modification time match what was
+    /// hashed before; not read again.
+    Unchanged(PathBuf),
 }
 
 fn ext_of(name: &str) -> String {
@@ -88,9 +119,10 @@ pub fn walk(
     root: &Path,
     skip: &[PathBuf],
     opts: ScanOptions,
+    unchanged: impl Fn(&Path, Stamp) -> bool,
     mut each: impl FnMut(Visit),
 ) -> Result<(), Error> {
-    let mut units: Vec<(u64, Unit)> = Vec::new();
+    let mut units: Vec<(u64, Option<Stamp>, Unit)> = Vec::new();
     let walker = walkdir::WalkDir::new(root)
         .follow_links(false)
         .follow_root_links(true)
@@ -100,6 +132,7 @@ pub fn walk(
             Ok(item) => item,
             Err(e) => {
                 each(Visit::Hashed(Entry {
+                    stamp: None,
                     path: e.path().map(Path::to_path_buf).unwrap_or_default(),
                     member: String::new(),
                     hashes: Err(e.to_string()),
@@ -132,9 +165,16 @@ pub fn walk(
             });
             continue;
         }
-        let size = item.metadata().map_or(0, |m| m.len());
+        let stamp = Stamp::of(&path);
+        if let Some(s) = stamp
+            && unchanged(&path, s)
+        {
+            each(Visit::Unchanged(path));
+            continue;
+        }
         units.push((
-            size,
+            stamp.map_or(0, |s| s.size),
+            stamp,
             match ext.as_str() {
                 "zip" => Unit::Zip(path),
                 "7z" => Unit::SevenZ(path),
@@ -148,12 +188,12 @@ pub fn walk(
     units.sort_by_key(|u| std::cmp::Reverse(u.0));
     let threads = opts.threads().min(units.len());
     if threads <= 1 {
-        for (_, unit) in units {
-            hash_unit(unit, opts, &mut each);
+        for (_, stamp, unit) in units {
+            hash_unit(unit, stamp, opts, &mut each);
         }
         return Ok(());
     }
-    let queue = Mutex::new(units.into_iter().map(|(_, u)| u));
+    let queue = Mutex::new(units.into_iter().map(|(_, s, u)| (s, u)));
     let (tx, rx) = mpsc::sync_channel::<Visit>(256);
     std::thread::scope(|s| {
         for _ in 0..threads {
@@ -162,8 +202,8 @@ pub fn walk(
             s.spawn(move || {
                 loop {
                     let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
-                    let Some(unit) = next else { break };
-                    hash_unit(unit, opts, &mut |v| {
+                    let Some((stamp, unit)) = next else { break };
+                    hash_unit(unit, stamp, opts, &mut |v| {
                         let _ = tx.send(v);
                     });
                 }
@@ -177,7 +217,15 @@ pub fn walk(
     Ok(())
 }
 
-fn hash_unit(unit: Unit, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
+fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
+    // Every entry of the unit carries the file's stamp.
+    let each = &mut |v: Visit| match v {
+        Visit::Hashed(mut e) => {
+            e.stamp = stamp;
+            each(Visit::Hashed(e))
+        }
+        v => each(v),
+    };
     let (path, result) = match unit {
         Unit::Zip(path) => {
             let r = walk_zip(&path, opts, each);
@@ -191,6 +239,7 @@ fn hash_unit(unit: Unit, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
             let r = crate::disc::chd_members(&path).map(|members| {
                 for (member, hashes) in members {
                     each(Visit::Hashed(Entry {
+                        stamp: None,
                         path: path.clone(),
                         member,
                         hashes: Ok(hashes),
@@ -202,6 +251,7 @@ fn hash_unit(unit: Unit, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
         Unit::File(path) => {
             let hashes = hash_file(&path).map_err(|e| e.to_string());
             each(Visit::Hashed(Entry {
+                stamp: None,
                 path,
                 member: String::new(),
                 hashes,
@@ -211,6 +261,7 @@ fn hash_unit(unit: Unit, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
     };
     if let Err(e) = result {
         each(Visit::Hashed(Entry {
+            stamp: None,
             path,
             member: String::new(),
             hashes: Err(e.to_string()),
@@ -242,6 +293,7 @@ fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Res
         let size = member.size();
         let hashes = hash_stream(&mut member, size).map_err(|e| e.to_string());
         each(Visit::Hashed(Entry {
+            stamp: None,
             path: path.to_path_buf(),
             member: name,
             hashes,
@@ -263,6 +315,7 @@ fn walk_7z(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Resu
         } else {
             let hashes = hash_stream(reader, entry.size()).map_err(|e| e.to_string());
             each(Visit::Hashed(Entry {
+                stamp: None,
                 path: path.to_path_buf(),
                 member: entry.name().to_owned(),
                 hashes,

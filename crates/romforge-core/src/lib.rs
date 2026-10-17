@@ -86,6 +86,8 @@ pub struct ScanReport {
     pub skipped: usize,
     /// Symlinked folders inside the tree (not followed).
     pub skipped_links: Vec<PathBuf>,
+    /// Files (or archives) unchanged since the last scan, not read again.
+    pub unchanged: usize,
     pub errors: Vec<(PathBuf, String, String)>,
     /// Loose `.cue`/`.gdi` sheets and the track files they name that are
     /// missing.
@@ -562,16 +564,47 @@ impl Library {
 
         let tx = self.conn.transaction()?;
         let root_str = root.to_string_lossy().into_owned();
+        // What is already known under the folder (from any scan made with the
+        // same choice of files: `all_files` hashes members a plain scan
+        // skips): files whose size and modification time haven't changed
+        // keep their rows.
+        let prefix = format!("{}/", root_str.trim_end_matches('/'));
+        let known: std::collections::HashMap<String, scan::Stamp> = if opts.rehash {
+            Default::default()
+        } else {
+            tx.prepare(
+                "SELECT DISTINCT f.path, f.disk_size, f.mtime FROM files f
+                 JOIN scan_roots s ON s.root_id = f.root_id
+                 WHERE (f.path = ?1 OR substr(f.path, 1, length(?2)) = ?2)
+                   AND f.disk_size IS NOT NULL AND f.mtime IS NOT NULL
+                   AND s.all_files = ?3",
+            )?
+            .query_map(params![root_str, prefix, opts.all_files], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    scan::Stamp {
+                        size: r.get(1)?,
+                        mtime: r.get(2)?,
+                    },
+                ))
+            })?
+            .collect::<Result<_, _>>()?
+        };
         let root_id: i64 = tx.query_row(
-            "INSERT INTO scan_roots (path, system_id, dat_id, scanned_at)
-             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            "INSERT INTO scan_roots (path, system_id, dat_id, scanned_at, all_files)
+             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?4)
              ON CONFLICT(path) DO UPDATE SET system_id = excluded.system_id,
-               dat_id = excluded.dat_id, scanned_at = excluded.scanned_at
+               dat_id = excluded.dat_id, scanned_at = excluded.scanned_at,
+               all_files = excluded.all_files
              RETURNING root_id",
-            params![root_str, system_id, dat_id],
+            params![root_str, system_id, dat_id, opts.all_files],
             |r| r.get(0),
         )?;
-        tx.execute("DELETE FROM files WHERE root_id = ?1", [root_id])?;
+        // Paths seen in this scan; rows of this folder for anything else are
+        // files that went away. `cleared`: paths whose old rows were dropped
+        // before the new ones went in (an archive may have lost members).
+        let mut seen: std::collections::HashSet<String> = Default::default();
+        let mut cleared: std::collections::HashSet<String> = Default::default();
 
         let mut report = ScanReport {
             root: root.clone(),
@@ -580,16 +613,22 @@ impl Library {
         {
             let mut upsert = tx.prepare(
                 "INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
-                                    stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                                    stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at,
+                                    disk_size, mtime)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?13, ?14)
                  ON CONFLICT(path, member) DO UPDATE SET root_id = excluded.root_id, size = excluded.size,
                    crc32 = excluded.crc32, md5 = excluded.md5, sha1 = excluded.sha1,
                    header_kind = excluded.header_kind, stripped_size = excluded.stripped_size,
                    stripped_crc32 = excluded.stripped_crc32, stripped_md5 = excluded.stripped_md5,
-                   stripped_sha1 = excluded.stripped_sha1, scanned_at = excluded.scanned_at",
+                   stripped_sha1 = excluded.stripped_sha1, scanned_at = excluded.scanned_at,
+                   disk_size = excluded.disk_size, mtime = excluded.mtime",
             )?;
+            let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
+            let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
-            scan::walk(&root, &skip, opts, |visit| {
+            let unchanged =
+                |path: &Path, stamp: scan::Stamp| known.get(path.to_string_lossy().as_ref()) == Some(&stamp);
+            scan::walk(&root, &skip, opts, unchanged, |visit| {
                 if result.is_err() {
                     return;
                 }
@@ -603,7 +642,26 @@ impl Library {
                         report.skipped_links.push(path);
                         return;
                     }
+                    Visit::Unchanged(path) => {
+                        // Kept, but scanned as part of this folder now (and
+                        // so with its scope), as a re-hashed file would be.
+                        let p = path.to_string_lossy().into_owned();
+                        if let Err(e) = adopt.execute(params![root_id, p]) {
+                            result = Err(e);
+                        }
+                        seen.insert(p);
+                        report.unchanged += 1;
+                        return;
+                    }
                 };
+                let path_str = entry.path.to_string_lossy().into_owned();
+                seen.insert(path_str.clone());
+                if cleared.insert(path_str.clone())
+                    && let Err(e) = drop_path.execute([&path_str])
+                {
+                    result = Err(e);
+                    return;
+                }
                 if entry.member.is_empty()
                     && let Some(listed) = disc::sheet_files(&entry.path)
                 {
@@ -635,6 +693,8 @@ impl Library {
                                 s.map(|s| &s.1.crc32),
                                 s.map(|s| &s.1.md5),
                                 s.map(|s| &s.1.sha1),
+                                entry.stamp.map(|s| s.size),
+                                entry.stamp.map(|s| s.mtime),
                             ])
                             .map(drop);
                         report.hashed += 1;
@@ -649,6 +709,17 @@ impl Library {
                 });
             })?;
             result?;
+        }
+        // Rows of this folder for files that are gone (or now skipped).
+        let ours: Vec<String> = tx
+            .prepare("SELECT DISTINCT path FROM files WHERE root_id = ?1")?
+            .query_map([root_id], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        for path in ours.iter().filter(|p| !seen.contains(*p)) {
+            tx.execute(
+                "DELETE FROM files WHERE path = ?1 AND root_id = ?2",
+                params![path, root_id],
+            )?;
         }
         identify::identify_all(&tx)?;
         tx.commit()?;

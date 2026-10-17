@@ -63,6 +63,11 @@ const MIGRATIONS: &[&str] = &[
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );",
+    // 7: size and modification time of the file on disk (the archive, for
+    // members) when hashed, for incremental rescans
+    "ALTER TABLE files ADD COLUMN disk_size INTEGER;
+     ALTER TABLE files ADD COLUMN mtime INTEGER;
+     ALTER TABLE scan_roots ADD COLUMN all_files INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

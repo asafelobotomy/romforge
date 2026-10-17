@@ -1001,3 +1001,60 @@ fn disc_with_a_different_cue_sheet_counts_as_have() {
     let only = games.iter().find(|g| g.name == "Sheets only").unwrap();
     assert!(only.have, "the same sheet satisfies the sheet-only game");
 }
+
+#[test]
+fn rescans_skip_unchanged_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    for f in ["gb/Test GB.gb", "nes/Test NES 2.0.nes", "archives/Test GBA.zip"] {
+        let name = std::path::Path::new(f).file_name().unwrap();
+        std::fs::copy(fixtures().join("roms").join(f), dir.join(name)).unwrap();
+    }
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    let first = lib.scan(&dir, Scope::All).unwrap();
+    assert_eq!((first.hashed, first.unchanged), (3, 0));
+    let matched = |lib: &Library| {
+        lib.files(&LibraryFilter::default())
+            .unwrap()
+            .iter()
+            .filter(|f| f.status == Status::Matched)
+            .count()
+    };
+    assert_eq!(matched(&lib), 3);
+
+    let again = lib.scan(&dir, Scope::All).unwrap();
+    assert_eq!(
+        (again.hashed, again.unchanged),
+        (0, 3),
+        "nothing read the second time"
+    );
+    assert_eq!(matched(&lib), 3, "and nothing lost");
+
+    // A changed file is read again; a deleted one leaves the library.
+    std::fs::write(dir.join("Test NES 2.0.nes"), b"changed").unwrap();
+    std::fs::remove_file(dir.join("Test GB.gb")).unwrap();
+    let after = lib.scan(&dir, Scope::All).unwrap();
+    assert_eq!((after.hashed, after.unchanged), (1, 1));
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    assert_eq!(files.len(), 2);
+    assert!(
+        files
+            .iter()
+            .any(|f| f.path.ends_with("Test NES 2.0.nes") && f.status == Status::Unknown)
+    );
+
+    let all = lib
+        .scan_with(
+            &dir,
+            Scope::All,
+            ScanOptions {
+                rehash: true,
+                ..ScanOptions::default()
+            },
+            |_| {},
+        )
+        .unwrap();
+    assert_eq!((all.hashed, all.unchanged), (2, 0));
+}

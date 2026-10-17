@@ -36,6 +36,9 @@ fn one_row_per_game_and_lone_files() {
     assert_eq!(v.rows.iter().filter(|r| r.title == "Test GB").count(), 1);
 
     assert_eq!(row("CRC Only").status, RowStatus::Candidate);
+    // One file, two revisions with identical data: both are listed.
+    assert_eq!(row("Shared Hash (Rev A)").files, 1);
+    assert_eq!(row("Shared Hash (Rev B)").files, 1);
     let unknown = row("unknown.bin");
     assert_eq!(unknown.status, RowStatus::Unknown);
     assert_eq!(unknown.system, None);

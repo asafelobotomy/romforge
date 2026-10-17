@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use romforge_core::{
     DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, enrich, fetch,
-    launch, organize, systems,
+    launch, organize, settings, systems,
 };
 
 #[derive(Parser)]
@@ -45,6 +45,9 @@ enum Command {
         /// spinning disk
         #[arg(long, short)]
         jobs: Option<usize>,
+        /// Hash every file again, even ones unchanged since the last scan
+        #[arg(long)]
+        rehash: bool,
     },
     /// Rename and move identified files into a tidy folder (milestone 2)
     #[command(subcommand)]
@@ -93,11 +96,36 @@ enum Command {
         /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
         #[arg(long)]
         staging: Option<String>,
+        /// Optional online-source credentials ("" clears). Values given here
+        /// end up in your shell history.
+        #[arg(long, value_name = "KEY")]
+        steamgriddb_key: Option<String>,
+        #[arg(long)]
+        igdb_client_id: Option<String>,
+        #[arg(long)]
+        igdb_client_secret: Option<String>,
+        #[arg(long)]
+        screenscraper_dev_id: Option<String>,
+        #[arg(long)]
+        screenscraper_dev_password: Option<String>,
+        #[arg(long)]
+        screenscraper_user: Option<String>,
+        #[arg(long)]
+        screenscraper_password: Option<String>,
     },
     /// Rescan the Source and Library folders and every folder scanned before
     Refresh {
         #[arg(long, short)]
         quiet: bool,
+        /// Hash every file again, even ones unchanged since the last scan
+        #[arg(long)]
+        rehash: bool,
+    },
+    /// List games as the app does: one row per game, lone files as their own
+    Games {
+        /// Only this platform (system key)
+        #[arg(long)]
+        platform: Option<String>,
     },
     /// Show file statuses and have/missing per DAT
     Report {
@@ -351,6 +379,7 @@ fn main() -> Result<()> {
             all_files,
             quiet,
             jobs,
+            rehash,
         } => {
             let scope = match (scope.system, scope.dat) {
                 (Some(key), _) => match systems::by_key(&key) {
@@ -363,6 +392,7 @@ fn main() -> Result<()> {
             let opts = ScanOptions {
                 all_files,
                 jobs: jobs.unwrap_or(0),
+                rehash,
             };
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
             let report = lib.scan_with(&dir, scope, opts, |p| meter.update(p))?;
@@ -421,6 +451,9 @@ fn main() -> Result<()> {
                 bytes(report.bytes_hashed),
                 counts.join(", ")
             );
+            if report.unchanged > 0 {
+                line += &format!("; {} files unchanged since the last scan", report.unchanged);
+            }
             if report.skipped > 0 {
                 line += &format!("; skipped {} non-ROM files", report.skipped);
             }
@@ -618,10 +651,31 @@ fn main() -> Result<()> {
             library,
             keep_originals,
             staging,
+            steamgriddb_key,
+            igdb_client_id,
+            igdb_client_secret,
+            screenscraper_dev_id,
+            screenscraper_dev_password,
+            screenscraper_user,
+            screenscraper_password,
         } => {
             let mut s = lib.settings()?;
-            let changed =
+            let mut changed =
                 source.is_some() || library.is_some() || keep_originals.is_some() || staging.is_some();
+            for (given, slot) in [
+                (steamgriddb_key, &mut s.keys.steamgriddb_key),
+                (igdb_client_id, &mut s.keys.igdb_client_id),
+                (igdb_client_secret, &mut s.keys.igdb_client_secret),
+                (screenscraper_dev_id, &mut s.keys.screenscraper_dev_id),
+                (screenscraper_dev_password, &mut s.keys.screenscraper_dev_password),
+                (screenscraper_user, &mut s.keys.screenscraper_user),
+                (screenscraper_password, &mut s.keys.screenscraper_password),
+            ] {
+                if let Some(v) = given {
+                    *slot = Some(v);
+                    changed = true;
+                }
+            }
             let set = |p: String| (!p.is_empty()).then(|| PathBuf::from(p));
             if let Some(p) = source {
                 s.source_dir = set(p);
@@ -643,15 +697,37 @@ fn main() -> Result<()> {
             println!("library         {}", shown(&s.library_dir));
             println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
             println!("staging         {}", s.staging().display());
+            let key = |v: &Option<String>| v.as_deref().map_or("-".to_owned(), settings::mask);
+            println!("steamgriddb     {}", key(&s.keys.steamgriddb_key));
+            println!(
+                "igdb            {} / {}",
+                key(&s.keys.igdb_client_id),
+                key(&s.keys.igdb_client_secret)
+            );
+            println!(
+                "screenscraper   dev {} / {}, user {}",
+                key(&s.keys.screenscraper_dev_id),
+                key(&s.keys.screenscraper_dev_password),
+                s.keys.screenscraper_user.as_deref().unwrap_or("-")
+            );
         }
-        Command::Refresh { quiet } => {
+        Command::Refresh { quiet, rehash } => {
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
-            let results = lib.refresh(ScanOptions::default(), |_, p| meter.update(p))?;
+            let opts = ScanOptions {
+                rehash,
+                ..ScanOptions::default()
+            };
+            let results = lib.refresh(opts, |_, p| meter.update(p))?;
             meter.finish();
             let mut failed = 0;
             for r in results {
                 match r {
-                    Ok(report) => println!("rescanned {} ({} entries)", report.root.display(), report.hashed),
+                    Ok(report) => println!(
+                        "rescanned {}: {} entries hashed, {} files unchanged",
+                        report.root.display(),
+                        report.hashed,
+                        report.unchanged
+                    ),
                     Err((path, e)) => {
                         failed += 1;
                         eprintln!("error: {}: {e}", path.display());
@@ -661,6 +737,29 @@ fn main() -> Result<()> {
             if failed > 0 {
                 bail!("{failed} folders could not be rescanned");
             }
+        }
+        Command::Games { platform } => {
+            let v = lib.library_view()?;
+            for r in v.rows.iter().filter(|r| {
+                platform
+                    .as_deref()
+                    .is_none_or(|p| r.system.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(p)))
+            }) {
+                let gathered = format!("{}{}", if r.metadata { "info " } else { "" }, r.art.join(" "));
+                println!(
+                    "{:<11} {:<16} {}  [{}]",
+                    format!("{:?}", r.status).to_lowercase(),
+                    r.system.as_deref().unwrap_or("-"),
+                    r.title,
+                    gathered.trim()
+                );
+            }
+            let n: Vec<String> = v
+                .platforms
+                .iter()
+                .map(|p| format!("{} {}", p.games, p.name))
+                .collect();
+            println!("{} rows; {}", v.rows.len(), n.join(", "));
         }
         Command::Report {
             dat: Some(id),

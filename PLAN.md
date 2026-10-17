@@ -93,11 +93,15 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    with Tauri's opener plugin, https only). Search and Cleanup & rename are
    in the toolbar but disabled until milestones 8 and 10; art libretro
    lacks shows as empty slots until milestone 9.
-7. **Settings and refresh** — *(started)* Settings for the Source folder,
-   an optional Library folder, Keep originals and the staging folder (in
-   the database, shared by CLI and app; Refresh scans Source and Library).
-   Still to do: optional API keys (house rule 10) and incremental rescans
-   (path + size + mtime) so Refresh is quick.
+7. **Settings and refresh** *(built)* — Settings for the Source folder, an
+   optional Library folder, Keep originals, the staging folder and optional
+   credentials (ScreenScraper developer + user login, SteamGridDB key, IGDB
+   via a Twitch app; stored locally, shown masked). Refresh scans Source
+   and Library and skips files whose path, size and modification time are
+   unchanged (`--rehash` reads everything again); the game list is drawn
+   virtually so tens of thousands of rows stay quick. ScreenScraper needs
+   developer credentials issued to an app: the owner registers romforge, or
+   uses their own.
 8. **Search** — a queue dialog going game by game: hash match, DAT title
    suggestions for unknown files, manual title search. Picks by hand are
    "identified by you" (house rule 8).
@@ -120,8 +124,6 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 - `.m3u` playlists for multi-disc games (organize would write a new file).
 - Play history and favourites.
 
-- Incremental rescans keyed on path + size + mtime, so unchanged files are
-  not re-hashed.
 - Scan-time system hints from extension or header to shortlist DATs.
 - Redump update check without re-downloading (Redump has no version index).
 - Parent/clone data for 1G1R (titles are grouped by name today), and the
