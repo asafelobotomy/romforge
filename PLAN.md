@@ -77,6 +77,37 @@ is listed under each milestone as **Open**.
    **Open:** no emulator is installed on the dev machine; tested with
    stand-in scripts only.
 
+## UI and data milestones (decided 2026-10-17)
+
+Layout after tinyMediaManager: a toolbar on top (Refresh, Search, Enrich,
+Cleanup & rename, Play), platforms down the left (icon and name), one list
+of games in the middle (one row per game; unidentified files are their own
+rows) with columns showing what has been gathered, and a detail panel on the
+right with tabs: Details (box, banner, hero, 3D box, title, snap, icon,
+description, players, genre), Development (developer, publisher, country,
+credits), Series (related games in order, with years) and Links (MobyGames,
+RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
+
+6. **Layout** *(built)* — the layout above on the data romforge already has;
+   Refresh rescans every source folder; Links as plain search links (opened
+   with Tauri's opener plugin, https only). Search and Cleanup & rename are
+   in the toolbar but disabled until milestones 8 and 10; art libretro
+   lacks shows as empty slots until milestone 9.
+7. **Settings and refresh** — source folders and optional API keys in the
+   app; incremental rescans (path + size + mtime) so Refresh is quick.
+8. **Search** — a queue dialog going game by game: hash match, DAT title
+   suggestions for unknown files, manual title search. Picks by hand are
+   "identified by you" (house rule 8).
+9. **Deeper enrich** — Wikidata (developer, publisher, country, director,
+   composer, series and its order, external IDs for Links), then
+   ScreenScraper, then SteamGridDB / IGDB for art libretro lacks (banner,
+   hero, 3D box, logo, icon), in the order of house rule 10.
+10. **Cleanup & rename** — repack each game into one archive named by the
+    owner's title preferences, with a `romforge/` folder inside holding the
+    art and a `.romforge.md` / `.nfo` with its details, under the guardrails
+    of house rule 7. Discs: CHD cannot hold extra files; decide between
+    7z/zip with art inside and CHD with a sidecar folder when building it.
+
 ## Later ideas (parked, do not build yet)
 
 - Arcade: MAME / FBNeo DATs (libretro mirrors them); merged/split sets need

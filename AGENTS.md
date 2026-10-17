@@ -12,12 +12,25 @@
    second list.
 5. **No pile of docs, reports or scripts.** README, PLAN.md and this file.
    Ideas for later milestones go in PLAN.md, not into code.
-6. **Stay in the milestone.** See PLAN.md. Milestone 1 never moves, renames
-   or writes ROM files.
+6. **Stay in the milestone.** See PLAN.md. Scanning and identifying never
+   move, rename or write ROM files; only organize and cleanup do, and only
+   after a dry run, journaled for undo.
 7. **No external tools.** No shelling out to 7z, unzip, chdman, etc. Archives
-   are read as streams and never extracted to disk.
+   are read as streams. Only cleanup & rename (milestone 10) rewrites ROMs,
+   with these guardrails: repack stream to stream (no temporary extraction
+   where avoidable), re-hash the new archive against the DAT before the
+   original goes, keep originals in a trash folder for undo, and never let
+   extra files (art, `.nfo`, `.romforge.md`) shadow the ROM: they go in a
+   `romforge/` folder inside the archive, the ROM stays at the top level.
 8. **Matching is strict.** A match needs size + SHA1 or size + MD5. CRC32
    alone is only a candidate. Never fall back to a default system, never
-   `LIMIT 1` over a hash that may belong to many games.
+   `LIMIT 1` over a hash that may belong to many games. A title the user
+   picks by hand is its own status ("identified by you") and is never shown
+   or counted as verified.
 9. **Licenses:** dependencies must be MIT, Apache-2.0, BSD, Zlib, ISC,
    Unlicense or similar.
+10. **Data sources in order of preference.** (1) Free, no account and no
+    key: libretro, Wikidata, plain search links. (2) Free key, no account:
+    ScreenScraper with app credentials. (3) Free account and free key:
+    SteamGridDB, IGDB. A later tier only fills what earlier tiers left
+    empty, and keys are optional settings, never required.

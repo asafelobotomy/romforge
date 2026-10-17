@@ -153,9 +153,12 @@ archive; standalone emulators only get archives if they read them
 ## Desktop app
 
 Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
-(`webkit2gtk-4.1`). It uses the same database as the CLI: scan a folder,
-download DATs, see have/missing per DAT, plan/apply/undo organize, fetch
-metadata and art, and play.
+(`webkit2gtk-4.1`). It uses the same database as the CLI. The layout follows
+tinyMediaManager: a toolbar (Refresh, Add folder, Search, Enrich, Cleanup
+and rename, Play), platforms down the left, one row per game with columns
+for what has been gathered (identified, metadata, box art, title screen,
+snap), and a detail panel with Details, Development, Series and Links tabs.
+DATs and Organize are at the foot of the platform list.
 
 ```bash
 cd app && npm install && npm run tauri dev

@@ -8,9 +8,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use romforge_core::enrich::{EnrichOptions, EnrichReport, default_cache_dir};
+use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
+use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{
     DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
 };
@@ -116,10 +117,65 @@ async fn organize_undo(db: tauri::State<'_, Db>) -> Res<Undone> {
 }
 
 #[tauri::command]
-async fn enrich(db: tauri::State<'_, Db>) -> Res<EnrichReport> {
-    with(&db, |lib| {
-        lib.enrich(&EnrichOptions::new(default_cache_dir()), |_| {})
-    })
+async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichReport> {
+    let opts = EnrichOptions {
+        system,
+        art: ArtKind::ALL.to_vec(),
+        ..EnrichOptions::new(default_cache_dir())
+    };
+    with(&db, |lib| lib.enrich(&opts, |_| {}))
+}
+
+#[tauri::command]
+async fn library_view(db: tauri::State<'_, Db>) -> Res<LibraryView> {
+    with(&db, |lib| lib.library_view())
+}
+
+#[tauri::command]
+async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
+    let mut d = with(&db, |lib| lib.game_detail(&id))?;
+    // Paths become data: URLs the page can show without file access.
+    for path in d.art.values_mut() {
+        *path = match std::fs::read(&*path) {
+            Ok(png) => format!("data:image/png;base64,{}", base64(&png)),
+            Err(_) => String::new(),
+        };
+    }
+    d.art.retain(|_, v| !v.is_empty());
+    Ok(d)
+}
+
+#[derive(serde::Serialize)]
+struct Refreshed {
+    folders: usize,
+    entries: usize,
+    problems: Vec<String>,
+}
+
+#[tauri::command]
+async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
+    let results = with(&db, |lib| lib.refresh(Default::default(), |_, _| {}))?;
+    let mut out = Refreshed {
+        folders: 0,
+        entries: 0,
+        problems: Vec::new(),
+    };
+    for r in results {
+        match r {
+            Ok(report) => {
+                out.folders += 1;
+                out.entries += report.hashed;
+                out.problems.extend(
+                    report
+                        .errors
+                        .iter()
+                        .map(|(p, m, e)| format!("{}#{m}: {e}", p.display())),
+                );
+            }
+            Err((path, e)) => out.problems.push(format!("{}: {e}", path.display())),
+        }
+    }
+    Ok(out)
 }
 
 #[derive(serde::Serialize)]
@@ -184,6 +240,7 @@ fn main() {
         .unwrap_or_else(romforge_core::default_db_path);
     let lib = Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(Db(Mutex::new(lib)))
         .invoke_handler(tauri::generate_handler![
             library,
@@ -197,7 +254,10 @@ fn main() {
             organize_undo,
             enrich,
             game_info,
-            launch
+            launch,
+            library_view,
+            game_detail,
+            refresh
         ])
         .run(tauri::generate_context!())
         .expect("error while running romforge");

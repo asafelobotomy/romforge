@@ -17,6 +17,7 @@ pub mod organize;
 mod report;
 pub mod scan;
 pub mod systems;
+pub mod view;
 
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -87,6 +88,9 @@ pub struct ScanReport {
     /// missing.
     pub sheet_problems: Vec<(PathBuf, String)>,
 }
+
+/// One source folder's rescan: its report, or the folder and why it failed.
+pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
 
 /// Running totals passed to the progress callback after every file or member.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -723,6 +727,55 @@ impl Library {
         emulator: Option<&str>,
     ) -> Result<launch::LaunchSpec, Error> {
         launch::plan(&self.conn, env, query, emulator)
+    }
+
+    /// One row per game (unidentified files as their own rows) and the
+    /// platforms they're on, for the app's library screen.
+    pub fn library_view(&self) -> Result<view::LibraryView, Error> {
+        view::library(&self.conn)
+    }
+
+    /// Everything known about one row of [`Library::library_view`].
+    pub fn game_detail(&self, id: &str) -> Result<view::GameDetail, Error> {
+        view::detail(&self.conn, id)
+    }
+
+    /// Rescan every source folder (scan roots that aren't inside another),
+    /// each with the scope it was scanned with. Folders that are gone are
+    /// reported, not forgotten.
+    pub fn refresh(
+        &mut self,
+        opts: ScanOptions,
+        mut progress: impl FnMut(&Path, ScanProgress),
+    ) -> Result<Vec<RefreshResult>, Error> {
+        let roots: Vec<(String, Option<i64>, Option<i64>)> = self
+            .conn
+            .prepare("SELECT path, system_id, dat_id FROM scan_roots ORDER BY length(path), path")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut top: Vec<&(String, Option<i64>, Option<i64>)> = Vec::new();
+        for r in &roots {
+            let inside = top
+                .iter()
+                .any(|t| Path::new(&r.0).starts_with(&t.0) && r.0 != t.0);
+            if !inside {
+                top.push(r);
+            }
+        }
+        let mut out = Vec::new();
+        for (path, system_id, dat_id) in top {
+            let path = PathBuf::from(path);
+            if !path.exists() {
+                out.push(Err((path, "folder not found".into())));
+                continue;
+            }
+            let scope = Scope::from_columns(*system_id, *dat_id);
+            match self.scan_with(&path, scope, opts, |p| progress(&path, p)) {
+                Ok(r) => out.push(Ok(r)),
+                Err(e) => out.push(Err((path, e.to_string()))),
+            }
+        }
+        Ok(out)
     }
 
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {
