@@ -165,13 +165,48 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     files and moves the originals back. Not yet: `.nfo` (only
     `.romforge.md`), GDI/Dreamcast and `.img`/`.ccd` discs, emptying the
     trash from the app, multi-disc `.m3u`.
+11. **More free sources** (tier 1 of house rule 10: free, no account, no
+    key; reviewed 2026-10-17), in this order:
+    1. *libretro, more of it*: `Named_Logos` from the thumbnail server
+       (free logos before any keyed source), and the `metadat` fields not
+       fetched yet: `esrb`, `bbfc`, `elspa` (ratings), `origin` (country),
+       `serial`, `rumble`, `analog`, `enhancement_hw` (e.g. Super FX) and
+       `magazine` (review scores). Same code path as today.
+    2. *Wikipedia summaries* (REST `page/summary`, no key, descriptive
+       User-Agent) for games with no description: most of the library has
+       none. Only for games whose article Wikidata names (no guessing).
+       Text is CC BY-SA 4.0: shown and written to `.romforge.md` with
+       "From Wikipedia" and a link. Never its thumbnail (usually a
+       non-free cover).
+    3. *More Wikidata properties* in the same details query: P154 logo
+       image (Commons, free files only, licence checked per file), P444
+       review scores with their source, ratings (P852 ESRB, P908 PEGI,
+       P853 CERO, P914 USK), P1705 native title, P437 distribution format,
+       regional release dates (P577 with place qualifiers), and IDs for
+       more links: P4769 GameFAQs, P6783 speedrun.com.
+    4. *What the DAT names already say* (offline): region, languages,
+       revision, and flags such as Proto, Beta, Demo, Unl, parsed from
+       No-Intro / Redump / TOSEC naming. Shown in Details and Search.
+    5. *MAME software lists* (`hash/*.xml`, CC0-1.0) for consoles and
+       handhelds, matched by SHA1 only (house rule 8): publisher, year,
+       serial, release date, alternate (Japanese) title, cartridge hardware
+       (PCB, chips, battery save) and parent/clone links, which 1G1R needs.
+       Downloaded like DATs, read offline.
+    Worth a look before use (free, terms or access unclear): Hasheous
+    (AGPL, free public hash lookup that maps to IGDB and VIMM's Lair
+    manuals; no account per its README), GameTDB (GameCube/Wii/DS/3DS XML,
+    open wiki, no stated licence, covers unclear), Recalbox Game DB (no
+    stated licence or API). Not used: LaunchBox `Metadata.zip` and OpenVGDB
+    (no licence stated), RetroAchievements' hash library (needs a login
+    token), Giant Bomb IDs on Wikidata (former scheme).
 
 ## Later ideas (parked, do not build yet)
 
 - Arcade: MAME / FBNeo DATs (libretro mirrors them); merged/split sets need
   their own matching rules.
-- Online lookups for files that stay unknown: RetroAchievements hashes,
-  ScreenScraper, Hasheous (accounts / keys).
+- Online lookups for files that stay unknown: RetroAchievements hashes
+  (login token), ScreenScraper (keys); Hasheous needs neither, see
+  milestone 11.
 - `.m3u` playlists for multi-disc games (organize would write a new file).
 - Play history and favourites.
 
