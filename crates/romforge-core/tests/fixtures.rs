@@ -637,7 +637,10 @@ fn non_rom_files_and_members_are_skipped() {
     assert_eq!(lib.summary().unwrap().files_by_status[2], (Status::Unknown, 1));
 
     // --all-files hashes them; they are unknown, everything else is unchanged.
-    let opts = ScanOptions { all_files: true };
+    let opts = ScanOptions {
+        all_files: true,
+        ..ScanOptions::default()
+    };
     let report = lib
         .scan_with(fixtures().join("roms"), Scope::All, opts, |_| {})
         .unwrap();
@@ -894,4 +897,107 @@ fn newer_tosec_release_replaces_older_one() {
     let file = lib.import_dat_bytes(xml.as_bytes(), "/tmp/gb.dat", None).unwrap();
     assert_eq!(file.replaced, None, "a hand import never replaces a download");
     assert_eq!(lib.summary().unwrap().dats.len(), 2);
+}
+
+#[test]
+fn batch_identifies_once_at_the_end() {
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+    let matched = |lib: &Library| {
+        lib.files(&LibraryFilter::default())
+            .unwrap()
+            .iter()
+            .filter(|f| f.status == Status::Matched)
+            .count()
+    };
+    assert_eq!(matched(&lib), 0);
+    lib.batch(|lib| -> Result<(), romforge_core::Error> {
+        lib.batch(|lib| lib.import_dat(fixtures().join("dats/gb.dat"), None).map(drop))?;
+        assert_eq!(matched(lib), 0, "nested batch defers too");
+        Ok(())
+    })
+    .unwrap();
+    assert!(matched(&lib) > 0, "identified when the outer batch ended");
+
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+    let err = lib.batch(|lib| -> Result<(), romforge_core::Error> {
+        lib.import_dat(fixtures().join("dats/gb.dat"), None)?;
+        lib.import_dat(fixtures().join("nope.dat"), None)?;
+        Ok(())
+    });
+    assert!(err.is_err());
+    assert!(matched(&lib) > 0, "DATs imported before the failure still count");
+}
+
+#[test]
+fn parallel_and_serial_scans_agree() {
+    let statuses = |jobs: usize| {
+        let mut lib = Library::open_in_memory().unwrap();
+        import_all(&mut lib);
+        let opts = ScanOptions {
+            jobs,
+            ..ScanOptions::default()
+        };
+        let report = lib
+            .scan_with(fixtures().join("roms"), Scope::All, opts, |_| {})
+            .unwrap();
+        let files: Vec<_> = by_path(&lib).into_iter().map(|(p, f)| (p, f.status)).collect();
+        (report.hashed, report.bytes_hashed, report.skipped, files)
+    };
+    let serial = statuses(1);
+    assert!(serial.0 > 10);
+    assert_eq!(statuses(4), serial);
+    assert_eq!(statuses(0), serial);
+}
+
+#[test]
+fn disc_with_a_different_cue_sheet_counts_as_have() {
+    use romforge_core::hash::hash_stream;
+    let dir = tempfile::tempdir().unwrap();
+    let track = vec![7u8; 4096];
+    let cue = b"FILE \"Disc (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n".to_vec();
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let (t, c) = (h(&track), h(&cue));
+    let rom = |name: &str, d: &romforge_core::hash::Digest| {
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            d.size, d.crc32, d.md5, d.sha1
+        )
+    };
+    let dat = format!(
+        r#"<?xml version="1.0"?><datafile><header><name>Test - Discs</name></header>
+<game name="Disc"><description>Disc</description>{}{}</game>
+<game name="Sheets only">{}</game></datafile>"#,
+        rom("Disc (Track 1).bin", &t),
+        rom("Disc.cue", &c),
+        rom("Only.cue", &c),
+    );
+    let dat_path = dir.path().join("discs.dat");
+    std::fs::write(&dat_path, dat).unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir(&roms).unwrap();
+    std::fs::write(roms.join("Disc (Track 1).bin"), &track).unwrap();
+    std::fs::write(roms.join("Disc.cue"), b"FILE \"disc.bin\" BINARY\r\n").unwrap();
+
+    let mut lib = Library::open_in_memory().unwrap();
+    let d = lib.import_dat(&dat_path, Some("PlayStation")).unwrap();
+    lib.scan(&roms, Scope::Dat(d.dat_id)).unwrap();
+    let games = lib.dat_games(d.dat_id).unwrap();
+    let disc = games.iter().find(|g| g.name == "Disc").unwrap();
+    assert!(disc.have && disc.cue_differs, "{disc:?}");
+    assert_eq!((disc.roms_have, disc.roms_total), (1, 2));
+    let only = games.iter().find(|g| g.name == "Sheets only").unwrap();
+    assert!(!only.have, "a game of only sheets needs them to match");
+    let s = lib.summary().unwrap();
+    assert_eq!((s.dats[0].have, s.dats[0].missing), (1, 1));
+
+    // The exact cue sheet makes it a plain have.
+    std::fs::write(roms.join("Disc.cue"), &cue).unwrap();
+    lib.scan(&roms, Scope::Dat(d.dat_id)).unwrap();
+    let games = lib.dat_games(d.dat_id).unwrap();
+    let disc = games.iter().find(|g| g.name == "Disc").unwrap();
+    assert!(disc.have && !disc.cue_differs);
+    let only = games.iter().find(|g| g.name == "Sheets only").unwrap();
+    assert!(only.have, "the same sheet satisfies the sheet-only game");
 }

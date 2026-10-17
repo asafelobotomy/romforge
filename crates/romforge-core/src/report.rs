@@ -8,23 +8,40 @@ use serde::Serialize;
 use crate::Error;
 use crate::identify::Status;
 
-/// A ROM counts as "have" when a matched (or duplicate) file hit it by size +
-/// SHA1/MD5 inside that file's scan scope. `nodump` ROMs are not counted.
-const ROM_HAVE: &str = "
-    rom_have AS (
-        SELECT r.rom_id, r.game_id, EXISTS (
-            SELECT 1 FROM matches m JOIN files f ON f.file_id = m.file_id
-            WHERE m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-              AND f.status IN ('matched', 'duplicate')
-        ) AS have
-        FROM roms r WHERE coalesce(r.status, '') <> 'nodump'
-    ),
-    game_have AS (
-        SELECT g.game_id, g.dat_id, g.name, count(rh.rom_id) AS total,
-               coalesce(sum(rh.have), 0) AS have_roms
-        FROM games g LEFT JOIN rom_have rh ON rh.game_id = g.game_id
-        GROUP BY g.game_id
+/// ROMs that a matched (or duplicate) file hit by size + SHA1/MD5 inside
+/// that file's scan scope.
+const HAD: &str = "
+    had AS (
+        SELECT DISTINCT m.rom_id FROM matches m JOIN files f ON f.file_id = m.file_id
+        WHERE m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
+          AND f.status IN ('matched', 'duplicate')
     )";
+
+/// Per game in `games_in` (a CTE of `game_id`s): how many of its data ROMs
+/// and cue sheets are had. `nodump` ROMs are not counted. Only games with a
+/// had ROM can be complete, so callers keep `games_in` to those where they
+/// can; scanning every ROM of every DAT is slow at TOSEC scale.
+const GAME_HAVE: &str = "
+    game_have AS (
+        SELECT r.game_id,
+               sum(NOT r.sheet) AS data_total,
+               sum(NOT r.sheet AND h.rom_id IS NOT NULL) AS data_have,
+               sum(r.sheet) AS sheet_total,
+               sum(r.sheet AND h.rom_id IS NOT NULL) AS sheet_have
+        FROM (SELECT rom_id, game_id, lower(name) LIKE '%.cue' AS sheet FROM roms
+              WHERE game_id IN (SELECT game_id FROM games_in)
+                AND coalesce(status, '') <> 'nodump') r
+        LEFT JOIN had h ON h.rom_id = r.rom_id
+        GROUP BY r.game_id
+    )";
+
+/// A game is "have" when every data ROM is had. Cue sheets are text that
+/// tools rewrite freely, so one that differs from the DAT doesn't make a
+/// disc missing (the game is flagged `cue_differs` instead); a game made only
+/// of sheets needs them all.
+const IS_HAVE: &str = "
+    (CASE WHEN gh.data_total > 0 THEN gh.data_have = gh.data_total
+          ELSE gh.sheet_total > 0 AND gh.sheet_have = gh.sheet_total END)";
 
 /// The matches that explain a file's status: in-scope hits, or for
 /// `wrong_system` the out-of-scope SHA1/MD5 hits.
@@ -57,6 +74,8 @@ pub struct DatGame {
     pub game_id: i64,
     pub name: String,
     pub have: bool,
+    /// Have, but a cue sheet differs from the DAT's.
+    pub cue_differs: bool,
     pub roms_total: i64,
     pub roms_have: i64,
     /// Files that provide this game's ROMs (`path` or `path#member`).
@@ -123,14 +142,20 @@ pub fn summary(conn: &Connection) -> Result<Summary, Error> {
         .collect();
 
     let mut stmt = conn.prepare(&format!(
-        "WITH {ROM_HAVE}
+        "WITH {HAD},
+              games_in AS (SELECT DISTINCT r.game_id FROM had JOIN roms r ON r.rom_id = had.rom_id),
+              {GAME_HAVE},
+              dat_have AS (
+                  SELECT g.dat_id, sum({IS_HAVE}) AS have
+                  FROM game_have gh JOIN games g ON g.game_id = gh.game_id GROUP BY g.dat_id
+              )
          SELECT d.dat_id, d.name, d.version, s.key, d.header_hint, d.source_path, d.imported_at,
-                count(gh.game_id),
-                coalesce(sum(gh.total > 0 AND gh.have_roms = gh.total), 0)
+                (SELECT count(*) FROM games g WHERE g.dat_id = d.dat_id),
+                coalesce(dh.have, 0)
          FROM dats d
          LEFT JOIN systems s ON s.system_id = d.system_id
-         LEFT JOIN game_have gh ON gh.dat_id = d.dat_id
-         GROUP BY d.dat_id ORDER BY d.name, d.dat_id"
+         LEFT JOIN dat_have dh ON dh.dat_id = d.dat_id
+         ORDER BY d.name, d.dat_id"
     ))?;
     let dats = stmt
         .query_map([], |r| {
@@ -178,21 +203,35 @@ pub fn dat_games(conn: &Connection, dat_id: i64) -> Result<Vec<DatGame>, Error> 
     }
 
     let mut stmt = conn.prepare(&format!(
-        "WITH {ROM_HAVE}
-         SELECT game_id, name, total, have_roms FROM game_have WHERE dat_id = ?1 ORDER BY name, game_id"
+        "WITH {HAD},
+              games_in AS (SELECT game_id FROM games WHERE dat_id = ?1),
+              {GAME_HAVE}
+         SELECT g.game_id, g.name,
+                coalesce(gh.data_total + gh.sheet_total, 0),
+                coalesce(gh.data_have + gh.sheet_have, 0),
+                coalesce({IS_HAVE}, 0),
+                coalesce(gh.sheet_have < gh.sheet_total, 0)
+         FROM games g LEFT JOIN game_have gh ON gh.game_id = g.game_id
+         WHERE g.dat_id = ?1 ORDER BY g.name, g.game_id"
     ))?;
     let games = stmt
         .query_map([dat_id], |r| {
-            let total: i64 = r.get(2)?;
-            let have: i64 = r.get(3)?;
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, total, have))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, bool>(4)?,
+                r.get::<_, bool>(5)?,
+            ))
         })?
         .map(|row| {
-            let (game_id, name, roms_total, roms_have) = row?;
+            let (game_id, name, roms_total, roms_have, have, sheets_differ) = row?;
             Ok(DatGame {
                 game_id,
                 name,
-                have: roms_total > 0 && roms_have == roms_total,
+                have,
+                cue_differs: have && sheets_differ,
                 roms_total,
                 roms_have,
                 files: files.remove(&game_id).unwrap_or_default(),

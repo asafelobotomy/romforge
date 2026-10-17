@@ -122,6 +122,10 @@ pub fn default_db_path() -> PathBuf {
 pub struct Library {
     conn: Connection,
     path: Option<PathBuf>,
+    /// Inside [`Library::batch`]: DAT imports skip re-identifying.
+    batch_depth: u32,
+    /// A DAT was imported inside the batch; identify when it ends.
+    batch_dirty: bool,
 }
 
 impl Library {
@@ -131,6 +135,8 @@ impl Library {
         Ok(Self {
             conn,
             path: Some(std::path::absolute(path)?),
+            batch_depth: 0,
+            batch_dirty: false,
         })
     }
 
@@ -138,7 +144,24 @@ impl Library {
         Ok(Self {
             conn: db::open_in_memory()?,
             path: None,
+            batch_depth: 0,
+            batch_dirty: false,
         })
+    }
+
+    /// Run `f` with DAT imports deferring the re-identification of scanned
+    /// files, then identify once at the end (also when `f` fails, since the
+    /// DATs imported before the failure stay). Every import otherwise
+    /// re-checks the whole library, which adds up over hundreds of DATs.
+    /// Batches nest; only the outermost one identifies.
+    pub fn batch<T, E: From<Error>>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E> {
+        self.batch_depth += 1;
+        let result = f(self);
+        self.batch_depth -= 1;
+        if self.batch_depth == 0 && std::mem::take(&mut self.batch_dirty) {
+            self.identify()?;
+        }
+        result
     }
 
     /// Import a DAT (Logiqx XML or clrmamepro text). The system is taken from `system_key` when
@@ -171,15 +194,17 @@ impl Library {
                 dats.len()
             )));
         }
-        dats.into_iter()
-            .map(|fetch::DatBytes { member, bytes }| {
-                let source = match member {
-                    Some(m) => format!("{}#{m}", path.display()),
-                    None => path.to_string_lossy().into_owned(),
-                };
-                self.import_dat_bytes(&bytes, &source, system_key)
-            })
-            .collect()
+        self.batch(|lib| {
+            dats.into_iter()
+                .map(|fetch::DatBytes { member, bytes }| {
+                    let source = match member {
+                        Some(m) => format!("{}#{m}", path.display()),
+                        None => path.to_string_lossy().into_owned(),
+                    };
+                    lib.import_dat_bytes(&bytes, &source, system_key)
+                })
+                .collect()
+        })
     }
 
     /// Download a source's DATs and import them for `system_key`: one DAT,
@@ -208,13 +233,14 @@ impl Library {
             if dats.is_empty() {
                 return Err(Error::Dat(format!("the TOSEC pack has no {name} DATs")));
             }
-            return dats
-                .into_iter()
-                .map(|d| {
-                    let source = format!("{url}#{}", d.member.unwrap_or_default());
-                    self.import_dat_bytes(&d.bytes, &source, Some(system_key))
-                })
-                .collect();
+            return self.batch(|lib| {
+                dats.into_iter()
+                    .map(|d| {
+                        let source = format!("{url}#{}", d.member.unwrap_or_default());
+                        lib.import_dat_bytes(&d.bytes, &source, Some(system_key))
+                    })
+                    .collect()
+            });
         }
         let url = source.url().unwrap_or_default();
         let body = fetch::get(&url)?;
@@ -248,11 +274,13 @@ impl Library {
         if sources.is_empty() {
             return Err(Error::NoDownload(system.key));
         }
-        for source in sources {
-            let result = self.download_dat(system.key, source);
-            each(source, result);
-        }
-        Ok(())
+        self.batch(|lib| {
+            for source in sources {
+                let result = lib.download_dat(system.key, source);
+                each(source, result);
+            }
+            Ok(())
+        })
     }
 
     /// Compare imported DATs with No-Intro's `profile.xml` (from
@@ -317,6 +345,7 @@ impl Library {
             None => systems::from_dat_name(&dat.name),
         };
 
+        let defer = self.batch_depth > 0;
         let tx = self.conn.transaction()?;
         // The same file again is a no-op; a new version of a DAT (same name,
         // and same source family: see `fetch::source_family`) replaces the
@@ -405,7 +434,11 @@ impl Library {
                 }
             }
         }
-        identify::identify_all(&tx)?;
+        if defer {
+            self.batch_dirty = true;
+        } else {
+            identify::identify_all(&tx)?;
+        }
         tx.commit()?;
 
         Ok(ImportedDat {

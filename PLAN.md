@@ -41,7 +41,6 @@ end to end on the real collection, not just on fixtures.
 
 - Incremental rescans keyed on path + size + mtime, so unchanged files are
   not re-hashed.
-- Parallel hashing across files.
 - Scan-time system hints from extension or header to shortlist DATs.
 - Redump update check without re-downloading (Redump has no version index).
 - Parent/clone and region data (the regions seed from remustwo) for 1G1R in

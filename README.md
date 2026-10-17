@@ -35,8 +35,11 @@ Only files whose extension some system uses (the `extensions` column in
 `crates/romforge-core/src/systems.rs`) are hashed, plus `.zip`/`.7z`; the
 same rule applies to archive members, so a `.url` or `.nfo` in a zip is
 skipped. `--all-files` hashes everything. The folder you name may be a
-symlink, but symlinked folders inside it are never followed. Long scans show
-progress on stderr; `-q` keeps it quiet.
+symlink, but symlinked folders inside it are never followed. Files and
+archives are hashed on one thread per CPU (at most 8), largest first; a
+single solid `.7z` is still read as one stream. `-j 1` hashes one file at a
+time, kinder to a spinning disk. Long scans show progress on stderr; `-q`
+keeps it quiet.
 
 On your own collection, get DATs first, then scan a folder.
 
@@ -82,9 +85,16 @@ what a folder should contain; without it, every DAT is tried. Without
   provides.
 - **unknown**: nothing.
 
+A game is **have** when all its data ROMs are matched. Cue sheets are text
+that tools rewrite freely, so a disc whose tracks all match but whose `.cue`
+differs from the DAT's is still have, marked `cue differs` in
+`report --dat`.
+
 One hash may belong to many games; every hit is kept. A DAT's source path,
 SHA-256, import time and `<clrmamepro header=…>` hint are recorded.
-Importing a new version of a DAT (same name) replaces the old one.
+Importing a new version of a DAT (same name, same source) replaces the old
+one. Importing many DATs at once (a zip, `dat download`) re-identifies the
+library once at the end, not after every DAT.
 
 ## Desktop app
 

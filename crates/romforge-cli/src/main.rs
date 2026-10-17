@@ -40,6 +40,10 @@ enum Command {
         /// Print only the summary: no per-file lines, no progress
         #[arg(long, short)]
         quiet: bool,
+        /// Hashing threads [default: one per CPU, at most 8]; 1 for a slow
+        /// spinning disk
+        #[arg(long, short)]
+        jobs: Option<usize>,
     },
     /// Show file statuses and have/missing per DAT
     Report {
@@ -126,12 +130,15 @@ fn main() -> Result<()> {
     let mut lib = Library::open(&db).with_context(|| format!("opening {}", db.display()))?;
     match cli.command {
         Command::Dat(DatCommand::Import { files, system }) => {
-            for file in files {
-                let dats = lib
-                    .import_dats(&file, system.as_deref())
-                    .with_context(|| format!("importing {}", file.display()))?;
-                dats.into_iter().for_each(print_imported);
-            }
+            lib.batch(|lib| -> Result<()> {
+                for file in files {
+                    let dats = lib
+                        .import_dats(&file, system.as_deref())
+                        .with_context(|| format!("importing {}", file.display()))?;
+                    dats.into_iter().for_each(print_imported);
+                }
+                Ok(())
+            })?;
         }
         Command::Dat(DatCommand::Download { systems, all, extras }) => {
             let keys: Vec<String> = if all {
@@ -144,17 +151,20 @@ fn main() -> Result<()> {
                 systems
             };
             let mut failed = 0;
-            for key in keys {
-                lib.download_dats(&key, extras, |source, result| match result {
-                    Ok(dats) if dats.is_empty() => println!("{key}: {source}: already imported"),
-                    Ok(dats) => dats.into_iter().for_each(print_imported),
-                    Err(e) => {
-                        failed += 1;
-                        eprintln!("error: {key}: {source}: {e}");
-                    }
-                })
-                .with_context(|| format!("downloading DATs for {key}"))?;
-            }
+            lib.batch(|lib| -> Result<()> {
+                for key in keys {
+                    lib.download_dats(&key, extras, |source, result| match result {
+                        Ok(dats) if dats.is_empty() => println!("{key}: {source}: already imported"),
+                        Ok(dats) => dats.into_iter().for_each(print_imported),
+                        Err(e) => {
+                            failed += 1;
+                            eprintln!("error: {key}: {source}: {e}");
+                        }
+                    })
+                    .with_context(|| format!("downloading DATs for {key}"))?;
+                }
+                Ok(())
+            })?;
             if failed > 0 {
                 bail!("{failed} DAT downloads failed");
             }
@@ -203,6 +213,7 @@ fn main() -> Result<()> {
             scope,
             all_files,
             quiet,
+            jobs,
         } => {
             let scope = match (scope.system, scope.dat) {
                 (Some(key), _) => match systems::by_key(&key) {
@@ -212,7 +223,10 @@ fn main() -> Result<()> {
                 (None, Some(id)) => Scope::Dat(id),
                 (None, None) => Scope::All,
             };
-            let opts = ScanOptions { all_files };
+            let opts = ScanOptions {
+                all_files,
+                jobs: jobs.unwrap_or(0),
+            };
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
             let report = lib.scan_with(&dir, scope, opts, |p| meter.update(p))?;
             meter.finish();
@@ -290,7 +304,11 @@ fn main() -> Result<()> {
                     continue;
                 }
                 let mark = if g.have { "have" } else { "missing" };
-                println!("{mark:<8} {}  ({}/{} roms)", g.name, g.roms_have, g.roms_total);
+                let note = if g.cue_differs { ", cue differs" } else { "" };
+                println!(
+                    "{mark:<8} {}  ({}/{} roms{note})",
+                    g.name, g.roms_have, g.roms_total
+                );
                 for f in &g.files {
                     println!("         <- {f}");
                 }
