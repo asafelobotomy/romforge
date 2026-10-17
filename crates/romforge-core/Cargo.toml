@@ -12,14 +12,17 @@ sha1 = "0.11"
 quick-xml = "0.42"
 rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
 serde.workspace = true
+serde_json.workspace = true
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["bzip2", "deflate", "ppmd"] }
 sha2 = "0.11"
 thiserror = "2"
 walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "ppmd"] }
 ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier", "gzip"] }
+chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector"] }
 
 [dev-dependencies]
+chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 tempfile = "3"

@@ -8,11 +8,12 @@ use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
 
 use romforge_core::{
-    DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, fetch, systems,
+    DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, enrich, fetch,
+    launch, organize, systems,
 };
 
 #[derive(Parser)]
-#[command(version, about = "Scan and identify retro ROM collections (read-only)")]
+#[command(version, about = "Catalog, identify and organize retro ROM collections")]
 struct Cli {
     /// SQLite database [default: $XDG_DATA_HOME/romforge/romforge.db]
     #[arg(long, global = true, env = "ROMFORGE_DB")]
@@ -45,6 +46,39 @@ enum Command {
         #[arg(long, short)]
         jobs: Option<usize>,
     },
+    /// Rename and move identified files into a tidy folder (milestone 2)
+    #[command(subcommand)]
+    Organize(OrganizeCommand),
+    /// Fetch metadata and art for the games you have (milestone 3)
+    ///
+    /// From libretro's database and thumbnail server; art is saved under
+    /// $ROMFORGE_CACHE (default ~/.cache/romforge), never next to ROMs.
+    Enrich {
+        /// Art to fetch: boxart, title, snap; `none` for metadata only
+        #[arg(long, value_delimiter = ',', default_value = "boxart")]
+        art: Vec<String>,
+        /// Only this system
+        #[arg(long)]
+        system: Option<String>,
+        /// Fetch again what was fetched or found missing before
+        #[arg(long)]
+        refresh: bool,
+    },
+    /// Show metadata and art for games whose name contains QUERY
+    Info { query: String },
+    /// Start a game (by name, part of a name, or file path) in an emulator
+    Launch {
+        query: String,
+        /// Emulator to use (see `emulator list`), e.g. retroarch:snes9x
+        #[arg(long, short)]
+        emulator: Option<String>,
+        /// Print the command instead of running it
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// List, add or remove emulators
+    #[command(subcommand)]
+    Emulator(EmulatorCommand),
     /// Show file statuses and have/missing per DAT
     Report {
         /// List the games of one DAT
@@ -93,6 +127,82 @@ enum DatCommand {
     Systems,
 }
 
+#[derive(Subcommand)]
+enum OrganizeCommand {
+    /// Show what would move where; changes nothing
+    Plan(OrganizeArgs),
+    /// Move the files as `plan` shows, journaled for `undo`
+    Apply(OrganizeArgs),
+    /// Move the files of the latest batch (or --batch N) back
+    Undo {
+        #[arg(long)]
+        batch: Option<i64>,
+    },
+    /// List applied batches
+    History,
+}
+
+#[derive(Subcommand)]
+enum EmulatorCommand {
+    /// Emulators romforge knows, and which are installed
+    List {
+        /// Also those not installed
+        #[arg(long)]
+        all: bool,
+    },
+    /// Add (or replace) an emulator for a system; tried before the defaults
+    Add {
+        name: String,
+        #[arg(long)]
+        system: String,
+        /// Executable (name on PATH, or a full path)
+        #[arg(long)]
+        program: String,
+        /// Arguments; {rom} is the file
+        #[arg(long, allow_hyphen_values = true, num_args = 1.., default_value = "{rom}")]
+        args: Vec<String>,
+        /// It opens ROMs inside zip/7z itself
+        #[arg(long)]
+        archives: bool,
+    },
+    /// Remove an emulator you added
+    Remove { name: String },
+}
+
+#[derive(Args)]
+struct OrganizeArgs {
+    /// Destination folder; files go to DEST/<system>/...
+    #[arg(long)]
+    dest: PathBuf,
+    /// Only files under this folder
+    #[arg(long)]
+    from: Option<PathBuf>,
+    /// Only files of this system
+    #[arg(long)]
+    system: Option<String>,
+    /// Keep one version per title (best region, then highest revision)
+    #[arg(long = "1g1r")]
+    one_g1r: bool,
+    /// Region preference for --1g1r, best first
+    #[arg(long, value_delimiter = ',', default_value = "USA,World,Europe,Japan")]
+    regions: Vec<String>,
+    /// Also list files that won't move, with the reason
+    #[arg(long, short)]
+    verbose: bool,
+}
+
+impl OrganizeArgs {
+    fn options(&self) -> organize::OrganizeOptions {
+        organize::OrganizeOptions {
+            from: self.from.clone(),
+            system: self.system.clone(),
+            one_g1r: self.one_g1r,
+            regions: self.regions.clone(),
+            ..organize::OrganizeOptions::new(&self.dest)
+        }
+    }
+}
+
 #[derive(Args)]
 #[group(multiple = false)]
 struct ScopeArgs {
@@ -105,6 +215,14 @@ struct ScopeArgs {
 }
 
 fn main() -> Result<()> {
+    // Like other command-line tools, end quietly when the reader of our
+    // output goes away (`romforge-cli report | head`) instead of panicking.
+    #[cfg(unix)]
+    // SAFETY: restoring the default action of a signal before any thread
+    // starts.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     let db = cli.db.unwrap_or_else(romforge_core::default_db_path);
 
@@ -141,30 +259,29 @@ fn main() -> Result<()> {
             })?;
         }
         Command::Dat(DatCommand::Download { systems, all, extras }) => {
-            let keys: Vec<String> = if all {
-                systems::SYSTEMS
-                    .iter()
-                    .filter(|s| !fetch::sources(s, extras).is_empty())
-                    .map(|s| s.key.to_owned())
-                    .collect()
-            } else {
-                systems
-            };
             let mut failed = 0;
-            lib.batch(|lib| -> Result<()> {
-                for key in keys {
-                    lib.download_dats(&key, extras, |source, result| match result {
+            let mut report =
+                |key: &str, source: fetch::Source, result: Result<Vec<ImportedDat>, romforge_core::Error>| {
+                    match result {
                         Ok(dats) if dats.is_empty() => println!("{key}: {source}: already imported"),
                         Ok(dats) => dats.into_iter().for_each(print_imported),
                         Err(e) => {
                             failed += 1;
                             eprintln!("error: {key}: {source}: {e}");
                         }
-                    })
-                    .with_context(|| format!("downloading DATs for {key}"))?;
-                }
-                Ok(())
-            })?;
+                    }
+                };
+            if all {
+                lib.download_all(extras, &mut report)?;
+            } else {
+                lib.batch(|lib| -> Result<()> {
+                    for key in &systems {
+                        lib.download_dats(key, extras, |source, r| report(key, source, r))
+                            .with_context(|| format!("downloading DATs for {key}"))?;
+                    }
+                    Ok(())
+                })?;
+            }
             if failed > 0 {
                 bail!("{failed} DAT downloads failed");
             }
@@ -230,6 +347,9 @@ fn main() -> Result<()> {
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
             let report = lib.scan_with(&dir, scope, opts, |p| meter.update(p))?;
             meter.finish();
+            for (sheet, problem) in &report.sheet_problems {
+                eprintln!("sheet: {}: {problem}", sheet.display());
+            }
             for (path, member, err) in &report.errors {
                 let at = if member.is_empty() {
                     String::new()
@@ -295,6 +415,184 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Command::Organize(OrganizeCommand::Plan(args)) => {
+            let plan = lib.organize_plan(&args.options())?;
+            print_plan(&plan, args.verbose);
+            println!(
+                "{} to move, {} staying; nothing changed (run `organize apply` to move)",
+                plan.moves.len(),
+                plan.skipped.len()
+            );
+        }
+        Command::Organize(OrganizeCommand::Apply(args)) => {
+            let plan = lib.organize_plan(&args.options())?;
+            print_plan(&plan, args.verbose);
+            if plan.moves.is_empty() {
+                println!(
+                    "nothing to move ({} files stay; -v shows why)",
+                    plan.skipped.len()
+                );
+                return Ok(());
+            }
+            let applied = lib.organize_apply(&plan, &args.dest)?;
+            for (m, e) in &applied.failed {
+                eprintln!("error: {}: {e}", m.from.display());
+            }
+            println!(
+                "batch #{}: moved {}, failed {} (undo with `organize undo --batch {}`)",
+                applied.batch_id,
+                applied.moved,
+                applied.failed.len(),
+                applied.batch_id
+            );
+            if !applied.failed.is_empty() {
+                bail!("{} moves failed", applied.failed.len());
+            }
+        }
+        Command::Organize(OrganizeCommand::Undo { batch }) => {
+            let undone = lib.organize_undo(batch)?;
+            for (p, e) in &undone.failed {
+                eprintln!("error: {}: {e}", p.display());
+            }
+            println!(
+                "batch #{}: restored {}, failed {}",
+                undone.batch_id,
+                undone.restored,
+                undone.failed.len()
+            );
+            if !undone.failed.is_empty() {
+                bail!("{} files could not be moved back", undone.failed.len());
+            }
+        }
+        Command::Organize(OrganizeCommand::History) => {
+            for b in lib.organize_batches()? {
+                let state = match &b.undone_at {
+                    Some(t) => format!("undone {t}"),
+                    None => "applied".into(),
+                };
+                println!(
+                    "#{:<4} {}  {:>5} moves  {state}  -> {}",
+                    b.batch_id, b.created_at, b.moves, b.dest
+                );
+            }
+        }
+        Command::Enrich { art, system, refresh } => {
+            let mut kinds = Vec::new();
+            for a in art.iter().filter(|a| !a.eq_ignore_ascii_case("none")) {
+                match enrich::ArtKind::parse(a) {
+                    Some(k) => kinds.push(k),
+                    None => bail!("unknown art kind {a:?} (boxart, title, snap, none)"),
+                }
+            }
+            let opts = enrich::EnrichOptions {
+                art: kinds,
+                system,
+                refresh,
+                ..enrich::EnrichOptions::new(enrich::default_cache_dir())
+            };
+            let tty = std::io::stderr().is_terminal();
+            let r = lib.enrich(&opts, |e| {
+                if tty {
+                    let line = match e {
+                        enrich::EnrichEvent::Metadata { system, field } => format!("{system}: {field}"),
+                        enrich::EnrichEvent::Art { system, game, kind } => {
+                            format!("{system}: {} {game}", kind.as_str())
+                        }
+                    };
+                    eprint!("\r\x1b[2K{line}");
+                }
+            })?;
+            if tty {
+                eprint!("\r\x1b[2K");
+            }
+            for e in &r.errors {
+                eprintln!("error: {e}");
+            }
+            println!(
+                "{} games in {} systems: {} with metadata; art {} saved, {} not found upstream, {} already cached (in {})",
+                r.games,
+                r.systems,
+                r.games_with_metadata,
+                r.art_saved,
+                r.art_missing,
+                r.art_cached,
+                opts.cache_dir.display()
+            );
+        }
+        Command::Info { query } => {
+            let found = lib.game_info(&query)?;
+            if found.is_empty() {
+                bail!("no metadata or art for {query:?}; run `romforge-cli enrich` first");
+            }
+            for g in found {
+                println!("{}  [{}]", g.title, g.system);
+                for (k, v) in &g.fields {
+                    println!("  {k:<12} {v}");
+                }
+                for (k, p) in &g.art {
+                    println!("  {:<12} {}", k.as_str(), p.display());
+                }
+            }
+        }
+        Command::Launch {
+            query,
+            emulator,
+            dry_run,
+        } => {
+            let spec = lib.launch_plan(&launch::Env::detect(), &query, emulator.as_deref())?;
+            let shown: Vec<String> = std::iter::once(spec.program.display().to_string())
+                .chain(spec.args.iter().map(|a| {
+                    if a.contains(' ') {
+                        format!("'{a}'")
+                    } else {
+                        a.clone()
+                    }
+                }))
+                .collect();
+            println!(
+                "{} [{}] with {}: {}",
+                spec.game,
+                spec.system,
+                spec.emulator,
+                shown.join(" ")
+            );
+            if !dry_run {
+                let pid = launch::spawn(&spec)?;
+                println!("started (pid {pid})");
+            }
+        }
+        Command::Emulator(EmulatorCommand::List { all }) => {
+            for e in lib.emulators(&launch::Env::detect())? {
+                match (&e.found, all) {
+                    (Some(how), _) => println!("{:<28} {:<40} {how}", e.name, e.systems.join(", ")),
+                    (None, true) => println!("{:<28} {:<40} -", e.name, e.systems.join(", ")),
+                    (None, false) => {}
+                }
+            }
+        }
+        Command::Emulator(EmulatorCommand::Add {
+            name,
+            system,
+            program,
+            args,
+            archives,
+        }) => {
+            lib.add_emulator(&launch::UserEmulator {
+                name: name.clone(),
+                system,
+                program,
+                args,
+                archives,
+            })?;
+            println!("added {name}");
+        }
+        Command::Emulator(EmulatorCommand::Remove { name }) => {
+            let n = lib.remove_emulator(&name)?;
+            if n == 0 {
+                bail!("no emulator named {name:?} (only ones you added can be removed)");
+            }
+            println!("removed {name}");
+        }
         Command::Report {
             dat: Some(id),
             missing,
@@ -326,6 +624,17 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_plan(plan: &organize::Plan, verbose: bool) {
+    for m in &plan.moves {
+        println!("move  {}\n   -> {}", m.from.display(), m.to.display());
+    }
+    if verbose {
+        for s in &plan.skipped {
+            println!("stay  {}  ({})", s.path.display(), s.reason);
+        }
+    }
 }
 
 fn print_imported(d: ImportedDat) {

@@ -1,0 +1,545 @@
+//! Milestone 5: start a game in RetroArch or a standalone emulator.
+//!
+//! Which emulator: one you pass by name, else the first that is installed
+//! of the system's RetroArch `cores` and then its standalone `emulators`
+//! (both columns of `systems.rs`), with your own `emulator add` entries
+//! first. RetroArch is found on `PATH` or as the Flatpak
+//! `org.libretro.RetroArch`, its cores in the usual core folders.
+//!
+//! What to start: a game's matched file. A ROM inside a zip/7z is handed to
+//! RetroArch as the archive (RetroArch opens archives itself); a standalone
+//! emulator gets it only if it is marked as reading archives, since romforge
+//! never extracts. For a loose disc set the sheet (`.cue`, `.gdi`, `.m3u`)
+//! is started, not a track.
+
+use std::path::{Path, PathBuf};
+
+use rusqlite::{Connection, params};
+
+use crate::{Error, systems};
+
+/// A standalone emulator romforge knows how to start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KnownEmulator {
+    pub name: &'static str,
+    /// Executable names to look for on `PATH`.
+    pub programs: &'static [&'static str],
+    pub flatpak: Option<&'static str>,
+    /// Arguments; `{rom}` is the file.
+    pub args: &'static [&'static str],
+    /// Opens a ROM inside a zip/7z itself.
+    pub archives: bool,
+}
+
+const fn emu(
+    name: &'static str,
+    programs: &'static [&'static str],
+    flatpak: &'static str,
+    args: &'static [&'static str],
+    archives: bool,
+) -> KnownEmulator {
+    KnownEmulator {
+        name,
+        programs,
+        flatpak: Some(flatpak),
+        args,
+        archives,
+    }
+}
+
+pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
+    emu(
+        "duckstation",
+        &["duckstation-qt", "duckstation"],
+        "org.duckstation.DuckStation",
+        &["{rom}"],
+        false,
+    ),
+    emu(
+        "pcsx2",
+        &["pcsx2-qt", "pcsx2"],
+        "net.pcsx2.PCSX2",
+        &["{rom}"],
+        false,
+    ),
+    emu(
+        "dolphin",
+        &["dolphin-emu"],
+        "org.DolphinEmu.dolphin-emu",
+        &["-b", "-e", "{rom}"],
+        false,
+    ),
+    emu(
+        "ppsspp",
+        &["PPSSPPSDL", "ppsspp"],
+        "org.ppsspp.PPSSPP",
+        &["{rom}"],
+        false,
+    ),
+    emu("flycast", &["flycast"], "org.flycast.Flycast", &["{rom}"], false),
+    emu("mgba", &["mgba-qt", "mgba"], "io.mgba.mGBA", &["{rom}"], true),
+    emu("melonds", &["melonDS"], "net.kuribo64.melonDS", &["{rom}"], true),
+    emu("xemu", &["xemu"], "app.xemu.xemu", &["-dvd_path", "{rom}"], false),
+    emu(
+        "rpcs3",
+        &["rpcs3"],
+        "net.rpcs3.RPCS3",
+        &["--no-gui", "{rom}"],
+        false,
+    ),
+    emu("mednafen", &["mednafen"], "com.github.mednafen", &["{rom}"], true),
+    emu(
+        "cemu",
+        &["cemu", "Cemu"],
+        "info.cemu.Cemu",
+        &["-g", "{rom}"],
+        false,
+    ),
+];
+
+pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
+
+/// How a program is started.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum Runner {
+    /// An executable path.
+    Program(PathBuf),
+    /// `flatpak run <id>`.
+    Flatpak(String),
+}
+
+/// What [`plan`] decided: run `program` with `args`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LaunchSpec {
+    pub game: String,
+    pub system: String,
+    pub emulator: String,
+    pub rom: PathBuf,
+    pub program: PathBuf,
+    pub args: Vec<String>,
+}
+
+/// An emulator a user added (`emulator add`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct UserEmulator {
+    pub name: String,
+    pub system: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub archives: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EmulatorStatus {
+    pub name: String,
+    pub systems: Vec<String>,
+    /// How it would be started, if installed.
+    pub found: Option<String>,
+}
+
+/// Where to look for installed emulators. [`Env::detect`] reads the real
+/// environment; tests point it elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Env {
+    pub path: Vec<PathBuf>,
+    pub core_dirs: Vec<PathBuf>,
+    pub flatpak_dirs: Vec<PathBuf>,
+}
+
+impl Env {
+    pub fn detect() -> Self {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let path = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        let mut core_dirs = Vec::new();
+        if let Some(h) = &home {
+            core_dirs.push(h.join(".config/retroarch/cores"));
+            core_dirs.push(h.join(format!(".var/app/{RETROARCH_FLATPAK}/config/retroarch/cores")));
+        }
+        for d in [
+            "/usr/lib/libretro",
+            "/usr/lib64/libretro",
+            "/usr/lib/x86_64-linux-gnu/libretro",
+            "/usr/local/lib/libretro",
+        ] {
+            core_dirs.push(PathBuf::from(d));
+        }
+        let mut flatpak_dirs = vec![PathBuf::from("/var/lib/flatpak/app")];
+        if let Some(h) = &home {
+            flatpak_dirs.push(h.join(".local/share/flatpak/app"));
+        }
+        Env {
+            path,
+            core_dirs,
+            flatpak_dirs,
+        }
+    }
+
+    fn which(&self, program: &str) -> Option<PathBuf> {
+        let p = Path::new(program);
+        if p.is_absolute() {
+            return p.is_file().then(|| p.to_path_buf());
+        }
+        self.path
+            .iter()
+            .map(|d| d.join(program))
+            .find(|c| is_executable(c))
+    }
+
+    fn flatpak(&self, id: &str) -> Option<String> {
+        self.flatpak_dirs
+            .iter()
+            .any(|d| d.join(id).is_dir())
+            .then(|| id.to_owned())
+    }
+
+    fn retroarch(&self) -> Option<Runner> {
+        self.which("retroarch")
+            .map(Runner::Program)
+            .or_else(|| self.flatpak(RETROARCH_FLATPAK).map(Runner::Flatpak))
+    }
+
+    fn core(&self, name: &str) -> Option<PathBuf> {
+        let file = format!("{name}_libretro.{}", std::env::consts::DLL_EXTENSION);
+        self.core_dirs.iter().map(|d| d.join(&file)).find(|p| p.is_file())
+    }
+
+    fn known(&self, e: &KnownEmulator) -> Option<Runner> {
+        e.programs
+            .iter()
+            .find_map(|p| self.which(p))
+            .map(Runner::Program)
+            .or_else(|| e.flatpak.and_then(|id| self.flatpak(id)).map(Runner::Flatpak))
+    }
+}
+
+fn is_executable(p: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        p.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        p.is_file()
+    }
+}
+
+fn command(runner: &Runner, args: Vec<String>) -> (PathBuf, Vec<String>) {
+    match runner {
+        Runner::Program(p) => (p.clone(), args),
+        Runner::Flatpak(id) => {
+            let mut a = vec!["run".to_owned(), id.clone()];
+            a.extend(args);
+            (PathBuf::from("flatpak"), a)
+        }
+    }
+}
+
+fn fill(args: &[impl AsRef<str>], rom: &Path) -> Vec<String> {
+    args.iter()
+        .map(|a| a.as_ref().replace("{rom}", &rom.to_string_lossy()))
+        .collect()
+}
+
+pub fn user_emulators(conn: &Connection) -> Result<Vec<UserEmulator>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT e.name, s.key, e.program, e.args, e.archives FROM emulators e
+         JOIN systems s ON s.system_id = e.system_id ORDER BY e.emulator_id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        let args: String = r.get(3)?;
+        Ok(UserEmulator {
+            name: r.get(0)?,
+            system: r.get(1)?,
+            program: r.get(2)?,
+            args: serde_json::from_str(&args).unwrap_or_default(),
+            archives: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub fn add_emulator(conn: &Connection, e: &UserEmulator) -> Result<(), Error> {
+    let system = systems::by_key(&e.system).ok_or_else(|| Error::UnknownSystem(e.system.clone()))?;
+    if e.args.iter().all(|a| !a.contains("{rom}")) {
+        return Err(Error::Launch("the arguments need a {rom} placeholder".into()));
+    }
+    conn.execute(
+        "INSERT INTO emulators (name, system_id, program, args, archives) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name, system_id) DO UPDATE SET program = excluded.program, args = excluded.args,
+           archives = excluded.archives",
+        params![
+            e.name,
+            system.id,
+            e.program,
+            serde_json::to_string(&e.args).unwrap_or_default(),
+            e.archives
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn remove_emulator(conn: &Connection, name: &str) -> Result<usize, Error> {
+    Ok(conn.execute("DELETE FROM emulators WHERE name = ?1", [name])?)
+}
+
+/// Every emulator romforge could use, and whether it is installed.
+pub fn status(conn: &Connection, env: &Env) -> Result<Vec<EmulatorStatus>, Error> {
+    let mut out = Vec::new();
+    for u in user_emulators(conn)? {
+        out.push(EmulatorStatus {
+            found: env.which(&u.program).map(|p| p.display().to_string()),
+            name: u.name,
+            systems: vec![u.system],
+        });
+    }
+    let ra = env.retroarch();
+    let mut cores: Vec<&str> = systems::SYSTEMS
+        .iter()
+        .flat_map(|s| s.cores.iter().copied())
+        .collect();
+    cores.sort();
+    cores.dedup();
+    for core in cores {
+        let found = match (&ra, env.core(core)) {
+            (Some(r), Some(c)) => Some(format!("{} -L {}", describe(r), c.display())),
+            _ => None,
+        };
+        out.push(EmulatorStatus {
+            name: format!("retroarch:{core}"),
+            systems: systems::SYSTEMS
+                .iter()
+                .filter(|s| s.cores.contains(&core))
+                .map(|s| s.key.to_owned())
+                .collect(),
+            found,
+        });
+    }
+    for e in KNOWN_EMULATORS {
+        out.push(EmulatorStatus {
+            name: e.name.to_owned(),
+            systems: systems::SYSTEMS
+                .iter()
+                .filter(|s| s.emulators.contains(&e.name))
+                .map(|s| s.key.to_owned())
+                .collect(),
+            found: env.known(e).map(|r| describe(&r)),
+        });
+    }
+    Ok(out)
+}
+
+fn describe(r: &Runner) -> String {
+    match r {
+        Runner::Program(p) => p.display().to_string(),
+        Runner::Flatpak(id) => format!("flatpak run {id}"),
+    }
+}
+
+/// A matched file of a game: (game, system key, path on disk, member).
+fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, PathBuf, String)>, Error> {
+    let as_path = std::fs::canonicalize(query).ok();
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT g.name, s.key, f.path, f.member
+         FROM files f JOIN matches m ON m.file_id = f.file_id AND m.out_of_scope = 0
+              AND m.via IN ('sha1', 'md5')
+         JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
+         JOIN dats d ON d.dat_id = g.dat_id JOIN systems s ON s.system_id = d.system_id
+         WHERE f.status = 'matched' AND (f.path = ?1 OR g.name = ?2 OR (?1 IS NULL AND g.name LIKE '%' || ?2 || '%'))
+         ORDER BY g.name <> ?2, g.name, f.path, f.member",
+    )?;
+    let rows = stmt.query_map(
+        params![as_path.map(|p| p.to_string_lossy().into_owned()), query],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                PathBuf::from(r.get::<_, String>(2)?),
+                r.get(3)?,
+            ))
+        },
+    )?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Work out how to start `query` (a game name, part of one, or a file path)
+/// with `emulator` (a name from [`status`]) or the best installed one.
+pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -> Result<LaunchSpec, Error> {
+    let found = candidates(conn, query)?;
+    let Some((game, system_key, _, _)) = found.first().cloned() else {
+        return Err(Error::Launch(format!("no matched file for {query:?}")));
+    };
+    let titles: std::collections::BTreeSet<&str> = found.iter().map(|f| f.0.as_str()).collect();
+    if titles.len() > 1 && !titles.contains(query) {
+        let some: Vec<&str> = titles.iter().take(5).copied().collect();
+        return Err(Error::Launch(format!(
+            "{query:?} matches several games: {}",
+            some.join(" | ")
+        )));
+    }
+    let files: Vec<&(String, String, PathBuf, String)> = found.iter().filter(|f| f.0 == game).collect();
+    let system = systems::by_key(&system_key).ok_or_else(|| Error::UnknownSystem(system_key.clone()))?;
+
+    // The file to start: an archive (as a whole), a sheet, a CHD, else the
+    // first file.
+    let in_archive = files.iter().find(|f| !f.3.is_empty()).map(|f| f.2.clone());
+    let is_sheet = |p: &Path| {
+        p.extension().is_some_and(|e| {
+            ["cue", "gdi", "m3u"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str())
+        })
+    };
+    let sheet = files
+        .iter()
+        .map(|f| f.2.clone())
+        .find(|p| is_sheet(p))
+        .or_else(|| own_sheet(&files[0].2, &is_sheet));
+    let (rom, archived) = match (in_archive, sheet) {
+        (Some(a), _) => {
+            let chd = a.extension().is_some_and(|e| e.eq_ignore_ascii_case("chd"));
+            (a, !chd)
+        }
+        (None, Some(s)) => (s, false),
+        (None, None) => (files[0].2.clone(), false),
+    };
+
+    let spec = |emulator: String, runner: &Runner, args: Vec<String>| {
+        let (program, args) = command(runner, args);
+        LaunchSpec {
+            game: game.clone(),
+            system: system.key.to_owned(),
+            emulator,
+            rom: rom.clone(),
+            program,
+            args,
+        }
+    };
+    let wanted = |name: &str| emulator.is_none_or(|w| w.eq_ignore_ascii_case(name));
+    let mut why_not = Vec::new();
+
+    for u in user_emulators(conn)?
+        .into_iter()
+        .filter(|u| u.system == system.key)
+    {
+        if !wanted(&u.name) {
+            continue;
+        }
+        if archived && !u.archives {
+            why_not.push(format!("{} can't open archives", u.name));
+            continue;
+        }
+        match env.which(&u.program) {
+            Some(p) => return Ok(spec(u.name.clone(), &Runner::Program(p), fill(&u.args, &rom))),
+            None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
+        }
+    }
+    if let Some(ra) = env.retroarch() {
+        for core in system.cores {
+            let name = format!("retroarch:{core}");
+            if !wanted(&name) && !wanted("retroarch") {
+                continue;
+            }
+            match env.core(core) {
+                Some(c) => {
+                    let args = vec![
+                        "-L".to_owned(),
+                        c.to_string_lossy().into_owned(),
+                        rom.to_string_lossy().into_owned(),
+                    ];
+                    return Ok(spec(name, &ra, args));
+                }
+                None => why_not.push(format!("{name}: core not installed")),
+            }
+        }
+    } else if !system.cores.is_empty() {
+        why_not.push("RetroArch not found".into());
+    }
+    for name in system.emulators {
+        let Some(e) = KNOWN_EMULATORS.iter().find(|e| e.name == *name) else {
+            continue;
+        };
+        if !wanted(e.name) {
+            continue;
+        }
+        if archived && !e.archives {
+            why_not.push(format!("{} can't open archives", e.name));
+            continue;
+        }
+        match env.known(e) {
+            Some(r) => return Ok(spec(e.name.to_owned(), &r, fill(e.args, &rom))),
+            None => why_not.push(format!("{} not installed", e.name)),
+        }
+    }
+    Err(Error::Launch(format!(
+        "no emulator to start {game} [{}]: {}",
+        system.key,
+        if why_not.is_empty() {
+            "none known for this system; add one with `emulator add`".to_owned()
+        } else {
+            why_not.join("; ")
+        }
+    )))
+}
+
+/// A sheet next to a loose track that lists it: the disc's own cue (or
+/// gdi), when it differs from the DAT's and so didn't match.
+fn own_sheet(track: &Path, is_sheet: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
+    let dir = track.parent()?;
+    let mut sheets: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| is_sheet(p))
+        .collect();
+    sheets.sort();
+    sheets.into_iter().find(|s| match crate::disc::sheet_files(s) {
+        Some(Ok(listed)) => listed.iter().any(|f| f == track),
+        _ => false,
+    })
+}
+
+/// Start the emulator and return its process id. romforge doesn't wait for
+/// it, but a thread reaps it when it exits so no zombie is left behind.
+pub fn spawn(spec: &LaunchSpec) -> Result<u32, Error> {
+    let mut child = std::process::Command::new(&spec.program)
+        .args(&spec.args)
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| Error::Launch(format!("{}: {e}", spec.program.display())))?;
+    let pid = child.id();
+    std::thread::spawn(move || child.wait());
+    Ok(pid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_emulators_cover_the_systems_table() {
+        for s in systems::SYSTEMS {
+            for e in s.emulators {
+                assert!(
+                    KNOWN_EMULATORS.iter().any(|k| k.name == *e),
+                    "{} lists unknown {e}",
+                    s.key
+                );
+            }
+        }
+        for e in KNOWN_EMULATORS {
+            assert!(e.args.iter().any(|a| a.contains("{rom}")), "{}", e.name);
+        }
+    }
+
+    #[test]
+    fn flatpak_commands() {
+        let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()]);
+        assert_eq!(p, PathBuf::from("flatpak"));
+        assert_eq!(a, ["run", "org.x.Y", "{rom}"]);
+        assert_eq!(
+            fill(&["-e", "{rom}"], Path::new("/r/a b.iso")),
+            ["-e", "/r/a b.iso"]
+        );
+    }
+}

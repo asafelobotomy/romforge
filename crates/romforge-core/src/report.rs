@@ -10,7 +10,7 @@ use crate::identify::Status;
 
 /// ROMs that a matched (or duplicate) file hit by size + SHA1/MD5 inside
 /// that file's scan scope.
-const HAD: &str = "
+pub(crate) const HAD: &str = "
     had AS (
         SELECT DISTINCT m.rom_id FROM matches m JOIN files f ON f.file_id = m.file_id
         WHERE m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
@@ -21,7 +21,7 @@ const HAD: &str = "
 /// and cue sheets are had. `nodump` ROMs are not counted. Only games with a
 /// had ROM can be complete, so callers keep `games_in` to those where they
 /// can; scanning every ROM of every DAT is slow at TOSEC scale.
-const GAME_HAVE: &str = "
+pub(crate) const GAME_HAVE: &str = "
     game_have AS (
         SELECT r.game_id,
                sum(NOT r.sheet) AS data_total,
@@ -39,7 +39,7 @@ const GAME_HAVE: &str = "
 /// tools rewrite freely, so one that differs from the DAT doesn't make a
 /// disc missing (the game is flagged `cue_differs` instead); a game made only
 /// of sheets needs them all.
-const IS_HAVE: &str = "
+pub(crate) const IS_HAVE: &str = "
     (CASE WHEN gh.data_total > 0 THEN gh.data_have = gh.data_total
           ELSE gh.sheet_total > 0 AND gh.sheet_have = gh.sheet_total END)";
 

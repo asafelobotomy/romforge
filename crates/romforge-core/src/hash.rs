@@ -53,6 +53,24 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// CRC32 / MD5 / SHA1 fed piece by piece, with no header detection (disc
+/// tracks have no copier headers).
+#[derive(Default)]
+pub struct RawHasher(Hasher);
+
+impl RawHasher {
+    pub fn update(&mut self, data: &[u8]) {
+        self.0.update(data);
+    }
+
+    pub fn finish(self) -> Hashes {
+        Hashes {
+            raw: self.0.finish(),
+            stripped: None,
+        }
+    }
+}
+
 /// Hash `reader`, whose total length must be `size` (needed up front for the
 /// size-based SNES header rule). Errors if the stream length differs.
 pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {

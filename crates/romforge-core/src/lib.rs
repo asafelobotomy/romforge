@@ -1,14 +1,19 @@
 //! romforge core: DAT import, scanning, hashing and identification.
 //!
-//! Milestone 1 is read-only with respect to ROM files: nothing here moves,
-//! renames, writes or extracts them.
+//! Scanning and identifying never touch ROM files. Only [`organize`]
+//! (milestone 2) moves and renames them, after a dry run, journaled for
+//! undo; nothing ever rewrites or extracts a ROM.
 
 pub mod dat;
 mod db;
+pub mod disc;
+pub mod enrich;
 pub mod fetch;
 pub mod hash;
 pub mod headers;
 mod identify;
+pub mod launch;
+pub mod organize;
 mod report;
 pub mod scan;
 pub mod systems;
@@ -46,6 +51,12 @@ pub enum Error {
     Http(String),
     #[error("no DAT source is known for {0}")]
     NoDownload(&'static str),
+    #[error("organize: {0}")]
+    Organize(String),
+    #[error("CHD: {0}")]
+    Chd(String),
+    #[error("launch: {0}")]
+    Launch(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -72,6 +83,9 @@ pub struct ScanReport {
     /// Symlinked folders inside the tree (not followed).
     pub skipped_links: Vec<PathBuf>,
     pub errors: Vec<(PathBuf, String, String)>,
+    /// Loose `.cue`/`.gdi` sheets and the track files they name that are
+    /// missing.
+    pub sheet_problems: Vec<(PathBuf, String)>,
 }
 
 /// Running totals passed to the progress callback after every file or member.
@@ -158,8 +172,12 @@ impl Library {
         self.batch_depth += 1;
         let result = f(self);
         self.batch_depth -= 1;
-        if self.batch_depth == 0 && std::mem::take(&mut self.batch_dirty) {
-            self.identify()?;
+        if self.batch_depth == 0 {
+            // A TOSEC pack is shared within one batch only.
+            fetch::forget_tosec_pack();
+            if std::mem::take(&mut self.batch_dirty) {
+                self.identify()?;
+            }
         }
         result
     }
@@ -233,13 +251,30 @@ impl Library {
             if dats.is_empty() {
                 return Err(Error::Dat(format!("the TOSEC pack has no {name} DATs")));
             }
+            // Every DAT is tried even if one fails: the "already imported"
+            // check above would otherwise never come back for the rest.
             return self.batch(|lib| {
-                dats.into_iter()
-                    .map(|d| {
-                        let source = format!("{url}#{}", d.member.unwrap_or_default());
-                        lib.import_dat_bytes(&d.bytes, &source, Some(system_key))
-                    })
-                    .collect()
+                let total = dats.len();
+                let mut imported = Vec::new();
+                let mut failed = Vec::new();
+                for d in dats {
+                    let member = d.member.unwrap_or_default();
+                    let source = format!("{url}#{member}");
+                    match lib.import_dat_bytes(&d.bytes, &source, Some(system_key)) {
+                        Ok(i) => imported.push(i),
+                        Err(e) => failed.push(format!("{member}: {e}")),
+                    }
+                }
+                if failed.is_empty() {
+                    Ok(imported)
+                } else {
+                    Err(Error::Dat(format!(
+                        "{} of {total} TOSEC {name} DATs failed ({} imported): {}",
+                        failed.len(),
+                        imported.len(),
+                        failed.join("; ")
+                    )))
+                }
             });
         }
         let url = source.url().unwrap_or_default();
@@ -278,6 +313,24 @@ impl Library {
             for source in sources {
                 let result = lib.download_dat(system.key, source);
                 each(source, result);
+            }
+            Ok(())
+        })
+    }
+
+    /// [`Library::download_dats`] for every system that has a DAT source,
+    /// in one batch. `each` gets the system key too.
+    pub fn download_all(
+        &mut self,
+        extras: bool,
+        mut each: impl FnMut(&'static str, fetch::Source, Result<Vec<ImportedDat>, Error>),
+    ) -> Result<(), Error> {
+        self.batch(|lib| {
+            for s in systems::SYSTEMS
+                .iter()
+                .filter(|s| !fetch::sources(s, extras).is_empty())
+            {
+                lib.download_dats(s.key, extras, |source, r| each(s.key, source, r))?;
             }
             Ok(())
         })
@@ -529,6 +582,20 @@ impl Library {
                         return;
                     }
                 };
+                if entry.member.is_empty()
+                    && let Some(listed) = disc::sheet_files(&entry.path)
+                {
+                    match listed {
+                        Ok(files) => {
+                            for f in files.iter().filter(|f| !f.exists()) {
+                                report
+                                    .sheet_problems
+                                    .push((entry.path.clone(), format!("missing {}", f.display())));
+                            }
+                        }
+                        Err(e) => report.sheet_problems.push((entry.path.clone(), e.to_string())),
+                    }
+                }
                 match entry.hashes {
                     Ok(h) => {
                         let s = h.stripped.as_ref();
@@ -585,6 +652,62 @@ impl Library {
 
     pub fn files(&self, filter: &LibraryFilter) -> Result<Vec<LibraryFile>, Error> {
         report::files(&self.conn, filter)
+    }
+
+    /// Work out where identified files would go (a dry run; nothing moves).
+    pub fn organize_plan(&self, opts: &organize::OrganizeOptions) -> Result<organize::Plan, Error> {
+        organize::plan(&self.conn, opts)
+    }
+
+    /// Carry out an organize plan and journal it for [`Library::organize_undo`].
+    pub fn organize_apply(&mut self, plan: &organize::Plan, dest: &Path) -> Result<organize::Applied, Error> {
+        organize::apply(&mut self.conn, plan, dest)
+    }
+
+    /// Move a batch's files back (the latest batch by default).
+    pub fn organize_undo(&mut self, batch_id: Option<i64>) -> Result<organize::Undone, Error> {
+        organize::undo(&mut self.conn, batch_id)
+    }
+
+    pub fn organize_batches(&self) -> Result<Vec<organize::Batch>, Error> {
+        organize::batches(&self.conn)
+    }
+
+    /// Fetch metadata and art for the games you have (milestone 3).
+    pub fn enrich(
+        &mut self,
+        opts: &enrich::EnrichOptions,
+        progress: impl FnMut(enrich::EnrichEvent),
+    ) -> Result<enrich::EnrichReport, Error> {
+        enrich::enrich(&mut self.conn, opts, progress)
+    }
+
+    /// Metadata and cached art for games whose name contains `query`.
+    pub fn game_info(&self, query: &str) -> Result<Vec<enrich::GameInfo>, Error> {
+        enrich::info(&self.conn, query)
+    }
+
+    /// Every emulator romforge could use, and whether it is installed.
+    pub fn emulators(&self, env: &launch::Env) -> Result<Vec<launch::EmulatorStatus>, Error> {
+        launch::status(&self.conn, env)
+    }
+
+    pub fn add_emulator(&mut self, e: &launch::UserEmulator) -> Result<(), Error> {
+        launch::add_emulator(&self.conn, e)
+    }
+
+    pub fn remove_emulator(&mut self, name: &str) -> Result<usize, Error> {
+        launch::remove_emulator(&self.conn, name)
+    }
+
+    /// How to start a game (by name or file path); nothing runs yet.
+    pub fn launch_plan(
+        &self,
+        env: &launch::Env,
+        query: &str,
+        emulator: Option<&str>,
+    ) -> Result<launch::LaunchSpec, Error> {
+        launch::plan(&self.conn, env, query, emulator)
     }
 
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {

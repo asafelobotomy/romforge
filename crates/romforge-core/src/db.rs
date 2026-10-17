@@ -10,6 +10,54 @@ use crate::systems::SYSTEMS;
 const MIGRATIONS: &[&str] = &[
     // 2: file extensions per system (space-separated), from systems.rs
     "ALTER TABLE systems ADD COLUMN extensions TEXT NOT NULL DEFAULT '';",
+    // 3: organize journal (milestone 2)
+    "CREATE TABLE organize_batches (
+        batch_id   INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        dest       TEXT NOT NULL,
+        undone_at  TEXT
+    );
+    CREATE TABLE organize_moves (
+        batch_id INTEGER NOT NULL REFERENCES organize_batches(batch_id),
+        seq      INTEGER NOT NULL,
+        src      TEXT NOT NULL,
+        dst      TEXT NOT NULL,
+        size     INTEGER NOT NULL,
+        PRIMARY KEY (batch_id, seq)
+    );",
+    // 4: metadata and art (milestone 3), keyed by system and game name
+    "CREATE TABLE game_meta (
+        system_id INTEGER NOT NULL REFERENCES systems(system_id),
+        title     TEXT NOT NULL,
+        field     TEXT NOT NULL,
+        value     TEXT NOT NULL,
+        PRIMARY KEY (system_id, title, field)
+    );
+    CREATE TABLE meta_checked (
+        system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+        title      TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        PRIMARY KEY (system_id, title)
+    );
+    -- path NULL: looked for, not found upstream
+    CREATE TABLE art (
+        system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+        title      TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        path       TEXT,
+        checked_at TEXT NOT NULL,
+        PRIMARY KEY (system_id, title, kind)
+    );",
+    // 5: emulators the user added (milestone 5); args is a JSON array
+    "CREATE TABLE emulators (
+        emulator_id INTEGER PRIMARY KEY,
+        name        TEXT NOT NULL,
+        system_id   INTEGER NOT NULL REFERENCES systems(system_id),
+        program     TEXT NOT NULL,
+        args        TEXT NOT NULL,
+        archives    INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (name, system_id)
+    );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

@@ -10,8 +10,8 @@
 //!   (game DATs as zips, BIOS DATs as plain clrmamepro text).
 //! - `tosec`: TOSEC publishes one zip of all its DATs per release (about
 //!   100 MB). The latest release is found on tosecdev.org's download page;
-//!   the pack is fetched at most once per run and not at all when its DATs
-//!   for a system are already imported.
+//!   the pack is fetched at most once per batch and not at all when its
+//!   DATs for a system are already imported.
 //! - `hacks`, `homebrew`: libretro-database's own small DATs, fetched only
 //!   when asked for ([`sources`] with `extras`).
 //!
@@ -44,10 +44,11 @@ const MAX_BODY: u64 = 512 << 20;
 
 /// Minimum time between two requests to `host`.
 pub fn delay_for(host: &str) -> Duration {
-    if host == "datomatic.no-intro.org" {
-        Duration::from_secs(5)
-    } else {
-        Duration::from_secs(1)
+    let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    match name {
+        "datomatic.no-intro.org" => Duration::from_secs(5),
+        "127.0.0.1" | "localhost" | "[::1]" => Duration::ZERO,
+        _ => Duration::from_secs(1),
     }
 }
 
@@ -189,9 +190,11 @@ fn tosec_pack_link(html: &str) -> Option<String> {
         .map(|href| href.replace("&amp;", "&"))
 }
 
-/// The TOSEC pack at `url`, downloaded once per run and shared.
+static PACK: Mutex<Option<(String, Arc<Vec<u8>>)>> = Mutex::new(None);
+
+/// The TOSEC pack at `url`, downloaded once and shared until
+/// [`forget_tosec_pack`] (the end of a `Library::batch`).
 pub fn tosec_pack(url: &str) -> Result<Arc<Vec<u8>>, Error> {
-    static PACK: Mutex<Option<(String, Arc<Vec<u8>>)>> = Mutex::new(None);
     let mut cached = PACK.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((u, bytes)) = &*cached
         && u == url
@@ -204,6 +207,11 @@ pub fn tosec_pack(url: &str) -> Result<Arc<Vec<u8>>, Error> {
     }
     *cached = Some((url.to_owned(), bytes.clone()));
     Ok(bytes)
+}
+
+/// Drop the cached TOSEC pack (about 100 MB).
+pub fn forget_tosec_pack() {
+    *PACK.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// The DATs in a TOSEC pack for system `name`: `TOSEC/<name> - *.dat`,
@@ -229,9 +237,22 @@ pub fn tosec_dats(pack: &[u8], name: &str) -> Result<Vec<DatBytes>, Error> {
     Ok(out)
 }
 
+/// [`get`], but a 404 is `None` rather than an error.
+pub fn get_optional(url: &str) -> Result<Option<Vec<u8>>, Error> {
+    match fetch(url) {
+        Ok(body) => Ok(Some(body)),
+        Err(ureq::Error::StatusCode(404)) => Ok(None),
+        Err(e) => Err(Error::Http(format!("{url}: {e}"))),
+    }
+}
+
 /// GET `url` into memory, waiting first if the same host was asked less than
 /// [`delay_for`] ago.
 pub fn get(url: &str) -> Result<Vec<u8>, Error> {
+    fetch(url).map_err(|e| Error::Http(format!("{url}: {e}")))
+}
+
+fn fetch(url: &str) -> Result<Vec<u8>, ureq::Error> {
     wait_for_host(url);
     let agent = ureq::Agent::config_builder()
         .user_agent(USER_AGENT)
@@ -243,16 +264,13 @@ pub fn get(url: &str) -> Result<Vec<u8>, Error> {
         )
         .build()
         .new_agent();
-    let mut response = agent
-        .get(url)
-        .call()
-        .map_err(|e| Error::Http(format!("{url}: {e}")))?;
-    response
-        .body_mut()
-        .with_config()
-        .limit(MAX_BODY)
-        .read_to_vec()
-        .map_err(|e| Error::Http(format!("{url}: {e}")))
+    let mut response = agent.get(url).call()?;
+    response.body_mut().with_config().limit(MAX_BODY).read_to_vec()
+}
+
+/// Percent-encode one URL path segment.
+pub fn encode_segment(s: &str) -> String {
+    percent_encode(s)
 }
 
 fn wait_for_host(url: &str) {

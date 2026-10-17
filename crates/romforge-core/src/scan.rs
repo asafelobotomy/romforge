@@ -1,5 +1,5 @@
 //! Walks a folder and hashes likely ROMs (by extension, see `systems.rs`),
-//! including zip/7z members, as streams.
+//! including zip/7z members and CHD tracks (see `disc.rs`), as streams.
 //! Nothing is extracted to disk and no external tool is run.
 //!
 //! Files and archives are hashed on several threads, largest first; members
@@ -37,6 +37,8 @@ enum Unit {
     File(PathBuf),
     Zip(PathBuf),
     SevenZ(PathBuf),
+    /// A CHD disc image; its tracks are the members.
+    Chd(PathBuf),
 }
 
 #[derive(Debug)]
@@ -136,6 +138,7 @@ pub fn walk(
             match ext.as_str() {
                 "zip" => Unit::Zip(path),
                 "7z" => Unit::SevenZ(path),
+                "chd" => Unit::Chd(path),
                 _ => Unit::File(path),
             },
         ));
@@ -182,6 +185,18 @@ fn hash_unit(unit: Unit, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
         }
         Unit::SevenZ(path) => {
             let r = walk_7z(&path, opts, each);
+            (path, r)
+        }
+        Unit::Chd(path) => {
+            let r = crate::disc::chd_members(&path).map(|members| {
+                for (member, hashes) in members {
+                    each(Visit::Hashed(Entry {
+                        path: path.clone(),
+                        member,
+                        hashes: Ok(hashes),
+                    }));
+                }
+            });
             (path, r)
         }
         Unit::File(path) => {

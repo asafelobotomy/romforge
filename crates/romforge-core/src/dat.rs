@@ -184,9 +184,18 @@ impl<'a> Iterator for Tokens<'a> {
         let first = self.s.chars().next()?;
         let (token, rest) = match first {
             '(' | ')' => self.s.split_at(1),
+            // A quoted string ends at a `"` followed by whitespace, `)` or
+            // the end, so stray quotes inside survive
+            // (`developer ""Natsume", Vicarious Visions"`).
             '"' => {
                 let body = &self.s[1..];
-                match body.find('"') {
+                let end = body.match_indices('"').map(|(i, _)| i).find(|&i| {
+                    body[i + 1..]
+                        .chars()
+                        .next()
+                        .is_none_or(|c| c.is_whitespace() || c == ')')
+                });
+                match end {
                     Some(end) => (&body[..end], &body[end + 1..]),
                     None => (body, ""),
                 }
@@ -284,6 +293,48 @@ pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
         });
     }
     Ok(dat)
+}
+
+/// One `game ( ... )` entry of a clrmamepro metadata file (libretro's
+/// `metadat/<field>/` DATs): its title (`name` or `comment`), its plain
+/// fields, and the CRC32s and serials of its `rom` blocks.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Record {
+    pub title: Option<String>,
+    pub fields: Vec<(String, String)>,
+    pub crcs: Vec<String>,
+    pub serials: Vec<String>,
+}
+
+/// Parse a clrmamepro metadata file into [`Record`]s.
+pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let mut out = Vec::new();
+    for g in root.blocks("game") {
+        let Cmp::Block(items) = g else { continue };
+        let mut rec = Record {
+            title: g.get_owned("name").or_else(|| g.get_owned("comment")),
+            ..Record::default()
+        };
+        for (k, v) in items {
+            if let Cmp::Atom(a) = v
+                && !matches!(*k, "name" | "comment")
+                && !a.is_empty()
+            {
+                rec.fields.push((k.to_ascii_lowercase(), (*a).to_owned()));
+            }
+        }
+        for r in g.blocks("rom") {
+            if let Some(crc) = cmp_hash(r.get("crc")) {
+                rec.crcs.push(crc);
+            }
+            if let Some(serial) = r.get_owned("serial") {
+                rec.serials.push(serial);
+            }
+        }
+        out.push(rec);
+    }
+    Ok(out)
 }
 
 fn cmp_hash(h: Option<&str>) -> Option<String> {
@@ -407,6 +458,43 @@ game (
         assert_eq!(smb.roms[0].crc32.as_deref(), Some("393a432f"));
         assert_eq!(smb.roms[0].status.as_deref(), Some("baddump"));
         assert_eq!(smb.roms[1].size, Some(16));
+    }
+
+    #[test]
+    fn parses_metadata_records() {
+        let text = r#"clrmamepro ( name "x" )
+game (
+	comment "Super Mario World (USA)"
+	releaseyear "1991"
+	rom ( crc B19ED489 )
+)
+game (
+	name "Silent Hill (USA)"
+	serial "SLUS-00707"
+	developer "KCET"
+	rom ( serial "SLUS-00707" name "Silent Hill (USA).cue" )
+)
+game (
+	comment "2 Games in 1"
+	developer ""Natsume", Vicarious Visions"
+	rom ( crc 9FF018F9 )
+)"#;
+        let r = parse_cmp_records(text).unwrap();
+        assert_eq!(r.len(), 3);
+        assert_eq!(
+            r[2].fields,
+            [(
+                "developer".to_owned(),
+                "\"Natsume\", Vicarious Visions".to_owned()
+            )]
+        );
+        assert_eq!(r[2].crcs, ["9ff018f9"]);
+        assert_eq!(r[0].title.as_deref(), Some("Super Mario World (USA)"));
+        assert_eq!(r[0].fields, [("releaseyear".to_owned(), "1991".to_owned())]);
+        assert_eq!(r[0].crcs, ["b19ed489"]);
+        assert_eq!(r[1].title.as_deref(), Some("Silent Hill (USA)"));
+        assert!(r[1].fields.contains(&("developer".into(), "KCET".into())));
+        assert_eq!(r[1].serials, ["SLUS-00707"]);
     }
 
     #[test]

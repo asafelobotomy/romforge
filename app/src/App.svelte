@@ -16,6 +16,72 @@
 
   const statuses = ["matched", "candidate", "unknown", "wrong_system", "duplicate"];
 
+  let busy = $state("");
+  let note = $state("");
+  let scanDir = $state("");
+
+  let dest = $state("");
+  let oneG1R = $state(false);
+  let plan = $state(null);
+
+  let query = $state("");
+  let found = $state([]);
+
+  async function run(label, cmd, args) {
+    busy = label;
+    note = "";
+    const r = await call(cmd, args);
+    busy = "";
+    return r;
+  }
+
+  async function scan() {
+    const r = await run("Scanning…", "scan", { dir: scanDir });
+    if (r) note = `Scanned ${r.hashed} entries in ${r.root}; skipped ${r.skipped} non-ROM files` +
+      (r.errors.length ? `; ${r.errors.length} errors` : "") +
+      (r.sheet_problems.length ? `; ${r.sheet_problems.length} cue/gdi problems` : "");
+    await loadAll();
+  }
+
+  async function downloadDats() {
+    const r = await run("Downloading DATs… (a few minutes the first time)", "download_dats", { extras: false });
+    if (r) note = `DATs: ${r.imported} imported, ${r.unchanged} unchanged` + (r.errors.length ? `; errors: ${r.errors.join("; ")}` : "");
+    await loadAll();
+  }
+
+  async function planOrganize() {
+    plan = await run("Planning…", "organize_plan", { dest, oneG1r: oneG1R });
+  }
+
+  async function applyOrganize() {
+    const r = await run("Moving files…", "organize_apply", { dest, oneG1r: oneG1R });
+    if (r) note = `Batch #${r.batch_id}: moved ${r.moved}, failed ${r.failed.length}. Undo moves them back.`;
+    plan = null;
+    await loadAll();
+  }
+
+  async function undoOrganize() {
+    const r = await run("Moving files back…", "organize_undo", {});
+    if (r) note = `Batch #${r.batch_id}: restored ${r.restored}, failed ${r.failed.length}`;
+    plan = null;
+    await loadAll();
+  }
+
+  async function enrich() {
+    const r = await run("Fetching metadata and box art…", "enrich", {});
+    if (r) note = `${r.games} games: ${r.games_with_metadata} with metadata; ${r.art_saved} images saved, ${r.art_cached} cached`;
+    if (query) await search();
+  }
+
+  async function search() {
+    found = (await call("game_info", { query })) ?? [];
+  }
+
+  async function play(game) {
+    const r = await run(`Starting ${game}…`, "launch", { query: game });
+    if (r) note = r;
+  }
+
   async function call(cmd, args) {
     try {
       error = "";
@@ -73,6 +139,8 @@
   <nav>
     <button class:active={tab === "library"} onclick={() => (tab = "library")}>Library</button>
     <button class:active={tab === "dats"} onclick={() => (tab = "dats")}>DATs</button>
+    <button class:active={tab === "organize"} onclick={() => (tab = "organize")}>Organize</button>
+    <button class:active={tab === "games"} onclick={() => (tab = "games")}>Games</button>
   </nav>
   <span class="counts">
     {#each summary.files_by_status as [s, n]}
@@ -83,8 +151,13 @@
 </header>
 
 {#if error}<p class="error">{error}</p>{/if}
+{#if busy}<p class="note">{busy}</p>{:else if note}<p class="note">{note}</p>{/if}
 
 {#if tab === "library"}
+  <section class="filters">
+    <input class="wide" placeholder="Folder to scan, e.g. /home/me/roms" bind:value={scanDir} />
+    <button onclick={scan} disabled={!scanDir || busy}>Scan</button>
+  </section>
   <section class="filters">
     <label>
       System
@@ -106,13 +179,13 @@
   </section>
   {#if files.length === 0}
     <p class="empty">
-      Nothing here yet. Import DATs and scan a folder with the CLI:
-      <code>romforge-cli dat import my.dat && romforge-cli scan ~/roms</code>
+      Nothing here yet. Download DATs on the DATs tab, then scan a folder above
+      (or use the CLI: <code>romforge-cli dat download --all && romforge-cli scan ~/roms</code>).
     </p>
   {:else}
     <table>
       <thead>
-        <tr><th>Status</th><th>Game</th><th>System</th><th>File</th><th>Header</th><th class="num">Size</th></tr>
+        <tr><th>Status</th><th>Game</th><th>System</th><th>File</th><th>Header</th><th class="num">Size</th><th></th></tr>
       </thead>
       <tbody>
         {#each files as f (f.file_id)}
@@ -123,12 +196,65 @@
             <td class="path" title={shown(f)}><bdi>{shown(f)}</bdi></td>
             <td>{f.header_kind ?? ""}</td>
             <td class="num">{size(f.size)}</td>
+            <td>{#if f.status === "matched" && f.games.length === 1}<button onclick={() => play(f.games[0])}>Play</button>{/if}</td>
           </tr>
         {/each}
       </tbody>
     </table>
   {/if}
+{:else if tab === "organize"}
+  <section class="filters">
+    <input class="wide" placeholder="Destination folder, e.g. /home/me/roms-sorted" bind:value={dest} />
+    <label><input type="checkbox" bind:checked={oneG1R} /> 1G1R (one version per title)</label>
+    <button onclick={planOrganize} disabled={!dest || busy}>Plan</button>
+    <button onclick={applyOrganize} disabled={!plan || !plan.moves.length || busy}>Move {plan ? plan.moves.length : ""} files</button>
+    <button onclick={undoOrganize} disabled={busy}>Undo last batch</button>
+  </section>
+  {#if plan}
+    <p class="meta pad">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
+    <table>
+      <thead><tr><th>From</th><th>To</th></tr></thead>
+      <tbody>
+        {#each plan.moves as m}
+          <tr><td class="path"><bdi>{m.from}</bdi></td><td class="path"><bdi>{m.to}</bdi></td></tr>
+        {/each}
+        {#each plan.skipped as s}
+          <tr class="stay"><td class="path"><bdi>{s.path}</bdi></td><td>stays: {s.reason}</td></tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+{:else if tab === "games"}
+  <section class="filters">
+    <input class="wide" placeholder="Game name" bind:value={query} onkeydown={(e) => e.key === "Enter" && search()} />
+    <button onclick={search} disabled={!query}>Search</button>
+    <button onclick={enrich} disabled={busy} title="From libretro; saved under ~/.cache/romforge">Fetch metadata and art</button>
+  </section>
+  {#if query && found.length === 0}
+    <p class="empty">No metadata yet for that name. Scan, then fetch metadata and art.</p>
+  {/if}
+  <div class="cards">
+    {#each found as g}
+      <article class="card">
+        {#if g.art.boxart}<img src={g.art.boxart} alt="Box art of {g.title}" />{/if}
+        <div>
+          <h2>{g.title}</h2>
+          <p class="meta">{g.system}</p>
+          <dl>
+            {#each Object.entries(g.fields).filter(([k]) => k !== "description") as [k, v]}
+              <dt>{k}</dt><dd>{v}</dd>
+            {/each}
+          </dl>
+          {#if g.fields.description}<p>{g.fields.description}</p>{/if}
+          <button onclick={() => play(g.title)}>Play</button>
+        </div>
+      </article>
+    {/each}
+  </div>
 {:else}
+  <section class="filters">
+    <button onclick={downloadDats} disabled={busy}>Download DATs for all systems</button>
+  </section>
   <div class="dats">
     <table class="datlist">
       <thead><tr><th>DAT</th><th>System</th><th class="num">Have</th><th class="num">Missing</th></tr></thead>
@@ -160,7 +286,7 @@
           <tbody>
             {#each visibleGames as g (g.game_id)}
               <tr>
-                <td><span class="badge {g.have ? 'matched' : 'missing'}">{g.have ? "have" : "missing"}</span></td>
+                <td><span class="badge {g.have ? 'matched' : 'missing'}">{g.have ? "have" : "missing"}</span>{#if g.cue_differs}<span class="badge" title="All tracks match; the cue sheet differs from the DAT's">cue differs</span>{/if}</td>
                 <td>{g.name}</td>
                 <td class="num">{g.roms_have}/{g.roms_total}</td>
                 <td class="path" title={g.files.join("\n")}><bdi>{g.files.join("\n")}</bdi></td>
@@ -214,4 +340,15 @@
   .badge.wrong_system { background: #c6282833; color: #c62828; }
   .badge.duplicate { background: #5e35b133; color: #7e57c2; }
   .badge.missing { background: #c6282822; color: #c62828; }
+  .note { padding: 0 1rem; color: #3b6ea8; }
+  .pad { padding: 0 1rem; }
+  input.wide { flex: 1; min-width: 16rem; font: inherit; padding: 0.25rem 0.5rem; border: 1px solid #8886; border-radius: 4px; background: transparent; color: inherit; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  tr.stay td { color: #888; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(28rem, 1fr)); gap: 1rem; padding: 0 1rem 1rem; }
+  .card { display: flex; gap: 1rem; border: 1px solid #8884; border-radius: 6px; padding: 0.75rem; }
+  .card img { width: 10rem; height: auto; object-fit: contain; align-self: start; }
+  .card dl { display: grid; grid-template-columns: auto 1fr; gap: 0 0.75rem; margin: 0.5rem 0; font-size: 0.85rem; }
+  .card dt { color: #888; }
+  .card dd { margin: 0; }
 </style>

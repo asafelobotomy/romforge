@@ -1,11 +1,12 @@
 # romforge
 
-Catalog and identify retro ROM collections. Rust core, SQLite, a CLI, and a
-Tauri 2 + Svelte desktop app.
+Catalog, identify, organize, enrich and launch retro ROM collections. Rust
+core, SQLite, a CLI, and a Tauri 2 + Svelte desktop app.
 
-**Milestone 1 — scan and identify.** romforge only reads your files. It never
-moves, renames, writes or extracts them. See [PLAN.md](PLAN.md) for what
-comes next.
+Scanning and identifying only read your files. Only `organize apply` moves
+and renames them, after a dry run, journaled for undo. Nothing ever rewrites
+or extracts a ROM. See [PLAN.md](PLAN.md) for the milestones and what is
+still open.
 
 ## Quick start
 
@@ -71,6 +72,8 @@ what a folder should contain; without it, every DAT is tried. Without
 
 - Every file, and every member of a `.zip` or `.7z`, is hashed as a stream
   (CRC32, MD5, SHA1). Archives are never unpacked to disk.
+- A `.chd` is read as its tracks: each CD track is rebuilt as the Redump
+  `.bin` it came from and hashed as a member; a DVD CHD as one `.iso`.
 - If a copier header is found, the data is hashed a second time without it.
   The one header table is in `crates/romforge-core/src/headers.rs`:
   iNES/NES 2.0 (16 bytes, `NES\x1A`), FDS (16, `FDS\x1A`), Lynx (64, only
@@ -96,10 +99,61 @@ Importing a new version of a DAT (same name, same source) replaces the old
 one. Importing many DATs at once (a zip, `dat download`) re-identifies the
 library once at the end, not after every DAT.
 
+## Organize (dry run, apply, undo)
+
+```bash
+romforge-cli organize plan --dest ~/roms-sorted --1g1r -v   # changes nothing
+romforge-cli organize apply --dest ~/roms-sorted --1g1r
+romforge-cli organize undo                                  # latest batch
+romforge-cli organize history
+```
+
+Matched files go to `<dest>/<system>/<DAT name>` (archives keep their
+`.zip`/`.7z`, loose files their extension; multi-file discs get a folder).
+Nothing is overwritten, and a file that changed since it was moved is left
+where it is by undo. Archives are moved whole, never split. A loose disc
+moves only as a complete set, or with its own cue sheet listing exactly its
+tracks (then every name is kept so the sheet still works). `--1g1r` keeps
+one version per title: a release over a beta/proto, then `--regions` order
+(default `USA,World,Europe,Japan`), then the highest revision. `--from DIR`
+and `--system KEY` narrow it down. `-v` shows why each file stays.
+
+## Metadata and art
+
+```bash
+romforge-cli enrich --art boxart,snap
+romforge-cli info "Super Mario World"
+```
+
+From [libretro-database](https://github.com/libretro/libretro-database)
+(genre, developer, publisher, franchise, release date, players) and
+[thumbnails.libretro.com](https://thumbnails.libretro.com) (box art, title
+screens, snaps), for games you have complete. Art is cached under
+`$ROMFORGE_CACHE` (default `~/.cache/romforge`); a second run asks for
+nothing new. `--refresh` fetches again.
+
+## Launch
+
+```bash
+romforge-cli emulator list --all
+romforge-cli launch "Super Mario World" --dry-run
+romforge-cli launch "Silent Hill" -e duckstation
+romforge-cli emulator add bsnes --system SNES --program bsnes --args {rom}
+```
+
+RetroArch (on `PATH` or the Flatpak) with the system's first installed core,
+else a known standalone emulator (DuckStation, PCSX2, Dolphin, PPSSPP,
+Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu; `PATH` or Flatpak).
+Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
+archive; standalone emulators only get archives if they read them
+(`--archives`), since romforge never extracts. A disc starts from its sheet.
+
 ## Desktop app
 
 Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
-(`webkit2gtk-4.1`). It reads the same database as the CLI.
+(`webkit2gtk-4.1`). It uses the same database as the CLI: scan a folder,
+download DATs, see have/missing per DAT, plan/apply/undo organize, fetch
+metadata and art, and play.
 
 ```bash
 cd app && npm install && npm run tauri dev
@@ -109,7 +163,9 @@ cd app && npm install && npm run tauri dev
 
 ## Layout
 
-- `crates/romforge-core` — all logic (library)
+- `crates/romforge-core` — all logic (library): `scan`, `identify`, `dat`,
+  `fetch`, `organize`, `enrich`, `disc`, `launch`; one table of systems
+  (`systems.rs`) and one of copier headers (`headers.rs`)
 - `crates/romforge-cli` — thin CLI
 - `app/` — Tauri 2 + Svelte shell
 - `fixtures/` — tiny generated test files and DATs. Regenerate with
