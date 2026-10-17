@@ -1,10 +1,13 @@
 //! Milestone 9, first stage: Wikidata (free, no account, CC0 data).
 //!
-//! For each platform with games you have, one SPARQL query lists the video
-//! games on that platform (label, aliases, release dates; English or the
-//! language-neutral "mul" labels Wikidata uses for names that are the same
-//! everywhere, such as "Super Mario World"). A game is matched
-//! when exactly one of them has the same title (case, punctuation, region
+//! For the games you have, Wikidata's own search (run inside the SPARQL
+//! service, 20 titles per query) finds the video games on that platform
+//! with those words; each comes back with its labels, aliases and release
+//! dates (English, or the language-neutral "mul" labels Wikidata uses for
+//! names that are the same everywhere, such as "Super Mario World"). What
+//! was found and which titles were searched are kept per platform, so a
+//! run stopped by a rate limit resumes where it stopped. A game is matched
+//! when exactly one candidate has the same title (case, punctuation, region
 //! tags and a trailing ", The" ignored), narrowed by release year when
 //! several do. Ambiguous and unmatched games are recorded as such for the
 //! Search queue (milestone 8) to settle; nothing is guessed.
@@ -141,10 +144,45 @@ fn year_of(date: &str) -> Option<i32> {
     date.get(..4)?.parse().ok()
 }
 
-/// Every video game Wikidata lists on `platform` (a Q id).
-pub fn candidates(endpoint: &str, platform: &str) -> Result<Vec<Candidate>, Error> {
+/// Titles looked up per SPARQL query.
+const SEARCH_BATCH: usize = 20;
+
+/// What Wikidata's search is given for a normalized title: its words, minus
+/// stray letters (the "n" of "Ghouls 'n Ghosts"), which the search may
+/// split differently. Matching itself stays strict, in [`pick`].
+fn search_words(name: &str) -> String {
+    let words: Vec<&str> = name
+        .split(' ')
+        .filter(|w| w.chars().count() > 1 || w.chars().all(|c| c.is_ascii_digit()))
+        .collect();
+    if words.is_empty() {
+        name.to_owned()
+    } else {
+        words.join(" ")
+    }
+}
+
+/// The video games on `platform` (a Q id) that Wikidata's search finds for
+/// `names` (normalized titles: letters, digits and spaces only), with every
+/// English or "mul" label and alias, for [`pick`] to match strictly.
+pub fn candidates(endpoint: &str, platform: &str, names: &[String]) -> Result<Vec<Candidate>, Error> {
+    let searches: String = names
+        .iter()
+        .map(|n| {
+            format!(
+                "\"{} haswbstatement:P400={platform} haswbstatement:P31=Q7889\" ",
+                search_words(n)
+            )
+        })
+        .collect();
     let q = format!(
         "SELECT ?g ?label ?alias ?date WHERE {{
+           VALUES ?search {{ {searches} }}
+           SERVICE wikibase:mwapi {{
+             bd:serviceParam wikibase:api \"Search\"; wikibase:endpoint \"www.wikidata.org\";
+                             mwapi:srsearch ?search; mwapi:srlimit \"20\"; wikibase:limit \"once\".
+             ?g wikibase:apiOutputItem mwapi:title.
+           }}
            ?g wdt:P31 wd:Q7889; wdt:P400 wd:{platform}; rdfs:label ?label.
            FILTER(LANG(?label) IN (\"en\", \"mul\"))
            OPTIONAL {{ ?g skos:altLabel ?alias. FILTER(LANG(?alias) IN (\"en\", \"mul\")) }}
@@ -159,7 +197,9 @@ pub fn candidates(endpoint: &str, platform: &str) -> Result<Vec<Candidate>, Erro
             ..Candidate::default()
         });
         if let Some(l) = row.get("label") {
-            c.label = l.clone();
+            if c.label.is_empty() || l.as_str() < c.label.as_str() {
+                c.label = l.clone();
+            }
             c.names.insert(normalize(l));
         }
         if let Some(a) = row.get("alias") {
@@ -167,6 +207,79 @@ pub fn candidates(endpoint: &str, platform: &str) -> Result<Vec<Candidate>, Erro
         }
         if let Some(y) = row.get("date").and_then(|d| year_of(d)) {
             c.years.insert(y);
+        }
+    }
+    Ok(by_qid.into_values().collect())
+}
+
+/// Keep what one search found on `platform`, and that `names` were searched.
+fn remember(
+    conn: &mut Connection,
+    platform: &str,
+    names: &[String],
+    found: &[Candidate],
+) -> Result<(), Error> {
+    let tx = conn.transaction()?;
+    for c in found {
+        tx.execute(
+            "INSERT INTO wikidata_candidates (platform, qid, label, names, years) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(platform, qid) DO UPDATE SET label = excluded.label, names = excluded.names,
+               years = excluded.years",
+            params![
+                platform,
+                c.qid,
+                c.label,
+                serde_json::to_string(&c.names).unwrap_or_default(),
+                serde_json::to_string(&c.years).unwrap_or_default()
+            ],
+        )?;
+    }
+    for n in names {
+        tx.execute(
+            "INSERT INTO wikidata_searched (platform, name, searched_at)
+             VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+             ON CONFLICT(platform, name) DO UPDATE SET searched_at = excluded.searched_at",
+            params![platform, n],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Names searched on `platform`.
+fn searched(conn: &Connection, platform: &str) -> Result<BTreeSet<String>, Error> {
+    let mut stmt = conn.prepare("SELECT name FROM wikidata_searched WHERE platform = ?1")?;
+    let names = stmt
+        .query_map(params![platform], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
+/// Every candidate kept for `platforms`, one per item.
+fn kept(conn: &Connection, platforms: &[&str]) -> Result<Vec<Candidate>, Error> {
+    let mut stmt =
+        conn.prepare("SELECT qid, label, names, years FROM wikidata_candidates WHERE platform = ?1")?;
+    let mut by_qid: BTreeMap<String, Candidate> = BTreeMap::new();
+    for platform in platforms {
+        let rows = stmt.query_map(params![platform], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (qid, label, names, years) = row?;
+            let c = by_qid.entry(qid.clone()).or_insert_with(|| Candidate {
+                qid,
+                label,
+                ..Candidate::default()
+            });
+            c.names
+                .extend(serde_json::from_str::<BTreeSet<String>>(&names).unwrap_or_default());
+            c.years
+                .extend(serde_json::from_str::<BTreeSet<i32>>(&years).unwrap_or_default());
         }
     }
     Ok(by_qid.into_values().collect())
@@ -314,26 +427,55 @@ pub fn enrich(
                 _ => todo.push(title),
             }
         }
-        if todo.is_empty() || halted {
+        if todo.is_empty() {
             continue;
         }
-        progress(system.key);
-        let mut cands = Vec::new();
+        // Look up only the titles not searched yet on each platform item
+        // (`refresh` forgets earlier searches); what was found is kept, so
+        // a run cut short resumes where it stopped.
+        let names: BTreeSet<String> = todo
+            .iter()
+            .map(|t| normalize(t))
+            .filter(|n| !n.is_empty())
+            .collect();
+        let mut ready = names.clone();
         for platform in system.wikidata {
-            match candidates(endpoint, platform) {
-                Ok(c) => cands.extend(c),
-                Err(e) => {
-                    halted |= fetch::is_rate_limited(&e);
-                    report.errors.push(format!("{}: {e}", system.key));
+            if refresh && !halted {
+                let mut forget =
+                    conn.prepare("DELETE FROM wikidata_searched WHERE platform = ?1 AND name = ?2")?;
+                for n in &names {
+                    forget.execute(params![platform, n])?;
                 }
             }
-            if halted {
-                break;
+            let done = searched(conn, platform)?;
+            let missing: Vec<String> = names.difference(&done).cloned().collect();
+            if !missing.is_empty() && !halted {
+                progress(system.key);
             }
+            for batch in missing.chunks(SEARCH_BATCH) {
+                if halted {
+                    break;
+                }
+                match candidates(endpoint, platform, batch) {
+                    Ok(found) => remember(conn, platform, batch, &found)?,
+                    Err(e) => {
+                        halted |= fetch::is_rate_limited(&e);
+                        report.errors.push(format!("{}: {e}", system.key));
+                    }
+                }
+            }
+            let done = searched(conn, platform)?;
+            ready.retain(|n| done.contains(n));
         }
-        if cands.is_empty() {
+        // Titles not searched everywhere yet wait for the next run.
+        todo.retain(|t| {
+            let n = normalize(t);
+            n.is_empty() || ready.contains(&n)
+        });
+        if todo.is_empty() {
             continue;
         }
+        let cands = kept(conn, system.wikidata)?;
         let tx = conn.transaction()?;
         for title in todo {
             let year: Option<i32> = tx
@@ -514,6 +656,13 @@ mod tests {
             "ambiguous without a year"
         );
         assert!(pick("Unknown Game (USA)", None, &c).unwrap_err().is_empty());
+    }
+
+    #[test]
+    fn search_words_drop_stray_letters() {
+        assert_eq!(search_words("ghouls n ghosts"), "ghouls ghosts");
+        assert_eq!(search_words("final fantasy 6"), "final fantasy 6");
+        assert_eq!(search_words("x"), "x");
     }
 
     #[test]
