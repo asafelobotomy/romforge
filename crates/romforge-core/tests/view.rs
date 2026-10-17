@@ -116,3 +116,40 @@ fn refresh_rescans_each_source_folder_once() {
         "the new file was found"
     );
 }
+
+#[test]
+fn refresh_scans_the_settings_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (src, lib_dir) = (tmp.path().join("source"), tmp.path().join("library"));
+    std::fs::create_dir(&src).unwrap();
+    std::fs::create_dir(&lib_dir).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), src.join("a.gb")).unwrap();
+    std::fs::copy(
+        fixtures().join("roms/nes/Test NES 2.0.nes"),
+        lib_dir.join("b.nes"),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    for e in std::fs::read_dir(fixtures().join("dats")).unwrap() {
+        lib.import_dat(e.unwrap().path(), None).unwrap();
+    }
+    lib.save_settings(&romforge_core::settings::Settings {
+        source_dir: Some(src.clone()),
+        library_dir: Some(lib_dir.clone()),
+        ..Default::default()
+    })
+    .unwrap();
+    let results = lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2, "{results:?}");
+    let titles: Vec<String> = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|r| r.title)
+        .collect();
+    assert!(
+        titles.contains(&"Test GB".to_owned()) && titles.contains(&"Test NES 2.0".to_owned()),
+        "{titles:?}"
+    );
+}

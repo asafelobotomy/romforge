@@ -160,6 +160,20 @@ for what has been gathered (identified, metadata, box art, title screen,
 snap), and a detail panel with Details, Development, Series and Links tabs.
 DATs and Organize are at the foot of the platform list.
 
+**Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
+unprocessed ROMs, an optional **Library** folder that Cleanup and rename
+(milestone 10) sorts processed games into, **Keep originals** (Source files
+stay untouched; cleanup works on copies in the staging folder and moves the
+results into the Library), and the **staging** folder (default
+`~/.cache/romforge/staging`). Refresh scans the Source and Library.
+Source and Library can't be inside one another, and staging stays outside
+both.
+
+```bash
+romforge-cli settings --source ~/roms/incoming --library ~/roms/library --keep-originals true
+romforge-cli refresh
+```
+
 ```bash
 cd app && npm install && npm run tauri dev
 ```

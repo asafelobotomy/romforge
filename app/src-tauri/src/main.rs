@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
+use romforge_core::settings::{Settings, default_staging_dir};
 use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{
     DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
@@ -124,6 +125,28 @@ async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichR
         ..EnrichOptions::new(default_cache_dir())
     };
     with(&db, |lib| lib.enrich(&opts, |_| {}))
+}
+
+#[tauri::command]
+async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
+    with(&db, |lib| lib.settings())
+}
+
+#[tauri::command]
+async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<Settings> {
+    with(&db, |lib| lib.save_settings(&settings))
+}
+
+#[derive(serde::Serialize)]
+struct SettingsInfo {
+    default_staging: String,
+}
+
+#[tauri::command]
+async fn settings_info() -> Res<SettingsInfo> {
+    Ok(SettingsInfo {
+        default_staging: default_staging_dir().display().to_string(),
+    })
 }
 
 #[tauri::command]
@@ -241,6 +264,7 @@ fn main() {
     let lib = Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Db(Mutex::new(lib)))
         .invoke_handler(tauri::generate_handler![
             library,
@@ -257,7 +281,10 @@ fn main() {
             launch,
             library_view,
             game_detail,
-            refresh
+            refresh,
+            get_settings,
+            save_settings,
+            settings_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running romforge");

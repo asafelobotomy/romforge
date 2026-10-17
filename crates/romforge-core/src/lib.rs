@@ -16,6 +16,7 @@ pub mod launch;
 pub mod organize;
 mod report;
 pub mod scan;
+pub mod settings;
 pub mod systems;
 pub mod view;
 
@@ -58,6 +59,8 @@ pub enum Error {
     Chd(String),
     #[error("launch: {0}")]
     Launch(String),
+    #[error("settings: {0}")]
+    Settings(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -740,7 +743,8 @@ impl Library {
         view::detail(&self.conn, id)
     }
 
-    /// Rescan every source folder (scan roots that aren't inside another),
+    /// Rescan every folder romforge knows (the Source and Library folders of
+    /// the settings, and every scanned folder that isn't inside another),
     /// each with the scope it was scanned with. Folders that are gone are
     /// reported, not forgotten.
     pub fn refresh(
@@ -753,6 +757,17 @@ impl Library {
             .prepare("SELECT path, system_id, dat_id FROM scan_roots ORDER BY length(path), path")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .collect::<Result<_, _>>()?;
+        // The Source and Library folders are scanned even before their first
+        // scan, with no scope.
+        let mut roots = roots;
+        let s = settings::load(&self.conn)?;
+        for dir in [s.source_dir, s.library_dir].into_iter().flatten() {
+            let dir = dir.to_string_lossy().into_owned();
+            if !roots.iter().any(|r| r.0 == dir) {
+                roots.push((dir, None, None));
+            }
+        }
+        roots.sort_by(|a, b| (a.0.len(), &a.0).cmp(&(b.0.len(), &b.0)));
         let mut top: Vec<&(String, Option<i64>, Option<i64>)> = Vec::new();
         for r in &roots {
             let inside = top
@@ -776,6 +791,15 @@ impl Library {
             }
         }
         Ok(out)
+    }
+
+    pub fn settings(&self) -> Result<settings::Settings, Error> {
+        settings::load(&self.conn)
+    }
+
+    /// Validate and store the settings; returns what was stored.
+    pub fn save_settings(&mut self, s: &settings::Settings) -> Result<settings::Settings, Error> {
+        settings::save(&mut self.conn, s)
     }
 
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {

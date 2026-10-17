@@ -58,6 +58,11 @@ const MIGRATIONS: &[&str] = &[
         archives    INTEGER NOT NULL DEFAULT 0,
         UNIQUE (name, system_id)
     );",
+    // 6: the owner's settings (Source / Library / staging folders)
+    "CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

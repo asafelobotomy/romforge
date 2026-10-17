@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
   // Which screen: the library (default), DATs, or organize.
   let view = $state("library");
@@ -16,6 +17,37 @@
   let tab = $state("details");
   let adding = $state(false);
   let addDir = $state("");
+
+  // Settings panel: a working copy, saved on "Save".
+  let settingsOpen = $state(false);
+  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null });
+  let defaultStaging = $state("");
+  let settingsError = $state("");
+
+  async function openSettings() {
+    settingsError = "";
+    const s = await call("get_settings");
+    if (!s) return;
+    draft = s;
+    defaultStaging = (await call("settings_info"))?.default_staging ?? "";
+    settingsOpen = true;
+  }
+
+  async function browse(field) {
+    const dir = await pickFolder({ directory: true, multiple: false, defaultPath: draft[field] ?? undefined });
+    if (typeof dir === "string") draft[field] = dir;
+  }
+
+  async function saveSettings() {
+    settingsError = "";
+    try {
+      draft = await invoke("save_settings", { settings: draft });
+      settingsOpen = false;
+      note = "Settings saved. Refresh scans the Source and Library folders.";
+    } catch (e) {
+      settingsError = String(e).replace(/^settings: /, "");
+    }
+  }
 
   let summary = $state({ files_by_status: [], dats: [] });
   let datId = $state(null);
@@ -175,6 +207,8 @@
   load();
 </script>
 
+<svelte:window onkeydown={(e) => e.key === "Escape" && settingsOpen && (settingsOpen = false)} />
+
 <div class="app">
   <header class="toolbar">
     <button class="tool" onclick={refresh} disabled={!!busy} title="Rescan every source folder">
@@ -193,10 +227,74 @@
       <span class="glyph">✎</span>Cleanup and rename
     </button>
     <span class="spacer"></span>
+    <button class="tool" onclick={openSettings} disabled={!!busy} title="Source and Library folders, cleanup options">
+      <span class="glyph">⚙</span>Settings
+    </button>
     <button class="tool" onclick={play} disabled={!row || row.status !== "verified" || !!busy} title="Start the selected game">
       <span class="glyph">▶</span>Play
     </button>
   </header>
+
+  {#if settingsOpen}
+    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (settingsOpen = false)}>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <h2 id="settings-title">Settings</h2>
+
+        <section class="setting">
+          <label for="source">Source</label>
+          <p class="hint">Where your unprocessed ROMs are. Refresh scans it.</p>
+          <div class="pick">
+            <input id="source" bind:value={draft.source_dir} placeholder="Not set" />
+            <button onclick={() => browse("source_dir")}>Browse…</button>
+            {#if draft.source_dir}<button onclick={() => (draft.source_dir = null)}>Clear</button>{/if}
+          </div>
+        </section>
+
+        <section class="setting">
+          <label for="library">Library <span class="hint">(optional)</span></label>
+          <p class="hint">Where Cleanup and rename puts processed games, sorted by platform. Refresh scans it too, and Play uses what's there.</p>
+          <div class="pick">
+            <input id="library" bind:value={draft.library_dir} placeholder="Not set" />
+            <button onclick={() => browse("library_dir")}>Browse…</button>
+            {#if draft.library_dir}<button onclick={() => { draft.library_dir = null; draft.keep_originals = false; }}>Clear</button>{/if}
+          </div>
+        </section>
+
+        <section class="setting">
+          <label class="toggle">
+            <input type="checkbox" bind:checked={draft.keep_originals} disabled={!draft.library_dir} />
+            Keep originals
+          </label>
+          <p class="hint">
+            {#if draft.library_dir}
+              {draft.keep_originals
+                ? "Source files stay untouched. Cleanup copies each game into the staging folder, extracts, renames and repacks it there, then moves the result into the Library."
+                : "Cleanup processes games from the Source and moves them into the Library; the originals go to the trash once the new file is verified."}
+            {:else}
+              Needs a Library folder for the processed copies.
+            {/if}
+          </p>
+        </section>
+
+        <section class="setting">
+          <label for="staging">Staging folder</label>
+          <p class="hint">Scratch space for cleanup. Must be outside the Source and Library.</p>
+          <div class="pick">
+            <input id="staging" bind:value={draft.staging_dir} placeholder={defaultStaging} />
+            <button onclick={() => browse("staging_dir")}>Browse…</button>
+            {#if draft.staging_dir}<button onclick={() => (draft.staging_dir = null)}>Use default</button>{/if}
+          </div>
+        </section>
+
+        <p class="hint">Cleanup and rename itself arrives in milestone 10; these folders are used by Refresh and Play now.</p>
+        {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
+        <div class="actions">
+          <button onclick={() => (settingsOpen = false)}>Cancel</button>
+          <button class="primary" onclick={saveSettings}>Save</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if adding}
     <div class="addbar">
@@ -576,4 +674,17 @@
   .path { font-family: ui-monospace, monospace; font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; direction: rtl; text-align: left; }
   tr.stay td { color: var(--muted); }
   .meta { color: var(--muted); font-size: 0.85rem; }
+
+  .scrim { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
+  .dialog { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
+  .dialog h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
+  .setting { padding: 0.6rem 0; border-top: 1px solid var(--line); }
+  .setting > label { font-weight: 600; }
+  .setting .hint { margin: 0.15rem 0 0.4rem; }
+  .pick { display: flex; gap: 0.4rem; }
+  .pick input { flex: 1; min-width: 0; }
+  .toggle { display: flex; gap: 0.5rem; align-items: center; }
+  .err { color: var(--bad); }
+  .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
 </style>

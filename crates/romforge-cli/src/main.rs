@@ -79,6 +79,26 @@ enum Command {
     /// List, add or remove emulators
     #[command(subcommand)]
     Emulator(EmulatorCommand),
+    /// Show or change your Source / Library folders and cleanup options
+    Settings {
+        /// Folder of unprocessed ROMs ("" to clear)
+        #[arg(long)]
+        source: Option<String>,
+        /// Folder processed games are sorted into ("" to clear)
+        #[arg(long)]
+        library: Option<String>,
+        /// Keep the Source files; cleanup works on copies in staging
+        #[arg(long)]
+        keep_originals: Option<bool>,
+        /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
+        #[arg(long)]
+        staging: Option<String>,
+    },
+    /// Rescan the Source and Library folders and every folder scanned before
+    Refresh {
+        #[arg(long, short)]
+        quiet: bool,
+    },
     /// Show file statuses and have/missing per DAT
     Report {
         /// List the games of one DAT
@@ -592,6 +612,55 @@ fn main() -> Result<()> {
                 bail!("no emulator named {name:?} (only ones you added can be removed)");
             }
             println!("removed {name}");
+        }
+        Command::Settings {
+            source,
+            library,
+            keep_originals,
+            staging,
+        } => {
+            let mut s = lib.settings()?;
+            let changed =
+                source.is_some() || library.is_some() || keep_originals.is_some() || staging.is_some();
+            let set = |p: String| (!p.is_empty()).then(|| PathBuf::from(p));
+            if let Some(p) = source {
+                s.source_dir = set(p);
+            }
+            if let Some(p) = library {
+                s.library_dir = set(p);
+            }
+            if let Some(k) = keep_originals {
+                s.keep_originals = k;
+            }
+            if let Some(p) = staging {
+                s.staging_dir = set(p);
+            }
+            if changed {
+                s = lib.save_settings(&s)?;
+            }
+            let shown = |p: &Option<PathBuf>| p.as_ref().map_or("-".to_owned(), |p| p.display().to_string());
+            println!("source          {}", shown(&s.source_dir));
+            println!("library         {}", shown(&s.library_dir));
+            println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
+            println!("staging         {}", s.staging().display());
+        }
+        Command::Refresh { quiet } => {
+            let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
+            let results = lib.refresh(ScanOptions::default(), |_, p| meter.update(p))?;
+            meter.finish();
+            let mut failed = 0;
+            for r in results {
+                match r {
+                    Ok(report) => println!("rescanned {} ({} entries)", report.root.display(), report.hashed),
+                    Err((path, e)) => {
+                        failed += 1;
+                        eprintln!("error: {}: {e}", path.display());
+                    }
+                }
+            }
+            if failed > 0 {
+                bail!("{failed} folders could not be rescanned");
+            }
         }
         Command::Report {
             dat: Some(id),
