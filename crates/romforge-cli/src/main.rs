@@ -158,9 +158,10 @@ enum EmulatorCommand {
         /// Executable (name on PATH, or a full path)
         #[arg(long)]
         program: String,
-        /// Arguments; {rom} is the file
-        #[arg(long, allow_hyphen_values = true, num_args = 1.., default_value = "{rom}")]
-        args: Vec<String>,
+        /// Arguments as one string, split at spaces; {rom} is the file
+        /// (e.g. --args "--fullscreen {rom}")
+        #[arg(long, allow_hyphen_values = true, default_value = "{rom}")]
+        args: String,
         /// It opens ROMs inside zip/7z itself
         #[arg(long)]
         archives: bool,
@@ -174,9 +175,9 @@ struct OrganizeArgs {
     /// Destination folder; files go to DEST/<system>/...
     #[arg(long)]
     dest: PathBuf,
-    /// Only files under this folder
+    /// Folder (or file) whose identified files move; nothing outside it does
     #[arg(long)]
-    from: Option<PathBuf>,
+    from: PathBuf,
     /// Only files of this system
     #[arg(long)]
     system: Option<String>,
@@ -194,11 +195,10 @@ struct OrganizeArgs {
 impl OrganizeArgs {
     fn options(&self) -> organize::OrganizeOptions {
         organize::OrganizeOptions {
-            from: self.from.clone(),
             system: self.system.clone(),
             one_g1r: self.one_g1r,
             regions: self.regions.clone(),
-            ..organize::OrganizeOptions::new(&self.dest)
+            ..organize::OrganizeOptions::new(&self.from, &self.dest)
         }
     }
 }
@@ -581,7 +581,7 @@ fn main() -> Result<()> {
                 name: name.clone(),
                 system,
                 program,
-                args,
+                args: args.split_whitespace().map(str::to_owned).collect(),
                 archives,
             })?;
             println!("added {name}");

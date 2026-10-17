@@ -412,11 +412,13 @@ pub fn info(conn: &Connection, query: &str) -> Result<Vec<GameInfo>, Error> {
         "SELECT DISTINCT s.key, t.system_id, t.title FROM (
              SELECT system_id, title FROM game_meta UNION SELECT system_id, title FROM art
          ) t JOIN systems s ON s.system_id = t.system_id
-         WHERE t.title LIKE '%' || ?1 || '%'
+         WHERE t.title LIKE '%' || ?2 || '%' ESCAPE '\\'
          ORDER BY t.title <> ?1, t.title LIMIT 50",
     )?;
     let hits: Vec<(String, i64, String)> = stmt
-        .query_map([query], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .query_map(params![query, crate::like_escape(query)], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
         .collect::<Result<_, _>>()?;
     let mut fields =
         conn.prepare("SELECT field, value FROM game_meta WHERE system_id = ?1 AND title = ?2")?;

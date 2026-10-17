@@ -88,22 +88,24 @@ async fn download_dats(db: tauri::State<'_, Db>, extras: bool) -> Res<Downloaded
     Ok(out)
 }
 
-fn organize_options(dest: &str, one_g1r: bool) -> OrganizeOptions {
+fn organize_options(from: &str, dest: &str, one_g1r: bool) -> OrganizeOptions {
     OrganizeOptions {
         one_g1r,
-        ..OrganizeOptions::new(dest)
+        ..OrganizeOptions::new(from, dest)
     }
 }
 
 #[tauri::command]
-async fn organize_plan(db: tauri::State<'_, Db>, dest: String, one_g1r: bool) -> Res<Plan> {
-    with(&db, |lib| lib.organize_plan(&organize_options(&dest, one_g1r)))
+async fn organize_plan(db: tauri::State<'_, Db>, from: String, dest: String, one_g1r: bool) -> Res<Plan> {
+    with(&db, |lib| {
+        lib.organize_plan(&organize_options(&from, &dest, one_g1r))
+    })
 }
 
 #[tauri::command]
-async fn organize_apply(db: tauri::State<'_, Db>, dest: String, one_g1r: bool) -> Res<Applied> {
+async fn organize_apply(db: tauri::State<'_, Db>, from: String, dest: String, one_g1r: bool) -> Res<Applied> {
     with(&db, |lib| {
-        let plan = lib.organize_plan(&organize_options(&dest, one_g1r))?;
+        let plan = lib.organize_plan(&organize_options(&from, &dest, one_g1r))?;
         lib.organize_apply(&plan, &PathBuf::from(&dest))
     })
 }

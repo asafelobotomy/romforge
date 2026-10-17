@@ -64,7 +64,7 @@ fn plan_apply_rescan_undo() {
 
     let mut lib = library_with_fixture_dats();
     lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert_eq!(listing(&src), before, "planning moves nothing");
     assert!(!dest.exists());
 
@@ -119,7 +119,7 @@ fn plan_apply_rescan_undo() {
         .count();
     assert!(in_dest > 0 && in_dest <= matched_before);
     // Nothing left to do the second time round.
-    let again = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let again = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert!(again.moves.is_empty(), "{:?}", again.moves);
 
     let undone = lib.organize_undo(None).unwrap();
@@ -141,13 +141,13 @@ fn never_overwrites() {
     copy_tree(&fixtures().join("roms/nes"), &src);
     let mut lib = library_with_fixture_dats();
     lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     let first = &plan.moves[0];
     std::fs::create_dir_all(first.to.parent().unwrap()).unwrap();
     std::fs::write(&first.to, b"someone else's file").unwrap();
 
     // Planned again: the occupied target is skipped.
-    let replanned = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let replanned = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert!(replanned.moves.iter().all(|m| m.to != first.to));
     assert!(
         replanned
@@ -206,7 +206,7 @@ fn one_game_one_rom_keeps_the_best_version() {
     lib.import_dat(&dat, None).unwrap();
     lib.scan(&src, Scope::All).unwrap();
 
-    let mut opts = OrganizeOptions::new(tmp.path().join("sorted"));
+    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
     opts.one_g1r = true;
     let names = |lib: &Library, opts: &OrganizeOptions| {
         let mut v: Vec<String> = lib
@@ -260,7 +260,7 @@ fn loose_disc_moves_only_as_a_complete_set() {
     };
     // The user's own cue (not the DAT's) lists exactly the matched track: the
     // set moves as is, names kept, so that cue still works.
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert_eq!(
         rel(&plan),
         [
@@ -276,7 +276,7 @@ fn loose_disc_moves_only_as_a_complete_set() {
     )
     .unwrap();
     lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert!(
         plan.moves.is_empty(),
         "renaming the bin would break the user's cue: {plan:?}"
@@ -290,7 +290,7 @@ fn loose_disc_moves_only_as_a_complete_set() {
     // With the DAT's own cue sheet, the set moves into a game folder.
     std::fs::write(src.join("disc.cue"), &cue).unwrap();
     lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     let mut to: Vec<String> = plan
         .moves
         .iter()
@@ -315,7 +315,7 @@ fn bookkeeping_after_moves() {
     std::fs::create_dir(&dest).unwrap();
     let mut lib = library_with_fixture_dats();
     lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     let applied = lib.organize_apply(&plan, &dest).unwrap();
     assert!(applied.moved > 0);
 
@@ -333,7 +333,7 @@ fn bookkeeping_after_moves() {
     assert_eq!(moved, applied.moved);
 
     // An apply with nothing to move leaves no batch for undo to land on.
-    let again = lib.organize_plan(&OrganizeOptions::new(&dest)).unwrap();
+    let again = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
     assert!(again.moves.is_empty());
     assert_eq!(lib.organize_apply(&again, &dest).unwrap().batch_id, 0);
     assert_eq!(lib.organize_batches().unwrap().len(), 1);
@@ -373,7 +373,7 @@ fn one_g1r_counts_what_is_already_organized() {
     let mut lib = Library::open_in_memory().unwrap();
     lib.import_dat(&dat, None).unwrap();
     let dest = tmp.path().join("sorted");
-    let mut opts = OrganizeOptions::new(&dest);
+    let mut opts = OrganizeOptions::new(tmp.path(), &dest);
     opts.one_g1r = true;
 
     lib.scan(&a, Scope::All).unwrap();
@@ -388,5 +388,27 @@ fn one_g1r_counts_what_is_already_organized() {
         plan.skipped
             .iter()
             .any(|s| s.reason == "1G1R: keeping Puzzle (USA)")
+    );
+}
+
+#[test]
+fn only_files_under_the_source_folder_move() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
+    copy_tree(&fixtures().join("roms/nes"), &a);
+    copy_tree(&fixtures().join("roms/snes"), &b);
+    let mut lib = library_with_fixture_dats();
+    lib.scan(&a, Scope::All).unwrap();
+    lib.scan(&b, Scope::All).unwrap();
+    let plan = lib
+        .organize_plan(&OrganizeOptions::new(&a, tmp.path().join("out")))
+        .unwrap();
+    assert!(!plan.moves.is_empty());
+    let a = a.canonicalize().unwrap();
+    assert!(plan.moves.iter().all(|m| m.from.starts_with(&a)), "{plan:?}");
+    assert!(plan.skipped.iter().all(|s| s.path.starts_with(&a)));
+    assert!(
+        lib.organize_plan(&OrganizeOptions::new(tmp.path().join("nope"), tmp.path()))
+            .is_err()
     );
 }

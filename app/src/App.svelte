@@ -20,12 +20,22 @@
   let note = $state("");
   let scanDir = $state("");
 
+  let from = $state("");
   let dest = $state("");
   let oneG1R = $state(false);
   let plan = $state(null);
 
   let query = $state("");
   let found = $state([]);
+
+  let confirmUndo = $state(false);
+
+  function show(t) {
+    tab = t;
+    error = "";
+    note = "";
+    confirmUndo = false;
+  }
 
   async function run(label, cmd, args) {
     busy = label;
@@ -50,11 +60,11 @@
   }
 
   async function planOrganize() {
-    plan = await run("Planning…", "organize_plan", { dest, oneG1r: oneG1R });
+    plan = await run("Planning…", "organize_plan", { from, dest, oneG1r: oneG1R });
   }
 
   async function applyOrganize() {
-    const r = await run("Moving files…", "organize_apply", { dest, oneG1r: oneG1R });
+    const r = await run("Moving files…", "organize_apply", { from, dest, oneG1r: oneG1R });
     if (r) note = `Batch #${r.batch_id}: moved ${r.moved}, failed ${r.failed.length}. Undo moves them back.`;
     plan = null;
     await loadAll();
@@ -137,10 +147,10 @@
 <header>
   <h1>romforge</h1>
   <nav>
-    <button class:active={tab === "library"} onclick={() => (tab = "library")}>Library</button>
-    <button class:active={tab === "dats"} onclick={() => (tab = "dats")}>DATs</button>
-    <button class:active={tab === "organize"} onclick={() => (tab = "organize")}>Organize</button>
-    <button class:active={tab === "games"} onclick={() => (tab = "games")}>Games</button>
+    <button class:active={tab === "library"} onclick={() => show("library")}>Library</button>
+    <button class:active={tab === "dats"} onclick={() => show("dats")}>DATs</button>
+    <button class:active={tab === "organize"} onclick={() => show("organize")}>Organize</button>
+    <button class:active={tab === "games"} onclick={() => show("games")}>Games</button>
   </nav>
   <span class="counts">
     {#each summary.files_by_status as [s, n]}
@@ -150,8 +160,8 @@
   <button onclick={loadAll} title="Reload from the database">Reload</button>
 </header>
 
-{#if error}<p class="error">{error}</p>{/if}
-{#if busy}<p class="note">{busy}</p>{:else if note}<p class="note">{note}</p>{/if}
+<!-- One fixed-height line, so the controls below never move under the cursor. -->
+<p class="status" class:error={!!error && !busy} title={error || busy || note}>{busy || error || note}</p>
 
 {#if tab === "library"}
   <section class="filters">
@@ -204,11 +214,18 @@
   {/if}
 {:else if tab === "organize"}
   <section class="filters">
-    <input class="wide" placeholder="Destination folder, e.g. /home/me/roms-sorted" bind:value={dest} />
+    <input class="wide" placeholder="Organize files in, e.g. /home/me/roms" bind:value={from} />
+    <input class="wide" placeholder="Into, e.g. /home/me/roms-sorted" bind:value={dest} />
     <label><input type="checkbox" bind:checked={oneG1R} /> 1G1R (one version per title)</label>
-    <button onclick={planOrganize} disabled={!dest || busy}>Plan</button>
+    <button onclick={planOrganize} disabled={!from || !dest || busy}>Plan</button>
     <button onclick={applyOrganize} disabled={!plan || !plan.moves.length || busy}>Move {plan ? plan.moves.length : ""} files</button>
-    <button onclick={undoOrganize} disabled={busy}>Undo last batch</button>
+    {#if confirmUndo}
+      <span>Move the last batch back?</span>
+      <button onclick={() => { confirmUndo = false; undoOrganize(); }} disabled={busy}>Yes, move back</button>
+      <button onclick={() => (confirmUndo = false)}>Cancel</button>
+    {:else}
+      <button onclick={() => (confirmUndo = true)} disabled={busy}>Undo last batch…</button>
+    {/if}
   </section>
   {#if plan}
     <p class="meta pad">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
@@ -256,6 +273,7 @@
     <button onclick={downloadDats} disabled={busy}>Download DATs for all systems</button>
   </section>
   <div class="dats">
+    <div class="datpane">
     <table class="datlist">
       <thead><tr><th>DAT</th><th>System</th><th class="num">Have</th><th class="num">Missing</th></tr></thead>
       <tbody>
@@ -269,6 +287,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
     {#if currentDat}
       <section class="games">
         <h2>{currentDat.name}</h2>
@@ -329,7 +348,7 @@
   .num { text-align: right; white-space: nowrap; }
   .path { font-family: ui-monospace, monospace; font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; direction: rtl; text-align: left; }
   /* rtl + bdi: long paths are cut at the start, so the file name stays visible */
-  .dats { display: grid; grid-template-columns: minmax(20rem, 1fr) 2fr; align-items: start; }
+  .dats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
   .datlist tr { cursor: pointer; }
   tr.selected { background: #dce8f5; }
   .games { padding: 0 1rem 0 0; }
@@ -340,7 +359,10 @@
   .badge.wrong_system { background: #c6282833; color: #c62828; }
   .badge.duplicate { background: #5e35b133; color: #7e57c2; }
   .badge.missing { background: #c6282822; color: #c62828; }
-  .note { padding: 0 1rem; color: #3b6ea8; }
+  .status { margin: 0.25rem 0; padding: 0 1rem; color: #3b6ea8; min-height: 1.4em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status.error { color: #c33; }
+  .datpane { overflow-x: auto; min-width: 0; }
+  .datpane table { width: calc(100% - 1rem); margin-right: 0; }
   .pad { padding: 0 1rem; }
   input.wide { flex: 1; min-width: 16rem; font: inherit; padding: 0.25rem 0.5rem; border: 1px solid #8886; border-radius: 4px; background: transparent; color: inherit; }
   button:disabled { opacity: 0.5; cursor: default; }

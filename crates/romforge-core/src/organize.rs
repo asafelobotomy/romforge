@@ -31,9 +31,10 @@ use crate::Error;
 /// What [`plan`] should do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrganizeOptions {
+    /// Only files under this folder move. Required: the library may hold
+    /// scans of folders you never meant to reorganize.
+    pub from: PathBuf,
     pub dest: PathBuf,
-    /// Only files under this folder (default: every scanned file).
-    pub from: Option<PathBuf>,
     /// Only files identified for this system key.
     pub system: Option<String>,
     /// Keep one version per title.
@@ -45,10 +46,10 @@ pub struct OrganizeOptions {
 pub const DEFAULT_REGIONS: &[&str] = &["USA", "World", "Europe", "Japan"];
 
 impl OrganizeOptions {
-    pub fn new(dest: impl Into<PathBuf>) -> Self {
+    pub fn new(from: impl Into<PathBuf>, dest: impl Into<PathBuf>) -> Self {
         Self {
+            from: from.into(),
             dest: dest.into(),
-            from: None,
             system: None,
             one_g1r: false,
             regions: DEFAULT_REGIONS.iter().map(|s| s.to_string()).collect(),
@@ -112,6 +113,18 @@ struct Member {
     games: BTreeMap<GameRef, (String, i64, bool)>,
 }
 
+/// Whether `path` is under the source (`from`) of `opts`.
+fn in_source(path: &str, opts: &OrganizeOptions) -> bool {
+    let Ok(from) = std::fs::canonicalize(&opts.from) else {
+        return false;
+    };
+    if from.is_dir() {
+        path.starts_with(&format!("{}/", from.display()))
+    } else {
+        Path::new(path) == from
+    }
+}
+
 fn load(
     conn: &Connection,
     opts: &OrganizeOptions,
@@ -131,10 +144,15 @@ fn load(
          ORDER BY f.path, f.member",
     )?;
     let mut out: BTreeMap<String, BTreeMap<String, Member>> = BTreeMap::new();
-    let from = opts.from.as_ref().map(|p| {
-        let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.clone());
-        format!("{}/", p.display())
-    });
+    let dest = format!("{}/", opts.dest.display());
+    let from = std::fs::canonicalize(&opts.from)
+        .map_err(|e| Error::Organize(format!("source folder {}: {e}", opts.from.display())))?;
+    // A file as the source means just that file.
+    let (from, exact) = if from.is_dir() {
+        (format!("{}/", from.display()), None)
+    } else {
+        (String::new(), Some(from.to_string_lossy().into_owned()))
+    };
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -149,9 +167,13 @@ fn load(
     })?;
     for row in rows {
         let (path, member, status, system, game, rom, rom_count, cues) = row?;
-        if let Some(prefix) = &from
-            && !path.starts_with(prefix.as_str())
-        {
+        let inside = match &exact {
+            Some(file) => path == *file,
+            None => path.starts_with(from.as_str()),
+        };
+        // Files in the destination are loaded too, to know what is already
+        // organized; only files under `from` move.
+        if !inside && !path.starts_with(dest.as_str()) {
             continue;
         }
         let entry = out
@@ -212,6 +234,9 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
     }
 
     for (path, members) in &files {
+        if !in_source(path, opts) {
+            continue;
+        }
         let from = PathBuf::from(path);
         let skip = |reason: String| Skip {
             path: from.clone(),
@@ -568,7 +593,7 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
                         size
                     ],
                 )?;
-                follow(&tx, &m.from, &m.to)?;
+                follow(&tx, &m.from, &m.to, &dest)?;
                 tx.commit()?;
                 applied.moved += 1;
             }
@@ -584,9 +609,9 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
 }
 
 /// The library follows a moved file: its rows get the new path and move to
-/// the scan root that contains it (one is added for the destination if
-/// needed), so rescanning the folder it came from doesn't drop it.
-fn follow(tx: &rusqlite::Transaction, from: &Path, to: &Path) -> Result<(), Error> {
+/// the scan root that contains it (`new_root` is added as one if none
+/// does), so rescanning the folder it came from doesn't drop it.
+fn follow(tx: &rusqlite::Transaction, from: &Path, to: &Path, new_root: &Path) -> Result<(), Error> {
     let roots: Vec<(i64, String)> = tx
         .prepare("SELECT root_id, path FROM scan_roots")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -599,7 +624,7 @@ fn follow(tx: &rusqlite::Transaction, from: &Path, to: &Path) -> Result<(), Erro
     let root = match root {
         Some(id) => id,
         None => {
-            let dir = to.parent().unwrap_or(to);
+            let dir = new_root;
             tx.query_row(
                 "INSERT INTO scan_roots (path, scanned_at)
                  VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) RETURNING root_id",
@@ -672,7 +697,7 @@ pub fn undo(conn: &mut Connection, batch_id: Option<i64>) -> Result<Undone, Erro
                     "DELETE FROM organize_moves WHERE batch_id = ?1 AND seq = ?2",
                     params![batch_id, seq],
                 )?;
-                follow(&tx, &dst, &src)?;
+                follow(&tx, &dst, &src, src.parent().unwrap_or(&src))?;
                 tx.commit()?;
                 remove_empty_dirs(&dst, &dest);
                 undone.restored += 1;
@@ -762,8 +787,17 @@ fn copy_verify_delete(from: &Path, to: &Path, size: u64) -> std::io::Result<u64>
     let tmp = to.with_file_name(format!(".{name}.romforge-part"));
     let result = (|| {
         {
+            let mut src = std::fs::File::open(from)?;
+            let meta = src.metadata()?;
             let mut out = std::fs::File::create_new(&tmp)?;
-            std::io::copy(&mut std::fs::File::open(from)?, &mut out)?;
+            std::io::copy(&mut src, &mut out)?;
+            // Keep the file's times and permissions, as a rename would.
+            let mut times = std::fs::FileTimes::new().set_modified(meta.modified()?);
+            if let Ok(accessed) = meta.accessed() {
+                times = times.set_accessed(accessed);
+            }
+            out.set_times(times)?;
+            out.set_permissions(meta.permissions())?;
             out.sync_all()?;
         }
         if sha1_file(from)? != sha1_file(&tmp)? || std::fs::metadata(&tmp)?.len() != size {
@@ -839,7 +873,19 @@ mod tests {
         let (a, b) = (dir.path().join("a.bin"), dir.path().join("sub/b.bin"));
         std::fs::write(&a, vec![5u8; 100_000]).unwrap();
         std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&a)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
         assert_eq!(copy_verify_delete(&a, &b, 100_000).unwrap(), 100_000);
+        assert_eq!(
+            std::fs::metadata(&b).unwrap().modified().unwrap(),
+            old,
+            "mtime kept"
+        );
         assert!(!a.exists());
         assert_eq!(std::fs::read(&b).unwrap(), vec![5u8; 100_000]);
         let leftovers: Vec<_> = std::fs::read_dir(b.parent().unwrap()).unwrap().collect();

@@ -102,21 +102,23 @@ library once at the end, not after every DAT.
 ## Organize (dry run, apply, undo)
 
 ```bash
-romforge-cli organize plan --dest ~/roms-sorted --1g1r -v   # changes nothing
-romforge-cli organize apply --dest ~/roms-sorted --1g1r
+romforge-cli organize plan --from ~/roms --dest ~/roms-sorted --1g1r -v   # changes nothing
+romforge-cli organize apply --from ~/roms --dest ~/roms-sorted --1g1r
 romforge-cli organize undo                                  # latest batch
 romforge-cli organize history
 ```
 
-Matched files go to `<dest>/<system>/<DAT name>` (archives keep their
+Only files under `--from` move (it is required, so a plan never reaches
+other folders you scanned). Matched files go to `<dest>/<system>/<DAT name>` (archives keep their
 `.zip`/`.7z`, loose files their extension; multi-file discs get a folder).
 Nothing is overwritten, and a file that changed since it was moved is left
 where it is by undo. Archives are moved whole, never split. A loose disc
 moves only as a complete set, or with its own cue sheet listing exactly its
 tracks (then every name is kept so the sheet still works). `--1g1r` keeps
 one version per title: a release over a beta/proto, then `--regions` order
-(default `USA,World,Europe,Japan`), then the highest revision. `--from DIR`
-and `--system KEY` narrow it down. `-v` shows why each file stays.
+(default `USA,World,Europe,Japan`), then the highest revision. `--system
+KEY` narrows it down. `-v` shows why each file stays. A move across drives
+is a copy checked byte for byte, keeping the file's times, then a delete.
 
 ## Metadata and art
 
@@ -138,7 +140,7 @@ nothing new. `--refresh` fetches again.
 romforge-cli emulator list --all
 romforge-cli launch "Super Mario World" --dry-run
 romforge-cli launch "Silent Hill" -e duckstation
-romforge-cli emulator add bsnes --system SNES --program bsnes --args {rom}
+romforge-cli emulator add bsnes --system SNES --program bsnes --args "--fullscreen {rom}"
 ```
 
 RetroArch (on `PATH` or the Flatpak) with the system's first installed core,

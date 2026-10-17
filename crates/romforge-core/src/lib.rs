@@ -117,6 +117,19 @@ pub struct DatStatus {
     pub state: DatState,
 }
 
+/// `s` for a `LIKE ... ESCAPE '\'` pattern: `%`, `_` and `\` match
+/// themselves.
+pub(crate) fn like_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn read_file(path: &Path) -> Result<Vec<u8>, Error> {
     let mut buf = Vec::new();
     BufReader::new(std::fs::File::open(path)?).read_to_end(&mut buf)?;
@@ -341,9 +354,10 @@ impl Library {
     /// system. A system's main DAT counts as [`DatState::Mirror`] when it
     /// came from libretro's mirror, whose names and version format differ.
     pub fn nointro_status(&self, profile: &[fetch::ProfileEntry]) -> Result<Vec<DatStatus>, Error> {
-        let mut by_name = self
-            .conn
-            .prepare("SELECT dat_id, version, source_path FROM dats WHERE name = ?1")?;
+        let mut by_name = self.conn.prepare(
+            "SELECT dat_id, version, source_path FROM dats WHERE name = ?1
+                 ORDER BY source_path LIKE 'http%', dat_id DESC LIMIT 1",
+        )?;
         let mut mirror_of = self.conn.prepare(
             "SELECT dat_id, version, source_path FROM dats WHERE system_id = ?1 AND source_path LIKE ?2
              ORDER BY dat_id LIMIT 1",
@@ -521,7 +535,8 @@ impl Library {
         opts: ScanOptions,
         mut progress: impl FnMut(ScanProgress),
     ) -> Result<ScanReport, Error> {
-        let root = std::fs::canonicalize(root.as_ref())?;
+        let root = std::fs::canonicalize(root.as_ref())
+            .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {e}", root.as_ref().display())))?;
         let (system_id, dat_id) = match scope {
             Scope::All => (None, None),
             Scope::System(id) => {

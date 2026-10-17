@@ -348,11 +348,15 @@ fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, Pat
               AND m.via IN ('sha1', 'md5')
          JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
          JOIN dats d ON d.dat_id = g.dat_id JOIN systems s ON s.system_id = d.system_id
-         WHERE f.status = 'matched' AND (f.path = ?1 OR g.name = ?2 OR (?1 IS NULL AND g.name LIKE '%' || ?2 || '%'))
+         WHERE f.status = 'matched' AND (f.path = ?1 OR g.name = ?2 OR (?1 IS NULL AND g.name LIKE '%' || ?3 || '%' ESCAPE '\\'))
          ORDER BY g.name <> ?2, g.name, f.path, f.member",
     )?;
     let rows = stmt.query_map(
-        params![as_path.map(|p| p.to_string_lossy().into_owned()), query],
+        params![
+            as_path.map(|p| p.to_string_lossy().into_owned()),
+            query,
+            crate::like_escape(query)
+        ],
         |r| {
             Ok((
                 r.get(0)?,
@@ -470,6 +474,23 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
         match env.known(e) {
             Some(r) => return Ok(spec(e.name.to_owned(), &r, fill(e.args, &rom))),
             None => why_not.push(format!("{} not installed", e.name)),
+        }
+    }
+    if let Some(name) = emulator {
+        let known = user_emulators(conn)?
+            .iter()
+            .any(|u| u.name.eq_ignore_ascii_case(name))
+            || name.eq_ignore_ascii_case("retroarch")
+            || system
+                .cores
+                .iter()
+                .any(|c| name.eq_ignore_ascii_case(&format!("retroarch:{c}")))
+            || system.emulators.iter().any(|e| name.eq_ignore_ascii_case(e));
+        if !known {
+            return Err(Error::Launch(format!(
+                "{name:?} is not an emulator for {} (see `emulator list --all`)",
+                system.key
+            )));
         }
     }
     Err(Error::Launch(format!(

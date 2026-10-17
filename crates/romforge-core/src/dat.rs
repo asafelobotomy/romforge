@@ -47,7 +47,19 @@ pub fn parse_any(bytes: &[u8]) -> Result<Dat, Error> {
         Some(b'<') => parse(bytes),
         // Skip a UTF-8 BOM.
         Some(0xef) if bytes[start.unwrap_or(0)..].starts_with(b"\xef\xbb\xbf<") => parse(bytes),
-        _ => parse_cmp(&String::from_utf8_lossy(bytes)),
+        _ => {
+            let text = String::from_utf8_lossy(bytes);
+            let looks_like_cmp = text
+                .split_whitespace()
+                .next()
+                .is_some_and(|w| matches!(w, "clrmamepro" | "game" | "machine" | "resource"));
+            if !looks_like_cmp {
+                return Err(Error::Dat(
+                    "not a DAT (neither Logiqx XML nor clrmamepro text)".into(),
+                ));
+            }
+            parse_cmp(&text)
+        }
     }
 }
 
@@ -411,7 +423,10 @@ mod tests {
     fn rejects_non_dat() {
         assert!(parse("<html></html>".as_bytes()).is_err());
         assert!(parse_any(b"<!DOCTYPE html><html></html>").is_err());
-        assert!(parse_any(b"hello ( world )").is_err());
+        let err = parse_any(b"# romforge\n\nCatalog (and more)")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not a DAT"), "{err}");
         assert!(parse_any(b"clrmamepro ( name \"x\" ").is_err());
     }
 
