@@ -3,6 +3,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use romforge_core::enrich::EnrichOptions;
@@ -20,8 +21,9 @@ fn lit(v: &str) -> String {
     format!(r#"{{"type":"literal","value":"{v}"}}"#)
 }
 
-/// Answers SPARQL queries by what they ask for; records each query.
-fn serve() -> (String, Arc<Mutex<Vec<String>>>) {
+/// Answers SPARQL queries by what they ask for; records each query. While
+/// `busy` is set, detail queries get a 429 with a long Retry-After.
+fn serve(busy: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}/sparql", listener.local_addr().unwrap());
     let log = Arc::new(Mutex::new(Vec::new()));
@@ -44,8 +46,17 @@ fn serve() -> (String, Arc<Mutex<Vec<String>>>) {
                 .map(|(_, q)| percent_decode(q))
                 .unwrap_or_default();
             seen.lock().unwrap().push(query.clone());
-            let rows: Vec<String> = if query.contains("rdfs:label ?label") {
-                // Game Boy games: one exact match, one ambiguous pair.
+            if busy.load(Ordering::SeqCst) && query.contains("schema:about") {
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1000\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = stream.flush();
+                continue;
+            }
+            let rows: Vec<String> = if query.contains("wikibase:mwapi") {
+                // Game Boy games found by search: one exact match, one
+                // ambiguous pair.
                 vec![
                     format!(
                         r#"{{"g":{},"label":{},"date":{}}}"#,
@@ -162,18 +173,27 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-#[test]
-fn matches_fills_and_lists_the_series() {
+fn library(endpoint: &str) -> (Library, EnrichOptions, tempfile::TempDir) {
     let mut lib = Library::open_in_memory().unwrap();
     lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
     lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
-    let (endpoint, log) = serve();
     let cache = tempfile::tempdir().unwrap();
     let mut opts = EnrichOptions::new(cache.path());
     opts.art = Vec::new();
     // No libretro: point its base at nothing so only Wikidata answers.
     opts.metadata_base = format!("{endpoint}/none");
-    opts.wikidata = Some(endpoint);
+    opts.wikidata = Some(endpoint.to_owned());
+    (lib, opts, cache)
+}
+
+fn searches(log: &[String]) -> Vec<&String> {
+    log.iter().filter(|q| q.contains("wikibase:mwapi")).collect()
+}
+
+#[test]
+fn matches_fills_and_lists_the_series() {
+    let (endpoint, log) = serve(Arc::default());
+    let (mut lib, opts, _cache) = library(&endpoint);
 
     let report = lib.enrich(&opts, |_| {}).unwrap();
     let w = report.wikidata.expect("Wikidata ran");
@@ -182,6 +202,17 @@ fn matches_fills_and_lists_the_series() {
     assert!(
         w.ambiguous >= 1,
         "Shared Hash (Rev A) has two equal candidates: {w:?}"
+    );
+
+    // Only the library's titles are looked up, all in one query, on the
+    // Game Boy's item.
+    let all = log.lock().unwrap().clone();
+    let asked = searches(&all);
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert!(
+        asked[0].contains("\"test gb haswbstatement:P400=Q186437 haswbstatement:P31=Q7889\""),
+        "{}",
+        asked[0]
     );
 
     let v = lib.library_view().unwrap();
@@ -203,8 +234,49 @@ fn matches_fills_and_lists_the_series() {
     let before = log.lock().unwrap().len();
     lib.enrich(&opts, |_| {}).unwrap();
     let again: Vec<String> = log.lock().unwrap()[before..].to_vec();
+    assert!(searches(&again).is_empty(), "{again:?}");
+    assert!(again.iter().any(|q| q.contains("schema:about")), "{again:?}");
+
+    // With refresh, every title is searched again.
+    let before = log.lock().unwrap().len();
+    let mut fresh = opts.clone();
+    fresh.refresh = true;
+    lib.enrich(&fresh, |_| {}).unwrap();
+    let again: Vec<String> = log.lock().unwrap()[before..].to_vec();
+    assert_eq!(searches(&again).len(), 1, "{again:?}");
+}
+
+#[test]
+fn a_rate_limit_stops_the_run_and_the_next_one_resumes() {
+    let busy = Arc::new(AtomicBool::new(true));
+    let (endpoint, log) = serve(busy.clone());
+    let (mut lib, opts, _cache) = library(&endpoint);
+
+    let w = lib.enrich(&opts, |_| {}).unwrap().wikidata.unwrap();
+    assert_eq!(w.matched, 1, "the match is kept: {w:?}");
     assert!(
-        again.iter().all(|q| !q.contains("rdfs:label ?label")),
-        "{again:?}"
+        w.errors
+            .iter()
+            .any(|e| e.contains("rate limiting") && e.contains("17 minutes")),
+        "{:?}",
+        w.errors
     );
+    let all = log.lock().unwrap().clone();
+    assert!(
+        !all.iter().any(|q| q.contains("GROUP BY ?s ?m")),
+        "nothing more is asked after the 429: {all:?}"
+    );
+    let v = lib.library_view().unwrap();
+    let id = v.rows.iter().find(|r| r.title == "Test GB").unwrap().id.clone();
+    assert!(!lib.game_detail(&id).unwrap().fields.contains_key("developer"));
+
+    // Later: no new search, but the details of the match made before.
+    busy.store(false, Ordering::SeqCst);
+    let before = log.lock().unwrap().len();
+    let w = lib.enrich(&opts, |_| {}).unwrap().wikidata.unwrap();
+    assert!(w.errors.is_empty(), "{:?}", w.errors);
+    let again: Vec<String> = log.lock().unwrap()[before..].to_vec();
+    assert!(searches(&again).is_empty(), "{again:?}");
+    let d = lib.game_detail(&id).unwrap();
+    assert_eq!(d.fields.get("developer").map(String::as_str), Some("Test Studio"));
 }

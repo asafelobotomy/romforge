@@ -120,14 +120,21 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    listed?" for your own title; chips for what to fetch for that game once
    a result is taken, and "Do not overwrite existing data". Later: the
    keyed sources (ScreenScraper, IGDB) as scrapers too.
-9. **Deeper enrich** — Wikidata *(built)*: per platform, one SPARQL query
-   lists its video games; a game is matched when exactly one has the same
+9. **Deeper enrich** — Wikidata *(built)*: only the titles you have are
+   looked up, 20 per SPARQL query, through Wikidata's own search run inside
+   the query service (`haswbstatement` on the platform item and "video
+   game"); listing every game on a platform got one query per run past the
+   rate limit. A game is matched when exactly one candidate has the same
    title (narrowed by release year), ambiguous ones are kept for Search.
+   Candidates and searched titles are kept per platform item, so a run
+   stopped by a 429 resumes where it stopped and still fetches details for
+   games matched before; `--refresh` searches again.
    Stores developer, publisher, country, director, composer, designer,
    genre, modes, the series with its ordinal and every member, and IDs for
    MobyGames, IGDB, HowLongToBeat, RetroAchievements and Wikipedia (direct
    links). Requests are 2 s apart; 429/503 answers are retried after
-   Retry-After. Platform items are in the `wikidata` column of
+   Retry-After up to 30 s, beyond that the run stops asking and reports the
+   wait. Platform items are in the `wikidata` column of
    `systems.rs`, each checked against Wikidata; still missing: Lynx,
    TurboGrafx-CD, Neo Geo Pocket, 3DO, Neo Geo CD, PC-FX, CD-i, CD32,
    ColecoVision, Intellivision, Vectrex, PC-98, X68000, Atari 5200, MSX2,

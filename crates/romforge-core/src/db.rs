@@ -158,6 +158,22 @@ const MIGRATIONS: &[&str] = &[
         trashed  TEXT NOT NULL,
         PRIMARY KEY (batch_id, trashed)
     );",
+    // 12: Wikidata candidates per platform item, and the (normalized) titles
+    // already searched there, so a run cut short by a rate limit resumes
+    "CREATE TABLE wikidata_candidates (
+        platform TEXT NOT NULL,
+        qid      TEXT NOT NULL,
+        label    TEXT NOT NULL,
+        names    TEXT NOT NULL,
+        years    TEXT NOT NULL,
+        PRIMARY KEY (platform, qid)
+    );
+    CREATE TABLE wikidata_searched (
+        platform    TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        searched_at TEXT NOT NULL,
+        PRIMARY KEY (platform, name)
+    );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
