@@ -339,17 +339,24 @@ fn describe(r: &Runner) -> String {
     }
 }
 
-/// A matched file of a game: (game, system key, path on disk, member).
+/// A matched file of a game, or one you named in Search: (game, system key,
+/// path on disk, member).
 fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, PathBuf, String)>, Error> {
     let as_path = std::fs::canonicalize(query).ok();
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT g.name, s.key, f.path, f.member
+        "SELECT name, key, path, member FROM (
+         SELECT g.name AS name, s.key AS key, f.path AS path, f.member AS member
          FROM files f JOIN matches m ON m.file_id = f.file_id AND m.out_of_scope = 0
               AND m.via IN ('sha1', 'md5')
          JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
          JOIN dats d ON d.dat_id = g.dat_id JOIN systems s ON s.system_id = d.system_id
          WHERE f.status = 'matched' AND (f.path = ?1 OR g.name = ?2 OR (?1 IS NULL AND g.name LIKE '%' || ?3 || '%' ESCAPE '\\'))
-         ORDER BY g.name <> ?2, g.name, f.path, f.member",
+         UNION
+         SELECT mi.title, s.key, f.path, f.member
+         FROM files f JOIN manual_ids mi ON mi.sha1 = f.sha1 AND mi.size = f.size
+         JOIN systems s ON s.system_id = mi.system_id
+         WHERE f.status = 'manual' AND (f.path = ?1 OR mi.title = ?2 OR (?1 IS NULL AND mi.title LIKE '%' || ?3 || '%' ESCAPE '\\'))
+         ) ORDER BY name <> ?2, name, path, member",
     )?;
     let rows = stmt.query_map(
         params![

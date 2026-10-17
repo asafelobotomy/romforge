@@ -164,6 +164,21 @@ for what has been gathered (identified, metadata, box art, title screen,
 snap), and a detail panel with Details, Development, Series and Links tabs.
 DATs and Organize are at the foot of the platform list.
 
+**Search** (toolbar, or `romforge-cli search queue|suggest|name|forget|wikidata`)
+goes through what needs you, one game at a time: files no hash identified
+(pick a DAT title it resembles, or give your own title and platform, e.g.
+for a translation) and games Wikidata couldn't match on its own. Titles you
+pick show as "identified by you" and are never counted as verified.
+
+**Enrich** also asks Wikidata (free, no account) for developer, publisher,
+country, director, composer, the series in order, and IDs that make the
+Links tab point at each game's own MobyGames, RetroAchievements, Wikipedia,
+IGDB and HowLongToBeat page.
+
+With keys in Settings, Enrich also fills art libretro lacks (hero, logo,
+icon, 3D box, and any missing box art or screenshots) from ScreenScraper,
+then SteamGridDB, then IGDB, each only asked for what's still missing.
+
 **Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
 unprocessed ROMs, an optional **Library** folder that Cleanup and rename
 (milestone 10) sorts processed games into, **Keep originals** (Source files

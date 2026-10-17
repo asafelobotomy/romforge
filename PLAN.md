@@ -102,18 +102,40 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    virtually so tens of thousands of rows stay quick. ScreenScraper needs
    developer credentials issued to an app: the owner registers romforge, or
    uses their own.
-8. **Search** — a queue dialog going game by game: hash match, DAT title
-   suggestions for unknown files, manual title search. Picks by hand are
-   "identified by you" (house rule 8).
-9. **Deeper enrich** — Wikidata (developer, publisher, country, director,
-   composer, series and its order, external IDs for Links), then
-   ScreenScraper, then SteamGridDB / IGDB for art libretro lacks (banner,
-   hero, 3D box, logo, icon), in the order of house rule 10.
+8. **Search** *(built)* — a queue dialog going game by game through every
+   row not verified by hash and every game whose Wikidata match is
+   ambiguous or missing: DAT title suggestions (shared words, limited to
+   platforms using the file's extension), your own title and platform, or
+   a Wikidata item (from the kept candidates, or an id you paste). Titles
+   picked by hand are "identified by you" (status `manual`, house rule 8),
+   stored by SHA1 + size so they survive moves and rescans; they get
+   metadata, art and Play like any game. CLI: `romforge-cli search`.
+9. **Deeper enrich** — Wikidata *(built)*: per platform, one SPARQL query
+   lists its video games; a game is matched when exactly one has the same
+   title (narrowed by release year), ambiguous ones are kept for Search.
+   Stores developer, publisher, country, director, composer, designer,
+   genre, modes, the series with its ordinal and every member, and IDs for
+   MobyGames, IGDB, HowLongToBeat, RetroAchievements and Wikipedia (direct
+   links). Requests are 2 s apart; 429/503 answers are retried after
+   Retry-After. Platform items are in the `wikidata` column of
+   `systems.rs`, each checked against Wikidata; still missing: Lynx,
+   TurboGrafx-CD, Neo Geo Pocket, 3DO, Neo Geo CD, PC-FX, CD-i, CD32,
+   ColecoVision, Intellivision, Vectrex, PC-98, X68000, Atari 5200, MSX2,
+   Amstrad CPC. Keyed art sources *(built, not yet tried with real keys)*:
+   ScreenScraper (by ROM hashes: 2D/3D box, wheel logo, fanart, title,
+   screenshot), then SteamGridDB (exact title: grid, hero, logo, icon), then
+   IGDB (exact title + platform: cover, artwork, screenshot), each filling
+   only what is still missing and asked once per game (`--refresh` asks
+   again). Their system ids (`screenscraper`, `igdb` columns) are from
+   memory and must be checked once keys are entered. A source that answers
+   "rate limited" is left alone for the rest of the run.
 10. **Cleanup & rename** — repack each game into one archive named by the
     owner's title preferences, with a `romforge/` folder inside holding the
     art and a `.romforge.md` / `.nfo` with its details, under the guardrails
-    of house rule 7. Discs: CHD cannot hold extra files; decide between
-    7z/zip with art inside and CHD with a sidecar folder when building it.
+    of house rule 7. Decided 2026-10-17: archives are named by the DAT name
+    as is ("Super Mario World (USA).zip"); cartridge games are repacked as
+    zip; disc games become CHD (CHD can't hold extra files) with art and
+    details in a sidecar folder named like the game next to it.
 
 ## Later ideas (parked, do not build yet)
 

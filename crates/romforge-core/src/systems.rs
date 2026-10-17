@@ -6,7 +6,9 @@
 //! only: matching always needs size + SHA1 or size + MD5. `extensions` decide
 //! which files a scan hashes. `nointro`, `redump`, `tosec`, `hacks` and
 //! `homebrew` say where `dat download` fetches the system's DATs; `cores` and
-//! `emulators` what `launch` runs.
+//! `emulators` what `launch` runs; `wikidata` the platform's Wikidata items;
+//! `screenscraper` and `igdb` the ids those art sources use (from memory, to
+//! be checked once keys are entered).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct System {
@@ -43,6 +45,13 @@ pub struct System {
     /// Standalone emulators to try after RetroArch (names from
     /// `launch::KNOWN_EMULATORS`).
     pub emulators: &'static [&'static str],
+    /// Wikidata items of the platform (games are matched against the video
+    /// games listed for it).
+    pub wikidata: &'static [&'static str],
+    /// ScreenScraper's system id (unverified until checked with a key).
+    pub screenscraper: Option<u32>,
+    /// IGDB platform ids (unverified until checked with a key).
+    pub igdb: &'static [u32],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -78,6 +87,9 @@ const fn s(
         homebrew: &[],
         cores: &[],
         emulators: &[],
+        wikidata: &[],
+        screenscraper: None,
+        igdb: &[],
     }
 }
 
@@ -116,67 +128,82 @@ impl System {
         self.emulators = names;
         self
     }
+
+    const fn wikidata(mut self, items: &'static [&'static str]) -> Self {
+        self.wikidata = items;
+        self
+    }
+
+    const fn ss(mut self, id: u32) -> Self {
+        self.screenscraper = Some(id);
+        self
+    }
+
+    const fn igdb(mut self, ids: &'static [u32]) -> Self {
+        self.igdb = ids;
+        self
+    }
 }
 
 #[rustfmt::skip]
 pub const SYSTEMS: &[System] = &[
-    s(1, "NES", "Nintendo Entertainment System", "Nintendo", 3, 1983, "CRC32", 0, 0, &["Nintendo - Nintendo Entertainment System"], &["nes", "unf", "unif"]).nointro(&["Nintendo - Nintendo Entertainment System"]).hacks(&["Nintendo - Nintendo Entertainment System"]).homebrew(&["Nintendo - Nintendo Entertainment System"]).cores(&["mesen", "fceumm", "nestopia"]),
-    s(2, "SNES", "Super Nintendo Entertainment System", "Nintendo", 4, 1990, "CRC32", 0, 0, &["Nintendo - Super Nintendo Entertainment System"], &["sfc", "smc", "swc", "fig", "bs", "st"]).nointro(&["Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview", "Nintendo - Sufami Turbo"]).hacks(&["Nintendo - Super Nintendo Entertainment System"]).homebrew(&["Nintendo - Super Nintendo Entertainment System"]).cores(&["snes9x", "bsnes"]),
-    s(3, "N64", "Nintendo 64", "Nintendo", 5, 1996, "CRC32", 0, 0, &["Nintendo - Nintendo 64"], &["n64", "z64", "v64"]).nointro(&["Nintendo - Nintendo 64", "Nintendo - Nintendo 64DD"]).hacks(&["Nintendo - Nintendo 64"]).cores(&["mupen64plus_next", "parallel_n64"]),
-    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]).redump(&["gc", "gc-bios"]).homebrew(&["Nintendo - GameCube"]).cores(&["dolphin"]).emulators(&["dolphin"]),
-    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]).redump(&["wii"]).cores(&["dolphin"]).emulators(&["dolphin"]),
-    s(6, "Game Boy", "Nintendo Game Boy", "Nintendo", 4, 1989, "CRC32", 0, 1, &["Nintendo - Game Boy"], &["gb", "sgb"]).nointro(&["Nintendo - Game Boy"]).hacks(&["Nintendo - Game Boy"]).homebrew(&["Nintendo - Game Boy"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]),
-    s(7, "Game Boy Color", "Nintendo Game Boy Color", "Nintendo", 5, 1998, "CRC32", 0, 1, &["Nintendo - Game Boy Color"], &["gbc"]).nointro(&["Nintendo - Game Boy Color"]).hacks(&["Nintendo - Game Boy Color"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]),
-    s(8, "Game Boy Advance", "Nintendo Game Boy Advance", "Nintendo", 6, 2001, "CRC32", 0, 1, &["Nintendo - Game Boy Advance"], &["gba", "agb"]).nointro(&["Nintendo - Game Boy Advance", "Nintendo - e-Reader"]).hacks(&["Nintendo - Game Boy Advance"]).homebrew(&["Nintendo - Game Boy Advance"]).cores(&["mgba", "vbam"]).emulators(&["mgba"]),
-    s(9, "Nintendo DS", "Nintendo DS", "Nintendo", 7, 2004, "CRC32", 0, 1, &["Nintendo - Nintendo DS"], &["nds", "dsi"]).nointro(&["Nintendo - Nintendo DS", "Nintendo - Nintendo DSi", "Nintendo - Nintendo DS (Download Play)"]).hacks(&["Nintendo - Nintendo DS"]).cores(&["melonds", "desmume"]).emulators(&["melonds"]),
-    s(10, "Genesis", "Sega Genesis / Mega Drive", "Sega", 4, 1988, "CRC32", 0, 0, &["Sega - Mega Drive - Genesis"], &["md", "gen", "smd", "bin"]).nointro(&["Sega - Mega Drive - Genesis"]).hacks(&["Sega - Mega Drive - Genesis"]).homebrew(&["Sega - Mega Drive - Genesis"]).cores(&["genesis_plus_gx", "picodrive"]),
-    s(11, "Master System", "Sega Master System", "Sega", 3, 1985, "CRC32", 0, 0, &["Sega - Master System - Mark III"], &["sms"]).nointro(&["Sega - Master System - Mark III"]).hacks(&["Sega - Master System - Mark III"]).cores(&["genesis_plus_gx", "picodrive"]),
-    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]).redump(&["ss"]).hacks(&["Sega - Saturn"]).cores(&["mednafen_saturn", "yabause"]).emulators(&["mednafen"]),
-    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]).redump(&["dc"]).homebrew(&["Sega - Dreamcast"]).cores(&["flycast"]).emulators(&["flycast"]),
-    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]).redump(&["psx", "psx-bios"]).hacks(&["Sony - PlayStation"]).cores(&["mednafen_psx_hw", "swanstation", "pcsx_rearmed"]).emulators(&["duckstation"]),
-    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]).redump(&["ps2", "ps2-bios"]).hacks(&["Sony - PlayStation 2"]).cores(&["pcsx2"]).emulators(&["pcsx2"]),
-    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]).redump(&["psp"]).nointro(&["Sony - PlayStation Portable", "Sony - PlayStation Portable (PSN)"]).hacks(&["Sony - PlayStation Portable"]).cores(&["ppsspp"]).emulators(&["ppsspp"]),
-    s(17, "Atari 2600", "Atari 2600", "Atari", 2, 1977, "CRC32", 0, 0, &["Atari - Atari 2600", "Atari - 2600"], &["a26", "bin"]).nointro(&["Atari - 2600"]).cores(&["stella"]),
-    s(18, "Atari 7800", "Atari 7800 ProSystem", "Atari", 3, 1986, "CRC32", 0, 0, &["Atari - Atari 7800", "Atari - 7800"], &["a78", "bin"]).nointro(&["Atari - 7800"]).cores(&["prosystem"]),
-    s(19, "Lynx", "Atari Lynx", "Atari", 4, 1989, "CRC32", 0, 1, &["Atari - Atari Lynx", "Atari - Lynx"], &["lnx", "lyx", "o"]).nointro(&["Atari - Lynx"]).cores(&["handy", "mednafen_lynx"]),
-    s(20, "TurboGrafx-16", "TurboGrafx-16 / PC Engine", "NEC", 4, 1987, "CRC32", 0, 0, &["NEC - PC Engine - TurboGrafx-16"], &["pce"]).nointro(&["NEC - PC Engine - TurboGrafx 16"]).hacks(&["NEC - PC Engine - TurboGrafx 16"]).cores(&["mednafen_pce_fast", "mednafen_pce"]),
+    s(1, "NES", "Nintendo Entertainment System", "Nintendo", 3, 1983, "CRC32", 0, 0, &["Nintendo - Nintendo Entertainment System"], &["nes", "unf", "unif"]).nointro(&["Nintendo - Nintendo Entertainment System"]).hacks(&["Nintendo - Nintendo Entertainment System"]).homebrew(&["Nintendo - Nintendo Entertainment System"]).cores(&["mesen", "fceumm", "nestopia"]).wikidata(&["Q172742"]).ss(3).igdb(&[18]),
+    s(2, "SNES", "Super Nintendo Entertainment System", "Nintendo", 4, 1990, "CRC32", 0, 0, &["Nintendo - Super Nintendo Entertainment System"], &["sfc", "smc", "swc", "fig", "bs", "st"]).nointro(&["Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview", "Nintendo - Sufami Turbo"]).hacks(&["Nintendo - Super Nintendo Entertainment System"]).homebrew(&["Nintendo - Super Nintendo Entertainment System"]).cores(&["snes9x", "bsnes"]).wikidata(&["Q183259"]).ss(4).igdb(&[19]),
+    s(3, "N64", "Nintendo 64", "Nintendo", 5, 1996, "CRC32", 0, 0, &["Nintendo - Nintendo 64"], &["n64", "z64", "v64"]).nointro(&["Nintendo - Nintendo 64", "Nintendo - Nintendo 64DD"]).hacks(&["Nintendo - Nintendo 64"]).cores(&["mupen64plus_next", "parallel_n64"]).wikidata(&["Q184839"]).ss(14).igdb(&[4]),
+    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]).redump(&["gc", "gc-bios"]).homebrew(&["Nintendo - GameCube"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q182172"]).ss(13).igdb(&[21]),
+    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]).redump(&["wii"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q8079"]).ss(16).igdb(&[5]),
+    s(6, "Game Boy", "Nintendo Game Boy", "Nintendo", 4, 1989, "CRC32", 0, 1, &["Nintendo - Game Boy"], &["gb", "sgb"]).nointro(&["Nintendo - Game Boy"]).hacks(&["Nintendo - Game Boy"]).homebrew(&["Nintendo - Game Boy"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q186437"]).ss(9).igdb(&[33]),
+    s(7, "Game Boy Color", "Nintendo Game Boy Color", "Nintendo", 5, 1998, "CRC32", 0, 1, &["Nintendo - Game Boy Color"], &["gbc"]).nointro(&["Nintendo - Game Boy Color"]).hacks(&["Nintendo - Game Boy Color"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q203992"]).ss(10).igdb(&[22]),
+    s(8, "Game Boy Advance", "Nintendo Game Boy Advance", "Nintendo", 6, 2001, "CRC32", 0, 1, &["Nintendo - Game Boy Advance"], &["gba", "agb"]).nointro(&["Nintendo - Game Boy Advance", "Nintendo - e-Reader"]).hacks(&["Nintendo - Game Boy Advance"]).homebrew(&["Nintendo - Game Boy Advance"]).cores(&["mgba", "vbam"]).emulators(&["mgba"]).wikidata(&["Q188642"]).ss(12).igdb(&[24]),
+    s(9, "Nintendo DS", "Nintendo DS", "Nintendo", 7, 2004, "CRC32", 0, 1, &["Nintendo - Nintendo DS"], &["nds", "dsi"]).nointro(&["Nintendo - Nintendo DS", "Nintendo - Nintendo DSi", "Nintendo - Nintendo DS (Download Play)"]).hacks(&["Nintendo - Nintendo DS"]).cores(&["melonds", "desmume"]).emulators(&["melonds"]).wikidata(&["Q170323"]).ss(15).igdb(&[20]),
+    s(10, "Genesis", "Sega Genesis / Mega Drive", "Sega", 4, 1988, "CRC32", 0, 0, &["Sega - Mega Drive - Genesis"], &["md", "gen", "smd", "bin"]).nointro(&["Sega - Mega Drive - Genesis"]).hacks(&["Sega - Mega Drive - Genesis"]).homebrew(&["Sega - Mega Drive - Genesis"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q10676"]).ss(1).igdb(&[29]),
+    s(11, "Master System", "Sega Master System", "Sega", 3, 1985, "CRC32", 0, 0, &["Sega - Master System - Mark III"], &["sms"]).nointro(&["Sega - Master System - Mark III"]).hacks(&["Sega - Master System - Mark III"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q209868"]).ss(2).igdb(&[64]),
+    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]).redump(&["ss"]).hacks(&["Sega - Saturn"]).cores(&["mednafen_saturn", "yabause"]).emulators(&["mednafen"]).wikidata(&["Q200912"]).ss(22).igdb(&[32]),
+    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]).redump(&["dc"]).homebrew(&["Sega - Dreamcast"]).cores(&["flycast"]).emulators(&["flycast"]).wikidata(&["Q184198"]).ss(23).igdb(&[23]),
+    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]).redump(&["psx", "psx-bios"]).hacks(&["Sony - PlayStation"]).cores(&["mednafen_psx_hw", "swanstation", "pcsx_rearmed"]).emulators(&["duckstation"]).wikidata(&["Q10677"]).ss(57).igdb(&[7]),
+    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]).redump(&["ps2", "ps2-bios"]).hacks(&["Sony - PlayStation 2"]).cores(&["pcsx2"]).emulators(&["pcsx2"]).wikidata(&["Q10680"]).ss(58).igdb(&[8]),
+    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]).redump(&["psp"]).nointro(&["Sony - PlayStation Portable", "Sony - PlayStation Portable (PSN)"]).hacks(&["Sony - PlayStation Portable"]).cores(&["ppsspp"]).emulators(&["ppsspp"]).wikidata(&["Q170325"]).ss(61).igdb(&[38]),
+    s(17, "Atari 2600", "Atari 2600", "Atari", 2, 1977, "CRC32", 0, 0, &["Atari - Atari 2600", "Atari - 2600"], &["a26", "bin"]).nointro(&["Atari - 2600"]).cores(&["stella"]).wikidata(&["Q206261"]).ss(26).igdb(&[59]),
+    s(18, "Atari 7800", "Atari 7800 ProSystem", "Atari", 3, 1986, "CRC32", 0, 0, &["Atari - Atari 7800", "Atari - 7800"], &["a78", "bin"]).nointro(&["Atari - 7800"]).cores(&["prosystem"]).wikidata(&["Q753600"]).ss(41).igdb(&[60]),
+    s(19, "Lynx", "Atari Lynx", "Atari", 4, 1989, "CRC32", 0, 1, &["Atari - Atari Lynx", "Atari - Lynx"], &["lnx", "lyx", "o"]).nointro(&["Atari - Lynx"]).cores(&["handy", "mednafen_lynx"]).ss(28).igdb(&[61]),
+    s(20, "TurboGrafx-16", "TurboGrafx-16 / PC Engine", "NEC", 4, 1987, "CRC32", 0, 0, &["NEC - PC Engine - TurboGrafx-16"], &["pce"]).nointro(&["NEC - PC Engine - TurboGrafx 16"]).hacks(&["NEC - PC Engine - TurboGrafx 16"]).cores(&["mednafen_pce_fast", "mednafen_pce"]).wikidata(&["Q1057377"]).ss(31).igdb(&[86]),
     s(21, "TurboGrafx-CD", "TurboGrafx-CD / PC Engine CD", "NEC", 4, 1988, "MD5", 1, 0, &["NEC - PC Engine CD & TurboGrafx CD"], &["cue", "bin", "chd"]).redump(&["pce"]).cores(&["mednafen_pce", "mednafen_pce_fast"]),
-    s(22, "Neo Geo", "SNK Neo Geo", "SNK", 4, 1990, "CRC32", 0, 0, &[], &["neo"]).tosec(&["SNK Neo-Geo"]).cores(&["fbneo"]),
-    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]).redump(&["mcd"]).cores(&["genesis_plus_gx", "picodrive"]),
-    s(24, "Game Gear", "Sega Game Gear", "Sega", 4, 1990, "CRC32", 0, 1, &["Sega - Game Gear"], &["gg"]).nointro(&["Sega - Game Gear"]).hacks(&["Sega - Game Gear"]).cores(&["genesis_plus_gx"]),
-    s(25, "Sega 32X", "Sega 32X", "Sega", 5, 1994, "CRC32", 0, 0, &["Sega - 32X"], &["32x"]).nointro(&["Sega - 32X"]).hacks(&["Sega - 32x"]).cores(&["picodrive"]),
-    s(26, "Atari Jaguar", "Atari Jaguar", "Atari", 5, 1993, "CRC32", 0, 0, &["Atari - Atari Jaguar", "Atari - Jaguar"], &["j64", "jag", "rom", "abs", "cof"]).nointro(&["Atari - Jaguar"]).cores(&["virtualjaguar"]),
-    s(27, "Neo Geo Pocket", "Neo Geo Pocket / Color", "SNK", 5, 1998, "CRC32", 0, 1, &["SNK - NeoGeo Pocket", "SNK - NeoGeo Pocket Color"], &["ngp", "ngc"]).nointro(&["SNK - Neo Geo Pocket", "SNK - Neo Geo Pocket Color"]).hacks(&["SNK - Neo Geo Pocket Color"]).cores(&["mednafen_ngp"]),
-    s(28, "WonderSwan", "Bandai WonderSwan / Color", "Bandai", 5, 1999, "CRC32", 0, 1, &["Bandai - WonderSwan", "Bandai - WonderSwan Color"], &["ws", "wsc"]).nointro(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).hacks(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).cores(&["mednafen_wswan"]),
-    s(29, "Virtual Boy", "Nintendo Virtual Boy", "Nintendo", 5, 1995, "CRC32", 0, 1, &["Nintendo - Virtual Boy"], &["vb", "vboy"]).nointro(&["Nintendo - Virtual Boy"]).cores(&["mednafen_vb"]),
-    s(30, "Nintendo 3DS", "Nintendo 3DS", "Nintendo", 8, 2011, "MD5", 1, 1, &["Nintendo - Nintendo 3DS"], &["3ds", "cia", "cci", "cxi"]).nointro(&["Nintendo - Nintendo 3DS", "Nintendo - New Nintendo 3DS"]),
-    s(31, "Nintendo Switch", "Nintendo Switch", "Nintendo", 9, 2017, "SHA1", 1, 1, &[], &["nsp", "xci"]),
-    s(32, "PlayStation Vita", "Sony PlayStation Vita", "Sony", 8, 2011, "MD5", 0, 1, &[], &["vpk"]).nointro(&["Sony - PlayStation Vita"]),
-    s(33, "Commodore 64", "Commodore 64", "Commodore", 2, 1982, "CRC32", 0, 0, &[], &["d64", "t64", "prg", "crt", "tap", "g64"]).nointro(&["Commodore - 64"]).tosec(&["Commodore C64"]).cores(&["vice_x64"]),
-    s(34, "Amiga", "Commodore Amiga", "Commodore", 3, 1985, "CRC32", 0, 0, &[], &["adf", "ipf", "hdf", "lha"]).nointro(&["Commodore - Amiga"]).tosec(&["Commodore Amiga"]).cores(&["puae"]),
-    s(35, "ZX Spectrum", "Sinclair ZX Spectrum", "Sinclair", 2, 1982, "CRC32", 0, 0, &[], &["tzx", "tap", "z80", "sna", "dsk"]).tosec(&["Sinclair ZX Spectrum"]).cores(&["fuse"]),
+    s(22, "Neo Geo", "SNK Neo Geo", "SNK", 4, 1990, "CRC32", 0, 0, &[], &["neo"]).tosec(&["SNK Neo-Geo"]).cores(&["fbneo"]).wikidata(&["Q1054350"]),
+    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]).redump(&["mcd"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q1047516"]).ss(20).igdb(&[78]),
+    s(24, "Game Gear", "Sega Game Gear", "Sega", 4, 1990, "CRC32", 0, 1, &["Sega - Game Gear"], &["gg"]).nointro(&["Sega - Game Gear"]).hacks(&["Sega - Game Gear"]).cores(&["genesis_plus_gx"]).wikidata(&["Q751719"]).ss(21).igdb(&[35]),
+    s(25, "Sega 32X", "Sega 32X", "Sega", 5, 1994, "CRC32", 0, 0, &["Sega - 32X"], &["32x"]).nointro(&["Sega - 32X"]).hacks(&["Sega - 32x"]).cores(&["picodrive"]).wikidata(&["Q1063978"]).ss(19).igdb(&[30]),
+    s(26, "Atari Jaguar", "Atari Jaguar", "Atari", 5, 1993, "CRC32", 0, 0, &["Atari - Atari Jaguar", "Atari - Jaguar"], &["j64", "jag", "rom", "abs", "cof"]).nointro(&["Atari - Jaguar"]).cores(&["virtualjaguar"]).wikidata(&["Q650601"]).ss(27).igdb(&[62]),
+    s(27, "Neo Geo Pocket", "Neo Geo Pocket / Color", "SNK", 5, 1998, "CRC32", 0, 1, &["SNK - NeoGeo Pocket", "SNK - NeoGeo Pocket Color"], &["ngp", "ngc"]).nointro(&["SNK - Neo Geo Pocket", "SNK - Neo Geo Pocket Color"]).hacks(&["SNK - Neo Geo Pocket Color"]).cores(&["mednafen_ngp"]).ss(25).igdb(&[119]),
+    s(28, "WonderSwan", "Bandai WonderSwan / Color", "Bandai", 5, 1999, "CRC32", 0, 1, &["Bandai - WonderSwan", "Bandai - WonderSwan Color"], &["ws", "wsc"]).nointro(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).hacks(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).cores(&["mednafen_wswan"]).wikidata(&["Q1065792"]).ss(45).igdb(&[57]),
+    s(29, "Virtual Boy", "Nintendo Virtual Boy", "Nintendo", 5, 1995, "CRC32", 0, 1, &["Nintendo - Virtual Boy"], &["vb", "vboy"]).nointro(&["Nintendo - Virtual Boy"]).cores(&["mednafen_vb"]).wikidata(&["Q164651"]).ss(11).igdb(&[87]),
+    s(30, "Nintendo 3DS", "Nintendo 3DS", "Nintendo", 8, 2011, "MD5", 1, 1, &["Nintendo - Nintendo 3DS"], &["3ds", "cia", "cci", "cxi"]).nointro(&["Nintendo - Nintendo 3DS", "Nintendo - New Nintendo 3DS"]).wikidata(&["Q203597"]).igdb(&[37]),
+    s(31, "Nintendo Switch", "Nintendo Switch", "Nintendo", 9, 2017, "SHA1", 1, 1, &[], &["nsp", "xci"]).wikidata(&["Q19610114"]).igdb(&[130]),
+    s(32, "PlayStation Vita", "Sony PlayStation Vita", "Sony", 8, 2011, "MD5", 0, 1, &[], &["vpk"]).nointro(&["Sony - PlayStation Vita"]).wikidata(&["Q188808"]).igdb(&[46]),
+    s(33, "Commodore 64", "Commodore 64", "Commodore", 2, 1982, "CRC32", 0, 0, &[], &["d64", "t64", "prg", "crt", "tap", "g64"]).nointro(&["Commodore - 64"]).tosec(&["Commodore C64"]).cores(&["vice_x64"]).wikidata(&["Q99775"]).ss(66).igdb(&[15]),
+    s(34, "Amiga", "Commodore Amiga", "Commodore", 3, 1985, "CRC32", 0, 0, &[], &["adf", "ipf", "hdf", "lha"]).nointro(&["Commodore - Amiga"]).tosec(&["Commodore Amiga"]).cores(&["puae"]).wikidata(&["Q100047"]).ss(64).igdb(&[16]),
+    s(35, "ZX Spectrum", "Sinclair ZX Spectrum", "Sinclair", 2, 1982, "CRC32", 0, 0, &[], &["tzx", "tap", "z80", "sna", "dsk"]).tosec(&["Sinclair ZX Spectrum"]).cores(&["fuse"]).wikidata(&["Q23882"]).ss(76).igdb(&[26]),
     s(36, "SuperGrafx", "NEC PC Engine SuperGrafx", "NEC", 4, 1989, "CRC32", 0, 0, &["NEC - PC Engine SuperGrafx"], &["sgx", "pce"]).nointro(&["NEC - PC Engine SuperGrafx"]).cores(&["mednafen_supergrafx"]),
-    s(37, "Xbox", "Microsoft Xbox", "Microsoft", 6, 2001, "MD5", 1, 0, &[], &["iso", "xiso"]).redump(&["xbox", "xbox-bios"]).emulators(&["xemu"]),
-    s(38, "Xbox 360", "Microsoft Xbox 360", "Microsoft", 7, 2005, "MD5", 1, 0, &[], &["iso", "xex"]).redump(&["xbox360"]),
+    s(37, "Xbox", "Microsoft Xbox", "Microsoft", 6, 2001, "MD5", 1, 0, &[], &["iso", "xiso"]).redump(&["xbox", "xbox-bios"]).emulators(&["xemu"]).wikidata(&["Q132020"]).igdb(&[11]),
+    s(38, "Xbox 360", "Microsoft Xbox 360", "Microsoft", 7, 2005, "MD5", 1, 0, &[], &["iso", "xex"]).redump(&["xbox360"]).wikidata(&["Q48263"]).igdb(&[12]),
     s(39, "Arcade", "Arcade / MAME", "Various", 0, 1970, "CRC32", 0, 0, &[], &[]).cores(&["fbneo", "mame"]),
-    s(40, "3DO", "3DO Interactive Multiplayer", "Panasonic", 5, 1993, "MD5", 1, 0, &[], &["iso", "cue", "bin", "chd"]).redump(&["3do"]).cores(&["opera"]),
+    s(40, "3DO", "3DO Interactive Multiplayer", "Panasonic", 5, 1993, "MD5", 1, 0, &[], &["iso", "cue", "bin", "chd"]).redump(&["3do"]).cores(&["opera"]).ss(29).igdb(&[50]),
     s(41, "Neo Geo CD", "SNK Neo Geo CD", "SNK", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump(&["ngcd"]).cores(&["neocd"]),
-    s(42, "FDS", "Nintendo Famicom Disk System", "Nintendo", 3, 1986, "CRC32", 0, 0, &["Nintendo - Family Computer Disk System"], &["fds", "qd"]).nointro(&["Nintendo - Family Computer Disk System"]).cores(&["mesen", "fceumm"]),
+    s(42, "FDS", "Nintendo Famicom Disk System", "Nintendo", 3, 1986, "CRC32", 0, 0, &["Nintendo - Family Computer Disk System"], &["fds", "qd"]).nointro(&["Nintendo - Family Computer Disk System"]).cores(&["mesen", "fceumm"]).wikidata(&["Q135321"]).ss(106).igdb(&[51]),
     s(43, "Atari 5200", "Atari 5200", "Atari", 2, 1982, "CRC32", 0, 0, &["Atari - Atari 5200", "Atari - 5200"], &["a52", "bin"]).nointro(&["Atari - 5200"]).cores(&["atari800"]),
     s(44, "Atari 8-bit", "Atari 8-bit Family", "Atari", 2, 1979, "CRC32", 0, 0, &[], &["atr", "xex", "xfd", "car", "cas", "rom"]).nointro(&["Atari - 8-bit Family"]).tosec(&["Atari 8bit"]).cores(&["atari800"]),
-    s(45, "Atari ST", "Atari ST", "Atari", 3, 1985, "CRC32", 0, 0, &[], &["st", "stx", "msa"]).nointro(&["Atari - ST"]).tosec(&["Atari ST"]).cores(&["hatari"]),
+    s(45, "Atari ST", "Atari ST", "Atari", 3, 1985, "CRC32", 0, 0, &[], &["st", "stx", "msa"]).nointro(&["Atari - ST"]).tosec(&["Atari ST"]).cores(&["hatari"]).wikidata(&["Q627302"]),
     s(46, "ColecoVision", "ColecoVision", "Coleco", 2, 1982, "CRC32", 0, 0, &["Coleco - ColecoVision"], &["col", "cv"]).nointro(&["Coleco - ColecoVision"]).cores(&["gearcoleco", "bluemsx"]),
     s(47, "Intellivision", "Mattel Intellivision", "Mattel", 2, 1979, "CRC32", 0, 0, &["Mattel - Intellivision"], &["int", "rom", "bin"]).nointro(&["Mattel - Intellivision"]).homebrew(&["Mattel - Intellivision"]).cores(&["freeintv"]),
-    s(48, "MSX", "MSX", "Microsoft", 3, 1983, "CRC32", 0, 0, &["Microsoft - MSX"], &["rom", "mx1", "mx2", "dsk", "cas"]).nointro(&["Microsoft - MSX"]).tosec(&["MSX MSX"]).cores(&["bluemsx", "fmsx"]),
+    s(48, "MSX", "MSX", "Microsoft", 3, 1983, "CRC32", 0, 0, &["Microsoft - MSX"], &["rom", "mx1", "mx2", "dsk", "cas"]).nointro(&["Microsoft - MSX"]).tosec(&["MSX MSX"]).cores(&["bluemsx", "fmsx"]).wikidata(&["Q853547"]).ss(113).igdb(&[27]),
     s(49, "MSX2", "MSX2", "Microsoft", 3, 1985, "CRC32", 0, 0, &["Microsoft - MSX2"], &["rom", "mx2", "dsk", "cas"]).nointro(&["Microsoft - MSX2"]).tosec(&["MSX MSX2", "MSX MSX2+"]).hacks(&["Microsoft - MSX2"]).cores(&["bluemsx", "fmsx"]),
     s(50, "PC-FX", "NEC PC-FX", "NEC", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump(&["pc-fx"]).cores(&["mednafen_pcfx"]),
     s(51, "CD-i", "Philips CD-i", "Philips", 4, 1991, "MD5", 1, 0, &[], &["chd", "iso", "cue", "bin"]).redump(&["cdi"]).cores(&["same_cdi"]),
     s(52, "CD32", "Commodore Amiga CD32", "Commodore", 5, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump(&["cd32"]),
     s(53, "Naomi", "Sega Naomi", "Sega", 6, 1998, "MD5", 1, 0, &[], &["chd"]).redump(&["naomi"]).cores(&["flycast"]).emulators(&["flycast"]),
-    s(54, "SG-1000", "Sega SG-1000", "Sega", 3, 1983, "CRC32", 0, 0, &["Sega - SG-1000"], &["sg"]).nointro(&["Sega - SG-1000"]).cores(&["genesis_plus_gx"]),
+    s(54, "SG-1000", "Sega SG-1000", "Sega", 3, 1983, "CRC32", 0, 0, &["Sega - SG-1000"], &["sg"]).nointro(&["Sega - SG-1000"]).cores(&["genesis_plus_gx"]).wikidata(&["Q1136956"]).ss(109),
     s(55, "Atari Jaguar CD", "Atari Jaguar CD", "Atari", 5, 1995, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump(&["ajcd"]),
-    s(56, "Wii U", "Nintendo Wii U", "Nintendo", 8, 2012, "SHA1", 1, 0, &[], &["wud", "wux", "rpx"]).emulators(&["cemu"]),
-    s(57, "PlayStation 3", "Sony PlayStation 3", "Sony", 7, 2006, "SHA1", 1, 0, &[], &["iso", "pkg"]).redump(&["ps3"]).emulators(&["rpcs3"]),
+    s(56, "Wii U", "Nintendo Wii U", "Nintendo", 8, 2012, "SHA1", 1, 0, &[], &["wud", "wux", "rpx"]).emulators(&["cemu"]).igdb(&[41]),
+    s(57, "PlayStation 3", "Sony PlayStation 3", "Sony", 7, 2006, "SHA1", 1, 0, &[], &["iso", "pkg"]).redump(&["ps3"]).emulators(&["rpcs3"]).wikidata(&["Q10683"]).igdb(&[9]),
     s(58, "Amstrad CPC", "Amstrad CPC", "Amstrad", 3, 1984, "CRC32", 0, 0, &[], &["dsk", "sna", "cdt"]).tosec(&["Amstrad CPC"]).cores(&["cap32"]),
     s(59, "Enterprise 128", "Enterprise 64/128", "Intelligent Software", 3, 1985, "CRC32", 0, 0, &[], &["img", "dsk"]).tosec(&["Enterprise 64 & 128"]),
     s(60, "ZX 81", "Sinclair ZX 81", "Sinclair", 2, 1981, "CRC32", 0, 0, &[], &["p", "81"]).tosec(&["Sinclair ZX81"]),
@@ -217,7 +244,7 @@ pub const SYSTEMS: &[System] = &[
     s(95, "Lindbergh", "Sega Lindbergh", "Sega", 7, 2005, "MD5", 1, 0, &[], &[]).redump(&["lindbergh"]),
     s(96, "Palm OS", "Palm OS", "Palm", 6, 1996, "CRC32", 0, 1, &[], &["prc", "pdb"]).nointro(&["Mobile - Palm OS"]),
     s(97, "Playdia", "Bandai Playdia", "Bandai", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]),
-    s(98, "Apple II", "Apple II / IIe / IIc / IIGS", "Apple", 2, 1977, "CRC32", 0, 0, &[], &["dsk", "do", "po", "nib", "woz", "2mg"]).tosec(&["Apple II", "Apple IIGS"]),
+    s(98, "Apple II", "Apple II / IIe / IIc / IIGS", "Apple", 2, 1977, "CRC32", 0, 0, &[], &["dsk", "do", "po", "nib", "woz", "2mg"]).tosec(&["Apple II", "Apple IIGS"]).wikidata(&["Q201652"]),
     s(99, "BBC Micro", "Acorn BBC Micro / Electron", "Acorn", 3, 1981, "CRC32", 0, 0, &[], &["ssd", "dsd", "uef"]).tosec(&["Acorn BBC", "Acorn Electron"]),
     s(100, "Commodore 16", "Commodore 16 / Plus/4", "Commodore", 3, 1984, "CRC32", 0, 0, &[], &["prg", "d64", "tap"]).nointro(&["Commodore - Plus-4"]).tosec(&["Commodore C16, C116 & Plus-4"]).cores(&["vice_xplus4"]),
     s(101, "Mega Duck", "Mega Duck / Cougar Boy", "Welback", 4, 1993, "CRC32", 0, 1, &["Welback - Mega Duck"], &["bin"]).tosec(&["Creatronic Mega Duck & Cougar Boy"]).cores(&["sameduck"]),

@@ -11,8 +11,10 @@ use std::sync::Mutex;
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
+use romforge_core::search::{QueueItem, TitleSuggestion};
 use romforge_core::settings::{Settings, default_staging_dir};
 use romforge_core::view::{GameDetail, LibraryView};
+use romforge_core::wikidata::Candidate;
 use romforge_core::{
     DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
 };
@@ -150,6 +152,62 @@ async fn settings_info() -> Res<SettingsInfo> {
 }
 
 #[tauri::command]
+async fn search_queue(db: tauri::State<'_, Db>) -> Res<Vec<QueueItem>> {
+    with(&db, |lib| lib.search_queue(None))
+}
+
+#[tauri::command]
+async fn title_suggestions(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    text: Option<String>,
+) -> Res<Vec<TitleSuggestion>> {
+    with(&db, |lib| lib.title_suggestions(&row_id, text.as_deref(), 12))
+}
+
+#[tauri::command]
+async fn identify_as(db: tauri::State<'_, Db>, row_id: String, system: String, title: String) -> Res<()> {
+    with(&db, |lib| lib.identify_as(&row_id, &system, &title))
+}
+
+#[tauri::command]
+async fn forget_identity(db: tauri::State<'_, Db>, row_id: String) -> Res<()> {
+    with(&db, |lib| lib.forget_identity(&row_id))
+}
+
+#[tauri::command]
+async fn wikidata_candidates(db: tauri::State<'_, Db>, row_id: String) -> Res<Vec<Candidate>> {
+    with(&db, |lib| lib.wikidata_candidates(&row_id))
+}
+
+#[tauri::command]
+async fn settle_wikidata(db: tauri::State<'_, Db>, row_id: String, qid: String) -> Res<()> {
+    with(&db, |lib| {
+        lib.settle_wikidata(romforge_core::wikidata::ENDPOINT, &row_id, &qid)
+    })
+}
+
+#[derive(serde::Serialize)]
+struct SystemChoice {
+    key: &'static str,
+    name: &'static str,
+}
+
+/// Every platform, for picking one by hand.
+#[tauri::command]
+async fn all_systems() -> Res<Vec<SystemChoice>> {
+    let mut v: Vec<SystemChoice> = romforge_core::systems::SYSTEMS
+        .iter()
+        .map(|s| SystemChoice {
+            key: s.key,
+            name: s.name,
+        })
+        .collect();
+    v.sort_by(|a, b| a.name.cmp(b.name));
+    Ok(v)
+}
+
+#[tauri::command]
 async fn library_view(db: tauri::State<'_, Db>) -> Res<LibraryView> {
     with(&db, |lib| lib.library_view())
 }
@@ -160,7 +218,7 @@ async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
     // Paths become data: URLs the page can show without file access.
     for path in d.art.values_mut() {
         *path = match std::fs::read(&*path) {
-            Ok(png) => format!("data:image/png;base64,{}", base64(&png)),
+            Ok(img) => data_url(&img),
             Err(_) => String::new(),
         };
     }
@@ -206,7 +264,7 @@ struct Info {
     title: String,
     system: String,
     fields: BTreeMap<String, String>,
-    /// kind -> `data:image/png;base64,...`
+    /// kind -> `data:image/...;base64,...`
     art: BTreeMap<String, String>,
 }
 
@@ -221,10 +279,7 @@ async fn game_info(db: tauri::State<'_, Db>, query: String) -> Res<Vec<Info>> {
                 .iter()
                 .filter_map(|(k, p)| {
                     let png = std::fs::read(p).ok()?;
-                    Some((
-                        k.as_str().to_owned(),
-                        format!("data:image/png;base64,{}", base64(&png)),
-                    ))
+                    Some((k.as_str().to_owned(), data_url(&png)))
                 })
                 .collect(),
             title: g.title,
@@ -239,6 +294,16 @@ async fn launch(db: tauri::State<'_, Db>, query: String) -> Res<String> {
     let spec = with(&db, |lib| lib.launch_plan(&Env::detect(), &query, None))?;
     romforge_core::launch::spawn(&spec).map_err(|e| e.to_string())?;
     Ok(format!("{} started with {}", spec.game, spec.emulator))
+}
+
+/// An image as a `data:` URL with its real type (PNG, JPEG or WebP).
+fn data_url(img: &[u8]) -> String {
+    let mime = match romforge_core::enrich::image_ext(img) {
+        Some("jpg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => "image/png",
+    };
+    format!("data:{mime};base64,{}", base64(img))
 }
 
 fn base64(data: &[u8]) -> String {
@@ -284,7 +349,14 @@ fn main() {
             refresh,
             get_settings,
             save_settings,
-            settings_info
+            settings_info,
+            search_queue,
+            title_suggestions,
+            identify_as,
+            forget_identity,
+            wikidata_candidates,
+            settle_wikidata,
+            all_systems
         ])
         .run(tauri::generate_context!())
         .expect("error while running romforge");

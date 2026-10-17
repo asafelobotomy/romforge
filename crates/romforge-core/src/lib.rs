@@ -4,6 +4,7 @@
 //! (milestone 2) moves and renames them, after a dry run, journaled for
 //! undo; nothing ever rewrites or extracts a ROM.
 
+pub mod artsources;
 pub mod dat;
 mod db;
 pub mod disc;
@@ -16,9 +17,11 @@ pub mod launch;
 pub mod organize;
 mod report;
 pub mod scan;
+pub mod search;
 pub mod settings;
 pub mod systems;
 pub mod view;
+pub mod wikidata;
 
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -61,6 +64,8 @@ pub enum Error {
     Launch(String),
     #[error("settings: {0}")]
     Settings(String),
+    #[error("search: {0}")]
+    Search(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -862,6 +867,37 @@ impl Library {
             }
         }
         Ok(out)
+    }
+
+    /// Games and files that need the owner (milestone 8).
+    pub fn search_queue(&self, only: Option<&[String]>) -> Result<Vec<search::QueueItem>, Error> {
+        search::queue(&self.conn, only)
+    }
+
+    pub fn title_suggestions(
+        &self,
+        row_id: &str,
+        text: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<search::TitleSuggestion>, Error> {
+        search::title_suggestions(&self.conn, row_id, text, limit)
+    }
+
+    /// Name a row's files yourself ("identified by you").
+    pub fn identify_as(&mut self, row_id: &str, system: &str, title: &str) -> Result<(), Error> {
+        search::identify(&mut self.conn, row_id, system, title)
+    }
+
+    pub fn forget_identity(&mut self, row_id: &str) -> Result<(), Error> {
+        search::forget(&mut self.conn, row_id)
+    }
+
+    pub fn wikidata_candidates(&self, row_id: &str) -> Result<Vec<wikidata::Candidate>, Error> {
+        search::wikidata_candidates(&self.conn, row_id)
+    }
+
+    pub fn settle_wikidata(&mut self, endpoint: &str, row_id: &str, qid: &str) -> Result<(), Error> {
+        search::settle_wikidata(&mut self.conn, endpoint, row_id, qid)
     }
 
     pub fn settings(&self) -> Result<settings::Settings, Error> {

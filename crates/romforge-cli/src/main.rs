@@ -57,7 +57,8 @@ enum Command {
     /// From libretro's database and thumbnail server; art is saved under
     /// $ROMFORGE_CACHE (default ~/.cache/romforge), never next to ROMs.
     Enrich {
-        /// Art to fetch: boxart, title, snap; `none` for metadata only
+        /// Art to fetch: boxart, title, snap, hero, logo, icon, box3d; `none`
+        /// for metadata only (hero, logo, icon and box3d need keyed sources)
         #[arg(long, value_delimiter = ',', default_value = "boxart")]
         art: Vec<String>,
         /// Only this system
@@ -66,6 +67,9 @@ enum Command {
         /// Fetch again what was fetched or found missing before
         #[arg(long)]
         refresh: bool,
+        /// Skip Wikidata (developer, credits, series, links)
+        #[arg(long)]
+        no_wikidata: bool,
     },
     /// Show metadata and art for games whose name contains QUERY
     Info { query: String },
@@ -127,6 +131,9 @@ enum Command {
         #[arg(long)]
         platform: Option<String>,
     },
+    /// Identify what hashes couldn't, and settle Wikidata matches (milestone 8)
+    #[command(subcommand)]
+    Search(SearchCommand),
     /// Show file statuses and have/missing per DAT
     Report {
         /// List the games of one DAT
@@ -188,6 +195,26 @@ enum OrganizeCommand {
     },
     /// List applied batches
     History,
+}
+
+#[derive(Subcommand)]
+enum SearchCommand {
+    /// What needs you, with each row's id
+    Queue,
+    /// DAT titles like the row's file name (or TEXT)
+    Suggest { row: String, text: Option<String> },
+    /// Name a row's files yourself ("identified by you")
+    Name {
+        row: String,
+        #[arg(long)]
+        system: String,
+        #[arg(long)]
+        title: String,
+    },
+    /// Undo `name`
+    Forget { row: String },
+    /// Settle a row's Wikidata item (e.g. Q12345)
+    Wikidata { row: String, qid: String },
 }
 
 #[derive(Subcommand)]
@@ -529,12 +556,19 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Command::Enrich { art, system, refresh } => {
+        Command::Enrich {
+            art,
+            system,
+            refresh,
+            no_wikidata,
+        } => {
             let mut kinds = Vec::new();
             for a in art.iter().filter(|a| !a.eq_ignore_ascii_case("none")) {
                 match enrich::ArtKind::parse(a) {
                     Some(k) => kinds.push(k),
-                    None => bail!("unknown art kind {a:?} (boxart, title, snap, none)"),
+                    None => {
+                        bail!("unknown art kind {a:?} (boxart, title, snap, hero, logo, icon, box3d, none)")
+                    }
                 }
             }
             let opts = enrich::EnrichOptions {
@@ -542,6 +576,10 @@ fn main() -> Result<()> {
                 system,
                 refresh,
                 ..enrich::EnrichOptions::new(enrich::default_cache_dir())
+            };
+            let opts = enrich::EnrichOptions {
+                wikidata: if no_wikidata { None } else { opts.wikidata.clone() },
+                ..opts
             };
             let tty = std::io::stderr().is_terminal();
             let r = lib.enrich(&opts, |e| {
@@ -551,6 +589,7 @@ fn main() -> Result<()> {
                         enrich::EnrichEvent::Art { system, game, kind } => {
                             format!("{system}: {} {game}", kind.as_str())
                         }
+                        enrich::EnrichEvent::Wikidata { step } => format!("Wikidata: {step}"),
                     };
                     eprint!("\r\x1b[2K{line}");
                 }
@@ -571,6 +610,15 @@ fn main() -> Result<()> {
                 r.art_cached,
                 opts.cache_dir.display()
             );
+            if let Some(w) = &r.wikidata {
+                println!(
+                    "Wikidata: {} matched, {} ambiguous (settle them in Search), {} not found",
+                    w.matched, w.ambiguous, w.unmatched
+                );
+                for e in &w.errors {
+                    eprintln!("error: Wikidata: {e}");
+                }
+            }
         }
         Command::Info { query } => {
             let found = lib.game_info(&query)?;
@@ -737,6 +785,42 @@ fn main() -> Result<()> {
             if failed > 0 {
                 bail!("{failed} folders could not be rescanned");
             }
+        }
+        Command::Search(SearchCommand::Queue) => {
+            let q = lib.search_queue(None)?;
+            for item in &q {
+                let need = match item.need {
+                    romforge_core::search::Need::Identify => "identify".to_owned(),
+                    romforge_core::search::Need::Wikidata => {
+                        format!("wikidata ({})", item.wikidata.as_deref().unwrap_or("?"))
+                    }
+                };
+                println!(
+                    "{:<20} {:<18} {:<16} {}",
+                    item.row_id,
+                    need,
+                    item.system.as_deref().unwrap_or("-"),
+                    item.title
+                );
+            }
+            println!("{} need you", q.len());
+        }
+        Command::Search(SearchCommand::Suggest { row, text }) => {
+            for s in lib.title_suggestions(&row, text.as_deref(), 15)? {
+                println!("{:>4.0}%  {:<16} {}", s.score * 100.0, s.system, s.title);
+            }
+        }
+        Command::Search(SearchCommand::Name { row, system, title }) => {
+            lib.identify_as(&row, &system, &title)?;
+            println!("{title} [{system}], identified by you");
+        }
+        Command::Search(SearchCommand::Forget { row }) => {
+            lib.forget_identity(&row)?;
+            println!("forgotten");
+        }
+        Command::Search(SearchCommand::Wikidata { row, qid }) => {
+            lib.settle_wikidata(romforge_core::wikidata::ENDPOINT, &row, &qid)?;
+            println!("matched to {qid}");
         }
         Command::Games { platform } => {
             let v = lib.library_view()?;

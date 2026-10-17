@@ -49,6 +49,100 @@
     }
   }
 
+  // Search queue dialog.
+  let searchOpen = $state(false);
+  let queue = $state([]);
+  let qi = $state(0);
+  let qDetail = $state(null);
+  let suggestions = $state([]);
+  let sText = $state("");
+  let ownTitle = $state("");
+  let ownSystem = $state("");
+  let wdCands = $state([]);
+  let qid = $state("");
+  let qError = $state("");
+  let allSystems = $state([]);
+
+  async function openSearch() {
+    qError = "";
+    queue = (await call("search_queue")) ?? [];
+    if (!queue.length) {
+      note = "Nothing needs identifying: every game is matched by hash or named by you, and Wikidata is settled.";
+      return;
+    }
+    if (!allSystems.length) allSystems = (await call("all_systems")) ?? [];
+    const start = queue.findIndex((q) => q.row_id === selected);
+    qi = start >= 0 ? start : 0;
+    searchOpen = true;
+    await loadItem();
+  }
+
+  async function loadItem() {
+    qError = "";
+    const item = queue[qi];
+    if (!item) return;
+    qDetail = await call("game_detail", { id: item.row_id });
+    sText = "";
+    ownTitle = item.need === "identify" ? "" : item.title;
+    ownSystem = item.system ?? "";
+    qid = "";
+    suggestions = [];
+    wdCands = [];
+    if (item.need === "identify") suggestions = (await call("title_suggestions", { rowId: item.row_id, text: null })) ?? [];
+    else wdCands = (await call("wikidata_candidates", { rowId: item.row_id })) ?? [];
+  }
+
+  async function refine() {
+    suggestions = (await call("title_suggestions", { rowId: queue[qi].row_id, text: sText || null })) ?? [];
+  }
+
+  async function step(d) {
+    qi = Math.max(0, Math.min(queue.length - 1, qi + d));
+    await loadItem();
+  }
+
+  // After an answer: drop the item and go on with the next one.
+  async function answered(msg) {
+    note = msg;
+    queue = queue.filter((_, i) => i !== qi);
+    await load();
+    if (!queue.length) {
+      searchOpen = false;
+      note = msg + " That was the last one.";
+      return;
+    }
+    qi = Math.min(qi, queue.length - 1);
+    await loadItem();
+  }
+
+  async function useTitle(system, title) {
+    qError = "";
+    try {
+      await invoke("identify_as", { rowId: queue[qi].row_id, system, title });
+      await answered(`Named ${title} [${system}], identified by you.`);
+    } catch (e) {
+      qError = String(e);
+    }
+  }
+
+  async function useQid(id) {
+    qError = "";
+    try {
+      busy = "Fetching from Wikidata…";
+      await invoke("settle_wikidata", { rowId: queue[qi].row_id, qid: id });
+      busy = "";
+      await answered(`Matched ${queue[qi].title} to ${id}.`);
+    } catch (e) {
+      busy = "";
+      qError = String(e);
+    }
+  }
+
+  function wikidataSearch() {
+    const t = queue[qi]?.title ?? "";
+    openUrl(`https://www.wikidata.org/w/index.php?search=${encodeURIComponent(t.replace(/\s*[([].*$/, ""))}`).catch((e) => (qError = String(e)));
+  }
+
   let summary = $state({ files_by_status: [], dats: [] });
   let datId = $state(null);
   let datGames = $state([]);
@@ -169,15 +263,18 @@
     candidate: "Candidate",
     wrong_system: "Wrong system",
     duplicate: "Duplicate",
+    by_you: "Identified by you",
     unknown: "Unknown",
   };
   const artKinds = [
     ["boxart", "Box art"],
+    ["box3d", "3D box"],
     ["title", "Title screen"],
     ["snap", "In-game"],
+    ["hero", "Hero"],
+    ["logo", "Logo"],
+    ["icon", "Icon"],
   ];
-  // Art libretro doesn't have; filled by milestone 9 sources.
-  const laterArt = ["Banner", "Hero", "3D box", "Logo", "Icon"];
 
   // 1991, 1991-08 or 1991-08-21.
   function released(f) {
@@ -211,7 +308,7 @@
 
   // Up/Down move through the list when no text field has focus.
   function listKeys(e) {
-    if (view !== "library" || settingsOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+    if (view !== "library" || settingsOpen || searchOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     e.preventDefault();
     const i = rows.findIndex((r) => r.id === selected);
@@ -235,6 +332,7 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === "Escape" && settingsOpen) settingsOpen = false;
+    else if (e.key === "Escape" && searchOpen) searchOpen = false;
     else listKeys(e);
   }}
 />
@@ -247,7 +345,7 @@
     <button class="tool" onclick={() => (adding = !adding)} disabled={!!busy} title="Scan a new folder">
       <span class="glyph">＋</span>Add folder
     </button>
-    <button class="tool" disabled title="Identify games one by one: hash, DAT title, or your own pick (milestone 8)">
+    <button class="tool" onclick={openSearch} disabled={!!busy} title="Identify games one by one: DAT title suggestions or your own title, and settle Wikidata matches">
       <span class="glyph">⌕</span>Search
     </button>
     <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
@@ -260,7 +358,7 @@
     <button class="tool" onclick={openSettings} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
     </button>
-    <button class="tool" onclick={play} disabled={!row || row.status !== "verified" || !!busy} title="Start the selected game">
+    <button class="tool" onclick={play} disabled={!row || !["verified", "by_you"].includes(row.status) || !!busy} title="Start the selected game">
       <span class="glyph">▶</span>Play
     </button>
   </header>
@@ -346,6 +444,95 @@
     </div>
   {/if}
 
+  {#if searchOpen && queue[qi]}
+    {@const item = queue[qi]}
+    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (searchOpen = false)}>
+      <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
+        <div class="qhead">
+          <h2 id="search-title">Search</h2>
+          <span class="hint">{qi + 1} of {queue.length}</span>
+        </div>
+        <h3 class="sub">{item.title}</h3>
+        <p class="meta">
+          {item.system ?? "Unknown platform"} ·
+          <span class="badge {item.status}">{item.status.replace("_", " ")}</span>
+          {#if item.need === "wikidata"}· Wikidata: {item.wikidata === "ambiguous" ? "several games match" : "no match found"}{/if}
+        </p>
+        {#if qDetail}
+          <ul class="files">
+            {#each qDetail.files.slice(0, 4) as file}
+              <li title={file.sha1}><span class="fpath"><bdi>{file.path}</bdi></span></li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if item.need === "identify"}
+          <section class="setting">
+            <label for="refine">DAT titles like this</label>
+            <div class="pick">
+              <input id="refine" bind:value={sText} placeholder="Words from the title" onkeydown={(e) => e.key === "Enter" && refine()} />
+              <button onclick={refine}>Search</button>
+            </div>
+            {#if suggestions.length}
+              <ul class="choices">
+                {#each suggestions as s}
+                  <li>
+                    <span class="score" title="Shared words">{Math.round(s.score * 100)}%</span>
+                    <span class="ctitle">{s.title}</span><span class="sys">{s.system}</span>
+                    <button onclick={() => useTitle(s.system, s.title)}>Use</button>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="hint">No DAT title shares a word with it.</p>
+            {/if}
+          </section>
+          <section class="setting">
+            <label for="own">Or your own title</label>
+            <p class="hint">For translations, hacks and anything no DAT lists. Shown as "identified by you", never as verified.</p>
+            <div class="pick">
+              <input id="own" bind:value={ownTitle} placeholder="Dragon Quest III (English translation)" />
+              <select bind:value={ownSystem} aria-label="Platform">
+                <option value="">Platform…</option>
+                {#each allSystems as s}<option value={s.key}>{s.name}</option>{/each}
+              </select>
+              <button onclick={() => useTitle(ownSystem, ownTitle)} disabled={!ownTitle.trim() || !ownSystem}>Use</button>
+            </div>
+          </section>
+        {:else}
+          <section class="setting">
+            {#if wdCands.length}
+              <label for="cands">Which one is it?</label>
+              <ul class="choices" id="cands">
+                {#each wdCands as c}
+                  <li>
+                    <span class="ctitle">{c.label}</span>
+                    <span class="sys">{[...c.years].join(", ") || "—"}</span>
+                    <a href="https://www.wikidata.org/wiki/{c.qid}" onclick={(e) => { e.preventDefault(); openUrl(`https://www.wikidata.org/wiki/${c.qid}`); }}>{c.qid}</a>
+                    <button onclick={() => useQid(c.qid)}>Use</button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            <label for="qid">Wikidata item</label>
+            <div class="pick">
+              <input id="qid" bind:value={qid} placeholder="Q12345" />
+              <button onclick={() => useQid(qid)} disabled={!qid.trim()}>Use</button>
+              <button onclick={wikidataSearch}>Search Wikidata…</button>
+            </div>
+          </section>
+        {/if}
+
+        {#if qError}<p class="err" role="alert">{qError}</p>{/if}
+        <div class="actions">
+          <button onclick={() => step(-1)} disabled={qi === 0}>Previous</button>
+          <button onclick={() => step(1)} disabled={qi >= queue.length - 1}>Skip</button>
+          <button class="primary" onclick={() => (searchOpen = false)}>Close</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if adding}
     <div class="addbar">
       <input placeholder="/home/me/roms" bind:value={addDir} onkeydown={(e) => e.key === "Enter" && addDir && addFolder()} />
@@ -405,7 +592,7 @@
               <button class="tr" class:sel={r.id === selected} onclick={() => open(r.id)}>
                 <span class="title">{r.title}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
-                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "unknown" ? "?" : "~"}</span>
+                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" ? "✎" : r.status === "unknown" ? "?" : "~"}</span>
                 <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
                 {#each ["boxart", "title", "snap"] as k}
                   <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>
@@ -437,7 +624,9 @@
 
           {#if tab === "details"}
             <div class="hero">
-              {#if detail.art.snap}<img src={detail.art.snap} alt="In-game screenshot of {row.title}" />{:else}<span>Hero art (milestone 9)</span>{/if}
+              {#if detail.art.hero}<img src={detail.art.hero} alt="Hero art of {row.title}" />
+              {:else if detail.art.snap}<img src={detail.art.snap} alt="In-game screenshot of {row.title}" />
+              {:else}<span>No hero art. Keys for SteamGridDB, ScreenScraper or IGDB in Settings can fill it.</span>{/if}
             </div>
             <div class="overview">
               <div class="cover">
@@ -460,12 +649,7 @@
                   <figcaption>{label}</figcaption>
                 </figure>
               {/each}
-              {#each laterArt as label}
-                <figure class="missing" title="Comes with the art sources of milestone 9">
-                  <span>—</span>
-                  <figcaption>{label}</figcaption>
-                </figure>
-              {/each}
+
             </div>
             <h3>Files</h3>
             <ul class="files">
@@ -481,19 +665,31 @@
               <dt>Developer</dt><dd>{f.developer ?? "—"}</dd>
               <dt>Publisher</dt><dd>{f.publisher ?? "—"}</dd>
               <dt>Released</dt><dd>{released(f) || "—"}</dd>
+              {#if f.country}<dt>Country</dt><dd>{f.country}</dd>{/if}
+              {#if f.director}<dt>Director</dt><dd>{f.director}</dd>{/if}
+              {#if f.designer}<dt>Designer</dt><dd>{f.designer}</dd>{/if}
+              {#if f.composer}<dt>Composer</dt><dd>{f.composer}</dd>{/if}
+              {#if f.game_mode}<dt>Modes</dt><dd>{f.game_mode}</dd>{/if}
               {#if f.serial}<dt>Serial</dt><dd>{f.serial}</dd>{/if}
-              {#if f.franchise}<dt>Franchise</dt><dd>{f.franchise}</dd>{/if}
+              {#if f.series}<dt>Series</dt><dd>{f.series}{f.series_ordinal ? ` (#${f.series_ordinal})` : ""}</dd>{:else if f.franchise}<dt>Franchise</dt><dd>{f.franchise}</dd>{/if}
               <dt>DATs</dt><dd>{detail.dats.join(", ") || "—"}</dd>
             </dl>
-            <p class="hint">Country, director, composer and other credits come from Wikidata (milestone 9).</p>
+            {#if !f.wikidata}<p class="hint">Not matched on Wikidata yet: Enrich looks it up; Search settles games it can't tell apart.</p>{/if}
           {:else if tab === "series"}
             {#if detail.series.length}
               <ol class="series">
                 {#each detail.series as s}
-                  <li class:current={s.current}><span class="year">{s.year ?? "—"}</span>{s.title}<span class="sys">{s.system}</span></li>
+                  <li class:current={s.current}>
+                    <span class="year">{s.ordinal ? `#${s.ordinal}` : ""}</span>
+                    <span class="year">{s.year ?? "—"}</span>
+                    {s.title}
+                    <span class="sys">{s.in_library ? (s.system || "in your library") : ""}</span>
+                  </li>
                 {/each}
               </ol>
-              <p class="hint">Games in the “{f.franchise}” franchise that romforge has metadata for. The full series, in order, comes from Wikidata (milestone 9).</p>
+              <p class="hint">
+                {f.series ? `The ${f.series} series on Wikidata, in order.` : `Games in the “${f.franchise}” franchise that romforge has metadata for.`}
+              </p>
             {:else}
               <p class="hint">No series known for this game yet.</p>
             {/if}
@@ -501,10 +697,10 @@
             {#if detail.links.length}
               <ul class="links">
                 {#each detail.links as l}
-                  <li><a href={l.url} onclick={(e) => { e.preventDefault(); openUrl(l.url).catch((err) => (error = String(err))); }}>{l.label}</a><span class="hint">search</span></li>
+                  <li><a href={l.url} onclick={(e) => { e.preventDefault(); openUrl(l.url).catch((err) => (error = String(err))); }}>{l.label}</a><span class="hint">{l.direct ? "game page" : "search"}</span></li>
                 {/each}
               </ul>
-              <p class="hint">Search links for now; direct links to each site's page come with Wikidata IDs (milestone 9).</p>
+              <p class="hint">Game pages come from Wikidata's IDs; the rest are searches.</p>
             {:else}
               <p class="hint">Identify this file first to get links.</p>
             {/if}
@@ -746,4 +942,12 @@
   .err { color: var(--bad); }
   .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
   button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
+  .qhead { display: flex; justify-content: space-between; align-items: baseline; }
+  .choices { list-style: none; padding: 0; margin: 0.4rem 0 0; max-height: 16rem; overflow-y: auto; }
+  .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }
+  .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score { width: 2.6rem; color: var(--muted); font-size: 0.8rem; text-align: right; }
+  .pick select { max-width: 14rem; }
+  .badge.by_you, .ind.by_you { color: var(--accent); }
 </style>

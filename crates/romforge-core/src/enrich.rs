@@ -5,12 +5,13 @@
 //!   (genre, developer, publisher, franchise, release year and month, max
 //!   players; some entries also carry a description or serial);
 //! - art from `thumbnails.libretro.com/<system>/Named_<kind>s/<game>.png`
-//!   (box art, title screens, in-game snaps), saved under the cache folder.
+//!   (box art, title screens, in-game snaps), saved under the cache folder;
+//!   what libretro lacks (and hero, logo, icon, 3D box) from the keyed
+//!   sources in `artsources.rs`, when the owner entered keys.
 //!
 //! Records are matched to a game by its exact DAT name, else by the CRC32
 //! of one of its ROMs within that system's file. Only games with a matched
 //! file are looked up. Nothing is written next to the ROMs.
-//! ScreenScraper and IGDB need personal API keys; see PLAN.md.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -38,16 +39,34 @@ pub enum ArtKind {
     Boxart,
     Title,
     Snap,
+    /// A wide banner (hero) image.
+    Hero,
+    Logo,
+    Icon,
+    /// A 3D render of the box.
+    Box3d,
 }
 
 impl ArtKind {
-    pub const ALL: [ArtKind; 3] = [ArtKind::Boxart, ArtKind::Title, ArtKind::Snap];
+    pub const ALL: [ArtKind; 7] = [
+        ArtKind::Boxart,
+        ArtKind::Title,
+        ArtKind::Snap,
+        ArtKind::Hero,
+        ArtKind::Logo,
+        ArtKind::Icon,
+        ArtKind::Box3d,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             ArtKind::Boxart => "boxart",
             ArtKind::Title => "title",
             ArtKind::Snap => "snap",
+            ArtKind::Hero => "hero",
+            ArtKind::Logo => "logo",
+            ArtKind::Icon => "icon",
+            ArtKind::Box3d => "box3d",
         }
     }
 
@@ -57,11 +76,13 @@ impl ArtKind {
             .find(|k| k.as_str().eq_ignore_ascii_case(s.trim()))
     }
 
-    fn folder(self) -> &'static str {
+    /// libretro's thumbnail folder; it has only these three kinds.
+    fn folder(self) -> Option<&'static str> {
         match self {
-            ArtKind::Boxart => "Named_Boxarts",
-            ArtKind::Title => "Named_Titles",
-            ArtKind::Snap => "Named_Snaps",
+            ArtKind::Boxart => Some("Named_Boxarts"),
+            ArtKind::Title => Some("Named_Titles"),
+            ArtKind::Snap => Some("Named_Snaps"),
+            _ => None,
         }
     }
 }
@@ -79,6 +100,11 @@ pub struct EnrichOptions {
     pub metadata_base: String,
     /// The thumbnail server ([`THUMBNAILS_BASE`]).
     pub thumbnails_base: String,
+    /// Wikidata's SPARQL endpoint ([`crate::wikidata::ENDPOINT`]); `None`
+    /// skips Wikidata.
+    pub wikidata: Option<String>,
+    /// Where the keyed art sources live.
+    pub sources: crate::artsources::Bases,
 }
 
 impl EnrichOptions {
@@ -91,6 +117,8 @@ impl EnrichOptions {
             refresh: false,
             metadata_base: fetch::LIBRETRO_BASE.to_owned(),
             thumbnails_base: THUMBNAILS_BASE.to_owned(),
+            wikidata: Some(crate::wikidata::ENDPOINT.to_owned()),
+            sources: crate::artsources::Bases::default(),
         }
     }
 }
@@ -103,12 +131,16 @@ pub struct EnrichReport {
     pub art_saved: usize,
     pub art_missing: usize,
     pub art_cached: usize,
+    /// Wikidata matching (when it ran).
+    pub wikidata: Option<crate::wikidata::WikidataReport>,
     pub errors: Vec<String>,
 }
 
 /// What [`enrich`] is doing, for progress output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnrichEvent {
+    /// Wikidata: a platform being matched, or "details" / "series".
+    Wikidata { step: &'static str },
     Metadata {
         system: &'static str,
         field: &'static str,
@@ -156,13 +188,26 @@ pub fn thumbnail_file(game: &str) -> String {
     format!("{name}.png")
 }
 
-pub fn thumbnail_url(base: &str, system_name: &str, kind: ArtKind, game: &str) -> String {
-    format!(
+pub fn thumbnail_url(base: &str, system_name: &str, kind: ArtKind, game: &str) -> Option<String> {
+    Some(format!(
         "{base}/{}/{}/{}",
         fetch::encode_segment(system_name),
-        kind.folder(),
+        kind.folder()?,
         fetch::encode_segment(&thumbnail_file(game))
-    )
+    ))
+}
+
+/// The file type of an image by its first bytes.
+pub fn image_ext(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(b"\x89PNG") {
+        Some("png")
+    } else if data.starts_with(b"\xff\xd8\xff") {
+        Some("jpg")
+    } else if data.len() > 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        Some("webp")
+    } else {
+        None
+    }
 }
 
 /// (system id, game name) -> CRC32s of its ROMs, for the games you have
@@ -197,6 +242,16 @@ fn games_you_have(
             crcs.push(crc);
         }
     }
+    // Games you named in Search have no DAT ROMs (so no CRCs), but get
+    // metadata and art by title like any other.
+    let mut named = conn.prepare(
+        "SELECT DISTINCT m.system_id, m.title FROM manual_ids m
+         JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size AND f.status = 'manual'
+         WHERE ?1 IS NULL OR m.system_id = ?1",
+    )?;
+    for row in named.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+        out.entry(row?).or_default();
+    }
     Ok(out)
 }
 
@@ -225,6 +280,10 @@ pub fn enrich(
         ..EnrichReport::default()
     };
 
+    let keys = crate::settings::load(conn)?.keys;
+    let mut session = crate::artsources::Session::default();
+    // Sources that said "slow down" aren't asked again this run.
+    let mut halted: Vec<crate::artsources::Provider> = Vec::new();
     for (system_id, games) in &by_system {
         let Some(system) = systems::by_id(*system_id) else {
             continue;
@@ -319,8 +378,10 @@ pub fn enrich(
             }
         }
 
-        // Art.
+        // Art: libretro first (house rule 10, tier 1); the keyed sources
+        // fill what it doesn't have.
         for (game, _) in games {
+            let mut missing: Vec<ArtKind> = Vec::new();
             for &kind in &opts.art {
                 let known: Option<Option<String>> = conn
                     .query_row(
@@ -330,48 +391,119 @@ pub fn enrich(
                     )
                     .optional()?;
                 let still_there = matches!(&known, Some(Some(p)) if Path::new(p).exists());
-                if !opts.refresh && (still_there || matches!(known, Some(None))) {
+                if still_there && !opts.refresh {
                     report.art_cached += 1;
                     continue;
                 }
+                // libretro has no such kind, or didn't have this one before.
+                let Some(url) = thumbnail_url(&opts.thumbnails_base, lr_name, kind, game)
+                    .filter(|_| opts.refresh || !matches!(known, Some(None)))
+                else {
+                    missing.push(kind);
+                    continue;
+                };
                 progress(EnrichEvent::Art {
                     system: system.key,
                     game: (*game).clone(),
                     kind,
                 });
-                let url = thumbnail_url(&opts.thumbnails_base, lr_name, kind, game);
-                let path = match fetch::get_optional(&url) {
-                    Ok(Some(png)) if png.starts_with(b"\x89PNG") => {
-                        let path = opts
-                            .cache_dir
-                            .join("art")
-                            .join(system.key)
-                            .join(kind.as_str())
-                            .join(thumbnail_file(game));
-                        if let Err(e) = save(&path, &png) {
-                            report.errors.push(format!("{}: {e}", path.display()));
-                            continue;
+                match fetch::get_optional(&url) {
+                    Ok(Some(data)) if image_ext(&data).is_some() => {
+                        match keep(conn, opts, system, *system_id, game, kind, &data, "libretro") {
+                            Ok(()) => report.art_saved += 1,
+                            Err(e) => report.errors.push(e.to_string()),
                         }
-                        report.art_saved += 1;
-                        Some(path.to_string_lossy().into_owned())
                     }
                     Ok(_) => {
-                        report.art_missing += 1;
-                        None
+                        record(conn, *system_id, game, kind, None, "libretro")?;
+                        missing.push(kind);
+                    }
+                    Err(e) => report.errors.push(e.to_string()),
+                }
+            }
+            // Keyed sources, each asked once per game unless refreshing.
+            let providers: Vec<_> = crate::artsources::Provider::available(&keys, system)
+                .into_iter()
+                .filter(|p| !halted.contains(p))
+                .collect();
+            for provider in providers {
+                if missing.is_empty() {
+                    break;
+                }
+                let asked: bool = conn
+                    .query_row(
+                        "SELECT EXISTS (SELECT 1 FROM art_lookup WHERE system_id = ?1 AND title = ?2 AND provider = ?3)",
+                        params![system_id, game, provider.name()],
+                        |r| r.get(0),
+                    )?;
+                if asked && !opts.refresh {
+                    continue;
+                }
+                let job = crate::artsources::Job {
+                    system,
+                    title: game,
+                    rom: crate::artsources::rom_for(conn, *system_id, game)?,
+                };
+                match crate::artsources::lookup(provider, &keys, &opts.sources, &mut session, &job) {
+                    Ok(found) => {
+                        for (kind, url) in found {
+                            if !missing.contains(&kind) {
+                                continue;
+                            }
+                            progress(EnrichEvent::Art {
+                                system: system.key,
+                                game: (*game).clone(),
+                                kind,
+                            });
+                            match fetch::get_optional(&url) {
+                                Ok(Some(data)) if image_ext(&data).is_some() => {
+                                    match keep(
+                                        conn,
+                                        opts,
+                                        system,
+                                        *system_id,
+                                        game,
+                                        kind,
+                                        &data,
+                                        provider.name(),
+                                    ) {
+                                        Ok(()) => {
+                                            report.art_saved += 1;
+                                            missing.retain(|k| *k != kind);
+                                        }
+                                        Err(e) => report.errors.push(e.to_string()),
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(e) => report.errors.push(e.to_string()),
+                            }
+                        }
+                        conn.execute(
+                            "INSERT INTO art_lookup (system_id, title, provider, checked_at)
+                             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                             ON CONFLICT(system_id, title, provider) DO UPDATE SET checked_at = excluded.checked_at",
+                            params![system_id, game, provider.name()],
+                        )?;
                     }
                     Err(e) => {
-                        report.errors.push(e.to_string());
-                        continue;
+                        if fetch::is_rate_limited(&e) {
+                            halted.push(provider);
+                        }
+                        report.errors.push(format!("{}: {e}", provider.name()));
                     }
-                };
-                conn.execute(
-                    "INSERT INTO art (system_id, title, kind, path, checked_at)
-                     VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-                     ON CONFLICT(system_id, title, kind) DO UPDATE SET path = excluded.path,
-                       checked_at = excluded.checked_at",
-                    params![system_id, game, kind.as_str(), path],
-                )?;
+                }
             }
+            report.art_missing += missing.len();
+        }
+    }
+    // Wikidata after libretro, so a release year is there to tell apart
+    // games of the same name.
+    if let Some(endpoint) = &opts.wikidata {
+        match crate::wikidata::enrich(conn, endpoint, &have, opts.refresh, |step| {
+            progress(EnrichEvent::Wikidata { step })
+        }) {
+            Ok(w) => report.wikidata = Some(w),
+            Err(e) => report.errors.push(format!("Wikidata: {e}")),
         }
     }
     Ok(report)
@@ -394,13 +526,57 @@ fn games_without_meta(
     Ok(false)
 }
 
+/// Save an image for a game and record it.
+#[allow(clippy::too_many_arguments)]
+fn keep(
+    conn: &Connection,
+    opts: &EnrichOptions,
+    system: &systems::System,
+    system_id: i64,
+    game: &str,
+    kind: ArtKind,
+    data: &[u8],
+    source: &str,
+) -> Result<(), Error> {
+    let ext = image_ext(data).unwrap_or("png");
+    let stem = thumbnail_file(game);
+    let stem = stem.strip_suffix(".png").unwrap_or(&stem);
+    let path = opts
+        .cache_dir
+        .join("art")
+        .join(system.key)
+        .join(kind.as_str())
+        .join(format!("{stem}.{ext}"));
+    save(&path, data).map_err(|e| Error::Http(format!("{}: {e}", path.display())))?;
+    record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)
+}
+
+/// Note what was found for a game (`path` None: looked for, not found).
+fn record(
+    conn: &Connection,
+    system_id: i64,
+    game: &str,
+    kind: ArtKind,
+    path: Option<&str>,
+    source: &str,
+) -> Result<(), Error> {
+    conn.execute(
+        "INSERT INTO art (system_id, title, kind, path, checked_at, source)
+         VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5)
+         ON CONFLICT(system_id, title, kind) DO UPDATE SET path = excluded.path,
+           checked_at = excluded.checked_at, source = excluded.source",
+        params![system_id, game, kind.as_str(), path, source],
+    )?;
+    Ok(())
+}
+
 /// Write `data` to `path` via a temporary file, so a crash never leaves half
 /// an image under the real name.
 fn save(path: &Path, data: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension("png.part");
+    let tmp = path.with_extension("part");
     std::fs::write(&tmp, data)?;
     std::fs::rename(&tmp, path)
 }
@@ -469,9 +645,20 @@ mod tests {
                 libretro_name(snes).unwrap(),
                 ArtKind::Boxart,
                 "Super Mario World (USA)"
-            ),
-            "https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/Super%20Mario%20World%20(USA).png"
+            )
+            .as_deref(),
+            Some(
+                "https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/Super%20Mario%20World%20(USA).png"
+            )
         );
+        assert_eq!(
+            thumbnail_url(THUMBNAILS_BASE, "x", ArtKind::Hero, "y"),
+            None,
+            "libretro has no heroes"
+        );
+        assert_eq!(image_ext(b"\xff\xd8\xff\xe0"), Some("jpg"));
+        assert_eq!(image_ext(b"RIFF\0\0\0\0WEBPVP8 "), Some("webp"));
+        assert_eq!(image_ext(b"<html>"), None);
         let psx = systems::by_key("PlayStation").unwrap();
         assert_eq!(libretro_name(psx), Some("Sony - PlayStation"));
     }

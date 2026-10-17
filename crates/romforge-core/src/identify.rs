@@ -49,15 +49,19 @@ pub enum Status {
     Unknown,
     WrongSystem,
     Duplicate,
+    /// No hash match; the owner named it in Search (house rule 8: never
+    /// counted as verified).
+    Manual,
 }
 
 impl Status {
-    pub const ALL: [Status; 5] = [
+    pub const ALL: [Status; 6] = [
         Status::Matched,
         Status::Candidate,
         Status::Unknown,
         Status::WrongSystem,
         Status::Duplicate,
+        Status::Manual,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -67,6 +71,7 @@ impl Status {
             Status::Unknown => "unknown",
             Status::WrongSystem => "wrong_system",
             Status::Duplicate => "duplicate",
+            Status::Manual => "manual",
         }
     }
 
@@ -187,6 +192,11 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
         .collect::<Result<_, _>>()?
     };
 
+    // Files the owner named in Search, by content.
+    let manual: std::collections::HashSet<(String, u64)> = tx
+        .prepare("SELECT sha1, size FROM manual_ids")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
     tx.execute("DELETE FROM matches", [])?;
     let mut insert = tx.prepare(
         "INSERT INTO matches (file_id, rom_id, via, stripped, out_of_scope) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -232,6 +242,8 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
             Status::Candidate
         } else if hits.iter().any(|h| h.via.strong()) {
             Status::WrongSystem
+        } else if manual.contains(&(file.raw.sha1.clone(), file.raw.size)) {
+            Status::Manual
         } else {
             Status::Unknown
         };

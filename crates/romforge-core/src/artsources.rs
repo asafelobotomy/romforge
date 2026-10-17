@@ -1,0 +1,344 @@
+//! Milestone 9, second stage: art from sources that need the owner's keys
+//! (house rule 10: ScreenScraper is tier 2, SteamGridDB and IGDB tier 3).
+//! They only fill art libretro doesn't have.
+//!
+//! - ScreenScraper looks a game up by its ROM's hashes (the strongest
+//!   match): 2D and 3D box, wheel logo, fanart, title screen, screenshot.
+//! - SteamGridDB looks it up by title, accepting only an exact title:
+//!   600x900 grid (box), hero, logo, icon.
+//! - IGDB looks it up by title and platform, exact titles only: cover,
+//!   artwork (hero), screenshot.
+
+use std::collections::HashMap;
+
+use rusqlite::{Connection, OptionalExtension, params};
+
+use crate::enrich::ArtKind;
+use crate::fetch::{self, Request};
+use crate::settings::Keys;
+use crate::systems::System;
+use crate::{Error, wikidata};
+
+/// Where each source lives (changed only in tests).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bases {
+    pub screenscraper: String,
+    pub steamgriddb: String,
+    pub igdb_token: String,
+    pub igdb: String,
+    pub igdb_images: String,
+}
+
+impl Default for Bases {
+    fn default() -> Self {
+        Bases {
+            screenscraper: "https://api.screenscraper.fr/api2".into(),
+            steamgriddb: "https://www.steamgriddb.com/api/v2".into(),
+            igdb_token: "https://id.twitch.tv/oauth2/token".into(),
+            igdb: "https://api.igdb.com/v4".into(),
+            igdb_images: "https://images.igdb.com/igdb/image/upload".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Provider {
+    ScreenScraper,
+    SteamGridDb,
+    Igdb,
+}
+
+impl Provider {
+    pub fn name(self) -> &'static str {
+        match self {
+            Provider::ScreenScraper => "screenscraper",
+            Provider::SteamGridDb => "steamgriddb",
+            Provider::Igdb => "igdb",
+        }
+    }
+
+    /// The sources usable for `system` with `keys`, in house rule 10 order.
+    pub fn available(keys: &Keys, system: &System) -> Vec<Provider> {
+        let mut out = Vec::new();
+        if keys.screenscraper() && system.screenscraper.is_some() {
+            out.push(Provider::ScreenScraper);
+        }
+        if keys.steamgriddb() {
+            out.push(Provider::SteamGridDb);
+        }
+        if keys.igdb() && !system.igdb.is_empty() {
+            out.push(Provider::Igdb);
+        }
+        out
+    }
+}
+
+/// One ROM of a game, for hash lookups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RomRef {
+    pub name: String,
+    pub size: u64,
+    pub crc32: String,
+    pub md5: String,
+    pub sha1: String,
+}
+
+/// The first matched (or hand-named) file of a game.
+pub fn rom_for(conn: &Connection, system_id: i64, title: &str) -> Result<Option<RomRef>, Error> {
+    let row = |r: &rusqlite::Row| -> rusqlite::Result<RomRef> {
+        let path: String = r.get(0)?;
+        let member: String = r.get(1)?;
+        let shown = if member.is_empty() { path } else { member };
+        Ok(RomRef {
+            name: shown.rsplit('/').next().unwrap_or(&shown).to_owned(),
+            size: r.get(2)?,
+            crc32: r.get(3)?,
+            md5: r.get(4)?,
+            sha1: r.get(5)?,
+        })
+    };
+    let hashed = conn
+        .query_row(
+            "SELECT f.path, f.member, f.size, f.crc32, f.md5, f.sha1
+             FROM files f JOIN matches m ON m.file_id = f.file_id AND m.via IN ('sha1', 'md5')
+             JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
+             JOIN dats d ON d.dat_id = g.dat_id
+             WHERE d.system_id = ?1 AND g.name = ?2 AND f.status IN ('matched', 'duplicate')
+             ORDER BY f.size DESC LIMIT 1",
+            params![system_id, title],
+            row,
+        )
+        .optional()?;
+    if hashed.is_some() {
+        return Ok(hashed);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT f.path, f.member, f.size, f.crc32, f.md5, f.sha1
+             FROM files f JOIN manual_ids mi ON mi.sha1 = f.sha1 AND mi.size = f.size
+             WHERE mi.system_id = ?1 AND mi.title = ?2 ORDER BY f.size DESC LIMIT 1",
+            params![system_id, title],
+            row,
+        )
+        .optional()?)
+}
+
+/// What one game needs looked up.
+pub struct Job<'a> {
+    pub system: &'a System,
+    pub title: &'a str,
+    pub rom: Option<RomRef>,
+}
+
+/// Remembers an IGDB token for the rest of a run.
+#[derive(Default)]
+pub struct Session {
+    igdb_token: Option<String>,
+}
+
+/// Image URLs `provider` has for the job, by kind.
+pub fn lookup(
+    provider: Provider,
+    keys: &Keys,
+    bases: &Bases,
+    session: &mut Session,
+    job: &Job,
+) -> Result<Vec<(ArtKind, String)>, Error> {
+    match provider {
+        Provider::ScreenScraper => screenscraper(keys, bases, job),
+        Provider::SteamGridDb => steamgriddb(keys, bases, job),
+        Provider::Igdb => igdb(keys, bases, session, job),
+    }
+}
+
+fn json(body: &[u8]) -> Result<serde_json::Value, Error> {
+    serde_json::from_slice(body).map_err(|e| Error::Http(format!("unexpected answer: {e}")))
+}
+
+fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, String)>, Error> {
+    let (Some(system_id), Some(rom)) = (job.system.screenscraper, &job.rom) else {
+        return Ok(Vec::new());
+    };
+    let e = fetch::encode_segment;
+    let opt = |v: &Option<String>| v.as_deref().map(e).unwrap_or_default();
+    let url = format!(
+        "{}/jeuInfos.php?devid={}&devpassword={}&softname=romforge&output=json&ssid={}&sspassword={}\
+         &systemeid={system_id}&romtype=rom&crc={}&md5={}&sha1={}&romnom={}&romtaille={}",
+        bases.screenscraper,
+        opt(&keys.screenscraper_dev_id),
+        opt(&keys.screenscraper_dev_password),
+        opt(&keys.screenscraper_user),
+        opt(&keys.screenscraper_password),
+        rom.crc32.to_uppercase(),
+        rom.md5,
+        rom.sha1,
+        e(&rom.name),
+        rom.size
+    );
+    let Some(body) = fetch::get_optional(&url)? else {
+        return Ok(Vec::new());
+    };
+    let v = json(&body)?;
+    let medias = v["response"]["jeu"]["medias"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    // Prefer US / world / Europe / ScreenScraper's own / Japan versions.
+    let rank = |r: &str| {
+        ["us", "wor", "eu", "ss", "jp"]
+            .iter()
+            .position(|x| *x == r)
+            .unwrap_or(9)
+    };
+    let mut best: HashMap<ArtKind, (usize, String)> = HashMap::new();
+    for m in medias {
+        let kind = match m["type"].as_str().unwrap_or_default() {
+            "box-2D" => ArtKind::Boxart,
+            "box-3D" => ArtKind::Box3d,
+            "wheel" | "wheel-hd" => ArtKind::Logo,
+            "fanart" => ArtKind::Hero,
+            "sstitle" => ArtKind::Title,
+            "ss" => ArtKind::Snap,
+            _ => continue,
+        };
+        let Some(url) = m["url"].as_str() else { continue };
+        let r = rank(m["region"].as_str().unwrap_or("ss"));
+        if best.get(&kind).is_none_or(|(b, _)| r < *b) {
+            best.insert(kind, (r, url.to_owned()));
+        }
+    }
+    Ok(best.into_iter().map(|(k, (_, u))| (k, u)).collect())
+}
+
+fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, String)>, Error> {
+    let Some(key) = &keys.steamgriddb_key else {
+        return Ok(Vec::new());
+    };
+    let auth = vec![("Authorization", format!("Bearer {key}"))];
+    let get = |url: String| -> Result<Option<serde_json::Value>, Error> {
+        match fetch::request(&Request {
+            url: &url,
+            headers: auth.clone(),
+            body: None,
+        })? {
+            Some(b) => Ok(Some(json(&b)?)),
+            None => Ok(None),
+        }
+    };
+    let title = crate::view::search_title(job.title);
+    let Some(found) = get(format!(
+        "{}/search/autocomplete/{}",
+        bases.steamgriddb,
+        fetch::encode_segment(&title)
+    ))?
+    else {
+        return Ok(Vec::new());
+    };
+    let want = wikidata::normalize(job.title);
+    let id = found["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|g| g["name"].as_str().is_some_and(|n| wikidata::normalize(n) == want))
+        .and_then(|g| g["id"].as_u64());
+    let Some(id) = id else { return Ok(Vec::new()) };
+    let mut out = Vec::new();
+    for (kind, path) in [
+        (ArtKind::Boxart, format!("grids/game/{id}?dimensions=600x900")),
+        (ArtKind::Hero, format!("heroes/game/{id}")),
+        (ArtKind::Logo, format!("logos/game/{id}")),
+        (ArtKind::Icon, format!("icons/game/{id}")),
+    ] {
+        if let Some(v) = get(format!("{}/{path}", bases.steamgriddb))?
+            && let Some(url) = v["data"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|x| x["url"].as_str())
+        {
+            out.push((kind, url.to_owned()));
+        }
+    }
+    Ok(out)
+}
+
+fn igdb(
+    keys: &Keys,
+    bases: &Bases,
+    session: &mut Session,
+    job: &Job,
+) -> Result<Vec<(ArtKind, String)>, Error> {
+    let (Some(id), Some(secret)) = (&keys.igdb_client_id, &keys.igdb_client_secret) else {
+        return Ok(Vec::new());
+    };
+    if session.igdb_token.is_none() {
+        let url = format!(
+            "{}?client_id={}&client_secret={}&grant_type=client_credentials",
+            bases.igdb_token,
+            fetch::encode_segment(id),
+            fetch::encode_segment(secret)
+        );
+        let body = fetch::request(&Request {
+            url: &url,
+            headers: Vec::new(),
+            body: Some(String::new()),
+        })?
+        .ok_or_else(|| Error::Http("IGDB: no token".into()))?;
+        let token = json(&body)?["access_token"]
+            .as_str()
+            .ok_or_else(|| Error::Http("IGDB: no token in the answer".into()))?
+            .to_owned();
+        session.igdb_token = Some(token);
+    }
+    let token = session.igdb_token.clone().unwrap_or_default();
+    let title = crate::view::search_title(job.title).replace('"', "");
+    let platforms: Vec<String> = job.system.igdb.iter().map(|p| p.to_string()).collect();
+    let query = format!(
+        "search \"{title}\"; fields name,cover.image_id,screenshots.image_id,artworks.image_id; \
+         where platforms = ({}); limit 10;",
+        platforms.join(",")
+    );
+    let Some(body) = fetch::request(&Request {
+        url: &format!("{}/games", bases.igdb),
+        headers: vec![
+            ("Client-ID", id.clone()),
+            ("Authorization", format!("Bearer {token}")),
+        ],
+        body: Some(query),
+    })?
+    else {
+        return Ok(Vec::new());
+    };
+    let want = wikidata::normalize(job.title);
+    let games = json(&body)?;
+    let Some(g) = games
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|g| g["name"].as_str().is_some_and(|n| wikidata::normalize(n) == want))
+    else {
+        return Ok(Vec::new());
+    };
+    let image = |size: &str, id: &serde_json::Value| {
+        id.as_str()
+            .map(|i| format!("{}/{size}/{i}.jpg", bases.igdb_images))
+    };
+    let mut out = Vec::new();
+    if let Some(u) = image("t_cover_big", &g["cover"]["image_id"]) {
+        out.push((ArtKind::Boxart, u));
+    }
+    if let Some(u) = g["artworks"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|a| image("t_1080p", &a["image_id"]))
+    {
+        out.push((ArtKind::Hero, u));
+    }
+    if let Some(u) = g["screenshots"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|a| image("t_screenshot_big", &a["image_id"]))
+    {
+        out.push((ArtKind::Snap, u));
+    }
+    Ok(out)
+}

@@ -31,7 +31,12 @@ use ureq::tls::{RootCerts, TlsConfig};
 use crate::Error;
 use crate::systems::System;
 
-pub const USER_AGENT: &str = concat!("romforge/", env!("CARGO_PKG_VERSION"));
+/// Wikimedia's policy wants a name and a way to tell what is asking.
+pub const USER_AGENT: &str = concat!(
+    "romforge/",
+    env!("CARGO_PKG_VERSION"),
+    " (desktop ROM collection manager; ureq)"
+);
 pub const REDUMP_BASE: &str = "http://redump.org";
 pub const LIBRETRO_BASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat";
 pub const LIBRETRO_NOINTRO_BASE: &str =
@@ -48,6 +53,8 @@ pub fn delay_for(host: &str) -> Duration {
     match name {
         "datomatic.no-intro.org" => Duration::from_secs(5),
         "127.0.0.1" | "localhost" | "[::1]" => Duration::ZERO,
+        // Wikimedia asks bots to keep requests serial and slow.
+        "query.wikidata.org" | "www.wikidata.org" => Duration::from_secs(2),
         _ => Duration::from_secs(1),
     }
 }
@@ -239,24 +246,48 @@ pub fn tosec_dats(pack: &[u8], name: &str) -> Result<Vec<DatBytes>, Error> {
 
 /// [`get`], but a 404 is `None` rather than an error.
 pub fn get_optional(url: &str) -> Result<Option<Vec<u8>>, Error> {
-    match fetch(url) {
-        Ok(body) => Ok(Some(body)),
-        Err(ureq::Error::StatusCode(404)) => Ok(None),
-        Err(e) => Err(Error::Http(format!("{url}: {e}"))),
-    }
+    request(&Request::get(url))
 }
 
 /// GET `url` into memory, waiting first if the same host was asked less than
 /// [`delay_for`] ago.
 pub fn get(url: &str) -> Result<Vec<u8>, Error> {
-    fetch(url).map_err(|e| Error::Http(format!("{url}: {e}")))
+    request(&Request::get(url))?.ok_or_else(|| Error::Http(format!("{}: HTTP 404", short(url))))
 }
 
-fn fetch(url: &str) -> Result<Vec<u8>, ureq::Error> {
-    wait_for_host(url);
+/// An HTTP request beyond a plain GET (API keys in headers, POSTed queries).
+#[derive(Debug, Clone, Default)]
+pub struct Request<'a> {
+    pub url: &'a str,
+    pub headers: Vec<(&'a str, String)>,
+    /// `Some` makes it a POST with this body.
+    pub body: Option<String>,
+}
+
+impl<'a> Request<'a> {
+    pub fn get(url: &'a str) -> Self {
+        Request {
+            url,
+            ..Request::default()
+        }
+    }
+}
+
+/// The URL without its query (which may be long, or hold credentials).
+fn short(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
+}
+
+/// Send a request; `Ok(None)` for 404. A busy server (429, 503) is asked
+/// again after the wait it gives in Retry-After, twice at most; one that
+/// asks for more than 30 s is not, and the error says how long it wants.
+pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
+    let url = req.url;
+    let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
     let agent = ureq::Agent::config_builder()
         .user_agent(USER_AGENT)
         .timeout_global(Some(Duration::from_secs(900)))
+        .http_status_as_error(false)
         .tls_config(
             TlsConfig::builder()
                 .root_certs(RootCerts::PlatformVerifier)
@@ -264,8 +295,67 @@ fn fetch(url: &str) -> Result<Vec<u8>, ureq::Error> {
         )
         .build()
         .new_agent();
-    let mut response = agent.get(url).call()?;
-    response.body_mut().with_config().limit(MAX_BODY).read_to_vec()
+    for attempt in 0.. {
+        wait_for_host(url);
+        let result = match &req.body {
+            Some(body) => {
+                let mut r = agent.post(url);
+                for (k, v) in &req.headers {
+                    r = r.header(*k, v);
+                }
+                r.send(body.as_str())
+            }
+            None => {
+                let mut r = agent.get(url);
+                for (k, v) in &req.headers {
+                    r = r.header(*k, v);
+                }
+                r.call()
+            }
+        };
+        let mut response = result.map_err(|e| err(e.to_string()))?;
+        let status = response.status().as_u16();
+        if status == 429 || status == 503 {
+            let wait = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(5);
+            if wait > 30 || attempt >= 2 {
+                let minutes = wait.div_ceil(60);
+                return Err(err(format!(
+                    "HTTP {status}: the server is rate limiting; it asks to wait {} before trying again",
+                    if wait > 90 {
+                        format!("{minutes} minutes")
+                    } else {
+                        format!("{wait} s")
+                    }
+                )));
+            }
+            std::thread::sleep(Duration::from_secs(wait));
+            continue;
+        }
+        if status == 404 {
+            return Ok(None);
+        }
+        if status >= 400 {
+            return Err(err(format!("HTTP {status}")));
+        }
+        return response
+            .body_mut()
+            .with_config()
+            .limit(MAX_BODY)
+            .read_to_vec()
+            .map(Some)
+            .map_err(|e| err(e.to_string()));
+    }
+    unreachable!("the loop returns")
+}
+
+/// Whether an error from [`request`] is a server asking to be left alone.
+pub fn is_rate_limited(e: &Error) -> bool {
+    e.to_string().contains("rate limiting")
 }
 
 /// Percent-encode one URL path segment.
@@ -463,6 +553,40 @@ mod tests {
         assert_eq!(p[0].name, "Nintendo - Game Boy");
         assert_eq!(p[0].version, "20260101-000000");
         assert_eq!(p[1].name, "Sega - Mega Drive - Genesis");
+    }
+
+    #[test]
+    fn a_long_retry_after_is_reported_not_waited_out() {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/sparql?query=x", listener.local_addr().unwrap());
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = hits.clone();
+        std::thread::spawn(move || {
+            for s in listener.incoming() {
+                let Ok(mut s) = s else { continue };
+                let mut r = BufReader::new(s.try_clone().unwrap());
+                let mut line = String::new();
+                while r.read_line(&mut line).unwrap_or(0) > 2 {
+                    line.clear();
+                }
+                seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1000\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+            }
+        });
+        let started = Instant::now();
+        let e = get(&url).unwrap_err();
+        assert!(is_rate_limited(&e), "{e}");
+        assert!(e.to_string().contains("17 minutes"), "{e}");
+        assert!(
+            !e.to_string().contains("query=x"),
+            "no query string in errors: {e}"
+        );
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1, "asked once");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

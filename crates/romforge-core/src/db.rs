@@ -68,6 +68,77 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE files ADD COLUMN disk_size INTEGER;
      ALTER TABLE files ADD COLUMN mtime INTEGER;
      ALTER TABLE scan_roots ADD COLUMN all_files INTEGER NOT NULL DEFAULT 0;",
+    // 8: Wikidata matches (status: matched, ambiguous, none, by_you) and the
+    // members of the series matched games belong to
+    "CREATE TABLE wikidata_match (
+        system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+        title      TEXT NOT NULL,
+        qid        TEXT,
+        status     TEXT NOT NULL,
+        candidates TEXT NOT NULL DEFAULT '[]',
+        checked_at TEXT NOT NULL,
+        PRIMARY KEY (system_id, title)
+    );
+    CREATE TABLE series_members (
+        series_qid TEXT NOT NULL,
+        qid        TEXT NOT NULL,
+        title      TEXT NOT NULL,
+        ordinal    TEXT,
+        year       INTEGER,
+        PRIMARY KEY (series_qid, qid)
+    );",
+    // 9: titles the owner gave files no DAT knows (Search), by content so
+    // they survive moves and rescans
+    "CREATE TABLE manual_ids (
+        sha1       TEXT NOT NULL,
+        size       INTEGER NOT NULL,
+        system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+        title      TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (sha1, size)
+    );
+    -- files.status gains 'manual': SQLite can't change a CHECK, so the table
+    -- is rebuilt (matches are kept aside, as dropping files cascades to them)
+    CREATE TEMP TABLE matches_keep AS SELECT * FROM matches;
+    CREATE TABLE files_new (
+        file_id        INTEGER PRIMARY KEY,
+        root_id        INTEGER NOT NULL REFERENCES scan_roots(root_id) ON DELETE CASCADE,
+        path           TEXT NOT NULL,
+        member         TEXT NOT NULL DEFAULT '',
+        size           INTEGER NOT NULL,
+        crc32          TEXT NOT NULL,
+        md5            TEXT NOT NULL,
+        sha1           TEXT NOT NULL,
+        header_kind    TEXT,
+        stripped_size  INTEGER,
+        stripped_crc32 TEXT,
+        stripped_md5   TEXT,
+        stripped_sha1  TEXT,
+        status         TEXT NOT NULL DEFAULT 'unknown'
+            CHECK (status IN ('matched', 'candidate', 'unknown', 'wrong_system', 'duplicate', 'manual')),
+        scanned_at     TEXT NOT NULL,
+        disk_size      INTEGER,
+        mtime          INTEGER,
+        UNIQUE (path, member)
+    );
+    INSERT INTO files_new SELECT file_id, root_id, path, member, size, crc32, md5, sha1, header_kind,
+        stripped_size, stripped_crc32, stripped_md5, stripped_sha1, status, scanned_at, disk_size, mtime
+        FROM files;
+    DROP TABLE files;
+    ALTER TABLE files_new RENAME TO files;
+    CREATE INDEX files_root ON files(root_id);
+    INSERT INTO matches SELECT * FROM matches_keep;
+    DROP TABLE matches_keep;",
+    // 10: where each image came from, and which keyed art sources were
+    // asked about a game
+    "ALTER TABLE art ADD COLUMN source TEXT;
+    CREATE TABLE art_lookup (
+        system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+        title      TEXT NOT NULL,
+        provider   TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        PRIMARY KEY (system_id, title, provider)
+    );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

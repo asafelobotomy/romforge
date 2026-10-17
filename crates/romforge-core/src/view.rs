@@ -28,12 +28,15 @@ pub enum RowStatus {
     WrongSystem,
     /// A copy of something another file already provides.
     Duplicate,
+    /// No hash match; named by the owner in Search (never verified).
+    ByYou,
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GameRow {
-    /// `g:<system id>:<title>` for games, `f:<file id>` for lone files.
+    /// `g:<system id>:<title>` for games, `m:<system id>:<title>` for games
+    /// you named, `f:<file id>` for lone files.
     pub id: String,
     pub title: String,
     pub system: Option<String>,
@@ -82,6 +85,8 @@ pub struct RowFile {
 pub struct Link {
     pub label: String,
     pub url: String,
+    /// The game's own page (from a Wikidata ID), not a search.
+    pub direct: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -101,10 +106,15 @@ pub struct GameDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SeriesEntry {
     pub title: String,
+    /// Platform key when the entry is one of your games.
     pub system: String,
     pub year: Option<String>,
+    /// Place in the series (Wikidata's series ordinal), when known.
+    pub ordinal: Option<String>,
     /// The game being shown.
     pub current: bool,
+    /// A game you have.
+    pub in_library: bool,
 }
 
 struct FileRec {
@@ -113,11 +123,12 @@ struct FileRec {
     member: String,
     status: String,
     size: u64,
+    sha1: String,
 }
 
 pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     let files: Vec<FileRec> = conn
-        .prepare("SELECT file_id, path, member, status, size FROM files ORDER BY path, member")?
+        .prepare("SELECT file_id, path, member, status, size, sha1 FROM files ORDER BY path, member")?
         .query_map([], |r| {
             Ok(FileRec {
                 id: r.get(0)?,
@@ -125,6 +136,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 member: r.get(2)?,
                 status: r.get(3)?,
                 size: r.get(4)?,
+                sha1: r.get(5)?,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -239,7 +251,27 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             file_ids: Vec::new(),
         }
     };
+    // Titles the owner gave files in Search.
+    let manual: HashMap<(String, u64), (i64, String)> = conn
+        .prepare("SELECT sha1, size, system_id, title FROM manual_ids")?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), (r.get(2)?, r.get(3)?))))?
+        .collect::<Result<_, _>>()?;
     for f in &files {
+        if f.status == "manual"
+            && let Some((system_id, title)) = manual.get(&(f.sha1.clone(), f.size))
+        {
+            let id = format!("m:{system_id}:{title}");
+            let row = rows.entry(id.clone()).or_insert_with(|| {
+                let mut r = game_row(*system_id, title);
+                r.id = id;
+                r.status = RowStatus::ByYou;
+                r
+            });
+            row.files += 1;
+            row.size += f.size;
+            row.file_ids.push(f.id);
+            continue;
+        }
         let homes = owner.get(&f.id).or_else(|| {
             (!f.member.is_empty())
                 .then(|| by_path.get(f.path.as_str()))
@@ -380,36 +412,74 @@ pub fn search_title(name: &str) -> String {
     t
 }
 
-/// Plain search links (house rule 10, tier 1: no account, no key).
-pub fn links(title: &str, system_name: Option<&str>) -> Vec<Link> {
+/// Links for a game: its own pages where Wikidata gave an ID (in
+/// `fields`), plain searches otherwise (house rule 10, tier 1).
+pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, String>) -> Vec<Link> {
     let q = search_title(title);
     let enc = |s: &str| fetch::encode_segment(s);
     let wiki_q = match system_name {
         Some(_) => format!("{q} video game"),
         None => q.clone(),
     };
-    vec![
-        Link {
-            label: "MobyGames".into(),
-            url: format!("https://www.mobygames.com/search/?q={}", enc(&q)),
+    let first = |k: &str| {
+        fields
+            .get(k)
+            .and_then(|v| v.split(", ").next())
+            .map(str::to_owned)
+    };
+    let link = |label: &str, direct: Option<String>, search: String| match direct {
+        Some(url) => Link {
+            label: label.into(),
+            url,
+            direct: true,
         },
-        Link {
-            label: "RetroAchievements".into(),
-            url: format!("https://retroachievements.org/searchresults.php?s={}", enc(&q)),
+        None => Link {
+            label: label.into(),
+            url: search,
+            direct: false,
         },
-        Link {
-            label: "Wikipedia".into(),
-            url: format!("https://en.wikipedia.org/w/index.php?search={}", enc(&wiki_q)),
-        },
-        Link {
-            label: "IGDB".into(),
-            url: format!("https://www.igdb.com/search?q={}", enc(&q)),
-        },
-        Link {
-            label: "HowLongToBeat".into(),
-            url: format!("https://howlongtobeat.com/?q={}", enc(&q)),
-        },
-    ]
+    };
+    let mut out = vec![
+        link(
+            "MobyGames",
+            first("mobygames_id")
+                .map(|id| format!("https://www.mobygames.com/game/{}/", enc(&id)))
+                .or_else(|| {
+                    first("mobygames_slug").map(|s| format!("https://www.mobygames.com/game/{}", enc(&s)))
+                }),
+            format!("https://www.mobygames.com/search/?q={}", enc(&q)),
+        ),
+        link(
+            "RetroAchievements",
+            first("retroachievements_id")
+                .map(|id| format!("https://retroachievements.org/game/{}", enc(&id))),
+            format!("https://retroachievements.org/searchresults.php?s={}", enc(&q)),
+        ),
+        link(
+            "Wikipedia",
+            first("wikipedia")
+                .map(|a| format!("https://en.wikipedia.org/wiki/{}", enc(&a.replace(' ', "_")))),
+            format!("https://en.wikipedia.org/w/index.php?search={}", enc(&wiki_q)),
+        ),
+        link(
+            "IGDB",
+            first("igdb_slug").map(|s| format!("https://www.igdb.com/games/{}", enc(&s))),
+            format!("https://www.igdb.com/search?q={}", enc(&q)),
+        ),
+        link(
+            "HowLongToBeat",
+            first("hltb_id").map(|id| format!("https://howlongtobeat.com/game/{}", enc(&id))),
+            format!("https://howlongtobeat.com/?q={}", enc(&q)),
+        ),
+    ];
+    if let Some(qid) = first("wikidata") {
+        out.push(Link {
+            label: "Wikidata".into(),
+            url: format!("https://www.wikidata.org/wiki/{}", enc(&qid)),
+            direct: true,
+        });
+    }
+    out
 }
 
 /// Everything known about one row of [`library`].
@@ -469,12 +539,51 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
         files.push(f);
     }
     let links = if row.system_id.is_some() && row.status != RowStatus::Unknown {
-        links(&row.title, row.system_name.as_deref())
+        links(&row.title, row.system_name.as_deref(), &fields)
     } else {
         Vec::new()
     };
     let mut series = Vec::new();
-    if let Some(franchise) = fields.get("franchise") {
+    // Wikidata's series, in order; else games of the same franchise that
+    // romforge has metadata for.
+    if let Some(series_qids) = fields.get("series_qid") {
+        let mine: BTreeSet<String> = conn
+            .prepare("SELECT qid FROM wikidata_match WHERE qid IS NOT NULL")?
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        let me = fields.get("wikidata");
+        let mut stmt =
+            conn.prepare("SELECT qid, title, ordinal, year FROM series_members WHERE series_qid = ?1")?;
+        let mut seen = BTreeSet::new();
+        for s in series_qids.split(", ") {
+            for r in stmt.query_map([s], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                ))
+            })? {
+                let (qid, title, ordinal, year) = r?;
+                if !seen.insert(qid.clone()) {
+                    continue;
+                }
+                series.push(SeriesEntry {
+                    current: me == Some(&qid),
+                    in_library: mine.contains(&qid),
+                    system: String::new(),
+                    title,
+                    year: year.map(|y| y.to_string()),
+                    ordinal,
+                });
+            }
+        }
+        let num = |o: &Option<String>| o.as_deref().and_then(|v| v.parse::<f64>().ok());
+        series.sort_by(|a, b| match (num(&a.ordinal), num(&b.ordinal)) {
+            (Some(x), Some(y)) => x.total_cmp(&y),
+            _ => (a.year.is_none(), &a.year, &a.title).cmp(&(b.year.is_none(), &b.year, &b.title)),
+        });
+    } else if let Some(franchise) = fields.get("franchise") {
         let mut stmt = conn.prepare(
             "SELECT f.system_id, f.title,
                     (SELECT value FROM game_meta y WHERE y.system_id = f.system_id
@@ -491,9 +600,11 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
             let (system_id, title, year) = r?;
             series.push(SeriesEntry {
                 current: Some(system_id) == row.system_id && title == row.title,
+                in_library: true,
                 system: systems::by_id(system_id).map_or(String::new(), |s| s.key.to_owned()),
                 title,
                 year,
+                ordinal: None,
             });
         }
         series.sort_by(|a, b| {
@@ -539,15 +650,27 @@ mod tests {
     }
 
     #[test]
-    fn links_are_search_urls() {
+    fn links_are_search_urls_or_direct() {
+        let mut f = BTreeMap::new();
         let l = links(
             "Super Mario World (USA)",
             Some("Super Nintendo Entertainment System"),
+            &f,
         );
         assert_eq!(
             l[0].url,
             "https://www.mobygames.com/search/?q=Super%20Mario%20World"
         );
-        assert!(l.iter().any(|x| x.label == "RetroAchievements"));
+        assert!(l.iter().all(|x| !x.direct));
+        f.insert("mobygames_id".to_owned(), "123".to_owned());
+        f.insert("wikipedia".to_owned(), "Super Mario World".to_owned());
+        f.insert("retroachievements_id".to_owned(), "228".to_owned());
+        f.insert("wikidata".to_owned(), "Q1".to_owned());
+        let l = links("Super Mario World (USA)", None, &f);
+        assert_eq!(l[0].url, "https://www.mobygames.com/game/123/");
+        assert_eq!(l[1].url, "https://retroachievements.org/game/228");
+        assert_eq!(l[2].url, "https://en.wikipedia.org/wiki/Super_Mario_World");
+        assert!(l[3].url.contains("igdb.com/search"), "no IGDB id: still a search");
+        assert_eq!(l.last().unwrap().url, "https://www.wikidata.org/wiki/Q1");
     }
 }

@@ -77,6 +77,7 @@ fn metadata_and_art_for_games_you_have() {
     opts.metadata_base = format!("{base}/meta");
     opts.thumbnails_base = format!("{base}/thumbs");
     opts.art = vec![ArtKind::Boxart, ArtKind::Snap];
+    opts.wikidata = None;
 
     let report = lib.enrich(&opts, |_| {}).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
@@ -105,7 +106,8 @@ fn metadata_and_art_for_games_you_have() {
     let before = log.lock().unwrap().len();
     let again = lib.enrich(&opts, |_| {}).unwrap();
     assert_eq!(log.lock().unwrap().len(), before, "no requests the second time");
-    assert_eq!(again.art_cached, report.games * 2);
+    assert_eq!(again.art_cached, 1, "the one image on disk");
+    assert_eq!(again.art_missing, report.games * 2 - 1, "the rest known missing");
     // --refresh fetches again.
     opts.refresh = true;
     lib.enrich(&opts, |_| {}).unwrap();
