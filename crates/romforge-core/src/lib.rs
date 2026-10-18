@@ -829,7 +829,11 @@ impl Library {
                 };
                 let path_str = entry.path.to_string_lossy().into_owned();
                 seen.insert(path_str.clone());
-                if cleared.insert(path_str.clone())
+                // A plain file that couldn't be read keeps its old row (a
+                // flaky disk shouldn't forget it); it is read again next time.
+                let unreadable = entry.member.is_empty() && entry.hashes.is_err();
+                if !unreadable
+                    && cleared.insert(path_str.clone())
                     && let Err(e) = drop_path.execute([&path_str])
                 {
                     result = Err(e);
@@ -889,6 +893,15 @@ impl Library {
                 });
             })?;
             result?;
+        }
+        // A path with an error (an unreadable file, an archive member that
+        // failed) isn't stamped, so the next scan reads it again instead of
+        // calling it unchanged.
+        for (path, _, _) in &report.errors {
+            tx.execute(
+                "UPDATE files SET mtime = NULL WHERE path = ?1",
+                [path.to_string_lossy()],
+            )?;
         }
         // Rows of this folder for files that are gone (or now skipped).
         let ours: Vec<String> = tx

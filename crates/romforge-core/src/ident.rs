@@ -446,6 +446,10 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
             let total = le64(head.get(8..16)?);
             let block = le32(head.get(16..20)?) as u64;
             let shift = *head.get(21)? as u32;
+            // Header values are untrusted: sane block sizes and shifts only.
+            if !(512..=1 << 20).contains(&block) || shift > 31 {
+                return None;
+            }
             let lz4 = head[0] == b'Z';
             let blocks = (PREFIX_LEN as u64 / block.max(1)).min(total.div_ceil(block.max(1)));
             let mut index = vec![0u8; (blocks as usize + 1) * 4];
@@ -456,7 +460,12 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
                 let plain = w[0] & 0x8000_0000 != 0;
                 let start = ((w[0] & 0x7FFF_FFFF) as u64) << shift;
                 let end = ((w[1] & 0x7FFF_FFFF) as u64) << shift;
-                let mut raw = vec![0u8; end.checked_sub(start)? as usize];
+                // A stored block is never much bigger than a plain one.
+                let stored = end.checked_sub(start)?;
+                if stored > block + 4096 {
+                    return None;
+                }
+                let mut raw = vec![0u8; stored as usize];
                 read_at(f, start, &mut raw)?;
                 if plain || raw.len() as u64 >= block {
                     raw.truncate(block as usize);
@@ -465,8 +474,8 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
                     prefix.extend_from_slice(&lz4_flex::block::decompress(&raw, block as usize).ok()?);
                 } else {
                     let mut out = Vec::with_capacity(block as usize);
-                    std::io::Read::read_to_end(&mut flate2::read::DeflateDecoder::new(&raw[..]), &mut out)
-                        .ok()?;
+                    let inflate = flate2::read::DeflateDecoder::new(&raw[..]);
+                    std::io::Read::read_to_end(&mut std::io::Read::take(inflate, block), &mut out).ok()?;
                     prefix.extend_from_slice(&out);
                 }
             }
@@ -486,6 +495,7 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
             // Dolphin's GCZ: header, then u64 block pointers and u32 hashes
             // per block, then zlib blocks (top pointer bit: stored plain).
             let size = le64(&head[16..24]);
+            let block = (le32(&head[24..28]) as u64).min(1 << 22);
             let blocks = le32(&head[28..32]) as u64;
             let data = 32 + 12 * blocks;
             let mut ptr = [0u8; 16];
@@ -498,12 +508,15 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
                 0x8000
             };
             let mut raw = vec![0u8; len.min(1 << 22) as usize];
-            read_at(f, data + (p0 & !flag), &mut raw)?;
+            read_at(f, data.checked_add(p0 & !flag)?, &mut raw)?;
             let first = if p0 & flag != 0 {
                 raw
             } else {
+                // At most one block's worth, whatever the stream claims.
                 let mut out = Vec::new();
-                std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&raw[..]), &mut out).ok()?;
+                let inflate = flate2::read::ZlibDecoder::new(&raw[..]);
+                std::io::Read::read_to_end(&mut std::io::Read::take(inflate, block.max(0x8000)), &mut out)
+                    .ok()?;
                 out
             };
             let mut id = gamecube_wii(&first)?;
@@ -872,6 +885,24 @@ mod tests {
         assert_eq!((id.kind, id.serial.as_deref()), ("ps1", Some("SLUS00067")));
         assert_eq!(id.title.as_deref(), Some("Castlevania SOTN"));
         assert_eq!(container(&[0x5A; 512]), None);
+    }
+
+    /// Hostile CSO headers (a shift past 31, an absurd stored block, a
+    /// huge block size) give no ID instead of panicking or allocating.
+    #[test]
+    fn hostile_cso_headers() {
+        let good = cso(&iso("UMD_DATA.BIN", b"ULUS-10041|0001|G|"), false);
+        assert!(container(&good).is_some());
+        let mut shift = good.clone();
+        shift[21] = 40;
+        assert_eq!(container(&shift), None);
+        let mut block = good.clone();
+        block[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(container(&block), None);
+        let mut stored = good.clone();
+        stored[21] = 31;
+        stored[0x1C..0x20].copy_from_slice(&0x7FFF_FFFFu32.to_le_bytes());
+        assert_eq!(container(&stored), None);
     }
 
     #[test]

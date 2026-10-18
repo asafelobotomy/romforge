@@ -251,7 +251,16 @@ fn now() -> String {
 fn build_openvgdb(zip: &Path, out: &Path) -> Result<i64, Error> {
     let mut archive = zip::ZipArchive::new(BufReader::new(std::fs::File::open(zip)?))?;
     let mut member = archive.by_name("openvgdb.sqlite")?;
-    std::io::copy(&mut member, &mut std::fs::File::create(out)?)?;
+    // Bounded: the real file is about 42 MB; a zip can claim to hold anything.
+    let copied = std::io::copy(
+        &mut member.by_ref().take(4 << 30),
+        &mut std::fs::File::create(out)?,
+    )?;
+    if copied >= 4 << 30 {
+        return Err(Error::Http(
+            "openvgdb.sqlite in the zip is implausibly large".into(),
+        ));
+    }
     let conn = Connection::open(out)?;
     let n: i64 = conn
         .query_row("SELECT count(*) FROM ROMs", [], |r| r.get(0))

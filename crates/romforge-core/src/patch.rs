@@ -171,51 +171,53 @@ fn apply_bps(patch: &[u8], source: &[u8]) -> Option<Vec<u8>> {
     if target_size > MAX_SIZE {
         return None;
     }
-    let metadata = number(patch, &mut at)? as usize;
-    at += metadata;
+    let metadata = usize::try_from(number(patch, &mut at)?).ok()?;
+    at = at.checked_add(metadata)?;
     let end = patch.len() - 12;
+    if at > end {
+        return None;
+    }
     let mut out: Vec<u8> = Vec::with_capacity(target_size as usize);
     let (mut source_rel, mut target_rel) = (0i64, 0i64);
-    let signed = |n: u64| {
-        if n & 1 != 0 {
-            -((n >> 1) as i64)
-        } else {
-            (n >> 1) as i64
-        }
+    let signed = |n: u64| -> Option<i64> {
+        let v = i64::try_from(n >> 1).ok()?;
+        Some(if n & 1 != 0 { -v } else { v })
     };
     while at < end {
         let data = number(patch, &mut at)?;
-        let len = (data >> 2) as usize + 1;
+        let len = usize::try_from(data >> 2).ok()?.checked_add(1)?;
+        // Never past the size the patch declares, whatever it asks for (a
+        // forged patch's own CRC32 is easy to fake).
+        if (out.len() as u64).checked_add(len as u64)? > target_size {
+            return None;
+        }
         match data & 3 {
             // SourceRead: the source's bytes at the output position.
             0 => {
                 let from = out.len();
-                out.extend_from_slice(source.get(from..from + len)?);
+                out.extend_from_slice(source.get(from..from.checked_add(len)?)?);
             }
             // TargetRead: bytes from the patch.
             1 => {
-                out.extend_from_slice(patch.get(at..at + len)?);
+                out.extend_from_slice(patch.get(at..at.checked_add(len)?)?);
                 at += len;
             }
             // SourceCopy: from a moving position in the source.
             2 => {
-                source_rel += signed(number(patch, &mut at)?);
+                source_rel = source_rel.checked_add(signed(number(patch, &mut at)?)?)?;
                 let from = usize::try_from(source_rel).ok()?;
-                out.extend_from_slice(source.get(from..from + len)?);
-                source_rel += len as i64;
+                out.extend_from_slice(source.get(from..from.checked_add(len)?)?);
+                source_rel = source_rel.checked_add(len as i64)?;
             }
             // TargetCopy: from earlier output, byte by byte (may overlap).
             _ => {
-                target_rel += signed(number(patch, &mut at)?);
+                target_rel = target_rel.checked_add(signed(number(patch, &mut at)?)?)?;
                 for _ in 0..len {
                     let b = *out.get(usize::try_from(target_rel).ok()?)?;
                     out.push(b);
                     target_rel += 1;
                 }
             }
-        }
-        if out.len() as u64 > target_size {
-            return None;
         }
     }
     Some(out)
@@ -233,7 +235,7 @@ fn apply_ups(patch: &[u8], source: &[u8]) -> Option<Vec<u8>> {
     out.resize(target_size, 0);
     let mut pos = 0usize;
     while at < end {
-        pos += number(patch, &mut at)? as usize;
+        pos = pos.checked_add(usize::try_from(number(patch, &mut at)?).ok()?)?;
         // XOR bytes up to a zero byte.
         loop {
             let x = *patch.get(at)?;
@@ -269,8 +271,9 @@ pub(crate) fn read_entry(path: &std::path::Path, member: &str) -> Option<Vec<u8>
                 return None;
             }
             let mut out = Vec::with_capacity(m.size() as usize);
-            m.read_to_end(&mut out).ok()?;
-            Some(out)
+            // The declared size may lie: never read past the limit.
+            m.by_ref().take(MAX_SIZE + 1).read_to_end(&mut out).ok()?;
+            (out.len() as u64 <= MAX_SIZE).then_some(out)
         }
         "7z" => {
             let mut a = sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty()).ok()?;
@@ -413,6 +416,29 @@ pub(crate) mod tests {
         assert_eq!((out.len(), &out[20..23]), (23, &b"zzz"[..]));
         assert_eq!(info(&p).unwrap().kind, Kind::Ips);
         assert_eq!(info(b"not a patch"), None);
+    }
+
+    /// A forged BPS asking for a huge TargetCopy, or claiming absurd
+    /// metadata, fails at once instead of filling memory or panicking.
+    #[test]
+    fn hostile_bps_is_refused() {
+        let source = vec![7u8; 16];
+        let mut p = b"BPS1".to_vec();
+        num(16, &mut p);
+        num(32, &mut p);
+        num(0, &mut p);
+        num(1, &mut p); // TargetRead of 1 byte
+        p.push(0xAA);
+        num((((1u64 << 40) - 1) << 2) | 3, &mut p); // TargetCopy of 2^40 bytes
+        num(0, &mut p);
+        p.extend_from_slice(&[0u8; 12]);
+        assert_eq!(apply_bps(&p, &source), None);
+        let mut q = b"BPS1".to_vec();
+        num(16, &mut q);
+        num(16, &mut q);
+        num(u64::MAX >> 8, &mut q);
+        q.extend_from_slice(&[0u8; 12]);
+        assert_eq!(apply_bps(&q, &source), None);
     }
 
     #[test]

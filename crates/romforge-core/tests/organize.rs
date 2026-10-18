@@ -470,3 +470,29 @@ fn clone_lists_join_retitled_games_for_1g1r() {
         "one per group: the best region, then the lower priority"
     );
 }
+
+/// A move that fails leaves nothing in the journal (it is recorded before
+/// the move and dropped when the move fails): the file is where it was and
+/// there is nothing to undo.
+#[test]
+fn failed_moves_leave_no_journal_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("roms");
+    copy_tree(&fixtures().join("roms/gb"), &src);
+    let mut lib = library_with_fixture_dats();
+    lib.scan(&src, Scope::All).unwrap();
+    // The destination is a file, so no folder can be made in it.
+    let dest = tmp.path().join("not-a-folder");
+    std::fs::write(&dest, b"x").unwrap();
+    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
+    assert!(!plan.moves.is_empty());
+    let applied = lib.organize_apply(&plan, &dest).unwrap();
+    assert_eq!(applied.moved, 0);
+    assert_eq!(applied.failed.len(), plan.moves.len());
+    for m in &plan.moves {
+        assert!(m.from.exists(), "{} stayed", m.from.display());
+    }
+    // No move happened, so no batch was kept.
+    let err = lib.organize_undo(None).unwrap_err().to_string();
+    assert!(err.contains("nothing to undo"), "{err}");
+}

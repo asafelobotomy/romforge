@@ -119,6 +119,18 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
     let in_source = |p: &Path| p.starts_with(&source);
 
     let v = view::library(conn)?;
+    // Which library rows each file belongs to: an original another game
+    // still needs is never trashed (a disc track identical in two
+    // regions belongs to both).
+    let mut rows_of: HashMap<i64, Vec<(String, String, RowStatus)>> = HashMap::new();
+    for row in &v.rows {
+        for f in row.file_ids() {
+            rows_of
+                .entry(*f)
+                .or_default()
+                .push((row.id.clone(), row.title.clone(), row.status));
+        }
+    }
     let mut taken: BTreeSet<PathBuf> = BTreeSet::new();
     let mut items = Vec::new();
     for row in v.rows {
@@ -168,6 +180,18 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
             ));
             continue;
         };
+        // ROM names come from the DAT, which is untrusted: none may climb out
+        // of the archive or shadow its `romforge/` folder.
+        if let Some(bad) = parts.iter().find(|p| !safe_member_name(&p.name)) {
+            plan.skipped.push((
+                row.title.clone(),
+                format!(
+                    "the DAT names a file {:?}, which can't go in an archive safely",
+                    bad.name
+                ),
+            ));
+            continue;
+        }
         let name = sanitize(&row.title);
         let dir = dest.join(sanitize(system.key));
         let (target, sidecar) = match format {
@@ -189,6 +213,13 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
         } else {
             None
         };
+        if format == Format::ChdCd && tracks.len() > 1 && tracks.len() == parts.len() && sheet.is_none() {
+            plan.skipped.push((
+                row.title.clone(),
+                "a disc of several tracks needs its cue sheet (for the pregaps); none is beside it".into(),
+            ));
+            continue;
+        }
         items.push(Item {
             row_id: row.id.clone(),
             title: row.title.clone(),
@@ -212,6 +243,8 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
             used.entry(p.path.clone()).or_default().insert(p.member.clone());
         }
     }
+    let batch: BTreeSet<String> = items.iter().map(|it| it.row_id.clone()).collect();
+    let mut files_at = conn.prepare("SELECT file_id FROM files WHERE path = ?1")?;
     for it in &mut items {
         let paths: BTreeSet<&PathBuf> = it
             .parts
@@ -230,7 +263,15 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
             } else {
                 archive_names(p).is_ok_and(|names| names.iter().all(|n| taken.contains(n)))
             };
-            if all {
+            // Any of its files in a game outside the batch (a mere
+            // duplicate copy doesn't count) keeps it.
+            let needed_elsewhere = files_at
+                .query_map([p.to_string_lossy()], |r| r.get::<_, i64>(0))?
+                .collect::<Result<Vec<i64>, _>>()?
+                .iter()
+                .flat_map(|f| rows_of.get(f).into_iter().flatten())
+                .any(|(id, _, status)| !batch.contains(id) && *status != RowStatus::Duplicate);
+            if all && !needed_elsewhere {
                 it.trash.push(p.clone());
             } else {
                 it.kept.push(p.clone());
@@ -245,6 +286,18 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
     }
     plan.items = items;
     Ok(plan)
+}
+
+/// Whether a DAT's ROM name is safe as a path inside an archive: relative,
+/// no `.` or `..` parts, no backslashes or drive letters, and not in the
+/// `romforge/` folder kept for art and details.
+fn safe_member_name(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('/').collect();
+    !name.is_empty()
+        && !name.contains('\\')
+        && !name.contains(':')
+        && parts.iter().all(|p| !p.is_empty() && *p != "." && *p != "..")
+        && !parts[0].eq_ignore_ascii_case("romforge")
 }
 
 /// Every file in a zip or 7z archive.
@@ -632,6 +685,17 @@ fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool, Error> {
         // Pregaps from the game's own cue sheet when there is one.
         let (cue, took) = own_cue(item, staging);
         took_sheet = took;
+        // Several tracks need their pregaps from a cue: without one the CHD
+        // would put every track's INDEX 01 in the wrong place.
+        if cue.is_none() && tracks.len() > 1 {
+            drop(file);
+            let _ = std::fs::remove_file(out);
+            return Err(Error::Cleanup(format!(
+                "{}: no cue sheet that fits its {} tracks, so their pregaps are unknown",
+                item.title,
+                tracks.len()
+            )));
+        }
         let pregaps = cue.map(|c| cue_pregaps(&c)).unwrap_or_default();
         let mut w = ChdWriter::new(file, ChdWriteOptions::cd()).map_err(cerr)?;
         let mut meta = Vec::new();
@@ -778,7 +842,13 @@ fn own_cue(item: &Item, staging: &Path) -> (Option<String>, bool) {
         .into_iter()
         .map(|f| f.name.rsplit(['/', '\\']).next().unwrap_or(&f.name).to_owned())
         .collect();
-    if names == tracks {
+    // One TRACK per FILE: a single .bin holding several tracks would lose
+    // its layout in a CHD built track by track.
+    let track_lines = text
+        .lines()
+        .filter(|l| l.trim_start().to_ascii_uppercase().starts_with("TRACK "))
+        .count();
+    if names == tracks && track_lines == names.len() {
         (Some(text), true)
     } else {
         (None, false)
@@ -917,11 +987,19 @@ fn trash(conn: &Connection, batch: i64, original: &Path) -> Result<(), Error> {
         .join(TRASH_DIR)
         .join(batch.to_string())
         .join(original.file_name().unwrap_or_default());
-    move_file(original, &to)?;
+    // Journaled before it moves: a crash in between leaves a row undo can
+    // act on, never a trashed file nothing knows about.
     conn.execute(
         "INSERT INTO cleanup_trash (batch_id, original, trashed) VALUES (?1, ?2, ?3)",
         params![batch, original.to_string_lossy(), to.to_string_lossy()],
     )?;
+    if let Err(e) = move_file(original, &to) {
+        conn.execute(
+            "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
+            params![batch, to.to_string_lossy()],
+        )?;
+        return Err(e.into());
+    }
     Ok(())
 }
 
@@ -956,6 +1034,14 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
         .query_map([batch_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
     for (original, at) in trashed {
+        // Journaled but never moved (a crash in between): nothing to do.
+        if !Path::new(&at).exists() && Path::new(&original).exists() {
+            conn.execute(
+                "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
+                params![batch_id, at],
+            )?;
+            continue;
+        }
         match move_file(Path::new(&at), Path::new(&original)) {
             Ok(_) => {
                 conn.execute(
@@ -977,6 +1063,13 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
             }
             Err(e) => u.failed.push(format!("{original}: {e}")),
         }
+    }
+    // While an original is still in the trash, the new files stay: they
+    // may be the only other copy. Undo can be run again.
+    if !u.failed.is_empty() {
+        u.failed
+            .push("the new files were kept, since not every original came back".into());
+        return Ok(u);
     }
     let outputs: Vec<(String, String)> = conn
         .prepare("SELECT path, kind FROM cleanup_outputs WHERE batch_id = ?1")?
@@ -1047,6 +1140,25 @@ pub fn batches(conn: &Connection) -> Result<Vec<Batch>, Error> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unsafe_member_names() {
+        use super::safe_member_name as ok;
+        assert!(ok("Game (USA).sfc") && ok("Disk 1/Game.adf"));
+        for bad in [
+            "../evil.sfc",
+            "/etc/passwd",
+            "a/../b",
+            "C:\\x",
+            "a\\b",
+            "romforge/x.png",
+            "",
+            "a//b",
+            "./a",
+        ] {
+            assert!(!ok(bad), "{bad}");
+        }
+    }
+
     use super::*;
 
     #[test]

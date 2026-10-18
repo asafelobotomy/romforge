@@ -55,6 +55,23 @@ pub const NOINTRO_DOWNLOAD_PAGE: &str = "https://datomatic.no-intro.org/index.ph
 /// No DAT pack is near this; it only stops a runaway response.
 const MAX_BODY: u64 = 512 << 20;
 
+/// No DAT unpacks to this; it stops a zip bomb.
+const MAX_UNPACKED: u64 = 1 << 30;
+
+/// A zip member read into memory, refused beyond [`MAX_UNPACKED`] (a
+/// small zip can claim to hold anything).
+fn read_member(member: &mut impl Read) -> Result<Vec<u8>, Error> {
+    let mut buf = Vec::new();
+    member.take(MAX_UNPACKED + 1).read_to_end(&mut buf)?;
+    if buf.len() as u64 > MAX_UNPACKED {
+        return Err(Error::Dat(format!(
+            "a zip member over {} GiB",
+            MAX_UNPACKED >> 30
+        )));
+    }
+    Ok(buf)
+}
+
 /// Minimum time between two requests to `host`.
 pub fn delay_for(host: &str) -> Duration {
     let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
@@ -279,8 +296,7 @@ pub fn tosec_dats(pack: &[u8], name: &str) -> Result<Vec<DatBytes>, Error> {
         let mut member = zip.by_index(i)?;
         let member_name = member.name()?.into_owned();
         if member.is_file() && member_name.starts_with(&prefix) && member_name.ends_with(".dat") {
-            let mut buf = Vec::new();
-            member.read_to_end(&mut buf)?;
+            let buf = read_member(&mut member)?;
             out.push(DatBytes {
                 member: Some(member_name),
                 bytes: buf,
@@ -520,8 +536,7 @@ pub fn dats_in(bytes: &[u8]) -> Result<Vec<DatBytes>, Error> {
         let name = member.name()?.into_owned();
         let lower = name.to_ascii_lowercase();
         if member.is_file() && (lower.ends_with(".dat") || lower.ends_with(".xml")) {
-            let mut buf = Vec::new();
-            member.read_to_end(&mut buf)?;
+            let buf = read_member(&mut member)?;
             out.push(DatBytes {
                 member: Some(name),
                 bytes: buf,

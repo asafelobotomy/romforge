@@ -559,24 +559,40 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
     )?;
     let batch_id = conn.last_insert_rowid();
     for (seq, m) in plan.moves.iter().enumerate() {
+        // Journaled before it moves: a crash or a database error in between
+        // leaves a row undo can act on, never a moved file nothing knows
+        // about.
+        let size = match std::fs::metadata(&m.from) {
+            Ok(md) => md.len(),
+            Err(e) => {
+                applied.failed.push((m.clone(), e.to_string()));
+                continue;
+            }
+        };
+        conn.execute(
+            "INSERT INTO organize_moves (batch_id, seq, src, dst, size) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                batch_id,
+                seq as i64,
+                m.from.to_string_lossy(),
+                m.to.to_string_lossy(),
+                size
+            ],
+        )?;
         match move_file(&m.from, &m.to) {
-            Ok(size) => {
+            Ok(_) => {
                 let tx = conn.transaction()?;
-                tx.execute(
-                    "INSERT INTO organize_moves (batch_id, seq, src, dst, size) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        batch_id,
-                        seq as i64,
-                        m.from.to_string_lossy(),
-                        m.to.to_string_lossy(),
-                        size
-                    ],
-                )?;
                 follow(&tx, &m.from, &m.to, &dest)?;
                 tx.commit()?;
                 applied.moved += 1;
             }
-            Err(e) => applied.failed.push((m.clone(), e.to_string())),
+            Err(e) => {
+                conn.execute(
+                    "DELETE FROM organize_moves WHERE batch_id = ?1 AND seq = ?2",
+                    params![batch_id, seq as i64],
+                )?;
+                applied.failed.push((m.clone(), e.to_string()));
+            }
         }
     }
     if applied.moved == 0 {
@@ -663,6 +679,14 @@ pub fn undo(conn: &mut Connection, batch_id: Option<i64>) -> Result<Undone, Erro
     };
     for (seq, src, dst, size) in moves {
         let (src, dst) = (PathBuf::from(src), PathBuf::from(dst));
+        // Journaled but never moved (a crash in between): nothing to do.
+        if !dst.exists() && src.exists() {
+            conn.execute(
+                "DELETE FROM organize_moves WHERE batch_id = ?1 AND seq = ?2",
+                params![batch_id, seq],
+            )?;
+            continue;
+        }
         let now = std::fs::metadata(&dst).map(|m| m.len() as i64);
         let result = match now {
             Ok(n) if n != size => Err(format!("{} changed size since it was moved", dst.display())),

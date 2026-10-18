@@ -319,7 +319,18 @@ fn a_cue_that_isnt_the_dats_counts_when_it_names_the_tracks() {
     let redump = "FILE \"Game (USA) (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (USA) (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n";
     let fits = redump.replace('\n', "\r\n");
     let other = fits.replace("Game (USA) (Track 2)", "Something Else");
-    for (cue, taken) in [(fits.as_str(), true), (other.as_str(), false)] {
+    // The right files, but three TRACKs in two FILEs: a layout a CHD built
+    // track by track would lose.
+    let extra_track = fits.replace(
+        "    INDEX 01 00:02:00\r\n",
+        "    INDEX 01 00:02:00\r\n  TRACK 03 AUDIO\r\n    INDEX 01 00:04:00\r\n",
+    );
+    assert_ne!(extra_track, fits);
+    for (cue, taken) in [
+        (fits.as_str(), true),
+        (other.as_str(), false),
+        (extra_track.as_str(), false),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let library = dir.path().join("library");
@@ -381,11 +392,214 @@ fn a_cue_that_isnt_the_dats_counts_when_it_names_the_tracks() {
         );
         assert_eq!(item.trash, [source.join("Game (USA).zip")], "{item:?}");
         let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
-        assert!(report.failed.is_empty(), "{:?}", report.failed);
-
         let chd = library.join("PlayStation/Game (USA).chd");
-        assert_eq!(chd_pregaps(&chd), if taken { [0, 150] } else { [0, 0] });
-        assert_eq!(report.trashed, taken as usize);
-        assert_eq!(source.join("Game (USA).zip").exists(), !taken, "cue {taken}");
+        if taken {
+            assert!(report.failed.is_empty(), "{:?}", report.failed);
+            assert_eq!(chd_pregaps(&chd), [0, 150]);
+            assert_eq!(report.trashed, 1);
+            assert!(!source.join("Game (USA).zip").exists());
+        } else {
+            // No cue fits two tracks: their pregaps are unknown, so no CHD
+            // is written and the original stays.
+            assert_eq!(report.failed.len(), 1, "{:?}", report.failed);
+            assert!(report.failed[0].1.contains("pregaps"), "{:?}", report.failed);
+            assert!(!chd.exists());
+            assert_eq!(report.trashed, 0);
+            assert!(source.join("Game (USA).zip").exists());
+        }
     }
+}
+
+/// A game for [`disc_dat`]: its name and its ROMs as (name, bytes).
+type DatGame<'a> = (&'a str, Vec<(String, Vec<u8>)>);
+
+/// A DAT for `games`.
+fn disc_dat(dir: &Path, system: &str, games: &[DatGame]) -> PathBuf {
+    let mut xml = format!("<datafile><header><name>{system}</name></header>");
+    for (name, roms) in games {
+        xml += &format!(r#"<game name="{name}">"#);
+        for (rom, data) in roms {
+            let x = hash_stream(&data[..], data.len() as u64).unwrap().raw;
+            xml += &format!(
+                r#"<rom name="{rom}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+                x.size, x.crc32, x.md5, x.sha1
+            );
+        }
+        xml += "</game>";
+    }
+    xml += "</datafile>";
+    let p = dir.join(format!("{system}.dat"));
+    std::fs::write(&p, xml).unwrap();
+    p
+}
+
+fn cd_tracks(seed: u8) -> Vec<u8> {
+    let mut data = pattern(seed, 6 * 2352);
+    data[..12].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0]);
+    data[15] = 2;
+    data
+}
+
+fn cue_for(game: &str) -> String {
+    format!(
+        "FILE \"{game} (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"{game} (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n"
+    )
+}
+
+fn lib_with(dir: &Path, dat: &Path, source: &Path, library: &Path) -> Library {
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dat, None).unwrap();
+    lib.save_settings(&Settings {
+        source_dir: Some(source.to_path_buf()),
+        library_dir: Some(library.to_path_buf()),
+        staging_dir: Some(dir.join("staging")),
+        ..Settings::default()
+    })
+    .unwrap();
+    lib.scan(source, Scope::All).unwrap();
+    lib
+}
+
+/// Two regions' discs share an identical audio track. Cleaning one of them
+/// must not trash a file the other still needs.
+#[test]
+fn files_another_game_needs_are_never_trashed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, library) = (dir.path().join("source"), dir.path().join("library"));
+    std::fs::create_dir_all(&library).unwrap();
+    let shared_audio = pattern(9, 155 * 2352);
+    let mut games = Vec::new();
+    for (game, seed) in [("Game (USA)", 1u8), ("Game (Europe)", 2u8)] {
+        let d = source.join(game);
+        std::fs::create_dir_all(&d).unwrap();
+        let data = cd_tracks(seed);
+        std::fs::write(d.join(format!("{game} (Track 1).bin")), &data).unwrap();
+        std::fs::write(d.join(format!("{game} (Track 2).bin")), &shared_audio).unwrap();
+        std::fs::write(d.join(format!("{game}.cue")), cue_for(game)).unwrap();
+        games.push((
+            game,
+            vec![
+                (format!("{game}.cue"), cue_for(game).into_bytes()),
+                (format!("{game} (Track 1).bin"), data),
+                (format!("{game} (Track 2).bin"), shared_audio.clone()),
+            ],
+        ));
+    }
+    let dat = disc_dat(dir.path(), "Sony - PlayStation", &games);
+    let mut lib = lib_with(dir.path(), &dat, &source, &library);
+    let usa = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.title == "Game (USA)" && r.status == RowStatus::Verified)
+        .unwrap()
+        .id;
+    let plan = lib.cleanup_plan(Some(&[usa])).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    // Europe's files are all where they were.
+    for f in [
+        "Game (Europe) (Track 1).bin",
+        "Game (Europe) (Track 2).bin",
+        "Game (Europe).cue",
+    ] {
+        assert!(source.join("Game (Europe)").join(f).exists(), "{f} was taken");
+    }
+    lib.scan(&source, Scope::All).unwrap();
+    assert!(
+        lib.library_view()
+            .unwrap()
+            .rows
+            .iter()
+            .any(|r| r.title == "Game (Europe)" && r.status == RowStatus::Verified),
+        "Europe still complete"
+    );
+}
+
+/// A disc of several tracks with no cue sheet anywhere is skipped: its
+/// pregaps are unknown.
+#[test]
+fn multi_track_discs_need_a_cue() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, library) = (dir.path().join("source"), dir.path().join("library"));
+    std::fs::create_dir_all(source.join("g")).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    let (data, audio) = (cd_tracks(3), pattern(4, 155 * 2352));
+    std::fs::write(source.join("g/Game (USA) (Track 1).bin"), &data).unwrap();
+    std::fs::write(source.join("g/Game (USA) (Track 2).bin"), &audio).unwrap();
+    let dat = disc_dat(
+        dir.path(),
+        "Sony - PlayStation",
+        &[(
+            "Game (USA)",
+            vec![
+                ("Game (USA) (Track 1).bin".into(), data),
+                ("Game (USA) (Track 2).bin".into(), audio),
+            ],
+        )],
+    );
+    let lib = lib_with(dir.path(), &dat, &source, &library);
+    let plan = lib.cleanup_plan(None).unwrap();
+    assert!(plan.items.is_empty(), "{plan:?}");
+    assert!(
+        plan.skipped
+            .iter()
+            .any(|(t, why)| t == "Game (USA)" && why.contains("cue sheet")),
+        "{:?}",
+        plan.skipped
+    );
+}
+
+/// A DAT's ROM name is untrusted: one that would climb out of the archive
+/// skips the game.
+#[test]
+fn unsafe_dat_names_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, library) = (dir.path().join("source"), dir.path().join("library"));
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    let data = pattern(5, 1024);
+    std::fs::write(source.join("x.gb"), &data).unwrap();
+    let dat = disc_dat(
+        dir.path(),
+        "Nintendo - Game Boy",
+        &[("Evil (USA)", vec![("../../evil.gb".into(), data)])],
+    );
+    let lib = lib_with(dir.path(), &dat, &source, &library);
+    let plan = lib.cleanup_plan(None).unwrap();
+    assert!(plan.items.is_empty(), "{plan:?}");
+    assert!(
+        plan.skipped.iter().any(|(_, why)| why.contains("safely")),
+        "{:?}",
+        plan.skipped
+    );
+}
+
+/// Undo keeps the new files while an original can't come back (its place
+/// is taken), so the trash is never the only copy left.
+#[test]
+fn undo_keeps_new_files_until_every_original_is_back() {
+    let s = setup(false, &[("gb/Test GB.gb", "Test GB.gb")], &["gb.dat"]);
+    let mut lib = s.lib;
+    let plan = lib.cleanup_plan(None).unwrap();
+    let item = plan.items.iter().find(|i| i.title == "Test GB").unwrap().clone();
+    let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert!(item.target.exists());
+    // Something else now sits where the original was.
+    std::fs::write(s.source.join("Test GB.gb"), b"someone else's file").unwrap();
+    let undone = lib.cleanup_undo(None).unwrap();
+    assert!(!undone.failed.is_empty());
+    assert!(
+        item.target.exists(),
+        "the new zip stays while the original is in the trash"
+    );
+    // Once the place is free, undo finishes the job.
+    std::fs::remove_file(s.source.join("Test GB.gb")).unwrap();
+    let again = lib.cleanup_undo(None).unwrap();
+    assert!(again.failed.is_empty(), "{:?}", again.failed);
+    assert!(!item.target.exists());
+    assert!(s.source.join("Test GB.gb").exists());
 }

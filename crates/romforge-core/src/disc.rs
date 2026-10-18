@@ -199,6 +199,19 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
         )));
     }
 
+    // A pregap comes from the CHD's metadata, which is untrusted: more than
+    // ten minutes of silence isn't a disc, it would only spin the hasher.
+    if let Some(t) = tracks
+        .iter()
+        .find(|t| !t.pregap_stored && t.pregap > 10 * 60 * 75)
+    {
+        return Err(Error::Chd(format!(
+            "{}: track {} claims a pregap of {} frames",
+            path.display(),
+            t.number,
+            t.pregap
+        )));
+    }
     let many = tracks.len() > 1;
     let mut out = Vec::new();
     // (track index, frames of it left to hash, padding frames left to skip)

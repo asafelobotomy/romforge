@@ -1335,3 +1335,83 @@ fn rewritten_cue_sheets_fit_their_tracks() {
             })
     );
 }
+
+/// In a solid 7z every member is one stream: a ROM after a skipped
+/// (non-ROM) member must still hash as itself.
+#[test]
+fn solid_7z_members_after_a_skipped_one_hash_right() {
+    let dir = tempfile::tempdir().unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    let gba = body("solid-gba", 4096);
+    let notes = body("solid-notes", 3000);
+    {
+        let mut sz = sevenz_rust2::ArchiveWriter::create(roms.join("s.7z")).unwrap();
+        sz.push_archive_entries(
+            vec![
+                sevenz_rust2::ArchiveEntry::new_file("a notes.txt"),
+                sevenz_rust2::ArchiveEntry::new_file("z game.gba"),
+            ],
+            vec![
+                sevenz_rust2::SourceReader::new(&notes[..]),
+                sevenz_rust2::SourceReader::new(&gba[..]),
+            ],
+        )
+        .unwrap();
+        sz.finish().unwrap();
+    }
+    let h = hash_stream(&gba[..], gba.len() as u64).unwrap().raw;
+    std::fs::write(
+        dir.path().join("gba.dat"),
+        format!(
+            r#"<datafile><header><name>Nintendo - Game Boy Advance</name></header><game name="Solid (USA)"><rom name="Solid (USA).gba" size="{}" crc="{}" md5="{}" sha1="{}"/></game></datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("gba.dat"), None).unwrap();
+    let report = lib.scan(&roms, Scope::All).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].status, Status::Matched);
+}
+
+/// A file that can't be read keeps its row (a flaky disk shouldn't make it
+/// forget a match), and it is read again on the next scan.
+#[test]
+fn unreadable_files_keep_their_rows() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), roms.join("Test GB.gb")).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let file = roms.join("Test GB.gb");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&file).is_ok() {
+        return; // running as root: can't make it unreadable
+    }
+    let report = lib
+        .scan_with(
+            &roms,
+            Scope::All,
+            ScanOptions {
+                rehash: true,
+                ..ScanOptions::default()
+            },
+            |_| {},
+        )
+        .unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(report.errors.len(), 1, "{report:?}");
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    assert_eq!(files.len(), 1, "the row stays");
+    assert_eq!(files[0].status, Status::Matched);
+    // Readable again: hashed again, not taken as unchanged.
+    let again = lib.scan(&roms, Scope::All).unwrap();
+    assert_eq!((again.hashed, again.unchanged), (1, 0), "{again:?}");
+}

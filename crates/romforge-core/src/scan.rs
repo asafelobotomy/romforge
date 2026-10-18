@@ -320,12 +320,18 @@ fn walk_7z(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Resu
         if entry.is_directory() {
             // nothing to hash
         } else if !wanted(entry.name(), opts) {
+            // A solid archive is one stream: a member not read to its end
+            // would leave the next one starting at the wrong bytes.
+            std::io::copy(reader, &mut std::io::sink())?;
             each(Visit::Skipped {
                 path: path.to_path_buf(),
                 member: entry.name().to_owned(),
             });
         } else {
-            let hashes = hash_stream(reader, entry.size()).map_err(|e| e.to_string());
+            let hashes = hash_stream(&mut *reader, entry.size()).map_err(|e| e.to_string());
+            if hashes.is_err() {
+                let _ = std::io::copy(reader, &mut std::io::sink());
+            }
             each(Visit::Hashed(Entry {
                 stamp: None,
                 path: path.to_path_buf(),
