@@ -15,8 +15,8 @@ fn queue_suggest_identify_forget() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("roms");
     std::fs::create_dir(&dir).unwrap();
-    // A GB file nobody's DAT knows, named like a real game.
-    std::fs::write(dir.join("Test GB Deluxe Hack.gb"), vec![42u8; 1024]).unwrap();
+    // A GB file nobody's DAT knows, named like a hack of a real game.
+    std::fs::write(dir.join("Test GB (Hack).gb"), vec![42u8; 1024]).unwrap();
     std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), dir.join("Test GB.gb")).unwrap();
     let mut lib = Library::open_in_memory().unwrap();
     for e in std::fs::read_dir(fixtures().join("dats")).unwrap() {
@@ -116,7 +116,7 @@ fn find_preview_and_choose_a_dat_title() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("roms");
     std::fs::create_dir(&dir).unwrap();
-    std::fs::write(dir.join("Test GB Deluxe Hack.gb"), vec![42u8; 1024]).unwrap();
+    std::fs::write(dir.join("Test GB (Hack).gb"), vec![42u8; 1024]).unwrap();
     let mut lib = Library::open_in_memory().unwrap();
     lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
     lib.scan(&dir, Scope::All).unwrap();

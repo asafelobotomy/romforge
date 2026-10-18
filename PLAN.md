@@ -366,6 +366,27 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          Turbo/Special ("Street Fighter II" never matches "III");
        - score token-set similarity, built on `strsim` (MIT). Jaro-Winkler
          alone is unsafe ("II" vs "III" scores about 0.98).
+
+       *(Built 2026-10-18.)* `titles.rs` keys a title: tags dropped,
+       articles dropped wherever they are, accents folded, "&" as "and",
+       Roman numerals II–XX as digits ("I" only at the end), and the
+       subtitle as a field of its own. Hard tokens are numbers, years and
+       edition words (Jr., DX, Turbo, Gold/Silver, ...).
+
+       Scores:
+       - 1.0: the same words;
+       - 0.9: the same main title, one side without a subtitle;
+       - 0.85: every word of one side (two at least) is in the other;
+       - otherwise word overlap, below 0.85, with one-typo tolerance for
+         long words;
+       - 0 when the hard tokens differ, or when no ordinary word is
+         shared.
+
+       `TitleIndex` finds candidates through shared words. Search's DAT
+       suggestions and Wikidata labels both use the score; a search takes
+       about 0.25 s on the real library. There, the fan translation's top
+       suggestion is Dragon Quest III (Japan) at 90% (the next at 37%),
+       and "zelda link to the past" finds A Link to the Past at 85%.
     6. *Suggestions with evidence* (medium). Each unknown file gets scored
        suggestions, shown in the library and as the top three in the
        Search dialog, each with its evidence: "name exact, size equal,

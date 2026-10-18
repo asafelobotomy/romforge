@@ -3388,6 +3388,7 @@ dependencies = [
  "sha1 0.11.0",
  "sha2 0.11.1",
  "shiratsu-naming",
+ "strsim",
  "tempfile",
  "thiserror 2.0.21",
  "ureq",

@@ -94,23 +94,10 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
     Ok(out)
 }
 
-fn words(s: &str) -> BTreeSet<String> {
-    wikidata::normalize(s)
-        .split(' ')
-        .filter(|w| !w.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// How alike two titles are: shared words over all words (Jaccard), so
-/// "dragon quest iii english" vs "Dragon Quest III (Japan)" scores well.
+/// How alike two titles are, 0 to 1 ([`crate::titles::score`]): numbers
+/// and edition words must agree; a missing subtitle scores 0.9.
 pub fn similarity(a: &str, b: &str) -> f32 {
-    let (x, y) = (words(a), words(b));
-    if x.is_empty() || y.is_empty() {
-        return 0.0;
-    }
-    let shared = x.intersection(&y).count() as f32;
-    shared / x.union(&y).count() as f32
+    crate::titles::score(a, b)
 }
 
 /// DAT titles that look like `text` (a row's title, or what the owner
@@ -173,21 +160,25 @@ fn dat_titles(
          WHERE d.system_id IS NOT NULL AND (?1 = 0 OR d.system_id IN (SELECT value FROM json_each(?2)))",
     )?;
     let ids_json = serde_json::to_string(&system_ids).unwrap_or_else(|_| "[]".into());
-    let mut scored: Vec<TitleSuggestion> = Vec::new();
+    // name -> systems with it; the index scores each name once.
+    let mut systems_of: std::collections::HashMap<String, Vec<i64>> = Default::default();
     for r in stmt.query_map(params![system_ids.len() as i64, ids_json], |r| {
         Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
     })? {
         let (sid, name) = r?;
-        let score = similarity(&text, &name);
-        if score > 0.0 {
+        systems_of.entry(name).or_default().push(sid);
+    }
+    let index = crate::titles::TitleIndex::new(systems_of.keys().cloned());
+    let mut scored: Vec<TitleSuggestion> = Vec::new();
+    for (title, score) in index.find(&text, limit) {
+        for sid in &systems_of[&title] {
             scored.push(TitleSuggestion {
-                system: systems::by_id(sid).map_or(String::new(), |s| s.key.to_owned()),
-                title: name,
+                system: systems::by_id(*sid).map_or(String::new(), |s| s.key.to_owned()),
+                title: title.clone(),
                 score,
             });
         }
     }
-    scored.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.title.cmp(&b.title)));
     scored.truncate(limit);
     Ok(scored)
 }
@@ -645,7 +636,8 @@ mod tests {
         let a = similarity(q, "Dragon Quest III - Soshite Densetsu e... (Japan)");
         let b = similarity(q, "Dragon Quest I & II (Japan)");
         let c = similarity(q, "Super Mario World (USA)");
-        assert!(a > b && b > c, "{a} {b} {c}");
+        assert_eq!(a, 0.9, "same game, subtitle missing");
+        assert_eq!(b, 0.0, "numerals differ");
         assert_eq!(c, 0.0);
     }
 
