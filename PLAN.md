@@ -773,6 +773,24 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     start (see above) and stay zipped as decided. Parsing the 4 MB list
     takes about 2 s (debug build) on every scan.
 
+15. **Packages** (decided 2026-10-18; not built). romforge starts host
+    programs (RetroArch, ScummVM, MAME, `flatpak run`), reads and moves
+    files on any drive, and needs WebKitGTK (134 MiB installed on Arch).
+    So:
+    - *Native packages first.* An AUR package (PKGBUILD in the AUR's own
+      git, not here; rule 5) and Tauri's `.deb` and `.rpm`: the system's
+      WebKitGTK, nothing sandboxed, the app and `romforge-cli` together,
+      and the emulators as optional dependencies (RetroArch and its cores,
+      ScummVM, MAME, DOSBox).
+    - *AppImage* stays as the portable fallback (it bundles WebKit and
+      GStreamer: much bigger, and needs FUSE).
+    - *No Flatpak*: its sandbox can start host emulators only through
+      `flatpak-spawn --host` (in effect an escape) and needs the whole
+      filesystem.
+    - *Releases from CI.* Pushing a tag `vX.Y.Z` builds every package and
+      attaches them, with SHA-256 checksums, to a GitHub release. CI today
+      builds the app without bundling.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
