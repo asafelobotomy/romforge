@@ -72,7 +72,10 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
         if only.is_some_and(|ids| !ids.contains(&r.id)) {
             continue;
         }
-        let identified = matches!(r.status, RowStatus::Verified | RowStatus::ByYou);
+        let identified = matches!(
+            r.status,
+            RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
+        );
         if !identified && r.status != RowStatus::Duplicate {
             let d = view::detail(conn, &r.id)?;
             let suggestion = suggester.suggest(conn, &d, None, None, 1)?.into_iter().next();
@@ -191,9 +194,16 @@ fn dat_titles(
     Ok(scored)
 }
 
-/// Name every file of a row: `title` on `system` (a key). Re-identifies the
-/// library so the files show as "identified by you".
-pub fn identify(conn: &mut Connection, row_id: &str, system: &str, title: &str) -> Result<(), Error> {
+/// Name every file of a row: `title` on `system` (a key), as a translation
+/// or hack of a DAT game when `derived` says so. Re-identifies the library
+/// so the files show as "identified by you" (or "translation of X").
+pub fn identify(
+    conn: &mut Connection,
+    row_id: &str,
+    system: &str,
+    title: &str,
+    derived: Option<&view::Derived>,
+) -> Result<(), Error> {
     let title = title.trim();
     if title.is_empty() {
         return Err(Error::Search("a title is needed".into()));
@@ -209,10 +219,19 @@ pub fn identify(conn: &mut Connection, row_id: &str, system: &str, title: &str) 
     let tx = conn.transaction()?;
     for f in &d.files {
         tx.execute(
-            "INSERT INTO manual_ids (sha1, size, system_id, title, created_at)
-             VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-             ON CONFLICT(sha1, size) DO UPDATE SET system_id = excluded.system_id, title = excluded.title",
-            params![f.sha1, f.size, sys.id, title],
+            "INSERT INTO manual_ids (sha1, size, system_id, title, created_at, base, relation, tag)
+             VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5, ?6, ?7)
+             ON CONFLICT(sha1, size) DO UPDATE SET system_id = excluded.system_id, title = excluded.title,
+               base = excluded.base, relation = excluded.relation, tag = excluded.tag",
+            params![
+                f.sha1,
+                f.size,
+                sys.id,
+                title,
+                derived.map(|d| &d.base),
+                derived.map(|d| d.relation.as_str()),
+                derived.and_then(|d| d.tag.as_deref()),
+            ],
         )?;
     }
     crate::identify::identify_all(&tx)?;
@@ -320,6 +339,10 @@ pub struct Found {
     /// DAT results: what agrees and what doesn't.
     #[serde(default)]
     pub evidence: Vec<crate::suggest::Evidence>,
+    /// DAT results: taken as a translation or hack of this game (its name
+    /// says so).
+    #[serde(default)]
+    pub derived: Option<view::Derived>,
 }
 
 /// Search one scraper for a row. `text`: what the owner typed (the row's
@@ -352,9 +375,13 @@ pub fn find(
                         system: Some(t.system),
                         year: y.and_then(|y| y.parse().ok()),
                         score: t.score,
-                        description: Some(t.band.label().to_owned()),
+                        description: Some(match &t.derived {
+                            Some(d) => format!("{} · {}", t.band.label(), d.label()),
+                            None => t.band.label().to_owned(),
+                        }),
                         band: Some(t.band),
                         evidence: t.evidence,
+                        derived: t.derived,
                     })
                 })
                 .collect()
@@ -384,6 +411,7 @@ pub fn find(
                         description: Some("candidate found by Enrich".into()),
                         band: None,
                         evidence: Vec::new(),
+                        derived: None,
                     });
                 }
             }
@@ -438,6 +466,7 @@ pub fn parse_entity_search(body: &[u8], text: &str, system: Option<&str>) -> Res
                 description,
                 band: None,
                 evidence: Vec::new(),
+                derived: None,
             })
         })
         .collect())
@@ -599,7 +628,10 @@ pub fn choose(
     opts: &crate::enrich::EnrichOptions,
 ) -> Result<Chosen, Error> {
     let d = view::detail(conn, row_id)?;
-    let identified = matches!(d.row.status, RowStatus::Verified | RowStatus::ByYou);
+    let identified = matches!(
+        d.row.status,
+        RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
+    );
     let need_system = || {
         system
             .or(found.system.as_deref())
@@ -608,15 +640,20 @@ pub fn choose(
     let (key, title) = match found.scraper {
         Scraper::Dat => {
             let key = need_system()?;
-            identify(conn, row_id, key, &found.title)?;
-            (key.to_owned(), found.title.clone())
+            // A translation or hack is named after its base, with the tag.
+            let title = found
+                .derived
+                .as_ref()
+                .map_or_else(|| found.title.clone(), view::Derived::title);
+            identify(conn, row_id, key, &title, found.derived.as_ref())?;
+            (key.to_owned(), title)
         }
         Scraper::Wikidata => {
             let (key, title) = if identified {
                 (d.row.system.clone().unwrap_or_default(), d.row.title.clone())
             } else {
                 let key = need_system()?;
-                identify(conn, row_id, key, &found.title)?;
+                identify(conn, row_id, key, &found.title, None)?;
                 (key.to_owned(), found.title.clone())
             };
             let row = row_for(conn, &key, &title)?;

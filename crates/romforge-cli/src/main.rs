@@ -263,13 +263,23 @@ enum SearchCommand {
         #[arg(long)]
         system: Option<String>,
     },
-    /// Name a row's files yourself ("identified by you")
+    /// Name a row's files yourself ("identified by you"), or as a
+    /// translation or hack of a DAT game ("translation of X")
     Name {
         row: String,
         #[arg(long)]
         system: String,
+        #[arg(long, required_unless_present_any = ["translation_of", "hack_of"])]
+        title: Option<String>,
+        /// The DAT game it is a translation of (its title is made from it)
+        #[arg(long, conflicts_with_all = ["title", "hack_of"])]
+        translation_of: Option<String>,
+        /// The DAT game it is a hack of
+        #[arg(long, conflicts_with = "title")]
+        hack_of: Option<String>,
+        /// What the translation or hack is ("English v2.0 Addendum")
         #[arg(long)]
-        title: String,
+        tag: Option<String>,
     },
     /// Undo `name`
     Forget { row: String },
@@ -1018,9 +1028,30 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Command::Search(SearchCommand::Name { row, system, title }) => {
-            lib.identify_as(&row, &system, &title)?;
-            println!("{title} [{system}], identified by you");
+        Command::Search(SearchCommand::Name {
+            row,
+            system,
+            title,
+            translation_of,
+            hack_of,
+            tag,
+        }) => {
+            use romforge_core::view::{Derived, Relation};
+            let derived = translation_of
+                .map(|b| (Relation::Translation, b))
+                .or(hack_of.map(|b| (Relation::Hack, b)))
+                .map(|(relation, base)| Derived { relation, base, tag });
+            match (derived, title) {
+                (Some(d), _) => {
+                    lib.identify_derived(&row, &system, &d)?;
+                    println!("{} [{system}]: {}, identified by you", d.title(), d.label());
+                }
+                (None, Some(title)) => {
+                    lib.identify_as(&row, &system, &title)?;
+                    println!("{title} [{system}], identified by you");
+                }
+                (None, None) => bail!("give --title, --translation-of or --hack-of"),
+            }
         }
         Command::Search(SearchCommand::Forget { row }) => {
             lib.forget_identity(&row)?;

@@ -442,6 +442,37 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        - has internal title DRAGONQUEST3, region byte Japan and a valid
          checksum;
        - is 6 MiB, because the patch expands the ROM.
+
+       *(Built 2026-10-18.)*
+       - **Status:** `RowStatus::Derivative`, "translation of X" or "hack
+         of X". `manual_ids` keeps `base`, `relation` and `tag`
+         (migration 17). It counts as identified wherever "identified by
+         you" does (cleanup, play, the queue) and is never verified.
+       - **Listing:** it is listed as "<base> [Translation: tag]".
+         Details shows "Translation of …"; metadata and art fall back to
+         the base game's, which Enrich now fetches too (also in a
+         one-title run).
+       - **Suggestions** propose the relation when the file's name says
+         translation or hack ("its name says translation: English v2.0
+         Addendum"). Taking such a result in Search records it. The CLI
+         has `search name --translation-of BASE` / `--hack-of BASE` and
+         `--tag`.
+       - **Patches:** a valid BPS or UPS patch beside a plain file (same
+         stem) gives the source and target size and CRC32, checked by the
+         patch's own CRC32. A DAT ROM with the source size and CRC32
+         becomes a candidate. "Turns its ROM into this file" (target CRC
+         = the file's) makes it *Likely: modified copy*, proposed as a
+         hack. This is CRC-level evidence, so never verified. IPS has no
+         checksums and is not read.
+       - **Not yet:** patches inside archives; libretro's `metadat/hacks`
+         as a source of base names (its entries are hash-matched DAT
+         games already).
+
+       On the real library, the fan translation's top suggestion now
+       reads *Suggested: name match · translation of Dragon Quest III -
+       Soshite Densetsu e... (Japan)*, with 5 points for (title, header
+       title, header code AQ3J in SHVC-AQ3J-JPN, region, "its name says
+       translation: English v2.0 Addendum") and 2 against (size, hash).
     8. *Cue sheets by content* (small). Compare a cue's tracks (file names,
        modes, indexes) with the DAT's cue instead of its bytes. A cue
        rewritten with CRLF or other spacing then shows as "cue fits", not

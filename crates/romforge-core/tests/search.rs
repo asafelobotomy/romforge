@@ -151,17 +151,19 @@ fn find_preview_and_choose_a_dat_title() {
     opts.art = Vec::new();
     opts.wikidata = None;
     opts.metadata_base = "http://127.0.0.1:1".into();
+    // Its name says hack: taken as a hack of Test GB.
     let chosen = lib.search_choose(&row, &found[0], None, &opts).unwrap();
     assert_eq!(
         chosen.row_id,
         format!(
-            "m:{}:Test GB",
+            "m:{}:Test GB [Hack]",
             romforge_core::systems::by_key("Game Boy").unwrap().id
         )
     );
-    assert_eq!(chosen.enrich.games, 1, "fetches for that one game only");
+    assert_eq!(chosen.enrich.games, 2, "fetches for that game and its base only");
     let d = lib.game_detail(&chosen.row_id).unwrap();
-    assert_eq!(d.row.status, RowStatus::ByYou);
+    assert_eq!(d.row.status, RowStatus::Derivative);
+    assert_eq!(d.derived.unwrap().base, "Test GB");
 
     // A Wikidata pick on an unidentified row needs a platform.
     let other = tmp.path().join("other");
@@ -185,6 +187,7 @@ fn find_preview_and_choose_a_dat_title() {
         description: None,
         band: None,
         evidence: Vec::new(),
+        derived: None,
     };
     let err = lib.search_choose(&row, &wd, None, &opts).unwrap_err().to_string();
     assert!(err.contains("platform"), "{err}");
@@ -274,4 +277,128 @@ fn suggestions_with_evidence() {
     assert_eq!(top("Totally Different"), None);
     // Nothing became verified or identified.
     assert!(q.iter().all(|i| i.need == Need::Identify));
+}
+
+/// BPS's variable-length number, and a BPS patch with just its header and
+/// footer (enough for romforge, which only reads those).
+fn bps(source: &[u8], target: &[u8]) -> Vec<u8> {
+    fn number(mut n: u64, out: &mut Vec<u8>) {
+        loop {
+            let x = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                out.push(0x80 | x);
+                return;
+            }
+            out.push(x);
+            n -= 1;
+        }
+    }
+    let mut p = b"BPS1".to_vec();
+    number(source.len() as u64, &mut p);
+    number(target.len() as u64, &mut p);
+    number(0, &mut p);
+    let crc = |d: &[u8]| {
+        u32::from_str_radix(
+            &romforge_core::hash::hash_stream(d, d.len() as u64)
+                .unwrap()
+                .raw
+                .crc32,
+            16,
+        )
+        .unwrap()
+    };
+    p.extend_from_slice(&crc(source).to_le_bytes());
+    p.extend_from_slice(&crc(target).to_le_bytes());
+    let own = crc(&p);
+    p.extend_from_slice(&own.to_le_bytes());
+    p
+}
+
+/// A translation is suggested as "translation of X" and, once taken, has a
+/// status of its own; a patch beside a file proves its base.
+#[test]
+fn translations_and_hacks() {
+    use romforge_core::enrich::EnrichOptions;
+    use romforge_core::search::Scraper;
+    use romforge_core::suggest::Band;
+    use romforge_core::view::Relation;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let original = snes_rom(b"DRAGONQUEST3         ", b"AQ3J", 0, 0x10000, 0x11);
+    let h = romforge_core::hash::hash_stream(&original[..], original.len() as u64)
+        .unwrap()
+        .raw;
+    let dat = tmp.path().join("snes.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
+  <game name="Dragon Quest III - Soshite Densetsu e... (Japan)"><rom name="dq3.sfc" size="{}" crc="{}" md5="{}" sha1="{}"/></game>
+</datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        ),
+    )
+    .unwrap();
+    let translated = snes_rom(b"DRAGONQUEST3         ", b"AQ3J", 0, 0x18000, 0x22);
+    std::fs::write(
+        dir.join("Dragon Quest III (English v2.0)[Addendum].sfc"),
+        &translated,
+    )
+    .unwrap();
+    // A file whose name says nothing, with the patch that made it.
+    let patched = vec![0x5Au8; 0x10000];
+    std::fs::write(dir.join("dq3 fixed.sfc"), &patched).unwrap();
+    std::fs::write(dir.join("dq3 fixed.bps"), bps(&original, &patched)).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+
+    let q = lib.search_queue(None).unwrap();
+    let item = |needle: &str| q.iter().find(|i| i.title.contains(needle)).unwrap().clone();
+    let tr = item("English").suggestion.unwrap();
+    let d = tr.derived.clone().expect("its name says translation");
+    assert_eq!(d.relation, Relation::Translation);
+    assert_eq!(d.base, "Dragon Quest III - Soshite Densetsu e... (Japan)");
+    assert_eq!(d.tag.as_deref(), Some("English v2.0 Addendum"));
+
+    let fixed = item("dq3 fixed").suggestion.expect("the patch tells");
+    assert_eq!(fixed.band, Band::LikelyModified);
+    assert_eq!(fixed.title, "Dragon Quest III - Soshite Densetsu e... (Japan)");
+    assert!(
+        fixed
+            .evidence
+            .iter()
+            .any(|e| e.kind == "patch" && e.text.contains("turns its ROM into this file"))
+    );
+    assert_eq!(fixed.derived.map(|d| d.relation), Some(Relation::Hack));
+
+    // Taking the translation's suggestion in Search.
+    let row = item("English").row_id;
+    let found = lib
+        .search_find(&row, Scraper::Dat, None, None, "http://127.0.0.1:1")
+        .unwrap()
+        .into_iter()
+        .find(|f| f.derived.is_some())
+        .unwrap();
+    let mut opts = EnrichOptions::new(tmp.path().join("cache"));
+    opts.art = Vec::new();
+    opts.wikidata = None;
+    opts.metadata_base = "http://127.0.0.1:1".into();
+    opts.thumbnails_base = "http://127.0.0.1:1".into();
+    let chosen = lib.search_choose(&row, &found, None, &opts).unwrap();
+    let detail = lib.game_detail(&chosen.row_id).unwrap();
+    assert_eq!(detail.row.status, RowStatus::Derivative);
+    assert_eq!(
+        detail.row.title,
+        "Dragon Quest III - Soshite Densetsu e... (Japan) [Translation: English v2.0 Addendum]"
+    );
+    assert_eq!(detail.derived.unwrap().relation, Relation::Translation);
+    assert!(
+        !lib.search_queue(None)
+            .unwrap()
+            .iter()
+            .any(|i| i.row_id == chosen.row_id)
+    );
 }

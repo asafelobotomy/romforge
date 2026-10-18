@@ -146,3 +146,50 @@ fn thumbnails_by_libretros_own_name() {
     assert_eq!(g.fields.get("genre").map(String::as_str), Some("Racing"));
     assert!(g.art.contains_key(&ArtKind::Boxart), "{g:?}");
 }
+
+/// A translation shows its base game's metadata and art where it has
+/// none of its own; Enrich fetches the base too.
+#[test]
+fn derivatives_show_their_base() {
+    use romforge_core::view::{Derived, Relation};
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("Test GB (T-Eng).gb"), vec![9u8; 2048]).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let row = lib.search_queue(None).unwrap()[0].row_id.clone();
+    let d = Derived {
+        relation: Relation::Translation,
+        base: "Test GB".into(),
+        tag: Some("Eng".into()),
+    };
+    lib.identify_derived(&row, "Game Boy", &d).unwrap();
+
+    let system = "Nintendo%20-%20Game%20Boy";
+    let mut files = HashMap::new();
+    files.insert(
+        format!("/meta/genre/{system}.dat"),
+        b"game (\n\tcomment \"Test GB\"\n\tgenre \"Puzzle\"\n)\n".to_vec(),
+    );
+    files.insert(
+        format!("/thumbs/{system}/Named_Boxarts/Test%20GB.png"),
+        b"\x89PNG\r\n\x1a\nfake".to_vec(),
+    );
+    let (base, _log) = serve(files);
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    opts.metadata_base = format!("{base}/meta");
+    opts.thumbnails_base = format!("{base}/thumbs");
+    opts.art = vec![ArtKind::Boxart];
+    opts.wikidata = None;
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+    let v = lib.library_view().unwrap();
+    let row = v.rows.iter().find(|r| r.title == d.title()).unwrap();
+    let detail = lib.game_detail(&row.id).unwrap();
+    assert_eq!(detail.fields.get("genre").map(String::as_str), Some("Puzzle"));
+    assert!(detail.art.contains_key("boxart"), "{:?}", detail.art);
+}

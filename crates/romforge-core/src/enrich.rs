@@ -269,6 +269,16 @@ fn games_you_have(
     for row in named.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
         out.entry(row?).or_default();
     }
+    // The base games of translations and hacks, whose metadata and art
+    // they show where they have none of their own.
+    let mut bases = conn.prepare(
+        "SELECT DISTINCT m.system_id, m.base FROM manual_ids m
+         JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size AND f.status = 'manual'
+         WHERE m.base IS NOT NULL AND (?1 IS NULL OR m.system_id = ?1)",
+    )?;
+    for row in bases.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+        out.entry(row?).or_default();
+    }
     Ok(out)
 }
 
@@ -288,7 +298,12 @@ pub fn enrich(
     };
     let mut have = games_you_have(conn, only)?;
     if let Some(t) = &opts.title {
-        have.retain(|(_, game), _| game == t);
+        // A translation or hack brings its base game along.
+        let bases: Vec<String> = conn
+            .prepare("SELECT DISTINCT base FROM manual_ids WHERE title = ?1 AND base IS NOT NULL")?
+            .query_map([t], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        have.retain(|(_, game), _| game == t || bases.contains(game));
     }
     let mut by_system: BTreeMap<i64, Vec<(&String, &Vec<String>)>> = BTreeMap::new();
     for ((system, game), crcs) in &have {

@@ -125,7 +125,10 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
         if only.is_some_and(|ids| !ids.contains(&row.id)) {
             continue;
         }
-        if !matches!(row.status, RowStatus::Verified | RowStatus::ByYou) {
+        if !matches!(
+            row.status,
+            RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
+        ) {
             if only.is_some() {
                 plan.skipped
                     .push((row.title.clone(), "identify it first (Search)".into()));
@@ -470,9 +473,17 @@ fn extras(conn: &Connection, row_id: &str) -> Result<Vec<(String, Vec<u8>)>, Err
 /// The game's details as Markdown.
 pub fn details_md(d: &view::GameDetail) -> String {
     let mut s = format!("# {}\n\n", d.row.title);
+    let derived;
     let status = match d.row.status {
         RowStatus::Verified => "verified by hash",
         RowStatus::ByYou => "identified by you (no hash match)",
+        RowStatus::Derivative => {
+            derived = d.derived.as_ref().map_or_else(
+                || "a derivative, identified by you (no hash match)".to_owned(),
+                |x| format!("{}, identified by you (no hash match)", x.label()),
+            );
+            &derived
+        }
         _ => "not identified",
     };
     s += &format!(

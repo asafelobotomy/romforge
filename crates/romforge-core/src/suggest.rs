@@ -61,6 +61,54 @@ pub struct Suggestion {
     /// How alike the names are ([`titles::score`]), 0 to 1.
     pub score: f32,
     pub evidence: Vec<Evidence>,
+    /// When the file's name says translation or hack: taking it names the
+    /// file so ("translation of X"), never verified.
+    pub derived: Option<view::Derived>,
+}
+
+/// What a BPS or UPS patch says about what it was made from and makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Patch {
+    pub source_size: u64,
+    pub target_size: u64,
+    pub source_crc: u32,
+    pub target_crc: u32,
+}
+
+/// Read a BPS or UPS patch: sizes from its header, CRC32s from its footer
+/// (the patch's own CRC32 must check out). IPS stores no checksums.
+pub fn read_patch(data: &[u8]) -> Option<Patch> {
+    if data.len() < 4 + 12 || !(data.starts_with(b"BPS1") || data.starts_with(b"UPS1")) {
+        return None;
+    }
+    let (body, footer) = data.split_at(data.len() - 12);
+    let le = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    if crc32fast::hash(&data[..data.len() - 4]) != le(&footer[8..]) {
+        return None;
+    }
+    // Their variable-length numbers: 7 bits a byte, the high bit ends it.
+    let mut at = 4;
+    let mut number = || -> Option<u64> {
+        let (mut value, mut shift) = (0u64, 1u64);
+        loop {
+            let b = *body.get(at)?;
+            at += 1;
+            value = value.checked_add((b & 0x7f) as u64 * shift)?;
+            if b & 0x80 != 0 {
+                return Some(value);
+            }
+            shift = shift.checked_shl(7)?;
+            value = value.checked_add(shift)?;
+        }
+    };
+    let source_size = number()?;
+    let target_size = number()?;
+    Some(Patch {
+        source_size,
+        target_size,
+        source_crc: le(&footer[..4]),
+        target_crc: le(&footer[4..8]),
+    })
 }
 
 /// What is known about a row's files.
@@ -71,6 +119,9 @@ struct Facts {
     systems: Vec<i64>,
     /// (system id, DAT game) a CRC32 hit.
     crc: BTreeSet<(i64, String)>,
+    /// (system id, DAT game) a patch beside a file was made from, and
+    /// whether the patch makes that file.
+    patched: BTreeMap<(i64, String), bool>,
 }
 
 fn facts(
@@ -119,12 +170,40 @@ fn facts(
             crc.insert(r?);
         }
     }
+    // Patches beside plain files ("Game.sfc" and "Game.bps" or ".ups").
+    let mut patched = BTreeMap::new();
+    let mut file = conn.prepare_cached("SELECT path, member, crc32 FROM files WHERE file_id = ?1")?;
+    let mut roms = conn.prepare_cached(
+        "SELECT DISTINCT d.system_id, g.name FROM roms r JOIN games g ON g.game_id = r.game_id
+         JOIN dats d ON d.dat_id = g.dat_id
+         WHERE r.crc32 = ?1 AND r.size = ?2 AND d.system_id IS NOT NULL",
+    )?;
+    for id in d.row.file_ids() {
+        let (path, member, crc): (String, String, String) =
+            file.query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        if !member.is_empty() {
+            continue;
+        }
+        for ext in ["bps", "ups", "BPS", "UPS"] {
+            let Ok(data) = std::fs::read(std::path::Path::new(&path).with_extension(ext)) else {
+                continue;
+            };
+            let Some(p) = read_patch(&data) else { continue };
+            let makes_it = format!("{:08x}", p.target_crc) == crc;
+            for r in roms.query_map(params![format!("{:08x}", p.source_crc), p.source_size], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })? {
+                patched.insert(r?, makes_it);
+            }
+        }
+    }
     Ok(Facts {
         text,
         sizes,
         ids,
         systems,
         crc,
+        patched,
     })
 }
 
@@ -267,6 +346,18 @@ fn assess(
             text: "CRC32 agrees (no SHA1 or MD5 to confirm)".into(),
         });
     }
+    let patched = f.patched.get(&(system_id, title.to_owned())).copied();
+    if let Some(makes_it) = patched {
+        ev.push(Evidence {
+            kind: "patch".into(),
+            agrees: true,
+            text: if makes_it {
+                "a patch beside it turns its ROM into this file (sizes and CRC32s agree)".into()
+            } else {
+                "a patch beside it was made from its ROM (size and CRC32 agree)".into()
+            },
+        });
+    }
     if let Some(serial) = serial {
         let code = f.ids.iter().find_map(|i| i.serial.clone()).unwrap_or_default();
         ev.push(Evidence {
@@ -303,6 +394,32 @@ fn assess(
             ),
         });
     }
+    let derived = mine
+        .translation
+        .as_ref()
+        .map(|t| (view::Relation::Translation, t))
+        .or(mine.hack.as_ref().map(|h| (view::Relation::Hack, h)))
+        .map(|(relation, tag)| view::Derived {
+            relation,
+            base: title.to_owned(),
+            tag: Some(tag.clone()).filter(|t| !t.eq_ignore_ascii_case("hack")),
+        })
+        // Patched from it, the name saying nothing: a hack of it.
+        .or_else(|| {
+            patched.map(|_| view::Derived {
+                relation: view::Relation::Hack,
+                base: title.to_owned(),
+                tag: None,
+            })
+        });
+    if let Some(d) = &derived {
+        ev.push(Evidence {
+            kind: "derived".into(),
+            agrees: true,
+            text: format!("its name says {}", d.relation.as_str())
+                + &d.tag.as_ref().map(|t| format!(": {t}")).unwrap_or_default(),
+        });
+    }
     if !crc {
         ev.push(Evidence {
             kind: "hash".into(),
@@ -313,7 +430,7 @@ fn assess(
 
     let band = if crc && same_size {
         Band::LikelyCrc
-    } else if same_size && (score >= 0.85 || serial.is_some()) {
+    } else if patched == Some(true) || (same_size && (score >= 0.85 || serial.is_some())) {
         Band::LikelyModified
     } else if score >= 0.9 || (serial.is_some() && (score >= 0.5 || header_fits)) {
         Band::Suggested
@@ -328,6 +445,7 @@ fn assess(
         band,
         score,
         evidence: ev,
+        derived,
     }))
 }
 
@@ -393,6 +511,7 @@ fn suggest_with(
 ) -> Result<Vec<Suggestion>, Error> {
     let serials = by_serial(conn, f)?;
     let mut candidates: BTreeSet<(i64, String)> = f.crc.clone();
+    candidates.extend(f.patched.keys().cloned());
     candidates.extend(serials.keys().cloned());
     let header_titles: Vec<String> = f.ids.iter().filter_map(|i| i.title.clone()).collect();
     for q in std::iter::once(&f.text).chain(&header_titles) {
@@ -422,4 +541,48 @@ fn suggest_with(
     });
     out.truncate(limit);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// BPS's variable-length number.
+    fn number(mut n: u64, out: &mut Vec<u8>) {
+        loop {
+            let x = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                out.push(0x80 | x);
+                return;
+            }
+            out.push(x);
+            n -= 1;
+        }
+    }
+
+    pub(crate) fn bps(source: &[u8], target: &[u8]) -> Vec<u8> {
+        let mut p = b"BPS1".to_vec();
+        number(source.len() as u64, &mut p);
+        number(target.len() as u64, &mut p);
+        number(0, &mut p); // no metadata
+        p.extend_from_slice(&crc32fast::hash(source).to_le_bytes());
+        p.extend_from_slice(&crc32fast::hash(target).to_le_bytes());
+        let own = crc32fast::hash(&p);
+        p.extend_from_slice(&own.to_le_bytes());
+        p
+    }
+
+    #[test]
+    fn reads_bps_sizes_and_crcs() {
+        let (source, target) = (vec![1u8; 300_000], vec![2u8; 70]);
+        let p = read_patch(&bps(&source, &target)).unwrap();
+        assert_eq!((p.source_size, p.target_size), (300_000, 70));
+        assert_eq!(p.source_crc, crc32fast::hash(&source));
+        assert_eq!(p.target_crc, crc32fast::hash(&target));
+        let mut broken = bps(&source, &target);
+        broken[5] ^= 1;
+        assert_eq!(read_patch(&broken), None, "its own CRC32 must check out");
+        assert_eq!(read_patch(b"PATCH...EOF"), None, "IPS has no checksums");
+    }
 }

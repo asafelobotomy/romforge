@@ -30,6 +30,9 @@ pub enum RowStatus {
     Duplicate,
     /// No hash match; named by the owner in Search (never verified).
     ByYou,
+    /// A translation or hack of a DAT game, named so by the owner (never
+    /// verified; see [`GameDetail::derived`]).
+    Derivative,
     Unknown,
 }
 
@@ -58,6 +61,61 @@ impl GameRow {
     /// The row's files in `files`.
     pub(crate) fn file_ids(&self) -> &[i64] {
         &self.file_ids
+    }
+}
+
+/// What a derivative is made from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Relation {
+    Translation,
+    Hack,
+}
+
+impl Relation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Relation::Translation => "translation",
+            Relation::Hack => "hack",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Relation> {
+        match s {
+            "translation" => Some(Relation::Translation),
+            "hack" => Some(Relation::Hack),
+            _ => None,
+        }
+    }
+}
+
+/// A translation or hack of a DAT game (milestone 12.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Derived {
+    pub relation: Relation,
+    /// The DAT game it is made from.
+    pub base: String,
+    /// What its name says ("English v2.0 Addendum", "h1C").
+    pub tag: Option<String>,
+}
+
+impl Derived {
+    /// The title it is listed under: the base game's, then the tag
+    /// ("Dragon Quest III - ... (Japan) [Translation: English v2.0]").
+    pub fn title(&self) -> String {
+        let kind = match self.relation {
+            Relation::Translation => "Translation",
+            Relation::Hack => "Hack",
+        };
+        match &self.tag {
+            Some(t) => format!("{} [{kind}: {t}]", self.base),
+            None => format!("{} [{kind}]", self.base),
+        }
+    }
+
+    /// "translation of Dragon Quest III - ... (Japan)".
+    pub fn label(&self) -> String {
+        format!("{} of {}", self.relation.as_str(), self.base)
     }
 }
 
@@ -119,6 +177,9 @@ pub struct GameDetail {
     /// What the row's title (a DAT name, or a file name) says: regions,
     /// languages, version, flags.
     pub name: crate::names::Name,
+    /// For [`RowStatus::Derivative`]: what it is made from. Its metadata and
+    /// art fall back to the base game's.
+    pub derived: Option<Derived>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -269,20 +330,26 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             file_ids: Vec::new(),
         }
     };
-    // Titles the owner gave files in Search.
-    let manual: HashMap<(String, u64), (i64, String)> = conn
-        .prepare("SELECT sha1, size, system_id, title FROM manual_ids")?
-        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), (r.get(2)?, r.get(3)?))))?
+    // Titles the owner gave files in Search (and whether as a derivative).
+    let manual: HashMap<(String, u64), (i64, String, bool)> = conn
+        .prepare("SELECT sha1, size, system_id, title, relation IS NOT NULL FROM manual_ids")?
+        .query_map([], |r| {
+            Ok(((r.get(0)?, r.get(1)?), (r.get(2)?, r.get(3)?, r.get(4)?)))
+        })?
         .collect::<Result<_, _>>()?;
     for f in &files {
         if f.status == "manual"
-            && let Some((system_id, title)) = manual.get(&(f.sha1.clone(), f.size))
+            && let Some((system_id, title, derived)) = manual.get(&(f.sha1.clone(), f.size))
         {
             let id = format!("m:{system_id}:{title}");
             let row = rows.entry(id.clone()).or_insert_with(|| {
                 let mut r = game_row(*system_id, title);
                 r.id = id;
-                r.status = RowStatus::ByYou;
+                r.status = if *derived {
+                    RowStatus::Derivative
+                } else {
+                    RowStatus::ByYou
+                };
                 r
             });
             row.files += 1;
@@ -534,41 +601,79 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
     let mut art_sources = BTreeMap::new();
     let mut field_sources = BTreeMap::new();
     let mut dats = Vec::new();
-    if let Some(system_id) = row.system_id {
-        for r in conn
-            .prepare("SELECT field, value, source FROM game_meta WHERE system_id = ?1 AND title = ?2")?
-            .query_map(params![system_id, row.title], |r| {
+    // A derivative: what its files were named as.
+    let derived: Option<Derived> = if row.status == RowStatus::Derivative {
+        let mut stmt = conn.prepare(
+            "SELECT m.base, m.relation, m.tag FROM manual_ids m JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size
+             WHERE f.file_id = ?1 AND m.base IS NOT NULL",
+        )?;
+        row.file_ids.iter().find_map(|id| {
+            stmt.query_row([id], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
                 ))
-            })?
-        {
-            let (k, v, src) = r?;
-            if let Some(v) = shown_value(&v) {
-                if let Some(src) = src {
-                    field_sources.insert(k.clone(), src);
+            })
+            .ok()
+            .and_then(|(base, rel, tag)| {
+                Some(Derived {
+                    relation: Relation::parse(&rel)?,
+                    base,
+                    tag,
+                })
+            })
+        })
+    } else {
+        None
+    };
+    if let Some(system_id) = row.system_id {
+        // Its own metadata and art first; a derivative's gaps from its base.
+        let titles: Vec<&str> = std::iter::once(row.title.as_str())
+            .chain(derived.as_ref().map(|d| d.base.as_str()))
+            .collect();
+        for title in titles {
+            for r in conn
+                .prepare("SELECT field, value, source FROM game_meta WHERE system_id = ?1 AND title = ?2")?
+                .query_map(params![system_id, title], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                    ))
+                })?
+            {
+                let (k, v, src) = r?;
+                if fields.contains_key(&k) {
+                    continue;
                 }
-                fields.insert(k, v);
+                if let Some(v) = shown_value(&v) {
+                    if let Some(src) = src {
+                        field_sources.insert(k.clone(), src);
+                    }
+                    fields.insert(k, v);
+                }
             }
-        }
-        for r in conn
-            .prepare(
-                "SELECT kind, path, coalesce(source, 'libretro') FROM art
-                 WHERE system_id = ?1 AND title = ?2 AND path IS NOT NULL",
-            )?
-            .query_map(params![system_id, row.title], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })?
-        {
-            let (k, p, src) = r?;
-            art_sources.insert(k.clone(), src);
-            art.insert(k, p);
+            for r in conn
+                .prepare(
+                    "SELECT kind, path, coalesce(source, 'libretro') FROM art
+                     WHERE system_id = ?1 AND title = ?2 AND path IS NOT NULL",
+                )?
+                .query_map(params![system_id, title], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })?
+            {
+                let (k, p, src) = r?;
+                if art.contains_key(&k) {
+                    continue;
+                }
+                art_sources.insert(k.clone(), src);
+                art.insert(k, p);
+            }
         }
         dats = conn
             .prepare("SELECT DISTINCT d.name FROM games g JOIN dats d ON d.dat_id = g.dat_id WHERE g.name = ?1 AND d.system_id = ?2 ORDER BY d.name")?
@@ -674,6 +779,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
     }
     Ok(GameDetail {
         name: crate::names::parse(&row.title),
+        derived,
         row,
         fields,
         art,

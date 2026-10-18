@@ -402,6 +402,7 @@
     wrong_system: "Wrong system",
     duplicate: "Duplicate",
     by_you: "Identified by you",
+    derivative: "Translation or hack (identified by you)",
     unknown: "Unknown",
   };
   const artLabel = {
@@ -571,7 +572,7 @@
     <button class="tool" onclick={openSettings} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
     </button>
-    <button class="tool" onclick={play} disabled={!row || !["verified", "by_you"].includes(row.status) || !!busy} title="Start the selected game">
+    <button class="tool" onclick={play} disabled={!row || !["verified", "by_you", "derivative"].includes(row.status) || !!busy} title="Start the selected game">
       <span class="glyph">▶</span>Play
     </button>
   </header>
@@ -913,7 +914,7 @@
               <button class="tr" class:sel={r.id === selected} onclick={() => open(r.id)}>
                 <span class="title">{r.title}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
-                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" ? "✎" : r.status === "unknown" ? "?" : "~"}</span>
+                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "unknown" ? "?" : "~"}</span>
                 <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
                 {#each ["boxart", "title", "snap"] as k}
                   <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>
@@ -985,6 +986,7 @@
                   {#if f.publisher}<dt>Publisher</dt><dd>{f.publisher}</dd>{/if}
                   {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
                   {#if f.community_rating}<dt>Community</dt><dd>{f.community_rating}</dd>{/if}
+                  {#if detail.derived}<dt>{detail.derived.relation === "translation" ? "Translation of" : "Hack of"}</dt><dd>{detail.derived.base}{detail.derived.tag ? ` (${detail.derived.tag})` : ""}</dd>{/if}
                   {#if edition(detail.name)}<dt>Edition</dt><dd>{edition(detail.name)}</dd>{/if}
                   <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
                 </dl>
@@ -1428,5 +1430,5 @@
   .evidence li.agrees { color: inherit; }
   .evidence span { display: inline-block; width: 1em; }
   .pick select { max-width: 14rem; }
-  .badge.by_you, .ind.by_you { color: var(--accent); }
+  .badge.by_you, .ind.by_you, .badge.derivative, .ind.derivative { color: var(--accent); }
 </style>

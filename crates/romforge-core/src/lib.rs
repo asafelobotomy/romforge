@@ -1081,7 +1081,18 @@ impl Library {
 
     /// Name a row's files yourself ("identified by you").
     pub fn identify_as(&mut self, row_id: &str, system: &str, title: &str) -> Result<(), Error> {
-        search::identify(&mut self.conn, row_id, system, title)
+        search::identify(&mut self.conn, row_id, system, title, None)
+    }
+
+    /// Name a row's files as a translation or hack of a DAT game, listed
+    /// under [`view::Derived::title`] ("translation of X", never verified).
+    pub fn identify_derived(
+        &mut self,
+        row_id: &str,
+        system: &str,
+        derived: &view::Derived,
+    ) -> Result<(), Error> {
+        search::identify(&mut self.conn, row_id, system, &derived.title(), Some(derived))
     }
 
     pub fn forget_identity(&mut self, row_id: &str) -> Result<(), Error> {

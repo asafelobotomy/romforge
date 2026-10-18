@@ -213,6 +213,11 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE files ADD COLUMN id_region TEXT;
      UPDATE files SET mtime = NULL WHERE path IN (
        SELECT path FROM files WHERE status NOT IN ('matched', 'duplicate'));",
+    // 17: a file named by the owner as a translation or hack of a DAT
+    // game (`base`), with its tag ("English v2.0 Addendum").
+    "ALTER TABLE manual_ids ADD COLUMN base TEXT;
+     ALTER TABLE manual_ids ADD COLUMN relation TEXT;
+     ALTER TABLE manual_ids ADD COLUMN tag TEXT;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
