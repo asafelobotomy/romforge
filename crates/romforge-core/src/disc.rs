@@ -24,6 +24,9 @@ const FRAME: usize = 2448;
 const SECTOR: usize = 2352;
 const TRACK_PADDING: u64 = 4;
 
+/// The 12 bytes that start every raw CD data sector (audio has none).
+pub(crate) const SYNC: [u8; 12] = [0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0];
+
 /// One `FILE` of a cue sheet, or one track line of a GDI sheet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SheetFile {

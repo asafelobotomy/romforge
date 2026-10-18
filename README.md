@@ -401,7 +401,8 @@ cd app && npm install && npm run tauri dev
 - `crates/romforge-core` — all logic (library): `scan`, `hash`, `identify`,
   `dat`, `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`, `view`,
   `search`, `suggest`, `names`, `titles`, `ident`, `patch`, `wikidata`,
-  `extdb`, `artsources`, `home` (the RomForge folder), `scummvm`,
+  `extdb`, `artsources`, `home` (the RomForge folder), `layout` (every
+  file and folder name romforge writes), `scummvm`,
   `settings`, `report`, `db` (schema and migrations); one table of systems (`systems.rs`), one of copier
   headers and byte orders (`headers.rs`), one of game ID readers
   (`ident.rs`)

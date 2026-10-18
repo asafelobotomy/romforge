@@ -102,7 +102,10 @@ impl Default for Bases {
 /// The folder for the downloaded databases: `databases/` next to the
 /// library database.
 pub fn dir_for(db_path: &Path) -> PathBuf {
-    db_path.parent().unwrap_or(Path::new(".")).join("databases")
+    db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(crate::layout::LOOSE_DATABASES_DIR)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

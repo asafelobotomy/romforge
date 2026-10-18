@@ -25,14 +25,10 @@ use rusqlite::params;
 use crate::Error;
 use crate::organize::move_file;
 
-/// The folder's name: always this, inside whatever parent is chosen.
-pub const DIR: &str = "RomForge";
-/// The marker file at the top of the folder.
-const MARKER: &str = ".romforge";
+use crate::layout::{DATABASES_DIR, DB_FILE, GAMES_DIR, HOME_DIR as DIR, HOME_MARKER as MARKER, MEDIA_DIR};
+
+/// The layout version the marker file records.
 const LAYOUT: &str = "1";
-pub const DB: &str = "romforge.db";
-/// Scratch space for imports (never scanned).
-pub const STAGING: &str = ".romforge-staging";
 
 /// A RomForge folder.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -108,22 +104,22 @@ impl Home {
         &self.root
     }
     pub fn db(&self) -> PathBuf {
-        self.root.join(DB)
+        self.root.join(DB_FILE)
     }
     pub fn games(&self) -> PathBuf {
-        self.root.join("Games")
+        self.root.join(GAMES_DIR)
     }
     pub fn media(&self) -> PathBuf {
-        self.root.join("Media")
+        self.root.join(MEDIA_DIR)
     }
     pub fn databases(&self) -> PathBuf {
-        self.root.join("Databases")
+        self.root.join(DATABASES_DIR)
     }
     pub fn staging(&self) -> PathBuf {
-        self.root.join(STAGING)
+        self.root.join(crate::layout::STAGING_DIR)
     }
     pub fn trash(&self) -> PathBuf {
-        self.root.join(crate::cleanup::TRASH_DIR)
+        self.root.join(crate::layout::TRASH_DIR)
     }
 
     /// Whether `path` is inside this folder.
@@ -134,11 +130,7 @@ impl Home {
 
 /// `$XDG_CONFIG_HOME/romforge/location`, else `~/.config/romforge/location`.
 fn pointer_file() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(base.join("romforge").join("location"))
+    Some(crate::layout::xdg("XDG_CONFIG_HOME", ".config")?.join(crate::layout::POINTER_FILE))
 }
 
 /// Where the database last saw its folder (a `settings` row).

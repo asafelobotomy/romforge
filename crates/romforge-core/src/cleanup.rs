@@ -30,10 +30,7 @@ use crate::hash::{hash_stream, hex};
 use crate::home::Home;
 use crate::organize::{move_file, sanitize};
 use crate::view::{self, RowStatus};
-use crate::{Error, settings, systems};
-
-/// Folder (next to the originals) where cleanup keeps them until undo.
-pub const TRASH_DIR: &str = ".romforge-trash";
+use crate::{Error, layout, settings, systems};
 
 /// Zip members up to this size are read into memory; bigger ones are
 /// unpacked to staging.
@@ -446,7 +443,7 @@ fn safe_member_name(name: &str) -> bool {
         && !name.contains('\\')
         && !name.contains(':')
         && parts.iter().all(|p| !p.is_empty() && *p != "." && *p != "..")
-        && !parts[0].eq_ignore_ascii_case("romforge")
+        && !parts[0].eq_ignore_ascii_case(layout::EXTRAS_DIR)
 }
 
 /// Every file in a zip or 7z archive.
@@ -627,7 +624,7 @@ fn write_loose(
         .ok_or_else(|| Error::Cleanup(format!("{}: no disk", item.title)))?;
     let dir = item.target.parent().unwrap_or(Path::new("."));
     let name = item.target.file_name().unwrap_or_default().to_string_lossy();
-    let part = dir.join(format!(".{name}.romforge-part"));
+    let part = dir.join(layout::part(&name));
     let _ = std::fs::remove_file(&part);
     let result = (|| -> Result<(), Error> {
         let mut w = File::create_new(&part)?;
@@ -654,9 +651,9 @@ fn write_loose(
     }
     std::fs::rename(&part, &item.target)?;
     journal_output(conn, batch, &item.target, "file")?;
-    let side = dir.join("romforge").join(sanitize(&item.title));
+    let side = dir.join(layout::EXTRAS_DIR).join(sanitize(&item.title));
     if !extras.is_empty() && !side.exists() {
-        for d in [dir.join("romforge"), side.clone()] {
+        for d in [dir.join(layout::EXTRAS_DIR), side.clone()] {
             if !d.exists() {
                 std::fs::create_dir(&d)?;
                 journal_output(conn, batch, &d, "setdir")?;
@@ -728,7 +725,7 @@ fn write_folder_zip(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Re
         }
     }
     for (name, data) in extras {
-        zip.start_file(format!("romforge/{name}"), opts)?;
+        zip.start_file(format!("{}/{name}", layout::EXTRAS_DIR), opts)?;
         zip.write_all(data)?;
     }
     zip.finish()?.sync_all()?;
@@ -773,10 +770,10 @@ fn copy_folder(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<
             )));
         }
     }
-    if !extras.is_empty() && !out.join("romforge").exists() {
-        std::fs::create_dir(out.join("romforge"))?;
+    if !extras.is_empty() && !out.join(layout::EXTRAS_DIR).exists() {
+        std::fs::create_dir(out.join(layout::EXTRAS_DIR))?;
         for (name, data) in extras {
-            std::fs::write(out.join("romforge").join(name), data)?;
+            std::fs::write(out.join(layout::EXTRAS_DIR).join(name), data)?;
         }
     }
     if let Some(code) = &item.code {
@@ -827,15 +824,19 @@ fn verified_parts(
     title: &str,
     source: &Source,
 ) -> Result<Option<PartsAndCopies>, Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(concat!(
         "SELECT g.game_id, r.rom_id, r.name, f.path, f.member, f.size, f.sha1, f.status
          FROM games g JOIN dats d ON d.dat_id = g.dat_id
          JOIN roms r ON r.game_id = g.game_id
-         LEFT JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-         LEFT JOIN files f ON f.file_id = m.file_id AND f.status IN ('matched', 'duplicate')
+         LEFT JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ",
+        crate::report::strong!(),
+        "
+         LEFT JOIN files f ON f.file_id = m.file_id AND f.status IN ",
+        crate::report::holding!(),
+        "
          WHERE d.system_id = ?1 AND g.name = ?2 AND coalesce(r.status, '') <> 'nodump'
-         ORDER BY g.game_id, r.rom_id, f.path, f.member",
-    )?;
+         ORDER BY g.game_id, r.rom_id, f.path, f.member"
+    ))?;
     // game -> rom -> (DAT name, every copy with its rank: lower is better)
     type Copies = (String, Vec<(Part, u8)>);
     let mut games: BTreeMap<i64, BTreeMap<i64, Copies>> = BTreeMap::new();
@@ -1030,7 +1031,7 @@ fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Error> {
 fn extras(conn: &Connection, row_id: &str) -> Result<Vec<(String, Vec<u8>)>, Error> {
     let d = view::detail(conn, row_id)?;
     let mut out = vec![(
-        format!("{}.romforge.md", sanitize(&d.row.title)),
+        format!("{}{}", sanitize(&d.row.title), layout::DETAILS_SUFFIX),
         details_md(&d).into_bytes(),
     )];
     for (kind, path) in &d.art {
@@ -1120,7 +1121,7 @@ fn write_zip(item: &Item, extras: &[(String, Vec<u8>)], staging: &Path, out: &Pa
         std::io::copy(&mut r, &mut zip)?;
     }
     for (name, data) in extras {
-        zip.start_file(format!("romforge/{name}"), opts)?;
+        zip.start_file(format!("{}/{name}", layout::EXTRAS_DIR), opts)?;
         zip.write_all(data)?;
     }
     zip.finish()?.sync_all()?;
@@ -1144,8 +1145,7 @@ fn write_zip(item: &Item, extras: &[(String, Vec<u8>)], staging: &Path, out: &Pa
 /// Sectors in a CD track: data tracks start with the 12-byte sync pattern
 /// and say their mode in byte 15; anything else is audio.
 fn track_type(first_sector: &[u8]) -> &'static str {
-    const SYNC: [u8; 12] = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0];
-    if first_sector.len() >= 16 && first_sector[..12] == SYNC {
+    if first_sector.len() >= 16 && first_sector[..12] == crate::disc::SYNC {
         match first_sector[15] {
             1 => "MODE1_RAW",
             _ => "MODE2_RAW",
@@ -1386,7 +1386,11 @@ pub fn apply(
 ) -> Result<CleanupReport, Error> {
     let s = settings::load(conn)?;
     conn.execute(
-        "INSERT INTO cleanup_batches (created_at, keep_originals) VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1)",
+        concat!(
+            "INSERT INTO cleanup_batches (created_at, keep_originals) VALUES (",
+            crate::db::now!(),
+            ", ?1)"
+        ),
         [plan.keep_originals],
     )?;
     let batch_id = conn.last_insert_rowid();
@@ -1438,7 +1442,7 @@ pub fn apply(
             }
             if item.format == Format::Dir {
                 let name = item.target.file_name().unwrap_or_default().to_string_lossy();
-                let part = dir.join(format!(".{name}.romforge-part"));
+                let part = dir.join(layout::part(&name));
                 let _ = std::fs::remove_dir_all(&part);
                 let extras = extras(conn, &item.row_id)?;
                 if let Err(e) = copy_folder(item, &extras, &part) {
@@ -1462,7 +1466,7 @@ pub fn apply(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            let part = dir.join(format!(".{name}.romforge-part"));
+            let part = dir.join(layout::part(&name));
             let _ = std::fs::remove_file(&part);
             let extras = extras(conn, &item.row_id)?;
             let written = match item.format {
@@ -1479,7 +1483,7 @@ pub fn apply(
             };
             // The sidecar is written to a temporary folder and renamed too.
             if let Some(side) = &item.sidecar {
-                let tmp = dir.join(format!(".{name}.romforge-side"));
+                let tmp = dir.join(layout::side(&name));
                 let _ = std::fs::remove_dir_all(&tmp);
                 std::fs::create_dir_all(&tmp)?;
                 for (f, data) in &extras {
@@ -1647,7 +1651,7 @@ fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) -> Result<u
         } else {
             disks.values().map(|(_, f)| format!("{f}\n")).collect()
         };
-        let tmp = dir.join(format!(".{}.romforge-part", sanitize(&base)));
+        let tmp = dir.join(layout::part(&sanitize(&base)));
         std::fs::write(&tmp, body)?;
         if list.exists() {
             let _ = std::fs::remove_file(&tmp);
@@ -1682,7 +1686,7 @@ fn trash(conn: &Connection, batch: i64, original: &Path, home: Option<&Home>) ->
         None => original
             .parent()
             .unwrap_or(Path::new("."))
-            .join(TRASH_DIR)
+            .join(layout::TRASH_DIR)
             .join(batch.to_string())
             .join(original.file_name().unwrap_or_default()),
     };
@@ -1755,7 +1759,7 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
                         break;
                     }
                     d = dir.parent();
-                    if dir.file_name().is_some_and(|n| n == TRASH_DIR) {
+                    if dir.file_name().is_some_and(|n| n == layout::TRASH_DIR) {
                         break;
                     }
                 }
@@ -1807,7 +1811,11 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
     }
     if u.failed.is_empty() {
         conn.execute(
-            "UPDATE cleanup_batches SET undone_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE batch_id = ?1",
+            concat!(
+                "UPDATE cleanup_batches SET undone_at = ",
+                crate::db::now!(),
+                " WHERE batch_id = ?1"
+            ),
             [batch_id],
         )?;
     }

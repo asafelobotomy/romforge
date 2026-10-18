@@ -129,20 +129,22 @@ fn load(
     conn: &Connection,
     opts: &OrganizeOptions,
 ) -> Result<BTreeMap<String, BTreeMap<String, Member>>, Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(concat!(
         "SELECT f.path, f.member, f.status, coalesce(s.key, d.name), g.name, r.name,
                 (SELECT count(*) FROM roms r2 WHERE r2.game_id = g.game_id),
                 (SELECT count(*) FROM roms r3 WHERE r3.game_id = g.game_id
                    AND (lower(r3.name) LIKE '%.cue' OR lower(r3.name) LIKE '%.gdi'))
          FROM files f
          LEFT JOIN matches m ON m.file_id = f.file_id AND m.out_of_scope = 0
-              AND m.via IN ('sha1', 'md5')
+              AND m.via IN ",
+        crate::report::strong!(),
+        "
          LEFT JOIN roms r ON r.rom_id = m.rom_id
          LEFT JOIN games g ON g.game_id = r.game_id
          LEFT JOIN dats d ON d.dat_id = g.dat_id
          LEFT JOIN systems s ON s.system_id = d.system_id
-         ORDER BY f.path, f.member",
-    )?;
+         ORDER BY f.path, f.member"
+    ))?;
     let mut out: BTreeMap<String, BTreeMap<String, Member>> = BTreeMap::new();
     let dest = format!("{}/", opts.dest.display());
     let from = std::fs::canonicalize(&opts.from)
@@ -557,8 +559,12 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
     }
     let dest = absolute_dest(dest);
     conn.execute(
-        "INSERT INTO organize_batches (created_at, dest)
-         VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1)",
+        concat!(
+            "INSERT INTO organize_batches (created_at, dest)
+         VALUES (",
+            crate::db::now!(),
+            ", ?1)"
+        ),
         [dest.to_string_lossy()],
     )?;
     let batch_id = conn.last_insert_rowid();
@@ -625,8 +631,12 @@ fn follow(tx: &rusqlite::Transaction, from: &Path, to: &Path, new_root: &Path) -
         None => {
             let dir = new_root;
             tx.query_row(
-                "INSERT INTO scan_roots (path, scanned_at)
-                 VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) RETURNING root_id",
+                concat!(
+                    "INSERT INTO scan_roots (path, scanned_at)
+                 VALUES (?1, ",
+                    crate::db::now!(),
+                    ") RETURNING root_id"
+                ),
                 [dir.to_string_lossy()],
                 |r| r.get(0),
             )?
@@ -714,7 +724,11 @@ pub fn undo(conn: &mut Connection, batch_id: Option<i64>) -> Result<Undone, Erro
     }
     if undone.failed.is_empty() {
         conn.execute(
-            "UPDATE organize_batches SET undone_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE batch_id = ?1",
+            concat!(
+                "UPDATE organize_batches SET undone_at = ",
+                crate::db::now!(),
+                " WHERE batch_id = ?1"
+            ),
             [batch_id],
         )?;
     }
@@ -835,7 +849,7 @@ fn copy_verify_delete(from: &Path, to: &Path, size: u64) -> std::io::Result<u64>
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp = to.with_file_name(format!(".{name}.romforge-part"));
+    let tmp = to.with_file_name(crate::layout::part(&name));
     let result = (|| {
         {
             let mut src = std::fs::File::open(from)?;

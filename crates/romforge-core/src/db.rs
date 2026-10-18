@@ -7,6 +7,15 @@ use crate::Error;
 use crate::systems::SYSTEMS;
 
 /// Schema changes after version 1, in order. Entry `i` upgrades to version `i + 2`.
+/// The current time in UTC as SQL (`2026-10-18T22:14:54Z`), for
+/// `concat!` into a query: every timestamp romforge stores looks the same.
+macro_rules! now {
+    () => {
+        "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+    };
+}
+pub(crate) use now;
+
 const MIGRATIONS: &[&str] = &[
     // 2: file extensions per system (space-separated), from systems.rs
     "ALTER TABLE systems ADD COLUMN extensions TEXT NOT NULL DEFAULT '';",

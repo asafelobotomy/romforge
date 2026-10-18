@@ -264,7 +264,8 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     // Keyed by system (none for a DAT romforge doesn't know) and name.
     let mut games: BTreeMap<(Option<i64>, String), (bool, BTreeSet<i64>)> = BTreeMap::new();
     let mut stmt = conn.prepare(&format!(
-        "WITH {HAD},
+        concat!(
+            "WITH {HAD},
               games_in AS (SELECT DISTINCT r.game_id FROM had JOIN roms r ON r.rom_id = had.rom_id),
               {GAME_HAVE},
               complete AS (
@@ -274,8 +275,15 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
          FROM complete c JOIN games g ON g.game_id = c.game_id
          JOIN dats d ON d.dat_id = g.dat_id
          JOIN roms r ON r.game_id = g.game_id
-         JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-         JOIN files f ON f.file_id = m.file_id AND f.status IN ('matched', 'duplicate')"
+         JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ",
+            crate::report::strong!(),
+            "
+         JOIN files f ON f.file_id = m.file_id AND f.status IN ",
+            crate::report::holding!()
+        ),
+        HAD = HAD,
+        GAME_HAVE = GAME_HAVE,
+        IS_HAVE = IS_HAVE,
     ))?;
     for row in stmt.query_map([], |r| {
         Ok((

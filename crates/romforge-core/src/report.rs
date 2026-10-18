@@ -8,14 +8,39 @@ use serde::Serialize;
 use crate::Error;
 use crate::identify::Status;
 
+/// The match kinds that verify (house rule 8: size + SHA1, or size + MD5),
+/// as an SQL set: `m.via IN strong!()`. A CRC32 hit (`crc32`) or a fitting
+/// sheet (`sheet`) never does.
+macro_rules! strong {
+    () => {
+        "('sha1', 'md5')"
+    };
+}
+
+/// The file statuses that hold a verified copy of what they matched (the
+/// copy that counts, or another copy of it), as an SQL set:
+/// `f.status IN holding!()`.
+macro_rules! holding {
+    () => {
+        "('matched', 'duplicate')"
+    };
+}
+pub(crate) use {holding, strong};
+
 /// ROMs that a matched (or duplicate) file hit by size + SHA1/MD5 inside
 /// that file's scan scope.
-pub(crate) const HAD: &str = "
+pub(crate) const HAD: &str = concat!(
+    "
     had AS (
         SELECT DISTINCT m.rom_id FROM matches m JOIN files f ON f.file_id = m.file_id
-        WHERE m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-          AND f.status IN ('matched', 'duplicate')
-    )";
+        WHERE m.out_of_scope = 0 AND m.via IN ",
+    strong!(),
+    "
+          AND f.status IN ",
+    holding!(),
+    "
+    )"
+);
 
 /// Per game in `games_in` (a CTE of `game_id`s): how many of its data ROMs
 /// and cue sheets are had. `nodump` ROMs are not counted. Only games with a
@@ -50,11 +75,21 @@ pub(crate) const IS_HAVE: &str = "
 /// out-of-scope SHA1/MD5 hits for `wrong_system`, the sheet match for a
 /// `sheet`. An unknown file has none: a CRC32 alone never names it (house
 /// rule 8). Needs `f` (files) and `m` (matches).
-pub(crate) const RELEVANT_MATCH: &str = "
-    ((f.status IN ('matched', 'duplicate') AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5'))
+pub(crate) const RELEVANT_MATCH: &str = concat!(
+    concat!(
+        "
+    ((f.status IN ",
+        holding!(),
+        " AND m.out_of_scope = 0 AND m.via IN "
+    ),
+    strong!(),
+    ")
      OR (f.status = 'candidate' AND m.out_of_scope = 0)
-     OR (f.status = 'wrong_system' AND m.out_of_scope = 1 AND m.via IN ('sha1', 'md5'))
-     OR (f.status = 'sheet' AND m.via = 'sheet'))";
+     OR (f.status = 'wrong_system' AND m.out_of_scope = 1 AND m.via IN ",
+    strong!(),
+    ")
+     OR (f.status = 'sheet' AND m.via = 'sheet'))"
+);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DatSummary {
@@ -190,14 +225,18 @@ pub fn summary(conn: &Connection) -> Result<Summary, Error> {
 
 pub fn dat_games(conn: &Connection, dat_id: i64) -> Result<Vec<DatGame>, Error> {
     let mut files: BTreeMap<i64, Vec<String>> = BTreeMap::new();
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(concat!(
         "SELECT DISTINCT r.game_id, f.path, f.member
          FROM matches m JOIN files f ON f.file_id = m.file_id JOIN roms r ON r.rom_id = m.rom_id
          JOIN games g ON g.game_id = r.game_id
-         WHERE g.dat_id = ?1 AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-           AND f.status IN ('matched', 'duplicate')
-         ORDER BY f.path, f.member",
-    )?;
+         WHERE g.dat_id = ?1 AND m.out_of_scope = 0 AND m.via IN ",
+        strong!(),
+        "
+           AND f.status IN ",
+        holding!(),
+        "
+         ORDER BY f.path, f.member"
+    ))?;
     for row in stmt.query_map([dat_id], |r| {
         Ok((
             r.get::<_, i64>(0)?,

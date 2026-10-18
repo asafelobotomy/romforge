@@ -437,24 +437,31 @@ fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
     }
     // Hash-matched files beside it: in the same archive, or loose in the
     // same folder.
-    let mut beside_archive = tx.prepare(
+    let mut beside_archive = tx.prepare(concat!(
         "SELECT file_id, member FROM files WHERE path = ?1 AND member <> ''
-           AND status IN ('matched', 'duplicate')",
-    )?;
-    let mut beside_folder = tx.prepare(
-        "SELECT file_id, path FROM files WHERE member = '' AND status IN ('matched', 'duplicate')
-           AND substr(path, 1, length(?1) + 1) = ?1 || '/' AND instr(substr(path, length(?1) + 2), '/') = 0",
-    )?;
-    let mut games_of = tx.prepare(
+           AND status IN ",
+        crate::report::holding!()
+    ))?;
+    let mut beside_folder = tx.prepare(concat!(
+        "SELECT file_id, path FROM files WHERE member = '' AND status IN ",
+        crate::report::holding!(),
+        "
+           AND substr(path, 1, length(?1) + 1) = ?1 || '/' AND instr(substr(path, length(?1) + 2), '/') = 0"
+    ))?;
+    let mut games_of = tx.prepare(concat!(
         "SELECT DISTINCT r.game_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id
-         WHERE m.file_id = ?1 AND m.via IN ('sha1', 'md5') AND m.out_of_scope = 0",
-    )?;
+         WHERE m.file_id = ?1 AND m.via IN ",
+        crate::report::strong!(),
+        " AND m.out_of_scope = 0"
+    ))?;
     let mut roms_of = tx.prepare(
         "SELECT rom_id, name, lower(name) LIKE '%.cue' FROM roms
          WHERE game_id = ?1 AND coalesce(status, '') <> 'nodump' ORDER BY rom_id",
     )?;
-    let mut matched_by =
-        tx.prepare("SELECT 1 FROM matches WHERE rom_id = ?1 AND file_id = ?2 AND via IN ('sha1', 'md5')")?;
+    let mut matched_by = tx.prepare(concat!(
+        "SELECT 1 FROM matches WHERE rom_id = ?1 AND file_id = ?2 AND via IN ",
+        crate::report::strong!()
+    ))?;
     let mut insert = tx.prepare(
         "INSERT INTO matches (file_id, rom_id, via, stripped, out_of_scope) VALUES (?1, ?2, 'sheet', 0, 0)",
     )?;

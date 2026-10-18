@@ -112,14 +112,15 @@ fn is_archive(ext: &str) -> bool {
 fn wanted(name: &str, opts: ScanOptions) -> bool {
     // A game's details as import writes them (`.md` is a Mega Drive
     // extension too).
-    !name.ends_with(".romforge.md") && (opts.all_files || systems::is_rom_extension(&ext_of(name)))
+    !name.ends_with(crate::layout::DETAILS_SUFFIX)
+        && (opts.all_files || systems::is_rom_extension(&ext_of(name)))
 }
 
 /// An archive member worth hashing: not one of the files cleanup and
 /// import put in an archive's `romforge/` folder (art, and details as
 /// `.romforge.md`, which `.md` would otherwise take for a Mega Drive ROM).
 fn wanted_member(name: &str, opts: ScanOptions) -> bool {
-    !name.starts_with("romforge/") && wanted(name, opts)
+    !crate::layout::is_extra(name) && wanted(name, opts)
 }
 
 /// Visit everything under `root`: skipped files and links in path order
@@ -142,9 +143,7 @@ pub fn walk(
         .follow_root_links(true)
         .sort_by_file_name()
         .into_iter()
-        .filter_entry(|e| {
-            e.file_name() != crate::cleanup::TRASH_DIR && e.file_name() != crate::home::STAGING
-        });
+        .filter_entry(|e| !crate::layout::is_own_dir(e.file_name()));
     for item in walker {
         let item = match item {
             Ok(item) => item,

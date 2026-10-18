@@ -5,8 +5,9 @@
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
-use romforge_core::cleanup::{Format, TRASH_DIR};
+use romforge_core::cleanup::Format;
 use romforge_core::hash::hash_stream;
+use romforge_core::layout::TRASH_DIR;
 use romforge_core::settings::Settings;
 use romforge_core::view::RowStatus;
 use romforge_core::{Library, Scope};

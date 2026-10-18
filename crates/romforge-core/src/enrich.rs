@@ -192,12 +192,7 @@ pub fn default_cache_dir() -> PathBuf {
     if let Some(p) = std::env::var_os("ROMFORGE_CACHE") {
         return PathBuf::from(p);
     }
-    std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("romforge")
+    crate::layout::xdg("XDG_CACHE_HOME", ".cache").unwrap_or_else(|| PathBuf::from(crate::layout::APP_DIR))
 }
 
 /// libretro's name for a system (its database and thumbnail folders).
@@ -456,11 +451,13 @@ pub fn enrich(
                         put.execute(params![system_id, game, k, v])?;
                     }
                 }
-                let mut checked = tx.prepare(
+                let mut checked = tx.prepare(concat!(
                     "INSERT INTO meta_checked (system_id, title, checked_at)
-                     VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-                     ON CONFLICT(system_id, title) DO UPDATE SET checked_at = excluded.checked_at",
-                )?;
+                     VALUES (?1, ?2, ",
+                    crate::db::now!(),
+                    ")
+                     ON CONFLICT(system_id, title) DO UPDATE SET checked_at = excluded.checked_at"
+                ))?;
                 // After a failed download, look again next time.
                 if !fetch_failed {
                     for (game, _) in games {
@@ -649,9 +646,9 @@ pub fn enrich(
                             }
                         }
                         conn.execute(
-                            "INSERT INTO art_lookup (system_id, title, provider, checked_at)
-                             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-                             ON CONFLICT(system_id, title, provider) DO UPDATE SET checked_at = excluded.checked_at",
+                            concat!("INSERT INTO art_lookup (system_id, title, provider, checked_at)
+                             VALUES (?1, ?2, ?3, ", crate::db::now!(), ")
+                             ON CONFLICT(system_id, title, provider) DO UPDATE SET checked_at = excluded.checked_at"),
                             params![system_id, game, provider.name()],
                         )?;
                     }
@@ -886,7 +883,7 @@ fn keep(
     let path = opts
         .art_dir
         .clone()
-        .unwrap_or_else(|| opts.cache_dir.join("art"))
+        .unwrap_or_else(|| opts.cache_dir.join(crate::layout::LOOSE_ART_DIR))
         .join(system.key)
         .join(kind.as_str())
         .join(format!("{}.{ext}", cache_stem(game)));
@@ -904,14 +901,18 @@ fn record(
     source: &str,
 ) -> Result<(), Error> {
     conn.execute(
-        "INSERT INTO art (system_id, title, kind, path, checked_at, source)
-         VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5)
+        concat!(
+            "INSERT INTO art (system_id, title, kind, path, checked_at, source)
+         VALUES (?1, ?2, ?3, ?4, ",
+            crate::db::now!(),
+            ", ?5)
          ON CONFLICT(system_id, title, kind) DO UPDATE SET path = excluded.path,
            checked_at = excluded.checked_at, source = excluded.source
          -- A source that found nothing never wipes a picture another source
          -- saved (a refresh asks libretro again before the others).
          WHERE excluded.path IS NOT NULL OR art.path IS NULL
-            OR coalesce(art.source, 'libretro') = excluded.source",
+            OR coalesce(art.source, 'libretro') = excluded.source"
+        ),
         params![system_id, game, kind.as_str(), path, source],
     )?;
     Ok(())

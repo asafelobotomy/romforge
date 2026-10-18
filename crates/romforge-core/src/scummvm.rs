@@ -28,12 +28,6 @@ use rusqlite::{Connection, params};
 
 use crate::{Error, systems};
 
-/// File name of the detection list in the databases folder.
-pub const LIST_FILE: &str = "scummvm-detection.dat";
-
-/// File name of libretro's `ScummVM.dat` (titles by game id) there.
-pub const TITLES_FILE: &str = "scummvm-titles.dat";
-
 /// libretro's names for ScummVM game ids (its `ScummVM.dat`: one game per
 /// id and variant; the first name of an id is kept). Its box art goes by
 /// these names.
@@ -251,10 +245,7 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
         let walker = walkdir::WalkDir::new(root)
             .follow_links(false)
             .into_iter()
-            .filter_entry(|e| {
-                let n = e.file_name();
-                n != crate::cleanup::TRASH_DIR && n != crate::home::STAGING
-            });
+            .filter_entry(|e| !crate::layout::is_own_dir(e.file_name()));
         for e in walker.filter_map(Result::ok) {
             if !e.file_type().is_file() {
                 continue;
@@ -352,7 +343,7 @@ pub fn fingerprint(dir: &Path) -> Option<String> {
     let walker = walkdir::WalkDir::new(dir)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| !(e.depth() == 1 && e.file_name() == "romforge"));
+        .filter_entry(|e| !(e.depth() == 1 && e.file_name() == crate::layout::EXTRAS_DIR));
     for e in walker {
         let e = e.ok()?;
         if !e.file_type().is_file() {
@@ -540,7 +531,7 @@ pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, E
     // libretro's names, when its ScummVM.dat is kept beside the list.
     let names = list
         .and_then(Path::parent)
-        .map(|d| d.join(TITLES_FILE))
+        .map(|d| d.join(crate::layout::SCUMMVM_TITLES))
         .filter(|p| p.is_file())
         .and_then(|p| cached(&NAMES, &p, titles).ok())
         .unwrap_or_default();

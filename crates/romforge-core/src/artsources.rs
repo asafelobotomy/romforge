@@ -99,12 +99,18 @@ pub fn rom_for(conn: &Connection, system_id: i64, title: &str) -> Result<Option<
     };
     let hashed = conn
         .query_row(
-            "SELECT f.path, f.member, f.size, f.crc32, f.md5, f.sha1
-             FROM files f JOIN matches m ON m.file_id = f.file_id AND m.via IN ('sha1', 'md5')
+            concat!(
+                "SELECT f.path, f.member, f.size, f.crc32, f.md5, f.sha1
+             FROM files f JOIN matches m ON m.file_id = f.file_id AND m.via IN ",
+                crate::report::strong!(),
+                "
              JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
              JOIN dats d ON d.dat_id = g.dat_id
-             WHERE d.system_id = ?1 AND g.name = ?2 AND f.status IN ('matched', 'duplicate')
-             ORDER BY f.size DESC LIMIT 1",
+             WHERE d.system_id = ?1 AND g.name = ?2 AND f.status IN ",
+                crate::report::holding!(),
+                "
+             ORDER BY f.size DESC LIMIT 1"
+            ),
             params![system_id, title],
             row,
         )

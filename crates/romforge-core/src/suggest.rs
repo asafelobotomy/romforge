@@ -113,15 +113,19 @@ struct Facts {
 /// Your hash-verified copy of a DAT game's (single) ROM, if any.
 fn verified_copy(conn: &Connection, system_id: i64, title: &str) -> Result<Option<(String, String)>, Error> {
     Ok(conn
-        .prepare_cached(
+        .prepare_cached(concat!(
             "SELECT f.path, f.member FROM files f JOIN matches m ON m.file_id = f.file_id
              JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
              JOIN dats d ON d.dat_id = g.dat_id
-             WHERE d.system_id = ?1 AND g.name = ?2 AND m.via IN ('sha1', 'md5') AND m.stripped = 0
-               AND f.status IN ('matched', 'duplicate')
+             WHERE d.system_id = ?1 AND g.name = ?2 AND m.via IN ",
+            crate::report::strong!(),
+            " AND m.stripped = 0
+               AND f.status IN ",
+            crate::report::holding!(),
+            "
                AND (SELECT count(*) FROM roms x WHERE x.game_id = g.game_id) = 1
-             LIMIT 1",
-        )?
+             LIMIT 1"
+        ))?
         .query_row(params![system_id, title], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?)
 }

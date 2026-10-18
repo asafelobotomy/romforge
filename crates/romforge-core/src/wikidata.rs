@@ -320,9 +320,13 @@ fn remember(
     }
     for n in names {
         tx.execute(
-            "INSERT INTO wikidata_searched (platform, name, searched_at)
-             VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-             ON CONFLICT(platform, name) DO UPDATE SET searched_at = excluded.searched_at",
+            concat!(
+                "INSERT INTO wikidata_searched (platform, name, searched_at)
+             VALUES (?1, ?2, ",
+                crate::db::now!(),
+                ")
+             ON CONFLICT(platform, name) DO UPDATE SET searched_at = excluded.searched_at"
+            ),
             params![platform, n],
         )?;
     }
@@ -627,10 +631,14 @@ pub fn enrich(
                 Err(many) => (None, "ambiguous", many.into_iter().cloned().collect()),
             };
             tx.execute(
-                "INSERT INTO wikidata_match (system_id, title, qid, status, candidates, checked_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                concat!(
+                    "INSERT INTO wikidata_match (system_id, title, qid, status, candidates, checked_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ",
+                    crate::db::now!(),
+                    ")
                  ON CONFLICT(system_id, title) DO UPDATE SET qid = excluded.qid, status = excluded.status,
-                   candidates = excluded.candidates, checked_at = excluded.checked_at",
+                   candidates = excluded.candidates, checked_at = excluded.checked_at"
+                ),
                 params![
                     system_id,
                     title,

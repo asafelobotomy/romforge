@@ -240,7 +240,11 @@ async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
             // Both connections close before the database moves.
             *w = Library::open_in_memory()?;
             *r = Library::open_in_memory()?;
-            let moved = romforge_core::home::adopt(&home, &old, &default_cache_dir().join("art"));
+            let moved = romforge_core::home::adopt(
+                &home,
+                &old,
+                &default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR),
+            );
             let reopen = if home.db().exists() {
                 home.db()
             } else {

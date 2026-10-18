@@ -7,6 +7,8 @@
 //! 8), since revisions, regions and discs share codes, and a hack keeps its
 //! base game's header.
 
+use crate::disc::SYNC;
+
 /// Bytes of the data (in the DAT's form: header stripped, byte order fixed)
 /// the readers get. A PS1 disc's `SYSTEM.CNF` sits within the first few
 /// hundred sectors.
@@ -239,8 +241,6 @@ struct Sectors<'a> {
     data: &'a [u8],
     raw: bool,
 }
-
-const SYNC: [u8; 12] = [0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0];
 
 impl<'a> Sectors<'a> {
     fn new(data: &'a [u8]) -> Self {

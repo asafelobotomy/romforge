@@ -18,6 +18,7 @@ pub mod home;
 pub mod ident;
 mod identify;
 pub mod launch;
+pub mod layout;
 pub mod names;
 pub mod organize;
 pub mod patch;
@@ -173,12 +174,9 @@ fn read_file(path: &Path) -> Result<Vec<u8>, Error> {
 
 /// The default database location: `$XDG_DATA_HOME/romforge/romforge.db`.
 pub fn default_db_path() -> PathBuf {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("romforge").join("romforge.db")
+    layout::xdg("XDG_DATA_HOME", ".local/share")
+        .unwrap_or_else(|| PathBuf::from(layout::APP_DIR))
+        .join(layout::DB_FILE)
 }
 
 pub struct Library {
@@ -662,9 +660,13 @@ impl Library {
             });
         }
         tx.execute(
-            "INSERT INTO dats (system_id, name, description, version, author, homepage, url,
+            concat!(
+                "INSERT INTO dats (system_id, name, description, version, author, homepage, url,
                                header_hint, source_path, source_sha256, imported_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ",
+                crate::db::now!(),
+                ")"
+            ),
             params![
                 system.map(|s| s.id),
                 dat.name,
@@ -784,7 +786,7 @@ impl Library {
             })
             .collect();
 
-        let scummvm_list = self.extdb_dir().map(|d| d.join(scummvm::LIST_FILE));
+        let scummvm_list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
         let tx = self.conn.transaction()?;
         let root_str = root.to_string_lossy().into_owned();
         // What is already known under the folder (from any scan made with the
@@ -814,12 +816,16 @@ impl Library {
             .collect::<Result<_, _>>()?
         };
         let root_id: i64 = tx.query_row(
-            "INSERT INTO scan_roots (path, system_id, dat_id, scanned_at, all_files)
-             VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?4)
+            concat!(
+                "INSERT INTO scan_roots (path, system_id, dat_id, scanned_at, all_files)
+             VALUES (?1, ?2, ?3, ",
+                crate::db::now!(),
+                ", ?4)
              ON CONFLICT(path) DO UPDATE SET system_id = excluded.system_id,
                dat_id = excluded.dat_id, scanned_at = excluded.scanned_at,
                all_files = excluded.all_files
-             RETURNING root_id",
+             RETURNING root_id"
+            ),
             params![root_str, system_id, dat_id, opts.all_files],
             |r| r.get(0),
         )?;
@@ -837,10 +843,10 @@ impl Library {
         };
         {
             let mut upsert = tx.prepare(
-                "INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
+                concat!("INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
                                     stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at,
                                     disk_size, mtime, id_kind, id_serial, id_title, id_region, sheet_files, id_size, id_crc)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ", crate::db::now!(), ",
                          ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
                  ON CONFLICT(path, member) DO UPDATE SET root_id = excluded.root_id, size = excluded.size,
                    crc32 = excluded.crc32, md5 = excluded.md5, sha1 = excluded.sha1,
@@ -851,7 +857,7 @@ impl Library {
                    id_kind = excluded.id_kind, id_serial = excluded.id_serial,
                    id_title = excluded.id_title, id_region = excluded.id_region,
                    sheet_files = excluded.sheet_files, id_size = excluded.id_size, id_crc = excluded.id_crc
-                 RETURNING file_id",
+                 RETURNING file_id"),
             )?;
             let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
@@ -991,8 +997,8 @@ impl Library {
             .extdb_dir()
             .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM list".into()))?;
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join(scummvm::LIST_FILE);
-        let tmp = dir.join(format!(".{}.part", scummvm::LIST_FILE));
+        let path = dir.join(layout::SCUMMVM_LIST);
+        let tmp = dir.join(layout::part(layout::SCUMMVM_LIST));
         std::fs::write(&tmp, list)?;
         std::fs::rename(&tmp, &path)?;
         let games = scummvm::refresh(&self.conn, Some(&path))?;
@@ -1012,10 +1018,10 @@ impl Library {
             .extdb_dir()
             .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM titles".into()))?;
         std::fs::create_dir_all(&dir)?;
-        let tmp = dir.join(format!(".{}.part", scummvm::TITLES_FILE));
+        let tmp = dir.join(layout::part(layout::SCUMMVM_TITLES));
         std::fs::write(&tmp, dat)?;
-        std::fs::rename(&tmp, dir.join(scummvm::TITLES_FILE))?;
-        let list = dir.join(scummvm::LIST_FILE);
+        std::fs::rename(&tmp, dir.join(layout::SCUMMVM_TITLES))?;
+        let list = dir.join(layout::SCUMMVM_LIST);
         scummvm::refresh(&self.conn, Some(&list))?;
         Ok(n)
     }
@@ -1037,7 +1043,7 @@ impl Library {
             found.extend(scummvm::parse_detect(&launch::scummvm_detect(env, &root)?, &root));
         }
         r.asked = scummvm::remember(&self.conn, &found)?;
-        let list = self.extdb_dir().map(|d| d.join(scummvm::LIST_FILE));
+        let list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
         r.games = scummvm::refresh(&self.conn, list.as_deref())?;
         Ok(r)
     }

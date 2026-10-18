@@ -444,7 +444,7 @@ fn main() -> Result<()> {
             if new.db().exists() {
                 println!("{} is already a RomForge folder", new.root().display());
             } else if db.exists() && home.as_ref() != Some(&new) {
-                let art = enrich::default_cache_dir().join("art");
+                let art = enrich::default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
                 let a = romforge_core::home::adopt(&new, &db, &art)
                     .with_context(|| format!("moving {} into {}", db.display(), new.root().display()))?;
                 println!(
@@ -1302,9 +1302,9 @@ fn main() -> Result<()> {
 
 fn print_cleanup(plan: &romforge_core::cleanup::CleanupPlan, verbose: bool) {
     let what = if plan.keep_originals {
-        "originals kept"
+        "originals kept".to_owned()
     } else {
-        "originals to .romforge-trash"
+        format!("originals to {}", romforge_core::layout::TRASH_DIR)
     };
     println!("into {} ({what})", plan.dest.display());
     for it in &plan.items {

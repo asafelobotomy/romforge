@@ -146,10 +146,14 @@ pub fn identify(
     let tx = conn.transaction()?;
     for f in &d.files {
         tx.execute(
-            "INSERT INTO manual_ids (sha1, size, system_id, title, created_at, base, relation, tag)
-             VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5, ?6, ?7)
+            concat!(
+                "INSERT INTO manual_ids (sha1, size, system_id, title, created_at, base, relation, tag)
+             VALUES (?1, ?2, ?3, ?4, ",
+                crate::db::now!(),
+                ", ?5, ?6, ?7)
              ON CONFLICT(sha1, size) DO UPDATE SET system_id = excluded.system_id, title = excluded.title,
-               base = excluded.base, relation = excluded.relation, tag = excluded.tag",
+               base = excluded.base, relation = excluded.relation, tag = excluded.tag"
+            ),
             params![
                 f.sha1,
                 f.size,
@@ -216,10 +220,14 @@ pub fn settle_wikidata(conn: &mut Connection, endpoint: &str, row_id: &str, qid:
         .and_then(systems::by_key)
         .ok_or_else(|| Error::Search("identify the game first".into()))?;
     conn.execute(
-        "INSERT INTO wikidata_match (system_id, title, qid, status, candidates, checked_at)
-         VALUES (?1, ?2, ?3, 'by_you', '[]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        concat!(
+            "INSERT INTO wikidata_match (system_id, title, qid, status, candidates, checked_at)
+         VALUES (?1, ?2, ?3, 'by_you', '[]', ",
+            crate::db::now!(),
+            ")
          ON CONFLICT(system_id, title) DO UPDATE SET qid = excluded.qid, status = 'by_you',
-           checked_at = excluded.checked_at",
+           checked_at = excluded.checked_at"
+        ),
         params![sys.id, d.row.title, qid],
     )?;
     let mut one = BTreeMap::new();
