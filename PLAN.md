@@ -564,6 +564,44 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       order, even when it belongs to another disc;
     - files with unknown extensions are skipped silently (only counted).
 
+13. **One RomForge folder** (decided 2026-10-18). Everything romforge keeps
+    lives in one portable folder, `RomForge/`, inside a parent folder the
+    owner picks on first run (home suggested; Settings can move it, and
+    the folder is always named RomForge). Moving or backing up that folder
+    takes the whole library with it:
+
+    ```
+    RomForge/
+      Games/<System>/<Title>.zip       cartridges: ROM at the top level,
+                                       art and <Title>.romforge.md in romforge/
+      Games/<System>/<Title>.chd       discs, with a sidecar folder <Title>/
+      Media/<System>/<kind>/<Title>.*  the art (today ~/.cache/romforge/art)
+      Databases/                       OpenVGDB, LaunchBox (downloaded by you)
+      romforge.db                      today ~/.local/share/romforge
+      .staging/  .trash/               same drive: renames, not copies; undo
+    ```
+
+    - *Import* replaces Organize's destination and Cleanup's Library
+      folder. Adding a folder scans it (read-only, rule 6 unchanged), then
+      shows the import plan: which games go where in `Games/`, and what
+      stays (unidentified files, partial games, conflicts). One click
+      moves them, repacked as Cleanup does; journaled; "Undo last import".
+    - Originals are not kept by default; they go to `RomForge/.trash/`
+      until undone or emptied (the "Keep originals" setting still exists).
+    - Only verified games and games you named move. Unknown files stay
+      where they are until Search identifies them; then they import too.
+    - First run (or an existing setup): create `RomForge/`, then move the
+      database, art cache and downloaded databases into it, by the same
+      journaled, verified moves. The old locations are left empty.
+    - The scanned folders stay in the list, so Refresh finds new files
+      dropped into them and offers them for import.
+    - `RomForge/Games` itself is scanned like any folder; files put there
+      by hand are identified, and renamed only by an import plan.
+    - Open questions for building: the CLI's `--db` default (look for
+      `RomForge/romforge.db` via a small pointer file in
+      `~/.config/romforge/`), and what Organize's 1G1R mode becomes (a
+      filter on the import plan).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
