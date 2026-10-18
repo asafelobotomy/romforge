@@ -623,6 +623,48 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     4. *Organize* stays for setups without a RomForge folder; with one,
        its screen and command point to Import.
 
+14. **DOS, ScummVM and Japanese computers** (decided 2026-10-18; not
+    built). Researched: PC-88 and PC-98 are already systems with TOSEC
+    DATs; `PC` has TOSEC and Redump but nothing to run it; libretro's
+    `dat/DOS.dat` (24,631 games) names each game by one `.exe`, size and
+    CRC only; `dat/ScummVM.dat` only maps ScummVM game ids to titles.
+    1. *Folder games.* DOS and ScummVM games are folders of many files
+       (`.exe`, `.ovl`, `MONKEY.000`, ...), which the scan skips today
+       (it hashes by extension). A folder whose files make up a known
+       game is one game. Import packs a DOS game into
+       `Games/DOS/<Title>.zip` (DOSBox Pure runs it as is) and keeps a
+       ScummVM game as the folder `Games/ScummVM/<Title>/`, with a
+       `<id>.scummvm` file for RetroArch's core. Rule 6 is unchanged:
+       scanning reads, only import moves.
+    2. *DOS identification stays strict.* TOSEC disk images and Redump CDs
+       verify (size + SHA1/MD5). A `DOS.dat` hit (size + CRC of the main
+       `.exe`) is only a likely title, shown as a suggestion; confirming
+       it makes the game "identified by you", never verified.
+    3. *ScummVM identification from your own ScummVM.* romforge runs the
+       installed ScummVM once with `--dump-all-detection-entries`, which
+       writes its detection list as a DAT (files by name, size and MD5 of
+       their first N bytes, usually 5000), stores it in `Databases/`, and
+       matches folders itself, as ScummVM does: every listed file present
+       with that size and partial MD5. That needs a partial-MD5 hash in the
+       scan, kept apart from full hashes. ScummVM's detection data is GPL:
+       generated on the user's machine, never shipped (rule 10's terms).
+       Unverified: whether the SCUMM engine's own games (Monkey Island,
+       ...) are in that dump; if not, they are named by hand from
+       `ScummVM.dat`'s list.
+    4. *Launch.* DOS: the `dosbox_pure` core (zip or image as is), then
+       DOSBox Staging and DOSBox-X (on `PATH` or Flatpak) with the folder
+       or image mounted. ScummVM: the `scummvm` core with the `.scummvm`
+       file, then standalone ScummVM (`--path=<folder> <id>`). PC-88 gets
+       `quasi88`; PC-98 more disk formats (`hdm`, `nhd`, `fdd`, `thd`,
+       ...).
+    5. *Multi-disk playlists* (from Later ideas). For a set of disks
+       ("Disk 1 of 4"), import writes a `<Title>.m3u` next to them, so
+       the emulator can swap disks; launch starts the playlist.
+    6. *More Japanese computers.* Launchers for Sharp X1 (`x1` core),
+       FM-7 and FM Towns where a free emulator exists (to check which).
+    **Open:** check the systems' new emulator rows against the real
+    programs; none of these emulators is on the dev machine yet.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
@@ -638,7 +680,6 @@ on someone else:
 - Online lookups for files that stay unknown: RetroAchievements hashes
   (login token), ScreenScraper (keys); Hasheous needs neither, see
   milestone 11.
-- `.m3u` playlists for multi-disc games (organize would write a new file).
 - Play history and favourites.
 
 - Redump update check without re-downloading (Redump has no version index).
