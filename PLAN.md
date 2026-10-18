@@ -1119,6 +1119,49 @@ on romforge's distribution. Non-commercial cores carry their warning as in
 - Whether RetroArch's UDP interface is enough for a pause menu (it saves
   only to the current slot).
 
+## Patcher (milestone 19; decided 2026-10-19, not built)
+
+Apply a translation or hack to a game you have, making a new patched copy
+and leaving the original as it is.
+
+Checked 2026-10-19:
+- romhacking.net went read-only in August 2024; its pages stay up but have
+  no API and refuse automated requests (403). Its Internet Archive export
+  (`romhacking.net-20240801`: SQL database and 12.5 GB of files) is
+  private (401). Romhack Plaza documents no API or bulk data. So no source
+  romforge could download from by itself without scraping.
+- `patch.rs` already applies IPS, BPS and UPS in memory (to 64 MiB) to
+  prove what a file is; BPS and UPS name their source's size and CRC32.
+- Disc translations mostly ship as xdelta (VCDIFF), some as PPF.
+  `oxidelta` (MIT) decodes VCDIFF in pure Rust; PPF is small enough to
+  write here.
+
+Decided:
+1. *You fetch the patch, romforge applies it.* Details gets "Find a
+   translation" (search links to romhacking.net and Romhack Plaza for the
+   game, opened in the browser, like the other links) and "Apply patch…":
+   a `.ips`, `.bps`, `.ups`, `.xdelta`/`.vcdiff` or `.ppf`, or a zip holding
+   one (its readme kept with it). Patches found beside your ROMs (as Search
+   already sees them) are offered too. No scraping.
+2. *A new copy in RomForge, shown as a version.* The patched game is
+   written into `Games/<System>/` as "<Game> [Translation: <tag>]" (or
+   Hack), zipped or as a CHD like any import, journaled for undo; the
+   original is never touched. It lists as a version under its base game,
+   "patched by romforge from <patch>": proven (the patch applied to your
+   verified copy gave it), never "verified" unless a hack DAT lists its
+   hash (rule 8).
+3. *Cartridges and discs.* Cartridges with IPS, BPS and UPS in memory, as
+   today. Discs with xdelta and PPF, streamed: from the CHD (or loose
+   tracks), patched, and written back as a CHD (or the patched track
+   beside the others for loose discs).
+
+To work out while building: which form of the ROM a patch wants (BPS/UPS
+say it by CRC32: the raw file or the DAT's header-stripped form; IPS says
+nothing: the DAT's form unless the patch's name says headered, and the
+result is checked against hack DATs where there is one); which track of a
+multi-track disc an xdelta patch targets; patches that need an older
+revision than the one you have (refused, naming the one it wants).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
