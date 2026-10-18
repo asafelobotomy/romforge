@@ -54,6 +54,8 @@ pub struct GameRow {
     pub metadata: bool,
     /// Art kinds cached for the game (`boxart`, `title`, `snap`).
     pub art: Vec<String>,
+    /// Identified (by hash, or by the owner), so Play may start it.
+    pub playable: bool,
     #[serde(skip)]
     system_id: Option<i64>,
     #[serde(skip)]
@@ -356,6 +358,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             size: 0,
             metadata: meta.contains(&key),
             art: art.get(&key).cloned().unwrap_or_default(),
+            playable: false,
             system_id: Some(system_id),
             file_ids: Vec::new(),
         }
@@ -439,6 +442,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 size: 0,
                 metadata: key.as_ref().is_some_and(|k| meta.contains(k)),
                 art: key.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
+                playable: false,
                 system_id,
                 file_ids: Vec::new(),
             })
@@ -449,6 +453,12 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     }
 
     let mut rows: Vec<GameRow> = rows.into_values().collect();
+    for r in &mut rows {
+        r.playable = matches!(
+            r.status,
+            RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
+        );
+    }
     rows.sort_by(|a, b| {
         sort_key(&a.title)
             .cmp(&sort_key(&b.title))

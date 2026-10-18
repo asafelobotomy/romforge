@@ -52,7 +52,45 @@ pub struct Keys {
     pub igdb_client_secret: Option<String>,
 }
 
+/// What a set secret looks like outside the core (the app's settings
+/// form); saving it back keeps the stored value.
+pub const MASK: &str = "••••••••";
+
 impl Keys {
+    /// The secrets (passwords, keys) masked; ids and user names as they are.
+    pub fn masked(&self) -> Keys {
+        let m = |v: &Option<String>| v.as_ref().map(|_| MASK.to_owned());
+        Keys {
+            screenscraper_dev_password: m(&self.screenscraper_dev_password),
+            screenscraper_password: m(&self.screenscraper_password),
+            steamgriddb_key: m(&self.steamgriddb_key),
+            igdb_client_secret: m(&self.igdb_client_secret),
+            ..self.clone()
+        }
+    }
+
+    /// `self` from a form that got [`Keys::masked`]: a field still showing
+    /// the mask keeps the `stored` value.
+    pub fn unmasked(self, stored: &Keys) -> Keys {
+        let keep = |v: Option<String>, old: &Option<String>| {
+            if v.as_deref() == Some(MASK) {
+                old.clone()
+            } else {
+                v
+            }
+        };
+        Keys {
+            screenscraper_dev_password: keep(
+                self.screenscraper_dev_password,
+                &stored.screenscraper_dev_password,
+            ),
+            screenscraper_password: keep(self.screenscraper_password, &stored.screenscraper_password),
+            steamgriddb_key: keep(self.steamgriddb_key, &stored.steamgriddb_key),
+            igdb_client_secret: keep(self.igdb_client_secret, &stored.igdb_client_secret),
+            ..self
+        }
+    }
+
     /// (setting key, value) pairs, in a fixed order.
     fn fields(&self) -> [(&'static str, Option<String>); 7] {
         [
@@ -265,6 +303,33 @@ pub fn save(conn: &mut Connection, s: &Settings) -> Result<Settings, Error> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn secrets_are_masked_and_kept() {
+        let stored = Keys {
+            steamgriddb_key: Some("real-key".into()),
+            igdb_client_id: Some("my-app".into()),
+            igdb_client_secret: Some("real-secret".into()),
+            ..Keys::default()
+        };
+        let shown = stored.masked();
+        assert_eq!(shown.steamgriddb_key.as_deref(), Some(MASK));
+        assert_eq!(
+            shown.igdb_client_id.as_deref(),
+            Some("my-app"),
+            "ids are not secret"
+        );
+        assert_eq!(shown.screenscraper_password, None, "unset stays unset");
+        // The form sends the mask back unchanged, and a new secret.
+        let sent = Keys {
+            igdb_client_secret: Some("new-secret".into()),
+            ..shown
+        };
+        let saved = sent.unmasked(&stored);
+        assert_eq!(saved.steamgriddb_key.as_deref(), Some("real-key"));
+        assert_eq!(saved.igdb_client_secret.as_deref(), Some("new-secret"));
+    }
+
     use super::*;
 
     fn dirs() -> (tempfile::TempDir, PathBuf, PathBuf) {

@@ -291,6 +291,9 @@ const MIGRATIONS: &[&str] = &[
     // 22: games by name (details, cleanup, suggestions look games up by
     // title: a full scan of a million TOSEC and Redump games per click).
     "CREATE INDEX games_name ON games(name);",
+    // 23: which clone list a row came from, so a new version of the list
+    // replaces its own rows (and old titles go).
+    "ALTER TABLE clone_groups ADD COLUMN list TEXT NOT NULL DEFAULT '';",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

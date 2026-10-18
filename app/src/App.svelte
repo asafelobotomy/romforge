@@ -317,7 +317,11 @@
   async function addFolder() {
     const r = await run("Scanning…", "scan", { dir: addDir });
     if (r) {
-      note = `Scanned ${r.hashed} entries in ${r.root}`;
+      const problems = [
+        ...r.errors.map(([path, member, e]) => `${member ? `${path}#${member}` : path}: ${e}`),
+        ...r.sheet_problems.map(([path, e]) => `${path}: ${e}`),
+      ];
+      note = `Scanned ${r.hashed} entries in ${r.root}` + (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
       adding = false;
       addDir = "";
     }
@@ -327,14 +331,25 @@
   async function enrich() {
     const system = platform === "*" || platform === "" ? null : platform;
     const r = await run(`Fetching metadata and art${system ? ` for ${system}` : ""}…`, "enrich", { system });
-    if (r) note = `${r.games} games: ${r.games_with_metadata} with metadata; ${r.art_saved} images saved, ${r.art_missing} not found, ${r.art_cached} already cached`;
+    if (r) {
+      note = `${r.games} games: ${r.games_with_metadata} with metadata; ${r.art_saved} images saved, ${r.art_missing} not found, ${r.art_cached} already cached`;
+      if (r.wikidata) note += `. Wikidata: ${r.wikidata.matched} matched, ${r.wikidata.ambiguous} to settle in Search, ${r.wikidata.unmatched} not found`;
+      if (r.errors?.length) note += `. ${r.errors.length} problem${r.errors.length === 1 ? "" : "s"}: ${r.errors.slice(0, 3).join("; ")}${r.errors.length > 3 ? "; …" : ""}`;
+    }
+    await load();
+  }
+
+  // Undo a title picked in Search for the selected row.
+  async function forget() {
+    await run("Forgetting…", "forget_identity", { rowId: selected });
+    if (!error) note = "Forgotten: the files show as unknown again";
     await load();
   }
 
   async function play() {
     const row = lib.rows.find((r) => r.id === selected);
     if (!row) return;
-    const r = await run(`Starting ${row.title}…`, "launch", { query: row.title });
+    const r = await run(`Starting ${row.title}…`, "launch", { rowId: row.id });
     if (r) note = r;
   }
 
@@ -588,7 +603,7 @@
     <button class="tool" onclick={openSettings} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
     </button>
-    <button class="tool" onclick={play} disabled={!row || !["verified", "by_you", "derivative"].includes(row.status) || !!busy} title="Start the selected game">
+    <button class="tool" onclick={play} disabled={!row || !row.playable || !!busy} title="Start the selected game">
       <span class="glyph">▶</span>Play
     </button>
   </header>
@@ -951,6 +966,9 @@
             <h1>{row.title}</h1>
             <p class="meta">
               {row.system_name ?? "Unidentified"} · <span class="badge {row.status}">{statusLabel[row.status]}</span>
+              {#if row.status === "by_you" || row.status === "derivative"}
+                <button class="link" onclick={forget} disabled={!!busy} title="Undo naming these files: they show as unknown again">Forget</button>
+              {/if}
               {#if row.cue_differs && row.cue_fits}<span class="badge" title="All tracks match; the cue sheet was rewritten but names exactly these tracks">cue rewritten</span>{:else if row.cue_differs}<span class="badge" title="All tracks match; the cue sheet differs from the DAT's">cue differs</span>{/if}
             </p>
           </div>
@@ -1442,6 +1460,7 @@
   .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }
   .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .score { width: 2.6rem; color: var(--muted); font-size: 0.8rem; text-align: right; }
+  button.link { background: none; border: none; padding: 0 0.3rem; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
   .evidence { list-style: none; padding: 0; margin: 0.2rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); }
   .evidence li.agrees { color: inherit; }
   .evidence span { display: inline-block; width: 1em; }

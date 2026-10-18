@@ -163,16 +163,15 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
         .collect();
-    // Clone lists for the system's No-Intro or Redump DATs, by DAT name.
-    let group = if !system.nointro.is_empty() {
-        Some("No-Intro")
-    } else if !system.redump.is_empty() {
-        Some("Redump")
-    } else {
-        None
-    };
-    if let Some(g) = group {
-        out.extend(system.dat_names.iter().map(|n| Source::CloneList(n, g)));
+    // Clone lists for the system's No-Intro and Redump DATs, by DAT name
+    // (PSP has both; a list that doesn't exist is skipped).
+    for (has, g) in [
+        (!system.nointro.is_empty(), "No-Intro"),
+        (!system.redump.is_empty(), "Redump"),
+    ] {
+        if has {
+            out.extend(system.dat_names.iter().map(|n| Source::CloneList(n, g)));
+        }
     }
     if extras {
         out.extend(system.hacks.iter().copied().map(Source::Hacks));

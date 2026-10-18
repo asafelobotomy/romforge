@@ -29,7 +29,7 @@ matched       roms/archives/Mixed.7z#Test MD.md  Test MD
 candidate     roms/gb/CRC Only.gb  CRC Only
 duplicate     roms/gb/Test GB.gb  Test GB
 unknown       roms/unknown.bin
-scanned 17 entries (19.8 KiB) in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate; skipped 12 non-ROM files; skipped 1 symlinked folder
+scanned 17 entries (19.8 KiB) in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate, 0 manual, 0 sheet; skipped 12 non-ROM files; skipped 1 symlinked folder
 ```
 
 Only files whose extension some system uses (the `extensions` column in
@@ -78,11 +78,13 @@ again). `romforge-cli games` lists games the way the app does.
   (CRC32, MD5, SHA1). Archives are never unpacked to disk.
 - A `.chd` is read as its tracks: each CD track is rebuilt as the Redump
   `.bin` it came from and hashed as a member; a DVD CHD as one `.iso`.
-- If a copier header is found, the data is hashed a second time without it.
-  The one header table is in `crates/romforge-core/src/headers.rs`:
-  iNES/NES 2.0 (16 bytes, `NES\x1A`), FDS (16, `FDS\x1A`), Lynx (64, only
-  with `LYNX` magic), Atari 7800 (128, `ATARI7800` at offset 1), SNES copier
-  (512, when `size % 1024 == 512`).
+- If a copier header or another byte order is found, the data is hashed a
+  second time in the DAT's form. The one table is in
+  `crates/romforge-core/src/headers.rs`: iNES/NES 2.0 (16 bytes,
+  `NES\x1A`), FDS (16, `FDS\x1A`), Lynx (64, only with `LYNX` magic),
+  Atari 7800 (128, `ATARI7800` at offset 1), N64 `.v64`/`.n64` byte orders
+  (hashed as `.z64`), Super Magic Drive `.smd` interleave, SNES and PC
+  Engine copier headers (512, when `size % 1024 == 512`).
 - **matched**: size + SHA1, or size + MD5 when the DAT has no SHA1.
 - **candidate**: only size + CRC32 agree, because the DAT has nothing
   stronger. A stronger hash that disagrees rules the ROM out.
@@ -90,12 +92,27 @@ again). `romforge-cli games` lists games the way the app does.
   system's DAT.
 - **duplicate**: matched ROMs that an earlier file (in path order) already
   provides.
-- **unknown**: nothing.
+- **manual**: no hash match in scope, but you named it in Search
+  ("identified by you", or "translation / hack of X"); never verified.
+- **sheet**: a cue (or GDI) sheet that matches no hash but names exactly a
+  game's tracks, all matched beside it (a rewritten sheet).
+- **unknown**: nothing. Search suggests what it may be (see below).
 
 A game is **have** when all its data ROMs are matched. Cue sheets are text
 that tools rewrite freely, so a disc whose tracks all match but whose `.cue`
 differs from the DAT's is still have, marked `cue differs` in
 `report --dat`.
+
+When no hash matches, Search **suggests** what a file may be, each with its
+evidence (name, header title, size, CRC32, the serial in its own header or
+boot files, region, a BPS/UPS/IPS patch beside it, an RVZ/CSO/NKit image's
+ID and size) and a band that is never counted as verified: *Patch of it
+(proven)*, *Likely: CRC match*, *Likely: compressed image*, *Likely:
+modified copy*, *Suggested: name match*, *Possible: similar name*. Names
+are read as No-Intro, Redump, TOSEC or GoodTools (`names.rs`) and compared
+with numeral vetoes ("Street Fighter II" never suggests "III";
+`titles.rs`). A file whose name says translation or hack is offered as one
+("translation of Dragon Quest III (Japan)"), shown with its base game's art.
 
 One hash may belong to many games; every hit is kept. A DAT's source path,
 SHA-256, import time and `<clrmamepro header=…>` hint are recorded.
@@ -120,7 +137,10 @@ where it is by undo. Archives are moved whole, never split. A loose disc
 moves only as a complete set, or with its own cue sheet listing exactly its
 tracks (then every name is kept so the sheet still works). `--1g1r` keeps
 one version per title: a release over a beta/proto, then `--regions` order
-(default `USA,World,Europe,Japan`), then the highest revision. `--system
+(default `USA,World,Europe,Japan`), then the highest revision. Titles that
+are one game under other names ("Aero Fighters" in the USA is "Sonic
+Wings" in Japan) count as one, from Retool's clone lists (BSD-3-Clause),
+which `dat download` fetches with each system's DATs. `--system
 KEY` narrows it down. `-v` shows why each file stays. A move across drives
 is a copy checked byte for byte, keeping the file's times, then a delete.
 
@@ -164,7 +184,7 @@ romforge-cli cleanup history
 ```
 
 Every game in the Source folder that is verified by hash (or identified by
-you) becomes one file named by its DAT, in `<Library>/<system>/` (the
+you, as a game or as a translation / hack of one) becomes one file named by its DAT, in `<Library>/<system>/` (the
 Source when no Library is set): a zip for cartridges, holding the ROMs and
 a `romforge/` folder with the art and `<name>.romforge.md`; a CHD for discs
 (`.bin` tracks or one `.iso`), with the art and details in a folder of the
@@ -253,9 +273,12 @@ cd app && npm install && npm run tauri dev
 
 ## Layout
 
-- `crates/romforge-core` — all logic (library): `scan`, `identify`, `dat`,
-  `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`; one table of systems
-  (`systems.rs`) and one of copier headers (`headers.rs`)
+- `crates/romforge-core` — all logic (library): `scan`, `hash`, `identify`,
+  `dat`, `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`, `view`,
+  `search`, `suggest`, `names`, `titles`, `ident`, `patch`, `wikidata`,
+  `extdb`, `artsources`; one table of systems (`systems.rs`), one of copier
+  headers and byte orders (`headers.rs`), one of game ID readers
+  (`ident.rs`)
 - `crates/romforge-cli` — thin CLI
 - `app/` — Tauri 2 + Svelte shell
 - `fixtures/` — tiny generated test files and DATs. Regenerate with

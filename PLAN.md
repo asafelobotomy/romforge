@@ -36,7 +36,7 @@ is listed under each milestone as **Open**.
    - **Extras** (`--extras`): libretro-database's ROM hack and homebrew DATs.
    Requests to one host are kept 1 s apart (5 s for DAT-o-MATIC, per its
    robots.txt).
-   **Open:** scan the rest of the collection; run CI (no remote yet).
+   **Open:** scan the rest of the collection.
 2. **Organize** — `organize plan|apply|undo|history`: rename/move matched
    files into `<dest>/<system>/…` named by the DAT, a dry run first, every
    move journaled in the database for undo, nothing ever overwritten
@@ -56,8 +56,8 @@ is listed under each milestone as **Open**.
    `$ROMFORGE_CACHE` (default `~/.cache/romforge`); nothing is written next
    to ROMs. libretro was used instead of the three named sources because it
    needs no account and is keyed by the same No-Intro/Redump names.
-   **Open:** ScreenScraper and IGDB (need the owner's API keys); LaunchBox
-   DB (a large name-keyed XML).
+   ScreenScraper, SteamGridDB and IGDB came in milestone 9 (optional keys),
+   the LaunchBox database in 11 (a download the user makes).
 4. **Discs** — Redump DATs (milestone 1), cue and gdi sheets (scan reports
    tracks a sheet names that are missing; organize uses the sheet), and CHD:
    each CD track is rebuilt as its Redump `.bin` (subcode dropped, track
@@ -92,9 +92,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    logo + facts, overview, Media; true aspect and size; empty boxes hidden
    unless Settings shows them)* — the layout above on the data romforge already has;
    Refresh rescans every source folder; Links as plain search links (opened
-   with Tauri's opener plugin, https only). Search and Cleanup & rename are
-   in the toolbar but disabled until milestones 8 and 10; art libretro
-   lacks shows as empty slots until milestone 9.
+   with Tauri's opener plugin, https only). Search (milestone 8) and
+   Cleanup & rename (10) have since been built.
 7. **Settings and refresh** *(built)* — Settings for the Source folder, an
    optional Library folder, Keep originals, the staging folder and optional
    credentials (ScreenScraper developer + user login, SteamGridDB key, IGDB
@@ -187,7 +186,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     4. *What the DAT names already say* (offline): region, languages,
        revision, and flags such as Proto, Beta, Demo, Unl, parsed from
        No-Intro / Redump / TOSEC naming. Shown in Details and Search.
-       *(Built with 12.4: Details' "Edition" line; Search next, with 12.6.)*
+       *(Built with 12.4: Details' "Edition" line. Search shows the
+       evidence of 12.6, region agreement among it.)*
     5. *MAME software lists* (`hash/*.xml`, CC0-1.0) for consoles and
        handhelds, matched by SHA1 only (house rule 8): publisher, year,
        serial, release date, alternate (Japanese) title, cartridge hardware
@@ -563,6 +563,48 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     - a second copy of a shared audio track is marked "duplicate" by path
       order, even when it belongs to another disc;
     - files with unknown extensions are skipped silently (only counted).
+
+## Code review follow-ups (2026-10-18)
+
+A full review found about 90 items. The serious ones are fixed: batch 1
+(data safety and crashes), batch 2 (wrong results), batch 3 (speed) and
+batch 4 (medium items). Still open, all low or medium:
+
+- **Identify and view.** Duplicates are still decided by path order, not
+  by which copy is complete. `wrong_system` also covers "another DAT of
+  the same system" when a scan is scoped to one DAT. A complete game from
+  a DAT with no system shows as N "Incomplete" rows. A zero-byte file
+  matches every empty ROM in TOSEC.
+- **Identify and cleanup queries.** `LIKE` without escapes in `fit_sheets`
+  and `loose_cue` (folder names with `_` or `%`).
+- **Suggestions.**
+  - *Likely: modified copy* is loose: same size plus a two-word name
+    subset is enough.
+  - Typed text replaces the file name for derived and region evidence.
+  - `header_fits` skips the numeral veto.
+  - The preview's size line ignores CRC-only DATs and compressed images.
+- **Names.** Five overlapping title normalizers (`wikidata::normalize` folds
+  no accents). `title_suggestions` and `for_row` are only used by tests.
+- **DAT import.** DAT serials and TOSEC partial imports outlive a
+  replaced DAT. OpenVGDB is looked up by SHA1 with `LIMIT 1` and no size
+  check. SteamGridDB matches by title with no platform.
+- **Network.** Redump serves no HTTPS (its server resets TLS), so its DATs
+  stay on HTTP. ureq's global timeout covers the whole body, which a slow
+  link can exceed on the 110 MB LaunchBox download.
+- **Art cache.** Names collide (`A: B` and `A? B`); titles over 255 bytes
+  fail.
+- **Organize.** Symlinked files, rename races (no `RENAME_NOREPLACE`), GDI
+  in the disc-set check, no fsync before a cross-drive delete.
+- **Cleanup.** `named_parts` takes duplicates of one sha1 as two parts and
+  orders tracks by path.
+- **App.**
+  - `App.svelte` is about 1,450 lines and could be split by dialog.
+  - Details sends every image as base64 with no size cap.
+  - Unused commands: `game_info`, `systems`, `library`.
+  - Naming a translation by hand (not from a suggestion) isn't reachable
+    from the app.
+- **Licences.** Tauri brings MPL-2.0 crates (cssparser, selectors); add a
+  `cargo-deny` check for rule 9.
 
 ## Later ideas (parked, do not build yet)
 

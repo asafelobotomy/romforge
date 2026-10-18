@@ -177,6 +177,14 @@ fn download_then_fill_only_what_is_missing() {
     // Removing it leaves what was filled; listing shows it gone.
     extdb::remove(ExtDb::LaunchBox, &dir).unwrap();
     assert!(extdb::info(ExtDb::LaunchBox, &dir).downloaded_at.is_none());
+
+    // A refresh asks libretro again, which has nothing: that never wipes
+    // the box art LaunchBox gave.
+    opts.refresh = true;
+    lib.enrich(&opts, |_| {}).unwrap();
+    let d = lib.game_detail(id).unwrap();
+    assert!(d.art.contains_key("boxart"), "{:?}", d.art);
+    assert_eq!(d.art_sources.get("boxart").map(String::as_str), Some("launchbox"));
 }
 
 #[test]

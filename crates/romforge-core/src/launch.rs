@@ -391,12 +391,66 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
             some.join(" | ")
         )));
     }
-    let files: Vec<&(String, String, PathBuf, String)> = found.iter().filter(|f| f.0 == game).collect();
-    let system = systems::by_key(&system_key).ok_or_else(|| Error::UnknownSystem(system_key.clone()))?;
+    let files: Vec<(PathBuf, String)> = found
+        .iter()
+        .filter(|f| f.0 == game)
+        .map(|f| (f.2.clone(), f.3.clone()))
+        .collect();
+    start(conn, env, &game, &system_key, &files, emulator)
+}
+
+/// Work out how to start one row of the library (as [`crate::view`] lists
+/// it): exactly its files, whatever else shares its title.
+pub fn plan_row(
+    conn: &Connection,
+    env: &Env,
+    row_id: &str,
+    emulator: Option<&str>,
+) -> Result<LaunchSpec, Error> {
+    let v = crate::view::library(conn)?;
+    let row = v
+        .rows
+        .iter()
+        .find(|r| r.id == row_id)
+        .ok_or_else(|| Error::Launch(format!("no library row {row_id:?}")))?;
+    if !row.playable {
+        return Err(Error::Launch(format!(
+            "{} isn't identified yet (Search), so it isn't started",
+            row.title
+        )));
+    }
+    let system = row
+        .system
+        .clone()
+        .ok_or_else(|| Error::Launch(format!("{} has no platform", row.title)))?;
+    let mut stmt = conn.prepare_cached("SELECT path, member FROM files WHERE file_id = ?1")?;
+    let mut files = Vec::new();
+    for id in row.file_ids() {
+        let (path, member): (String, String) = stmt.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        files.push((PathBuf::from(path), member));
+    }
+    files.sort();
+    start(conn, env, &row.title, &system, &files, emulator)
+}
+
+/// How to start `game` on `system_key` from `files` (path, archive member).
+fn start(
+    conn: &Connection,
+    env: &Env,
+    game: &str,
+    system_key: &str,
+    files: &[(PathBuf, String)],
+    emulator: Option<&str>,
+) -> Result<LaunchSpec, Error> {
+    let game = game.to_owned();
+    let system = systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+    let Some(first) = files.first() else {
+        return Err(Error::Launch(format!("no file for {game}")));
+    };
 
     // The file to start: an archive (as a whole), a sheet, a CHD, else the
     // first file.
-    let in_archive = files.iter().find(|f| !f.3.is_empty()).map(|f| f.2.clone());
+    let in_archive = files.iter().find(|f| !f.1.is_empty()).map(|f| f.0.clone());
     let is_sheet = |p: &Path| {
         p.extension().is_some_and(|e| {
             ["cue", "gdi", "m3u"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str())
@@ -404,16 +458,16 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
     };
     let sheet = files
         .iter()
-        .map(|f| f.2.clone())
+        .map(|f| f.0.clone())
         .find(|p| is_sheet(p))
-        .or_else(|| own_sheet(&files[0].2, &is_sheet));
+        .or_else(|| own_sheet(&first.0, &is_sheet));
     let (rom, archived) = match (in_archive, sheet) {
         (Some(a), _) => {
             let chd = a.extension().is_some_and(|e| e.eq_ignore_ascii_case("chd"));
             (a, !chd)
         }
         (None, Some(s)) => (s, false),
-        (None, None) => (files[0].2.clone(), false),
+        (None, None) => (first.0.clone(), false),
     };
 
     let spec = |emulator: String, runner: &Runner, args: Vec<String>| {

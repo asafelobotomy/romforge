@@ -284,11 +284,24 @@ fn by_serial(conn: &Connection, f: &Facts) -> Result<BTreeMap<(i64, String), Str
                 ))
             })? {
                 let (sid, title, serial) = r?;
+                // A short game code must be a whole part of the serial
+                // ("AQ3J" in SHVC-AQ3J-JPN), not letters across two parts.
+                if dat::serial_key(&serial) != key && !code_in(&key, &serial) {
+                    continue;
+                }
                 out.entry((sid, title)).or_insert(serial);
             }
         }
     }
     Ok(out)
+}
+
+/// Whether `code` (letters and digits) is one of `serial`'s parts, split at
+/// anything else ("SHVC-AQ3J-JPN" has AQ3J).
+fn code_in(code: &str, serial: &str) -> bool {
+    serial
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|part| part.eq_ignore_ascii_case(code))
 }
 
 /// The DAT names of `systems`, each with its systems.
@@ -631,4 +644,16 @@ fn suggest_with(
     });
     out.truncate(limit);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn codes_are_whole_parts_of_serials() {
+        use super::code_in;
+        assert!(code_in("AQ3J", "SHVC-AQ3J-JPN"));
+        assert!(code_in("GALE", "DL-DOL-GALE-USA"));
+        assert!(!code_in("CAQ3", "SHVC-AQ3J-JPN"), "across two parts");
+        assert!(!code_in("AQ3J", "SHVCAQ3JJPN"), "no parts to tell");
+    }
 }

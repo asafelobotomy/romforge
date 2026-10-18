@@ -297,9 +297,11 @@ impl Library {
             .collect::<Result<_, _>>()?)
     }
 
-    /// Store a Retool clone list (JSON) for `system_key`, replacing what an
-    /// earlier list stored for those titles. Returns how many titles.
-    pub fn store_clone_list(&mut self, system_key: &str, json: &[u8]) -> Result<usize, Error> {
+    /// Store a Retool clone list (JSON) named `list` for `system_key`,
+    /// replacing what an earlier version of that list stored. A title
+    /// already in another group (of this list or another) keeps that one.
+    /// Returns how many titles were stored.
+    pub fn store_clone_list(&mut self, system_key: &str, list: &str, json: &[u8]) -> Result<usize, Error> {
         #[derive(serde::Deserialize)]
         struct List {
             variants: Vec<Variant>,
@@ -324,22 +326,28 @@ impl Library {
         }
         let system =
             systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
-        let list: List = serde_json::from_slice(json).map_err(|e| Error::Dat(format!("clone list: {e}")))?;
+        let parsed: List =
+            serde_json::from_slice(json).map_err(|e| Error::Dat(format!("clone list: {e}")))?;
         let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM clone_groups WHERE system_id = ?1 AND list = ?2",
+            params![system.id, list],
+        )?;
         let mut n = 0;
         {
             let mut put = tx.prepare(
-                "INSERT OR REPLACE INTO clone_groups (system_id, title, grp, priority) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT OR IGNORE INTO clone_groups (system_id, title, grp, priority, list)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
-            for v in &list.variants {
+            for v in &parsed.variants {
                 for t in v.titles.iter().filter(|t| t.name_type.is_none()) {
-                    put.execute(params![
+                    n += put.execute(params![
                         system.id,
                         organize::base_title(&t.search_term),
                         v.group,
-                        t.priority.unwrap_or(1)
+                        t.priority.unwrap_or(1),
+                        list
                     ])?;
-                    n += 1;
                 }
             }
         }
@@ -409,10 +417,10 @@ impl Library {
             return Ok(Vec::new());
         }
         if let fetch::Source::CloneList(..) = source {
-            if let Some(url) = source.url()
+            if let (Some(url), fetch::Source::CloneList(name, group)) = (source.url(), source)
                 && let Some(body) = fetch::get_optional(&url)?
             {
-                self.store_clone_list(system_key, &body)?;
+                self.store_clone_list(system_key, &format!("{name} ({group})"), &body)?;
             }
             return Ok(Vec::new());
         }
@@ -1059,6 +1067,17 @@ impl Library {
         launch::plan(&self.conn, env, query, emulator)
     }
 
+    /// How to start one library row: exactly its files, never another game
+    /// that shares its title.
+    pub fn launch_row(
+        &self,
+        env: &launch::Env,
+        row_id: &str,
+        emulator: Option<&str>,
+    ) -> Result<launch::LaunchSpec, Error> {
+        launch::plan_row(&self.conn, env, row_id, emulator)
+    }
+
     /// One row per game (unidentified files as their own rows) and the
     /// platforms they're on, for the app's library screen.
     pub fn library_view(&self) -> Result<view::LibraryView, Error> {
@@ -1222,6 +1241,28 @@ impl Library {
     /// Validate and store the settings; returns what was stored.
     pub fn save_settings(&mut self, s: &settings::Settings) -> Result<settings::Settings, Error> {
         settings::save(&mut self.conn, s)
+    }
+
+    /// The settings with their secrets masked, for a form (the app's).
+    pub fn settings_masked(&self) -> Result<settings::Settings, Error> {
+        let mut s = self.settings()?;
+        s.keys = s.keys.masked();
+        Ok(s)
+    }
+
+    /// Store settings from a form that got [`Library::settings_masked`]:
+    /// a secret still showing the mask keeps its stored value. Returns the
+    /// stored settings, masked.
+    pub fn save_settings_from_form(
+        &mut self,
+        form: &settings::Settings,
+    ) -> Result<settings::Settings, Error> {
+        let stored = self.settings()?;
+        let mut s = form.clone();
+        s.keys = form.keys.clone().unmasked(&stored.keys);
+        let mut saved = self.save_settings(&s)?;
+        saved.keys = saved.keys.masked();
+        Ok(saved)
     }
 
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {

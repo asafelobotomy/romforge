@@ -330,6 +330,9 @@ pub fn enrich(
     let mut session = crate::artsources::Session::default();
     // Sources that said "slow down" aren't asked again this run.
     let mut halted: Vec<crate::artsources::Provider> = Vec::new();
+    // Hosts that said "slow down" (libretro's, LaunchBox's image server)
+    // aren't asked again this run either.
+    let mut halted_hosts: std::collections::HashSet<String> = Default::default();
     for (system_id, games) in &by_system {
         let Some(system) = systems::by_id(*system_id) else {
             continue;
@@ -354,7 +357,7 @@ pub fn enrich(
                     opts.metadata_base,
                     fetch::encode_segment(lr_name)
                 );
-                let body = match fetch::get_optional(&url) {
+                let body = match get_halting(&url, &mut halted_hosts) {
                     Ok(Some(b)) => b,
                     Ok(None) => continue,
                     Err(e) => {
@@ -470,7 +473,7 @@ pub fn enrich(
                     game: (*game).clone(),
                     kind,
                 });
-                match fetch::get_optional(&url) {
+                match get_halting(&url, &mut halted_hosts) {
                     Ok(Some(data)) if image_ext(&data).is_some() => {
                         match keep(conn, opts, system, *system_id, game, kind, &data, "libretro") {
                             Ok(()) => report.art_saved += 1,
@@ -500,7 +503,7 @@ pub fn enrich(
                                 game: (*game).clone(),
                                 kind,
                             });
-                            match fetch::get_optional(&url) {
+                            match get_halting(&url, &mut halted_hosts) {
                                 Ok(Some(data)) if image_ext(&data).is_some() => {
                                     match keep(conn, opts, system, *system_id, game, kind, &data, "launchbox")
                                     {
@@ -554,7 +557,7 @@ pub fn enrich(
                                 game: (*game).clone(),
                                 kind,
                             });
-                            match fetch::get_optional(&url) {
+                            match get_halting(&url, &mut halted_hosts) {
                                 Ok(Some(data)) if image_ext(&data).is_some() => {
                                     match keep(
                                         conn,
@@ -643,7 +646,33 @@ pub fn enrich(
             }
         }
     }
+    // The same failure for many games is listed once.
+    let mut seen = std::collections::HashSet::new();
+    report.errors.retain(|e| seen.insert(e.clone()));
     Ok(report)
+}
+
+/// [`fetch::get_optional`], unless `url`'s host rate-limited this run; a
+/// host that does now is added to `halted`.
+fn get_halting(url: &str, halted: &mut std::collections::HashSet<String>) -> Result<Option<Vec<u8>>, Error> {
+    let host = url
+        .split("://")
+        .nth(1)
+        .and_then(|r| r.split('/').next())
+        .unwrap_or("")
+        .to_owned();
+    if halted.contains(&host) {
+        return Err(Error::Http(format!(
+            "{host}: rate limiting, not asked again this run"
+        )));
+    }
+    let r = fetch::get_optional(url);
+    if let Err(e) = &r
+        && fetch::is_rate_limited(e)
+    {
+        halted.insert(host);
+    }
+    r
 }
 
 /// The SHA1s of a game's ROMs (from its DATs) or of the files you named it.
@@ -715,7 +744,11 @@ fn record(
         "INSERT INTO art (system_id, title, kind, path, checked_at, source)
          VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5)
          ON CONFLICT(system_id, title, kind) DO UPDATE SET path = excluded.path,
-           checked_at = excluded.checked_at, source = excluded.source",
+           checked_at = excluded.checked_at, source = excluded.source
+         -- A source that found nothing never wipes a picture another source
+         -- saved (a refresh asks libretro again before the others).
+         WHERE excluded.path IS NOT NULL OR art.path IS NULL
+            OR coalesce(art.source, 'libretro') = excluded.source",
         params![system_id, game, kind.as_str(), path, source],
     )?;
     Ok(())

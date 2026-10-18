@@ -235,3 +235,56 @@ fn redump_only_systems_get_art() {
     assert!(report.errors.is_empty(), "{:?}", report.errors);
     assert_eq!(report.art_saved, 1, "{report:?}");
 }
+
+/// An image host that says "slow down" is asked once, not once per game,
+/// and its pictures aren't recorded as missing (so a later run asks again).
+#[test]
+fn a_rate_limiting_image_host_is_asked_once() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let asked = Arc::new(Mutex::new(0usize));
+    let count = asked.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                    break;
+                }
+            }
+            let (status, extra) = if line.contains("/thumbs/") {
+                *count.lock().unwrap() += 1;
+                ("429 Too Many Requests", "Retry-After: 1000\r\n")
+            } else {
+                ("404 Not Found", "")
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status}\r\n{extra}Content-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+        }
+    });
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    opts.metadata_base = format!("{base}/meta");
+    opts.thumbnails_base = format!("{base}/thumbs");
+    opts.art = vec![ArtKind::Boxart, ArtKind::Snap];
+    opts.wikidata = None;
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(report.games >= 3, "{report:?}");
+    assert_eq!(*asked.lock().unwrap(), 1, "asked once");
+    assert_eq!(report.art_missing, 0, "not recorded as missing: {report:?}");
+    assert!(
+        report.errors.iter().any(|e| e.contains("not asked again")),
+        "{:?}",
+        report.errors
+    );
+    assert!(report.errors.len() <= 3, "listed once: {:?}", report.errors);
+}

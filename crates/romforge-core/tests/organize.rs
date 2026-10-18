@@ -463,7 +463,7 @@ fn clone_lists_join_retitled_games_for_1g1r() {
         {"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]},
         {"group": "Angelique - Premium Box", "titles": [{"searchTerm": "Angelique - Premium Box"}, {"searchTerm": "Angelique", "priority": 3}]}
     ]}"#;
-    assert_eq!(lib.store_clone_list("SNES", list).unwrap(), 4);
+    assert_eq!(lib.store_clone_list("SNES", "test (No-Intro)", list).unwrap(), 4);
     assert_eq!(
         names(&lib),
         ["Aero Fighters (USA)", "Angelique - Premium Box (Japan)"],
@@ -495,4 +495,62 @@ fn failed_moves_leave_no_journal_rows() {
     // No move happened, so no batch was kept.
     let err = lib.organize_undo(None).unwrap_err().to_string();
     assert!(err.contains("nothing to undo"), "{err}");
+}
+
+/// A clone list replaces its own earlier rows (old titles go), and a title
+/// another group already claimed keeps that group.
+#[test]
+fn clone_lists_replace_their_rows_and_keep_first_groups() {
+    let mut lib = Library::open_in_memory().unwrap();
+    let a = br#"{"variants": [
+        {"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]},
+        {"group": "Gone Game", "titles": [{"searchTerm": "Gone Game"}]}
+    ]}"#;
+    assert_eq!(lib.store_clone_list("SNES", "A (No-Intro)", a).unwrap(), 3);
+    // Another list claiming "Sonic Wings" for another group: it stays.
+    let b = br#"{"variants": [{"group": "Sonic Wings Special", "titles": [{"searchTerm": "Sonic Wings"}, {"searchTerm": "Sonic Wings Special"}]}]}"#;
+    assert_eq!(
+        lib.store_clone_list("SNES", "B (Redump)", b).unwrap(),
+        1,
+        "only the new title"
+    );
+    // A new version of list A without "Gone Game".
+    let a2 = br#"{"variants": [{"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]}]}"#;
+    assert_eq!(lib.store_clone_list("SNES", "A (No-Intro)", a2).unwrap(), 2);
+    // Back to plain names for 1G1R: "Gone Game" is in no group now.
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("roms");
+    std::fs::create_dir(&src).unwrap();
+    let mut games = String::new();
+    for (i, name) in [
+        "Gone Game (USA)",
+        "Gone Game (Japan)",
+        "Aero Fighters (USA)",
+        "Sonic Wings (Japan)",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let data = vec![i as u8 + 1; 2048];
+        games += &format!(
+            r#"<game name="{name}">{}</game>"#,
+            rom(&format!("{name}.sfc"), &data)
+        );
+        std::fs::write(src.join(format!("{i}.sfc")), &data).unwrap();
+    }
+    let dat = tmp.path().join("snes.dat");
+    std::fs::write(&dat, format!(r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>{games}</datafile>"#)).unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&src, Scope::All).unwrap();
+    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
+    opts.one_g1r = true;
+    let mut names: Vec<String> = lib
+        .organize_plan(&opts)
+        .unwrap()
+        .moves
+        .into_iter()
+        .map(|m| m.game)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Aero Fighters (USA)", "Gone Game (USA)"]);
 }

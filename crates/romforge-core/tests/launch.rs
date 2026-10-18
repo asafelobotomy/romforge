@@ -225,3 +225,23 @@ fn a_disc_with_its_own_cue_starts_from_that_cue() {
     let spec = lib.launch_plan(&f.env, "Disc (USA)", None).unwrap();
     assert_eq!(spec.rom, std::fs::canonicalize(roms.join("mine.cue")).unwrap());
 }
+
+/// Play starts a library row: exactly its files. A row that isn't
+/// identified isn't started.
+#[test]
+fn launch_by_row() {
+    let lib = library();
+    let f = fake();
+    script(&f.root.join("bin/retroarch"), "exit 0");
+    core(&f, "mgba");
+    let rows = lib.library_view().unwrap().rows;
+    let gba = rows.iter().find(|r| r.title.starts_with("Test GBA")).unwrap();
+    assert!(gba.playable);
+    let by_row = lib.launch_row(&f.env, &gba.id, None).unwrap();
+    let by_name = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
+    assert_eq!((by_row.rom, by_row.args), (by_name.rom, by_name.args));
+    let unknown = rows.iter().find(|r| r.title == "unknown.bin").unwrap();
+    assert!(!unknown.playable);
+    let err = lib.launch_row(&f.env, &unknown.id, None).unwrap_err().to_string();
+    assert!(err.contains("isn't identified"), "{err}");
+}

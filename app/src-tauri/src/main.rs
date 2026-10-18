@@ -222,12 +222,12 @@ async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichR
 
 #[tauri::command]
 async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
-    read(&db, move |lib| lib.settings()).await
+    read(&db, move |lib| lib.settings_masked()).await
 }
 
 #[tauri::command]
 async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<Settings> {
-    with(&db, move |lib| lib.save_settings(&settings)).await
+    with(&db, move |lib| lib.save_settings_from_form(&settings)).await
 }
 
 #[derive(serde::Serialize)]
@@ -418,8 +418,9 @@ async fn game_info(db: tauri::State<'_, Db>, query: String) -> Res<Vec<Info>> {
 }
 
 #[tauri::command]
-async fn launch(db: tauri::State<'_, Db>, query: String) -> Res<String> {
-    let spec = read(&db, move |lib| lib.launch_plan(&Env::detect(), &query, None)).await?;
+/// Start one library row (exactly its files).
+async fn launch(db: tauri::State<'_, Db>, row_id: String) -> Res<String> {
+    let spec = read(&db, move |lib| lib.launch_row(&Env::detect(), &row_id, None)).await?;
     romforge_core::launch::spawn(&spec).map_err(|e| e.to_string())?;
     Ok(format!("{} started with {}", spec.game, spec.emulator))
 }
