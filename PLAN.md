@@ -248,6 +248,101 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       matching; folding accents ("Pokémon" = "Pokemon") in title matching;
       a nightly single-file export as a model if romforge ever shares its
       own data.
+12. **Sharper identification** (researched 2026-10-18). Size + SHA1 or
+    size + MD5 stays the only "verified" (house rule 8). Each step below
+    either finds exact matches that are missed today, or gathers evidence
+    for files that stay unknown, shown as a suggestion the user confirms
+    (it then becomes "identified by you"). In this order:
+    1. *Close the normalized-hash gaps* (small). Add the PC Engine 512-byte
+       header (`size % 128 KiB == 512`), the SNES copier rule as
+       `size % 8 KiB == 512` (RetroAchievements' rule; today `% 1024`),
+       N64 `.v64`/`.n64` also hashed as `.z64` (byte order from the first
+       word), and Mega Drive `.smd` de-interleaved. Same raw + stripped
+       columns as now, one table in `headers.rs`. Use the DAT's stored
+       `header_hint` and the unused `is_nes2`.
+    2. *Keep more of the DAT* (small): `cloneof`/`romof`, region and
+       serial. libretro's `metadat/redump` mirror has a serial on each
+       game and rom (checked: SLUS-00067 is Symphony of the Night, USA),
+       and `metadat/serial` covers 35 cartridge systems. Both are CC BY-SA
+       4.0 and downloaded like DATs. Parent/clone feeds 1G1R (replaces the
+       parked idea below).
+    3. *Read the game's own ID* (medium), with one table of readers per
+       system, like `headers.rs`:
+       - SNES internal title, region and checksum (LoROM or HiROM by the
+         checksum complement);
+       - Mega Drive serial and region (`0x180`, `0x1F0`), GBA game code
+         (`0xAC`), GB title (`0x134`), N64 ID (`0x3B`), NDS code (`0x0C`);
+       - PS1/PS2 `BOOT=` in `SYSTEM.CNF`, from the first few MB of track
+         1 (on the real library: `SLUS_000.67`, `SLUS_007.07`,
+         `SLUS_009.74`, each in seconds);
+       - Saturn, Sega CD and Dreamcast IP.BIN, the GameCube/Wii 6-byte
+         ID, and PSP `PARAM.SFO`.
+
+       Stored per file. Never a match on its own, since revisions and
+       discs share serials, but a filter and tie-breaker, and the system
+       hint the parked "scan-time system hints" idea wanted.
+    4. *Parse names* (small to medium). `shiratsu-naming` (MIT, 1.1.0)
+       tokenizes No-Intro, TOSEC and GoodTools names into base title,
+       region, languages, revision, dev status and flags (`[b]`, `[!]`,
+       `[h]`, `[tr en]`, `[T+Eng]`). It serves 11.4 too, and reads the file
+       names of unknown files.
+    5. *A title index with vetoes* (medium), built per system from the
+       DATs:
+       - normalize articles, "&", accents and punctuation, turn Roman
+         numerals into digits, and keep the subtitle as a field of its
+         own;
+       - hard tokens veto a match: numerals, years, and Jr./DX/Plus/
+         Turbo/Special ("Street Fighter II" never matches "III");
+       - score token-set similarity, built on `strsim` (MIT). Jaro-Winkler
+         alone is unsafe ("II" vs "III" scores about 0.98).
+    6. *Suggestions with evidence* (medium). Each unknown file gets scored
+       suggestions, shown in the library and as the top three in the
+       Search dialog, each with its evidence: "name exact, size equal,
+       region Japan agrees (header), hash differs". The bands are never
+       counted as verified:
+       - *Likely, CRC match*;
+       - *Likely, modified copy of X*: same size, the name agrees, the hash
+         differs (bad dump or hack);
+       - *Suggested, name match*;
+       - *Possible, similar name*;
+       - *Unknown*.
+
+       Confirming a suggestion makes it "identified by you".
+    7. *Hacks and translations* (medium). Strip patch tags ("(English
+       v2.0)[Addendum]", `[T+Eng]`, `[tr en]`, `(Hack)`), match the base
+       title, and label the file "translation of X" or "hack of X": a
+       status of its own, never verified. Evidence comes from the internal
+       header and libretro `metadat/hacks`. A BPS patch beside the ROM
+       records the CRC32s of the source and the target, which proves the
+       base. On the real library, "Dragon Quest III (English
+       v2.0)[Addendum]":
+       - matches one SNES DAT title, "Dragon Quest III - Soshite Densetsu
+         e... (Japan)" (4 MiB, serial SHVC-AQ3J-JPN);
+       - has internal title DRAGONQUEST3, region byte Japan and a valid
+         checksum;
+       - is 6 MiB, because the patch expands the ROM.
+    8. *Cue sheets by content* (small). Compare a cue's tracks (file names,
+       modes, indexes) with the DAT's cue instead of its bytes. A cue
+       rewritten with CRLF or other spacing then shows as "cue fits", not
+       as an unknown file. The library's Symphony of the Night cue is 252
+       bytes against Redump's 282, with the same two tracks.
+    9. *Containers* (large, last). RVZ/WIA/WBFS/CISO/GCZ store the disc's
+       6-byte ID and size (RVZ: `iso_file_size`) but no hash of the
+       original ISO. ID + size gives a suggestion at once; a strict match
+       needs streaming decompression inside romforge (house rule 7).
+       CSO/ZSO/PBP work the same way for PSP and PS1. NKit keeps only the
+       source CRC32, so it gives a candidate at most.
+
+    Not used:
+    - RetroAchievements' hash database needs an account key. Its
+      per-system hashing rules (MIT, in rcheevos) can guide steps 1 and 3.
+    - ScreenScraper needs keys; it is already tier 2.
+    - Hasheous: a keyless lookup isn't confirmed (see 11).
+
+    Small fixes found along the way:
+    - a second copy of a shared audio track is marked "duplicate" by path
+      order, even when it belongs to another disc;
+    - files with unknown extensions are skipped silently (only counted).
 
 ## Later ideas (parked, do not build yet)
 
@@ -259,8 +354,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 - `.m3u` playlists for multi-disc games (organize would write a new file).
 - Play history and favourites.
 
-- Scan-time system hints from extension or header to shortlist DATs.
 - Redump update check without re-downloading (Redump has no version index).
-- Parent/clone data for 1G1R (titles are grouped by name today), and the
-  regions seed from remustwo.
+- The regions seed from remustwo for 1G1R (parent/clone data is in
+  milestone 12).
 - RAR support needs a free pure-Rust decoder; none known yet.
