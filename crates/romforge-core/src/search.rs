@@ -68,7 +68,7 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
     }
     let mut out = Vec::new();
     let mut suggester = crate::suggest::Suggester::default();
-    for r in v.rows {
+    for r in &v.rows {
         if only.is_some_and(|ids| !ids.contains(&r.id)) {
             continue;
         }
@@ -77,7 +77,7 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
             RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
         );
         if !identified && r.status != RowStatus::Duplicate {
-            let d = view::detail(conn, &r.id)?;
+            let d = view::detail_in(conn, &v, &r.id)?;
             let suggestion = suggester.suggest(conn, &d, None, None, 1)?.into_iter().next();
             out.push(QueueItem {
                 row_id: r.id.clone(),
@@ -241,7 +241,7 @@ pub fn identify(
             ],
         )?;
     }
-    crate::identify::identify_all(&tx)?;
+    crate::identify::identify(&tx, crate::identify::Relook::Nothing)?;
     tx.commit()?;
     Ok(())
 }
@@ -256,7 +256,7 @@ pub fn forget(conn: &mut Connection, row_id: &str) -> Result<(), Error> {
             params![f.sha1, f.size],
         )?;
     }
-    crate::identify::identify_all(&tx)?;
+    crate::identify::identify(&tx, crate::identify::Relook::Nothing)?;
     tx.commit()?;
     Ok(())
 }

@@ -1,12 +1,13 @@
 //! Tauri shell over romforge-core. Every command is a call into the core.
-//! All are async: a sync command runs on the main thread, and would freeze
-//! the window waiting for the library while a long scan or download holds it.
+//! Each runs on a blocking thread (never the main thread or an async
+//! worker), and commands that only read use a second connection: SQLite's
+//! WAL lets them go on while a scan, Enrich or a download writes.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
@@ -20,13 +21,44 @@ use romforge_core::{
     DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
 };
 
-struct Db(Mutex<Library>);
+/// The library twice: `write` for commands that change it, `read` for
+/// those that only look (a second connection to the same database).
+struct Db {
+    write: Arc<Mutex<Library>>,
+    read: Arc<Mutex<Library>>,
+}
 
 type Res<T> = Result<T, String>;
 
-fn with<T>(db: &tauri::State<Db>, f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error>) -> Res<T> {
-    let mut lib = db.0.lock().map_err(|e| e.to_string())?;
-    f(&mut lib).map_err(|e| e.to_string())
+/// Run `f` on a blocking thread with `lib` locked. A panic in an earlier
+/// call doesn't lock everyone out (the poisoned lock is taken anyway).
+async fn on<T: Send + 'static>(
+    lib: &Arc<Mutex<Library>>,
+    f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    let lib = lib.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut lib = lib.lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut lib).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// For commands that change the library.
+async fn with<T: Send + 'static>(
+    db: &tauri::State<'_, Db>,
+    f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    on(&db.write, f).await
+}
+
+/// For commands that only read it.
+async fn read<T: Send + 'static>(
+    db: &tauri::State<'_, Db>,
+    f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    on(&db.read, f).await
 }
 
 #[tauri::command]
@@ -39,27 +71,27 @@ async fn library(
         Some(s) => Some(Status::parse(&s).ok_or_else(|| format!("unknown status {s:?}"))?),
         None => None,
     };
-    with(&db, |lib| lib.files(&LibraryFilter { system_id, status }))
+    read(&db, move |lib| lib.files(&LibraryFilter { system_id, status })).await
 }
 
 #[tauri::command]
 async fn systems(db: tauri::State<'_, Db>) -> Res<Vec<SystemInfo>> {
-    with(&db, |lib| lib.systems_in_use())
+    read(&db, move |lib| lib.systems_in_use()).await
 }
 
 #[tauri::command]
 async fn summary(db: tauri::State<'_, Db>) -> Res<Summary> {
-    with(&db, |lib| lib.summary())
+    read(&db, move |lib| lib.summary()).await
 }
 
 #[tauri::command]
 async fn dat_games(db: tauri::State<'_, Db>, dat_id: i64) -> Res<Vec<DatGame>> {
-    with(&db, |lib| lib.dat_games(dat_id))
+    read(&db, move |lib| lib.dat_games(dat_id)).await
 }
 
 #[tauri::command]
 async fn scan(db: tauri::State<'_, Db>, dir: String) -> Res<ScanReport> {
-    with(&db, |lib| lib.scan(&dir, Scope::All))
+    with(&db, move |lib| lib.scan(&dir, Scope::All)).await
 }
 
 #[derive(serde::Serialize)]
@@ -69,8 +101,10 @@ struct Downloaded {
     errors: Vec<String>,
 }
 
-fn extdb_dir(db: &tauri::State<Db>) -> Res<PathBuf> {
-    with(db, |lib| Ok(lib.extdb_dir()))?.ok_or_else(|| "no folder for databases".into())
+async fn extdb_dir(db: &tauri::State<'_, Db>) -> Res<PathBuf> {
+    read(db, |lib| Ok(lib.extdb_dir()))
+        .await?
+        .ok_or_else(|| "no folder for databases".into())
 }
 
 fn extdb_named(name: &str) -> Res<ExtDb> {
@@ -79,31 +113,31 @@ fn extdb_named(name: &str) -> Res<ExtDb> {
 
 #[tauri::command]
 async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
-    Ok(romforge_core::extdb::list(&extdb_dir(&db)?))
+    Ok(romforge_core::extdb::list(&extdb_dir(&db).await?))
 }
 
 /// Downloads without holding the library, so the window stays usable.
 #[tauri::command]
 async fn extdb_download(db: tauri::State<'_, Db>, name: String) -> Res<ExtDbInfo> {
-    let dir = extdb_dir(&db)?;
+    let dir = extdb_dir(&db).await?;
     romforge_core::extdb::download(extdb_named(&name)?, &dir, &Default::default(), |_| {})
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
-    let dir = extdb_dir(&db)?;
+    let dir = extdb_dir(&db).await?;
     romforge_core::extdb::remove(extdb_named(&name)?, &dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn download_dats(db: tauri::State<'_, Db>, extras: bool) -> Res<Downloaded> {
-    let mut out = Downloaded {
-        imported: 0,
-        unchanged: 0,
-        errors: Vec::new(),
-    };
-    with(&db, |lib| {
+    with(&db, move |lib| {
+        let mut out = Downloaded {
+            imported: 0,
+            unchanged: 0,
+            errors: Vec::new(),
+        };
         lib.download_all(extras, |key, source, r| match r {
             Ok(dats) => {
                 for d in dats {
@@ -115,9 +149,10 @@ async fn download_dats(db: tauri::State<'_, Db>, extras: bool) -> Res<Downloaded
                 }
             }
             Err(e) => out.errors.push(format!("{key}: {source}: {e}")),
-        })
-    })?;
-    Ok(out)
+        })?;
+        Ok(out)
+    })
+    .await
 }
 
 fn organize_options(from: &str, dest: &str, one_g1r: bool) -> OrganizeOptions {
@@ -129,47 +164,50 @@ fn organize_options(from: &str, dest: &str, one_g1r: bool) -> OrganizeOptions {
 
 #[tauri::command]
 async fn organize_plan(db: tauri::State<'_, Db>, from: String, dest: String, one_g1r: bool) -> Res<Plan> {
-    with(&db, |lib| {
+    read(&db, move |lib| {
         lib.organize_plan(&organize_options(&from, &dest, one_g1r))
     })
+    .await
 }
 
 #[tauri::command]
 async fn organize_apply(db: tauri::State<'_, Db>, from: String, dest: String, one_g1r: bool) -> Res<Applied> {
-    with(&db, |lib| {
+    with(&db, move |lib| {
         let plan = lib.organize_plan(&organize_options(&from, &dest, one_g1r))?;
         lib.organize_apply(&plan, &PathBuf::from(&dest))
     })
+    .await
 }
 
 #[tauri::command]
 async fn organize_undo(db: tauri::State<'_, Db>) -> Res<Undone> {
-    with(&db, |lib| lib.organize_undo(None))
+    with(&db, move |lib| lib.organize_undo(None)).await
 }
 
 /// `only`: these library row ids, else every identified game in Source.
 #[tauri::command]
 async fn cleanup_plan(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupPlan> {
-    with(&db, |lib| lib.cleanup_plan(only.as_deref()))
+    read(&db, move |lib| lib.cleanup_plan(only.as_deref())).await
 }
 
 /// Plans again here rather than trusting a plan sent back from the window.
 #[tauri::command]
 async fn cleanup_apply(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupReport> {
-    with(&db, |lib| {
+    with(&db, move |lib| {
         let plan = lib.cleanup_plan(only.as_deref())?;
         lib.cleanup_apply(&plan, |_, _| {})
     })
+    .await
 }
 
 #[tauri::command]
 async fn cleanup_undo(db: tauri::State<'_, Db>) -> Res<CleanupUndone> {
-    with(&db, |lib| lib.cleanup_undo(None))
+    with(&db, move |lib| lib.cleanup_undo(None)).await
 }
 
 #[tauri::command]
 async fn cleanup_batches(db: tauri::State<'_, Db>) -> Res<Vec<CleanupBatch>> {
-    with(&db, |lib| lib.cleanup_batches())
+    read(&db, move |lib| lib.cleanup_batches()).await
 }
 
 #[tauri::command]
@@ -179,17 +217,17 @@ async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichR
         art: ArtKind::ALL.to_vec(),
         ..EnrichOptions::new(default_cache_dir())
     };
-    with(&db, |lib| lib.enrich(&opts, |_| {}))
+    with(&db, move |lib| lib.enrich(&opts, |_| {})).await
 }
 
 #[tauri::command]
 async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
-    with(&db, |lib| lib.settings())
+    read(&db, move |lib| lib.settings()).await
 }
 
 #[tauri::command]
 async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<Settings> {
-    with(&db, |lib| lib.save_settings(&settings))
+    with(&db, move |lib| lib.save_settings(&settings)).await
 }
 
 #[derive(serde::Serialize)]
@@ -206,12 +244,12 @@ async fn settings_info() -> Res<SettingsInfo> {
 
 #[tauri::command]
 async fn search_queue(db: tauri::State<'_, Db>) -> Res<Vec<QueueItem>> {
-    with(&db, |lib| lib.search_queue(None))
+    read(&db, move |lib| lib.search_queue(None)).await
 }
 
 #[tauri::command]
 async fn forget_identity(db: tauri::State<'_, Db>, row_id: String) -> Res<()> {
-    with(&db, |lib| lib.forget_identity(&row_id))
+    with(&db, move |lib| lib.forget_identity(&row_id)).await
 }
 
 #[derive(serde::Serialize)]
@@ -236,12 +274,12 @@ async fn all_systems() -> Res<Vec<SystemChoice>> {
 
 #[tauri::command]
 async fn library_view(db: tauri::State<'_, Db>) -> Res<LibraryView> {
-    with(&db, |lib| lib.library_view())
+    read(&db, move |lib| lib.library_view()).await
 }
 
 #[tauri::command]
 async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
-    let mut d = with(&db, |lib| lib.game_detail(&id))?;
+    let mut d = read(&db, move |lib| lib.game_detail(&id)).await?;
     // Paths become data: URLs the page can show without file access.
     for path in d.art.values_mut() {
         *path = match std::fs::read(&*path) {
@@ -261,7 +299,7 @@ async fn search_find(
     text: Option<String>,
     system: Option<String>,
 ) -> Res<Vec<Found>> {
-    with(&db, |lib| {
+    read(&db, move |lib| {
         lib.search_find(
             &row_id,
             scraper,
@@ -270,19 +308,21 @@ async fn search_find(
             romforge_core::search::WIKIDATA_API,
         )
     })
+    .await
 }
 
 /// The preview with its picture as a data: URL (in `image`).
 #[tauri::command]
 async fn search_preview(db: tauri::State<'_, Db>, row_id: String, found: Found) -> Res<Preview> {
-    let mut p = with(&db, |lib| {
+    let mut p = read(&db, move |lib| {
         lib.search_preview(
             &row_id,
             &found,
             &default_cache_dir(),
             romforge_core::enrich::THUMBNAILS_BASE,
         )
-    })?;
+    })
+    .await?;
     p.image = p
         .image
         .and_then(|path| std::fs::read(path).ok())
@@ -308,9 +348,10 @@ async fn search_choose(
         refresh: overwrite,
         ..EnrichOptions::new(default_cache_dir())
     };
-    with(&db, |lib| {
+    with(&db, move |lib| {
         lib.search_choose(&row_id, &found, system.as_deref(), &opts)
     })
+    .await
 }
 
 #[derive(serde::Serialize)]
@@ -322,7 +363,7 @@ struct Refreshed {
 
 #[tauri::command]
 async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
-    let results = with(&db, |lib| lib.refresh(Default::default(), |_, _| {}))?;
+    let results = with(&db, move |lib| lib.refresh(Default::default(), |_, _| {})).await?;
     let mut out = Refreshed {
         folders: 0,
         entries: 0,
@@ -357,7 +398,7 @@ struct Info {
 
 #[tauri::command]
 async fn game_info(db: tauri::State<'_, Db>, query: String) -> Res<Vec<Info>> {
-    let found = with(&db, |lib| lib.game_info(&query))?;
+    let found = read(&db, move |lib| lib.game_info(&query)).await?;
     Ok(found
         .into_iter()
         .map(|g| Info {
@@ -378,7 +419,7 @@ async fn game_info(db: tauri::State<'_, Db>, query: String) -> Res<Vec<Info>> {
 
 #[tauri::command]
 async fn launch(db: tauri::State<'_, Db>, query: String) -> Res<String> {
-    let spec = with(&db, |lib| lib.launch_plan(&Env::detect(), &query, None))?;
+    let spec = read(&db, move |lib| lib.launch_plan(&Env::detect(), &query, None)).await?;
     romforge_core::launch::spawn(&spec).map_err(|e| e.to_string())?;
     Ok(format!("{} started with {}", spec.game, spec.emulator))
 }
@@ -413,11 +454,15 @@ fn main() {
     let path = std::env::var_os("ROMFORGE_DB")
         .map(PathBuf::from)
         .unwrap_or_else(romforge_core::default_db_path);
-    let lib = Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
+    let open = || Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
+    let db = Db {
+        write: Arc::new(Mutex::new(open())),
+        read: Arc::new(Mutex::new(open())),
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(Db(Mutex::new(lib)))
+        .manage(db)
         .invoke_handler(tauri::generate_handler![
             library,
             systems,

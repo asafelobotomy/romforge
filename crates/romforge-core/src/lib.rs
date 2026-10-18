@@ -176,7 +176,13 @@ pub struct Library {
     batch_depth: u32,
     /// A DAT was imported inside the batch; identify when it ends.
     batch_dirty: bool,
+    /// The library view, kept until the database changes (by any
+    /// connection: SQLite's `data_version`, and this one's own changes).
+    view_cache: std::sync::Mutex<Option<CachedView>>,
 }
+
+/// ((SQLite data_version, this connection's total changes), the view).
+type CachedView = ((i64, u64), std::sync::Arc<view::LibraryView>);
 
 impl Library {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -187,6 +193,7 @@ impl Library {
             path: Some(std::path::absolute(path)?),
             batch_depth: 0,
             batch_dirty: false,
+            view_cache: Default::default(),
         })
     }
 
@@ -196,6 +203,7 @@ impl Library {
             path: None,
             batch_depth: 0,
             batch_dirty: false,
+            view_cache: Default::default(),
         })
     }
 
@@ -773,6 +781,8 @@ impl Library {
         // files that went away. `cleared`: paths whose old rows were dropped
         // before the new ones went in (an archive may have lost members).
         let mut seen: std::collections::HashSet<String> = Default::default();
+        // Files hashed in this scan: only they are looked up in the DATs again.
+        let mut hashed_ids: std::collections::HashSet<i64> = Default::default();
         let mut cleared: std::collections::HashSet<String> = Default::default();
 
         let mut report = ScanReport {
@@ -794,7 +804,8 @@ impl Library {
                    disk_size = excluded.disk_size, mtime = excluded.mtime,
                    id_kind = excluded.id_kind, id_serial = excluded.id_serial,
                    id_title = excluded.id_title, id_region = excluded.id_region,
-                   sheet_files = excluded.sheet_files, id_size = excluded.id_size, id_crc = excluded.id_crc",
+                   sheet_files = excluded.sheet_files, id_size = excluded.id_size, id_crc = excluded.id_crc
+                 RETURNING file_id",
             )?;
             let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
@@ -857,30 +868,35 @@ impl Library {
                     Ok(h) => {
                         let s = h.stripped.as_ref();
                         result = upsert
-                            .execute(params![
-                                root_id,
-                                entry.path.to_string_lossy(),
-                                entry.member,
-                                h.raw.size,
-                                h.raw.crc32,
-                                h.raw.md5,
-                                h.raw.sha1,
-                                s.map(|s| s.0),
-                                s.map(|s| s.1.size),
-                                s.map(|s| &s.1.crc32),
-                                s.map(|s| &s.1.md5),
-                                s.map(|s| &s.1.sha1),
-                                entry.stamp.map(|s| s.size),
-                                entry.stamp.map(|s| s.mtime),
-                                h.id.as_ref().map(|i| i.kind),
-                                h.id.as_ref().and_then(|i| i.serial.as_deref()),
-                                h.id.as_ref().and_then(|i| i.title.as_deref()),
-                                h.id.as_ref().and_then(|i| i.region.as_deref()),
-                                h.sheet.as_ref().and_then(|s| serde_json::to_string(s).ok()),
-                                h.id.as_ref().and_then(|i| i.image_size),
-                                h.id.as_ref().and_then(|i| i.source_crc),
-                            ])
-                            .map(drop);
+                            .query_row(
+                                params![
+                                    root_id,
+                                    entry.path.to_string_lossy(),
+                                    entry.member,
+                                    h.raw.size,
+                                    h.raw.crc32,
+                                    h.raw.md5,
+                                    h.raw.sha1,
+                                    s.map(|s| s.0),
+                                    s.map(|s| s.1.size),
+                                    s.map(|s| &s.1.crc32),
+                                    s.map(|s| &s.1.md5),
+                                    s.map(|s| &s.1.sha1),
+                                    entry.stamp.map(|s| s.size),
+                                    entry.stamp.map(|s| s.mtime),
+                                    h.id.as_ref().map(|i| i.kind),
+                                    h.id.as_ref().and_then(|i| i.serial.as_deref()),
+                                    h.id.as_ref().and_then(|i| i.title.as_deref()),
+                                    h.id.as_ref().and_then(|i| i.region.as_deref()),
+                                    h.sheet.as_ref().and_then(|s| serde_json::to_string(s).ok()),
+                                    h.id.as_ref().and_then(|i| i.image_size),
+                                    h.id.as_ref().and_then(|i| i.source_crc),
+                                ],
+                                |r| r.get::<_, i64>(0),
+                            )
+                            .map(|id| {
+                                hashed_ids.insert(id);
+                            });
                         report.hashed += 1;
                         report.bytes_hashed += h.raw.size;
                     }
@@ -914,7 +930,7 @@ impl Library {
                 params![path, root_id],
             )?;
         }
-        identify::identify_all(&tx)?;
+        identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
         tx.commit()?;
         Ok(report)
     }
@@ -1046,12 +1062,28 @@ impl Library {
     /// One row per game (unidentified files as their own rows) and the
     /// platforms they're on, for the app's library screen.
     pub fn library_view(&self) -> Result<view::LibraryView, Error> {
-        view::library(&self.conn)
+        Ok((*self.cached_view()?).clone())
     }
 
     /// Everything known about one row of [`Library::library_view`].
     pub fn game_detail(&self, id: &str) -> Result<view::GameDetail, Error> {
-        view::detail(&self.conn, id)
+        let v = self.cached_view()?;
+        view::detail_in(&self.conn, &v, id)
+    }
+
+    /// The library view, built again only when the database changed.
+    fn cached_view(&self) -> Result<std::sync::Arc<view::LibraryView>, Error> {
+        let version: i64 = self.conn.pragma_query_value(None, "data_version", |r| r.get(0))?;
+        let key = (version, self.conn.total_changes());
+        let mut cache = self.view_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((k, v)) = cache.as_ref()
+            && *k == key
+        {
+            return Ok(v.clone());
+        }
+        let v = std::sync::Arc::new(view::library(&self.conn)?);
+        *cache = Some((key, v.clone()));
+        Ok(v)
     }
 
     /// Rescan every folder romforge knows (the Source and Library folders of

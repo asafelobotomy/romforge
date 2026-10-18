@@ -288,6 +288,9 @@ const MIGRATIONS: &[&str] = &[
          priority  INTEGER NOT NULL DEFAULT 1,
          PRIMARY KEY (system_id, title)
      );",
+    // 22: games by name (details, cleanup, suggestions look games up by
+    // title: a full scan of a million TOSEC and Redump games per click).
+    "CREATE INDEX games_name ON games(name);",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
@@ -403,6 +406,9 @@ pub fn open_in_memory() -> Result<Connection, Error> {
 }
 
 fn init(mut conn: Connection) -> Result<Connection, Error> {
+    // Another connection (the app keeps one for reads) may be writing:
+    // wait for it rather than fail with "database is locked".
+    conn.busy_timeout(std::time::Duration::from_secs(10))?;
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;

@@ -1448,3 +1448,47 @@ fn crc_only_hits_never_name_unknown_files() {
     assert_eq!(v.rows[0].title, "my file.gb", "not named after the NES game");
     assert_eq!(v.rows[0].system, None);
 }
+
+/// Identify looks up only what changed: rescanning a folder with another
+/// scope (no file hashed again) still moves every status to the new scope,
+/// the same as identifying everything from scratch.
+#[test]
+fn incremental_identify_follows_a_new_scope() {
+    let mut lib = Library::open_in_memory().unwrap();
+    import_all(&mut lib);
+    lib.scan(fixtures().join("roms"), Scope::All).unwrap();
+    let snes = dat_id(&lib, "Nintendo - Super Nintendo");
+    let report = lib.scan(fixtures().join("roms"), Scope::Dat(snes)).unwrap();
+    assert_eq!(report.hashed, 0, "nothing changed on disk");
+    // Statuses and the games each file is listed as (which read the stored
+    // in-scope flag of every match).
+    let snapshot = |lib: &Library| -> Vec<String> {
+        lib.files(&LibraryFilter::default())
+            .unwrap()
+            .into_iter()
+            .map(|f| format!("{} {:?} {:?}", f.display_path(), f.status, f.games))
+            .collect()
+    };
+    let after = snapshot(&lib);
+    let files = by_path(&lib);
+    assert_eq!(files["snes/Test SNES (copier).smc"].status, Status::Matched);
+    assert_eq!(files["nes/Test NES (iNES).nes"].status, Status::WrongSystem);
+    lib.identify().unwrap();
+    assert_eq!(after, snapshot(&lib), "the same as looking everything up again");
+}
+
+/// The library view is kept between calls, but a write through another
+/// connection (the app reads on one and writes on another) is seen.
+#[test]
+fn the_cached_view_sees_other_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("lib.db");
+    let mut writer = Library::open(&db).unwrap();
+    let reader = Library::open(&db).unwrap();
+    writer.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    assert!(reader.library_view().unwrap().rows.is_empty());
+    assert!(reader.library_view().unwrap().rows.is_empty(), "cached");
+    writer.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+    let rows = reader.library_view().unwrap().rows;
+    assert!(rows.iter().any(|r| r.title == "Test GB"), "{rows:?}");
+}

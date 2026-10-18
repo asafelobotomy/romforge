@@ -94,6 +94,15 @@ enum Via {
 }
 
 impl Via {
+    fn parse(s: &str) -> Option<Via> {
+        match s {
+            "sha1" => Some(Via::Sha1),
+            "md5" => Some(Via::Md5),
+            "crc32" => Some(Via::Crc32),
+            _ => None,
+        }
+    }
+
     fn as_str(self) -> &'static str {
         match self {
             Via::Sha1 => "sha1",
@@ -162,14 +171,34 @@ struct FileRow {
     scope: Scope,
     raw: Digest,
     stripped: Option<Digest>,
+    status: String,
 }
 
-/// Recompute matches and statuses for every scanned file.
+/// Which files [`identify`] looks up in the DATs again; the others keep
+/// their stored matches (still valid until their hashes or the DATs change).
+pub enum Relook<'a> {
+    /// Every file: DATs were imported or removed.
+    All,
+    /// These files were hashed again.
+    Files(&'a HashSet<i64>),
+    /// None: only the owner's picks changed.
+    Nothing,
+}
+
+/// [`identify`] looking every file up again.
 pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
+    identify(tx, Relook::All)
+}
+
+/// Recompute matches and statuses. Files in `relook` are looked up in the
+/// DATs again; every file's status (and whether each match is in its
+/// folder's scope) is worked out again from its matches, in path order,
+/// since which copy is the duplicate depends on all of them.
+pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
     let files: Vec<FileRow> = {
         let mut stmt = tx.prepare(
             "SELECT f.file_id, s.system_id, s.dat_id, f.size, f.crc32, f.md5, f.sha1,
-                    f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1
+                    f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1, f.status
              FROM files f JOIN scan_roots s ON s.root_id = f.root_id
              ORDER BY f.path, f.member",
         )?;
@@ -193,6 +222,7 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
                     sha1: r.get(6)?,
                 },
                 stripped,
+                status: r.get(11)?,
             })
         })?
         .collect::<Result<_, _>>()?
@@ -203,30 +233,105 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
         .prepare("SELECT sha1, size FROM manual_ids")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
-    tx.execute("DELETE FROM matches", [])?;
+    // Sheet matches are worked out again below.
+    tx.execute("DELETE FROM matches WHERE via = 'sheet'", [])?;
+    let relook_all = matches!(relook, Relook::All);
+    if relook_all {
+        tx.execute("DELETE FROM matches", [])?;
+    }
     let mut insert = tx.prepare(
         "INSERT INTO matches (file_id, rom_id, via, stripped, out_of_scope) VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
+    let mut drop_matches = tx.prepare("DELETE FROM matches WHERE file_id = ?1")?;
+    let mut set_scope =
+        tx.prepare("UPDATE matches SET out_of_scope = ?3 WHERE file_id = ?1 AND rom_id = ?2")?;
     let mut set_status = tx.prepare("UPDATE files SET status = ?2 WHERE file_id = ?1")?;
+    // The stored matches of the files not looked up again, with what decides
+    // their scope (their ROM's DAT and system).
+    let mut stored: HashMap<i64, Vec<(RomRow, Via, bool, bool)>> = HashMap::new();
+    if !relook_all {
+        let mut stmt = tx.prepare(
+            "SELECT m.file_id, m.rom_id, m.via, m.stripped, m.out_of_scope, g.dat_id, d.system_id
+             FROM matches m JOIN roms r ON r.rom_id = m.rom_id
+             JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id",
+        )?;
+        for row in stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, bool>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, Option<i64>>(6)?,
+            ))
+        })? {
+            let (file, rom_id, via, stripped, out, dat_id, system_id) = row?;
+            let Some(via) = Via::parse(&via) else { continue };
+            let rom = RomRow {
+                rom_id,
+                dat_id,
+                system_id,
+                size: None,
+                crc32: None,
+                md5: None,
+                sha1: None,
+            };
+            stored.entry(file).or_default().push((rom, via, stripped, out));
+        }
+    }
     // ROM id -> file that first claimed it (files are in path order).
     let mut owners: HashMap<i64, i64> = HashMap::new();
 
     for file in &files {
+        let again = match relook {
+            Relook::All => true,
+            Relook::Files(ids) => ids.contains(&file.file_id),
+            Relook::Nothing => false,
+        };
         let mut hits: Vec<Hit> = Vec::new();
-        let mut seen = HashSet::new();
-        let digests = std::iter::once((&file.raw, false)).chain(file.stripped.iter().map(|d| (d, true)));
-        for (digest, stripped) in digests {
-            for rom in lookup(tx, digest)? {
-                if let Some(via) = compare(digest, &rom)
-                    && seen.insert(rom.rom_id)
-                {
-                    hits.push(Hit {
-                        rom_id: rom.rom_id,
-                        via,
-                        stripped,
-                        in_scope: file.scope.contains(&rom),
-                    });
+        if again {
+            if !relook_all {
+                drop_matches.execute([file.file_id])?;
+            }
+            let mut seen = HashSet::new();
+            let digests = std::iter::once((&file.raw, false)).chain(file.stripped.iter().map(|d| (d, true)));
+            for (digest, stripped) in digests {
+                for rom in lookup(tx, digest)? {
+                    if let Some(via) = compare(digest, &rom)
+                        && seen.insert(rom.rom_id)
+                    {
+                        hits.push(Hit {
+                            rom_id: rom.rom_id,
+                            via,
+                            stripped,
+                            in_scope: file.scope.contains(&rom),
+                        });
+                    }
                 }
+            }
+            for h in &hits {
+                insert.execute(params![
+                    file.file_id,
+                    h.rom_id,
+                    h.via.as_str(),
+                    h.stripped,
+                    !h.in_scope
+                ])?;
+            }
+        } else {
+            for (rom, via, stripped, was_out) in stored.remove(&file.file_id).unwrap_or_default() {
+                let in_scope = file.scope.contains(&rom);
+                // The folder's scope may have changed since.
+                if in_scope == was_out {
+                    set_scope.execute(params![file.file_id, rom.rom_id, !in_scope])?;
+                }
+                hits.push(Hit {
+                    rom_id: rom.rom_id,
+                    via,
+                    stripped,
+                    in_scope,
+                });
             }
         }
 
@@ -256,17 +361,9 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
         } else {
             Status::Unknown
         };
-
-        for h in &hits {
-            insert.execute(params![
-                file.file_id,
-                h.rom_id,
-                h.via.as_str(),
-                h.stripped,
-                !h.in_scope
-            ])?;
+        if status.as_str() != file.status {
+            set_status.execute(params![file.file_id, status.as_str()])?;
         }
-        set_status.execute(params![file.file_id, status.as_str()])?;
     }
     fit_sheets(tx)?;
     Ok(())

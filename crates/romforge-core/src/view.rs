@@ -621,11 +621,17 @@ pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, S
 
 /// Everything known about one row of [`library`].
 pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
-    let view = library(conn)?;
+    detail_in(conn, &library(conn)?, id)
+}
+
+/// [`detail`] with the library already built (it costs a pass over every
+/// file: build it once for many rows).
+pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<GameDetail, Error> {
     let row = view
         .rows
-        .into_iter()
+        .iter()
         .find(|r| r.id == id)
+        .cloned()
         .ok_or_else(|| Error::Dat(format!("no library row {id:?}")))?;
     let mut fields = BTreeMap::new();
     let mut art = BTreeMap::new();
