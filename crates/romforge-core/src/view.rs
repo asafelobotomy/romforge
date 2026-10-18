@@ -24,7 +24,8 @@ pub enum RowStatus {
     Incomplete,
     /// Only size + CRC32 agree.
     Candidate,
-    /// Matched a game of another system than the folder's.
+    /// Matched by hash outside the folder's scope: another system, or
+    /// another DAT when the folder is scoped to one.
     WrongSystem,
     /// A copy of something another file already provides.
     Duplicate,
@@ -36,10 +37,18 @@ pub enum RowStatus {
     Unknown,
 }
 
+fn game_id(system_id: Option<i64>, title: &str) -> String {
+    match system_id {
+        Some(s) => format!("g:{s}:{title}"),
+        None => format!("g:-:{title}"),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GameRow {
-    /// `g:<system id>:<title>` for games, `m:<system id>:<title>` for games
-    /// you named, `f:<file id>` for lone files.
+    /// `g:<system id>:<title>` for games (`g:-:<title>` from a DAT of no
+    /// known system), `m:<system id>:<title>` for games you named,
+    /// `f:<file id>` for lone files.
     pub id: String,
     pub title: String,
     pub system: Option<String>,
@@ -226,7 +235,8 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         .collect::<Result<_, _>>()?;
 
     // Complete games and the files that provide them.
-    let mut games: BTreeMap<(i64, String), (bool, BTreeSet<i64>)> = BTreeMap::new();
+    // Keyed by system (none for a DAT romforge doesn't know) and name.
+    let mut games: BTreeMap<(Option<i64>, String), (bool, BTreeSet<i64>)> = BTreeMap::new();
     let mut stmt = conn.prepare(&format!(
         "WITH {HAD},
               games_in AS (SELECT DISTINCT r.game_id FROM had JOIN roms r ON r.rom_id = had.rom_id),
@@ -239,12 +249,11 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
          JOIN dats d ON d.dat_id = g.dat_id
          JOIN roms r ON r.game_id = g.game_id
          JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5')
-         JOIN files f ON f.file_id = m.file_id AND f.status IN ('matched', 'duplicate')
-         WHERE d.system_id IS NOT NULL"
+         JOIN files f ON f.file_id = m.file_id AND f.status IN ('matched', 'duplicate')"
     ))?;
     for row in stmt.query_map([], |r| {
         Ok((
-            r.get::<_, i64>(0)?,
+            r.get::<_, Option<i64>>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, bool>(2)?,
             r.get::<_, i64>(3)?,
@@ -261,24 +270,28 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     // A file belongs to every complete game it provides (two revisions with
     // identical data are two rows). Only complete games count, so a short
     // audio track shared by hundreds of discs goes with the disc you have.
-    let mut owner: HashMap<i64, Vec<(i64, String)>> = HashMap::new();
+    let mut owner: HashMap<i64, Vec<(Option<i64>, String)>> = HashMap::new();
     for (key, (_, ids)) in &games {
         for f in ids {
             owner.entry(*f).or_default().push(key.clone());
         }
     }
     // Rewritten cue sheets that fit a complete game's tracks join it.
-    let mut cue_fits: BTreeSet<(i64, String)> = BTreeSet::new();
+    let mut cue_fits: BTreeSet<(Option<i64>, String)> = BTreeSet::new();
     for r in conn
         .prepare(
             "SELECT DISTINCT m.file_id, d.system_id, g.name FROM matches m
              JOIN files f ON f.file_id = m.file_id AND f.status = 'sheet'
              JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
              JOIN dats d ON d.dat_id = g.dat_id
-             WHERE m.via = 'sheet' AND d.system_id IS NOT NULL",
+             WHERE m.via = 'sheet'",
         )?
         .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })?
     {
         let (file, system, name) = r?;
@@ -289,7 +302,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         }
     }
     // Members of an archive holding a game stay with that game.
-    let mut by_path: HashMap<&str, Vec<(i64, String)>> = HashMap::new();
+    let mut by_path: HashMap<&str, Vec<(Option<i64>, String)>> = HashMap::new();
     for f in &files {
         if let Some(k) = owner.get(&f.id)
             && !f.member.is_empty()
@@ -343,11 +356,12 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     }
 
     let mut rows: BTreeMap<String, GameRow> = BTreeMap::new();
-    let game_row = |system_id: i64, title: &str| -> GameRow {
-        let sys = systems::by_id(system_id);
+    let game_row = |system_id: Option<i64>, title: &str| -> GameRow {
+        let sys = system_id.and_then(systems::by_id);
         let key = (system_id, title.to_owned());
+        let known = system_id.map(|s| (s, title.to_owned()));
         GameRow {
-            id: format!("g:{system_id}:{title}"),
+            id: game_id(system_id, title),
             title: title.to_owned(),
             system: sys.map(|s| s.key.to_owned()),
             system_name: sys.map(|s| s.name.to_owned()),
@@ -356,10 +370,10 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             cue_fits: cue_fits.contains(&key),
             files: 0,
             size: 0,
-            metadata: meta.contains(&key),
-            art: art.get(&key).cloned().unwrap_or_default(),
+            metadata: known.as_ref().is_some_and(|k| meta.contains(k)),
+            art: known.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
             playable: false,
-            system_id: Some(system_id),
+            system_id,
             file_ids: Vec::new(),
         }
     };
@@ -376,7 +390,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         {
             let id = format!("m:{system_id}:{title}");
             let row = rows.entry(id.clone()).or_insert_with(|| {
-                let mut r = game_row(*system_id, title);
+                let mut r = game_row(Some(*system_id), title);
                 r.id = id;
                 r.status = if *derived {
                     RowStatus::Derivative
@@ -398,7 +412,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         if let Some(homes) = homes {
             for (system_id, title) in homes {
                 let row = rows
-                    .entry(format!("g:{system_id}:{title}"))
+                    .entry(game_id(*system_id, title))
                     .or_insert_with(|| game_row(*system_id, title));
                 row.files += 1;
                 row.size += f.size;

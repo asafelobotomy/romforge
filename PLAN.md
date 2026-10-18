@@ -570,13 +570,6 @@ A full review found about 90 items. The serious ones are fixed: batch 1
 (data safety and crashes), batch 2 (wrong results), batch 3 (speed) and
 batch 4 (medium items). Still open, all low or medium:
 
-- **Identify and view.** Duplicates are still decided by path order, not
-  by which copy is complete. `wrong_system` also covers "another DAT of
-  the same system" when a scan is scoped to one DAT. A complete game from
-  a DAT with no system shows as N "Incomplete" rows. A zero-byte file
-  matches every empty ROM in TOSEC.
-- **Identify and cleanup queries.** `LIKE` without escapes in `fit_sheets`
-  and `loose_cue` (folder names with `_` or `%`).
 - **Suggestions.**
   - *Likely: modified copy* is loose: same size plus a two-word name
     subset is enough.

@@ -88,10 +88,12 @@ again). `romforge-cli games` lists games the way the app does.
 - **matched**: size + SHA1, or size + MD5 when the DAT has no SHA1.
 - **candidate**: only size + CRC32 agree, because the DAT has nothing
   stronger. A stronger hash that disagrees rules the ROM out.
-- **wrong system**: no hit in the folder's scope, but a real hit in another
-  system's DAT.
-- **duplicate**: matched ROMs that an earlier file (in path order) already
-  provides.
+- **wrong system**: no hit in the folder's scope, but a real hit outside
+  it: another system's DAT, or (for a folder scoped to one DAT) another DAT
+  of the same system.
+- **duplicate**: matched ROMs that another copy already provides. The copy
+  that holds more of the game in one archive or folder keeps them; ties go
+  by path order. Empty files match nothing.
 - **manual**: no hash match in scope, but you named it in Search
   ("identified by you", or "translation / hack of X"); never verified.
 - **sheet**: a cue (or GDI) sheet that matches no hash but names exactly a

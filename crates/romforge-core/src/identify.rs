@@ -118,6 +118,7 @@ impl Via {
 
 struct RomRow {
     rom_id: i64,
+    game_id: i64,
     dat_id: i64,
     system_id: Option<i64>,
     size: Option<u64>,
@@ -141,6 +142,7 @@ fn compare(d: &Digest, rom: &RomRow) -> Option<Via> {
 
 struct Hit {
     rom_id: i64,
+    game_id: i64,
     via: Via,
     stripped: bool,
     in_scope: bool,
@@ -148,7 +150,7 @@ struct Hit {
 
 fn lookup(conn: &Connection, d: &Digest) -> Result<Vec<RomRow>, Error> {
     let mut stmt = conn.prepare_cached(
-        "SELECT r.rom_id, g.dat_id, d.system_id, r.size, r.crc32, r.md5, r.sha1
+        "SELECT r.rom_id, g.dat_id, d.system_id, r.size, r.crc32, r.md5, r.sha1, r.game_id
          FROM roms r JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id
          WHERE r.sha1 = ?1 OR r.md5 = ?2 OR r.crc32 = ?3",
     )?;
@@ -161,6 +163,7 @@ fn lookup(conn: &Connection, d: &Digest) -> Result<Vec<RomRow>, Error> {
             crc32: r.get(4)?,
             md5: r.get(5)?,
             sha1: r.get(6)?,
+            game_id: r.get(7)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -168,6 +171,8 @@ fn lookup(conn: &Connection, d: &Digest) -> Result<Vec<RomRow>, Error> {
 
 struct FileRow {
     file_id: i64,
+    /// The archive it is in, or its folder: where its game's other files are.
+    place: String,
     scope: Scope,
     raw: Digest,
     stripped: Option<Digest>,
@@ -192,13 +197,14 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
 
 /// Recompute matches and statuses. Files in `relook` are looked up in the
 /// DATs again; every file's status (and whether each match is in its
-/// folder's scope) is worked out again from its matches, in path order,
-/// since which copy is the duplicate depends on all of them.
+/// folder's scope) is worked out again from its matches, since which copy
+/// is the duplicate depends on all of them: the most complete one wins.
 pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
     let files: Vec<FileRow> = {
         let mut stmt = tx.prepare(
             "SELECT f.file_id, s.system_id, s.dat_id, f.size, f.crc32, f.md5, f.sha1,
-                    f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1, f.status
+                    f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1, f.status,
+                    f.path, f.member
              FROM files f JOIN scan_roots s ON s.root_id = f.root_id
              ORDER BY f.path, f.member",
         )?;
@@ -212,8 +218,16 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                 }),
                 None => None,
             };
+            let (path, member): (String, String) = (r.get(12)?, r.get(13)?);
+            let place = if member.is_empty() {
+                path.rsplit_once('/')
+                    .map_or(String::new(), |(dir, _)| dir.to_owned())
+            } else {
+                path
+            };
             Ok(FileRow {
                 file_id: r.get(0)?,
+                place,
                 scope: Scope::from_columns(r.get(1)?, r.get(2)?),
                 raw: Digest {
                     size: r.get(3)?,
@@ -251,7 +265,8 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
     let mut stored: HashMap<i64, Vec<(RomRow, Via, bool, bool)>> = HashMap::new();
     if !relook_all {
         let mut stmt = tx.prepare(
-            "SELECT m.file_id, m.rom_id, m.via, m.stripped, m.out_of_scope, g.dat_id, d.system_id
+            "SELECT m.file_id, m.rom_id, m.via, m.stripped, m.out_of_scope, g.dat_id, d.system_id,
+                    r.game_id
              FROM matches m JOIN roms r ON r.rom_id = m.rom_id
              JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id",
         )?;
@@ -264,12 +279,14 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                 r.get::<_, bool>(4)?,
                 r.get::<_, i64>(5)?,
                 r.get::<_, Option<i64>>(6)?,
+                r.get::<_, i64>(7)?,
             ))
         })? {
-            let (file, rom_id, via, stripped, out, dat_id, system_id) = row?;
+            let (file, rom_id, via, stripped, out, dat_id, system_id, game_id) = row?;
             let Some(via) = Via::parse(&via) else { continue };
             let rom = RomRow {
                 rom_id,
+                game_id,
                 dat_id,
                 system_id,
                 size: None,
@@ -280,9 +297,8 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             stored.entry(file).or_default().push((rom, via, stripped, out));
         }
     }
-    // ROM id -> file that first claimed it (files are in path order).
-    let mut owners: HashMap<i64, i64> = HashMap::new();
-
+    // First every file's hits, then who owns which ROM.
+    let mut all_hits: Vec<Vec<Hit>> = Vec::with_capacity(files.len());
     for file in &files {
         let again = match relook {
             Relook::All => true,
@@ -296,13 +312,15 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             }
             let mut seen = HashSet::new();
             let digests = std::iter::once((&file.raw, false)).chain(file.stripped.iter().map(|d| (d, true)));
-            for (digest, stripped) in digests {
+            // An empty file says nothing: TOSEC lists many empty ROMs.
+            for (digest, stripped) in digests.filter(|(d, _)| d.size > 0) {
                 for rom in lookup(tx, digest)? {
                     if let Some(via) = compare(digest, &rom)
                         && seen.insert(rom.rom_id)
                     {
                         hits.push(Hit {
                             rom_id: rom.rom_id,
+                            game_id: rom.game_id,
                             via,
                             stripped,
                             in_scope: file.scope.contains(&rom),
@@ -328,12 +346,45 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                 }
                 hits.push(Hit {
                     rom_id: rom.rom_id,
+                    game_id: rom.game_id,
                     via,
                     stripped,
                     in_scope,
                 });
             }
         }
+        all_hits.push(hits);
+    }
+
+    // The copy that holds more of a game in one place (an archive or a
+    // folder) owns its ROMs; the others are duplicates. Ties go by path.
+    let mut held: HashMap<(&str, i64), HashSet<i64>> = HashMap::new();
+    for (file, hits) in files.iter().zip(&all_hits) {
+        for h in hits.iter().filter(|h| h.in_scope && h.via.strong()) {
+            held.entry((file.place.as_str(), h.game_id))
+                .or_default()
+                .insert(h.rom_id);
+        }
+    }
+    let mut order: Vec<(usize, usize)> = files
+        .iter()
+        .zip(&all_hits)
+        .enumerate()
+        .map(|(i, (file, hits))| {
+            let most = hits
+                .iter()
+                .filter_map(|h| held.get(&(file.place.as_str(), h.game_id)))
+                .map(HashSet::len)
+                .max()
+                .unwrap_or(0);
+            (i, most)
+        })
+        .collect();
+    order.sort_by_key(|&(i, most)| (std::cmp::Reverse(most), i));
+    // ROM id -> file that claimed it.
+    let mut owners: HashMap<i64, i64> = HashMap::new();
+    for (i, _) in order {
+        let (file, hits) = (&files[i], &all_hits[i]);
 
         let strong_in_scope: Vec<i64> = hits
             .iter()
@@ -392,7 +443,7 @@ fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
     )?;
     let mut beside_folder = tx.prepare(
         "SELECT file_id, path FROM files WHERE member = '' AND status IN ('matched', 'duplicate')
-           AND path LIKE ?1 || '/%' AND instr(substr(path, length(?1) + 2), '/') = 0",
+           AND substr(path, 1, length(?1) + 1) = ?1 || '/' AND instr(substr(path, length(?1) + 2), '/') = 0",
     )?;
     let mut games_of = tx.prepare(
         "SELECT DISTINCT r.game_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id

@@ -781,7 +781,7 @@ fn loose_cue(conn: &Connection, parts: &[Part]) -> Result<Option<Part>, Error> {
         .prepare(
             "SELECT path, member, size, sha1 FROM files WHERE path = ?1 AND lower(member) LIKE '%.cue'
              UNION SELECT path, member, size, sha1 FROM files WHERE member = '' AND lower(path) LIKE '%.cue'
-               AND path LIKE ?2 || '/%' AND instr(substr(path, length(?2) + 2), '/') = 0",
+               AND substr(path, 1, length(?2) + 1) = ?2 || '/' AND instr(substr(path, length(?2) + 2), '/') = 0",
         )?
         .query_map(params![first.path.to_string_lossy(), dir], |r| {
             let (path, member): (String, String) = (r.get(0)?, r.get(1)?);

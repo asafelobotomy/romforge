@@ -1492,3 +1492,138 @@ fn the_cached_view_sees_other_connections() {
     let rows = reader.library_view().unwrap().rows;
     assert!(rows.iter().any(|r| r.title == "Test GB"), "{rows:?}");
 }
+
+/// A sheet fits only tracks in its own folder: `a_b` is not `aXb` (`_` and
+/// `%` in folder names are plain characters).
+#[test]
+fn a_sheet_fits_only_its_own_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = body("wild-t1", 2352 * 4);
+    let cue = "FILE \"Game (USA).bin\" BINARY\r\n  TRACK 01 MODE2/2352\r\n    INDEX 01 00:00:00\r\n";
+    let dat_cue = cue.replace("\r\n", "\n");
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let rom = |name: &str, d: &[u8]| {
+        let x = h(d);
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        )
+    };
+    std::fs::write(
+        dir.path().join("psx.dat"),
+        format!(
+            r#"<datafile><header><name>Sony - PlayStation</name></header><game name="Game (USA)">{}{}</game></datafile>"#,
+            rom("Game (USA).cue", dat_cue.as_bytes()),
+            rom("Game (USA).bin", &t1),
+        ),
+    )
+    .unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(roms.join("a_b")).unwrap();
+    std::fs::create_dir_all(roms.join("aXb")).unwrap();
+    std::fs::write(roms.join("a_b").join("Game (USA).cue"), cue).unwrap();
+    std::fs::write(roms.join("aXb").join("Game (USA).bin"), &t1).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("psx.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    let cue_status: Vec<_> = files
+        .iter()
+        .filter(|f| f.display_path().ends_with("/a_b/Game (USA).cue"))
+        .map(|f| f.status)
+        .collect();
+    assert_eq!(cue_status, [Status::Unknown], "its track is in another folder");
+}
+
+/// The copy that holds the whole game owns it, wherever it sorts; a
+/// partial copy elsewhere is the duplicate. An empty file matches nothing.
+#[test]
+fn the_complete_copy_wins_and_empty_files_match_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = body("whole-a", 1000);
+    let b = body("whole-b", 1200);
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let rom = |name: &str, d: &[u8]| {
+        let x = h(d);
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        )
+    };
+    std::fs::write(
+        dir.path().join("t.dat"),
+        format!(
+            r#"<datafile><header><name>Nintendo - Game Boy</name></header>
+               <game name="Two (USA)">{}{}</game><game name="Blank (USA)">{}</game></datafile>"#,
+            rom("a.gb", &a),
+            rom("b.gb", &b),
+            rom("blank.gb", b""),
+        ),
+    )
+    .unwrap();
+    let roms = dir.path().join("roms");
+    for (sub, parts) in [
+        ("aaa", vec![("a.gb", &a)]),
+        ("zzz", vec![("a.gb", &a), ("b.gb", &b)]),
+    ] {
+        std::fs::create_dir_all(roms.join(sub)).unwrap();
+        for (n, d) in parts {
+            std::fs::write(roms.join(sub).join(n), d).unwrap();
+        }
+    }
+    std::fs::write(roms.join("blank.gb"), b"").unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("t.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    let status_of = |end: &str| {
+        files
+            .iter()
+            .find(|f| f.display_path().ends_with(end))
+            .map(|f| f.status)
+            .unwrap()
+    };
+    assert_eq!(status_of("/aaa/a.gb"), Status::Duplicate, "only half the game");
+    assert_eq!(status_of("/zzz/a.gb"), Status::Matched);
+    assert_eq!(status_of("/zzz/b.gb"), Status::Matched);
+    assert_eq!(status_of("/blank.gb"), Status::Unknown);
+}
+
+/// A complete game from a DAT of no known system is one verified row.
+#[test]
+fn a_game_from_an_unknown_system_is_one_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = body("nosys-a", 900);
+    let b = body("nosys-b", 700);
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let rom = |name: &str, d: &[u8]| {
+        let x = h(d);
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        )
+    };
+    std::fs::write(
+        dir.path().join("t.dat"),
+        format!(
+            r#"<datafile><header><name>Acme - Gadget 9000</name></header><game name="Pair (World)">{}{}</game></datafile>"#,
+            rom("a.bin", &a),
+            rom("b.bin", &b),
+        ),
+    )
+    .unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    std::fs::write(roms.join("a.bin"), &a).unwrap();
+    std::fs::write(roms.join("b.bin"), &b).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("t.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].title, "Pair (World)");
+    assert_eq!(rows[0].status, romforge_core::view::RowStatus::Verified);
+    assert_eq!(rows[0].system, None);
+    let d = lib.game_detail(&rows[0].id).unwrap();
+    assert_eq!(d.row.files, 2);
+}

@@ -430,7 +430,7 @@
     verified: "Verified",
     incomplete: "Incomplete",
     candidate: "Candidate",
-    wrong_system: "Wrong system",
+    wrong_system: "Wrong system or DAT",
     duplicate: "Duplicate",
     by_you: "Identified by you",
     derivative: "Translation or hack (identified by you)",
