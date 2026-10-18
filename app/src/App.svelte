@@ -993,6 +993,10 @@
                 <li title={file.sha1}>
                   <span class="badge {file.status === 'matched' ? 'verified' : file.status}">{file.status.replace("_", " ")}</span>
                   <span class="fpath"><bdi>{file.path}</bdi></span>
+                  {#if file.game_id}
+                    {@const g = file.game_id}
+                    <span class="fid" title="What the game's own header or boot files say (evidence, not a match)">{[g.title, g.serial, g.region].filter(Boolean).join(" · ")}</span>
+                  {/if}
                 </li>
               {/each}
             </ul>
@@ -1295,6 +1299,7 @@
   /* rtl on the box and <bdi> inside: long paths are cut at the start, the
      file name stays visible, and the text itself keeps its order */
   .fpath { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; min-width: 0; }
+  .fid { flex-shrink: 0; color: var(--muted); font-size: 0.75rem; }
   .group h3 { margin-top: 0.5rem; }
   .group + .group { border-top: 1px solid var(--line); margin-top: 0.75rem; }
   .group .hint { margin: 0 0 0.3rem; }

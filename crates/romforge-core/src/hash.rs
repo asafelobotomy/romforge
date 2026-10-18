@@ -8,6 +8,7 @@ use md5::Md5;
 use sha1::{Digest as _, Sha1};
 
 use crate::headers::{self, PREFIX_LEN};
+use crate::ident;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Digest {
@@ -23,6 +24,24 @@ pub struct Hashes {
     /// Present when a copier header or another byte order was detected:
     /// the hashes of the data in the DAT's form.
     pub stripped: Option<(&'static str, Digest)>,
+    /// What the game's own header or boot files say it is
+    /// ([`crate::ident`]), read from the data in the DAT's form.
+    pub id: Option<crate::ident::GameId>,
+}
+
+/// The first [`ident::PREFIX_LEN`] bytes of a stream, for [`ident::read`].
+#[derive(Default)]
+struct Prefix(Vec<u8>);
+
+impl Prefix {
+    fn take(&mut self, data: &[u8]) {
+        let room = ident::PREFIX_LEN - self.0.len();
+        self.0.extend_from_slice(&data[..room.min(data.len())]);
+    }
+
+    fn id(&self) -> Option<crate::ident::GameId> {
+        ident::read(&self.0)
+    }
 }
 
 #[derive(Default)]
@@ -58,15 +77,17 @@ fn hex(bytes: &[u8]) -> String {
 /// CRC32 / MD5 / SHA1 fed piece by piece, with no header detection (disc
 /// tracks have no copier headers).
 #[derive(Default)]
-pub struct RawHasher(Hasher);
+pub struct RawHasher(Hasher, Prefix);
 
 impl RawHasher {
     pub fn update(&mut self, data: &[u8]) {
         self.0.update(data);
+        self.1.take(data);
     }
 
     pub fn finish(self) -> Hashes {
         Hashes {
+            id: self.1.id(),
             raw: self.0.finish(),
             stripped: None,
         }
@@ -94,23 +115,30 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
     // Bytes after the header not reordered yet (less than one unit), and
     // the reordered output.
     let (mut pending, mut out): (Vec<u8>, Vec<u8>) = (Vec::new(), Vec::new());
+    // The first bytes as they are and in the DAT's form, for the ID
+    // readers (the size-only SNES rule may fire on a disc track by chance).
+    let (mut raw_prefix, mut prefix) = (Prefix::default(), Prefix::default());
     let mut feed = |chunk: &[u8], raw: &mut Hasher| {
         let start = raw.size;
         raw.update(chunk);
-        if let Some((h, s)) = stripped.as_mut() {
-            let skip = (h.len as u64).saturating_sub(start).min(chunk.len() as u64) as usize;
-            let body = &chunk[skip..];
-            let unit = h.reorder.unit();
-            if unit == 1 {
-                s.update(body);
-                return;
-            }
-            pending.extend_from_slice(body);
-            let whole = pending.len() / unit * unit;
-            h.reorder.apply(&pending[..whole], &mut out);
-            s.update(&out);
-            pending.drain(..whole);
+        raw_prefix.take(chunk);
+        let Some((h, s)) = stripped.as_mut() else {
+            return;
+        };
+        let skip = (h.len as u64).saturating_sub(start).min(chunk.len() as u64) as usize;
+        let body = &chunk[skip..];
+        let unit = h.reorder.unit();
+        if unit == 1 {
+            s.update(body);
+            prefix.take(body);
+            return;
         }
+        pending.extend_from_slice(body);
+        let whole = pending.len() / unit * unit;
+        h.reorder.apply(&pending[..whole], &mut out);
+        s.update(&out);
+        prefix.take(&out);
+        pending.drain(..whole);
     };
 
     feed(&buf[..filled], &mut raw);
@@ -125,6 +153,7 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
     // A trailing piece shorter than one unit is hashed as it is.
     if let Some((_, s)) = stripped.as_mut() {
         s.update(&pending);
+        prefix.take(&pending);
     }
     if raw.size != size {
         return Err(io::Error::new(
@@ -135,6 +164,7 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
     Ok(Hashes {
         raw: raw.finish(),
         stripped: stripped.map(|(h, s)| (h.kind, s.finish())),
+        id: prefix.id().or_else(|| raw_prefix.id()),
     })
 }
 

@@ -79,6 +79,9 @@ pub struct RowFile {
     pub size: u64,
     pub sha1: String,
     pub header_kind: Option<String>,
+    /// What the file's own header or boot files say ([`crate::ident`]);
+    /// evidence, never a match.
+    pub game_id: Option<crate::ident::GameId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -562,8 +565,10 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
             .query_map(params![row.title, system_id], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
     }
-    let mut stmt =
-        conn.prepare("SELECT path, member, status, size, sha1, header_kind FROM files WHERE file_id = ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT path, member, status, size, sha1, header_kind, id_kind, id_serial, id_title, id_region
+             FROM files WHERE file_id = ?1",
+    )?;
     let mut files = Vec::new();
     for id in &row.file_ids {
         let f = stmt.query_row([id], |r| {
@@ -579,6 +584,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
                 size: r.get(3)?,
                 sha1: r.get(4)?,
                 header_kind: r.get(5)?,
+                game_id: crate::ident::GameId::from_columns(r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?),
             })
         })?;
         files.push(f);

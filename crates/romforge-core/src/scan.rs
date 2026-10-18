@@ -78,6 +78,9 @@ impl Stamp {
     }
 }
 
+// Nearly every visit is `Hashed`, handed straight to a callback: boxing it
+// would only add an allocation per file.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Visit {
     Hashed(Entry),

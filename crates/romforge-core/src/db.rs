@@ -204,6 +204,15 @@ const MIGRATIONS: &[&str] = &[
      );
      CREATE INDEX serials_key ON serials(key);
      UPDATE dats SET source_sha256 = '';",
+    // 16: what each file's own header or boot files say it is (ident.rs).
+    // Files that aren't matched yet are read again on their next scan; a
+    // matched file needs no such evidence (`--rehash` fills it in too).
+    "ALTER TABLE files ADD COLUMN id_kind TEXT;
+     ALTER TABLE files ADD COLUMN id_serial TEXT;
+     ALTER TABLE files ADD COLUMN id_title TEXT;
+     ALTER TABLE files ADD COLUMN id_region TEXT;
+     UPDATE files SET mtime = NULL WHERE path IN (
+       SELECT path FROM files WHERE status NOT IN ('matched', 'duplicate'));",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

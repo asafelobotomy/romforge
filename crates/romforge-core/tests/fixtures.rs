@@ -1178,3 +1178,61 @@ fn serials_from_dats_and_libretro_lists() {
     assert!(lib.import_dat(&snes, None).unwrap().replaced.is_some());
     assert_eq!(lib.titles_by_serial("SNES", "SHVCAQ3JJPN").unwrap().len(), 2);
 }
+
+/// A file's own header is read while it is hashed, after a copier header
+/// is stripped, and shown in Details: for files no DAT knows, too.
+#[test]
+fn game_ids_from_headers_and_boot_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    // A LoROM SNES game with a 512-byte copier header in front.
+    let mut snes = vec![0u8; 512];
+    let mut body = vec![0xFFu8; 0x8000];
+    let h = 0x7FC0;
+    body[h..h + 21].copy_from_slice(b"DRAGONQUEST3         ");
+    body[h + 0x19] = 0; // Japan
+    body[h + 0x1C..h + 0x20].copy_from_slice(&[0x1A, 0x93, 0xE5, 0x6C]);
+    snes.extend_from_slice(&body);
+    std::fs::write(roms.join("dq3 translated.smc"), &snes).unwrap();
+    // A PS1 data track: raw Mode 2 sectors, SYSTEM.CNF in the root.
+    let cnf = b"BOOT = cdrom:\\SLUS_007.07;1\r\n";
+    let mut user = vec![[0u8; 2048]; 20];
+    user[16][0] = 1;
+    user[16][1..6].copy_from_slice(b"CD001");
+    user[16][156] = 34;
+    user[16][158..162].copy_from_slice(&18u32.to_le_bytes());
+    user[16][166..170].copy_from_slice(&2048u32.to_le_bytes());
+    let name = b"SYSTEM.CNF;1";
+    user[18][0] = (33 + name.len()) as u8;
+    user[18][2..6].copy_from_slice(&19u32.to_le_bytes());
+    user[18][10..14].copy_from_slice(&(cnf.len() as u32).to_le_bytes());
+    user[18][32] = name.len() as u8;
+    user[18][33..33 + name.len()].copy_from_slice(name);
+    user[19][..cnf.len()].copy_from_slice(cnf);
+    let mut track = Vec::new();
+    for s in &user {
+        let mut sector = [0u8; 2352];
+        sector[..12].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0]);
+        sector[15] = 2;
+        sector[24..2072].copy_from_slice(s);
+        track.extend_from_slice(&sector);
+    }
+    std::fs::write(roms.join("silent hill.bin"), &track).unwrap();
+
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let view = lib.library_view().unwrap();
+    let id_of = |needle: &str| {
+        let row = view.rows.iter().find(|r| r.title.contains(needle)).unwrap();
+        lib.game_detail(&row.id).unwrap().files[0]
+            .game_id
+            .clone()
+            .unwrap()
+    };
+    let snes = id_of("dq3");
+    assert_eq!((snes.kind, snes.title.as_deref()), ("snes", Some("DRAGONQUEST3")));
+    assert_eq!(snes.region.as_deref(), Some("Japan"));
+    let ps1 = id_of("silent");
+    assert_eq!((ps1.kind, ps1.serial.as_deref()), ("ps1", Some("SLUS_007.07")));
+}

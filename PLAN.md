@@ -308,6 +308,30 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        Stored per file. Never a match on its own, since revisions and
        discs share serials, but a filter and tie-breaker, and the system
        hint the parked "scan-time system hints" idea wanted.
+
+       *(Built 2026-10-18.)* `ident.rs` holds one table of readers. Each
+       checks a structure that can't occur by chance (a checksum, a magic,
+       ISO 9660 boot files), so nothing is guessed from extensions:
+       - GBA, NDS, GB/GBC, N64, Mega Drive, SNES;
+       - PS1/PS2 `SYSTEM.CNF`, or a root file named like `SLUS_007.47`
+         when `SYSTEM.CNF` lies beyond reach;
+       - PSP `UMD_DATA.BIN`, Saturn, Sega CD, Dreamcast, GameCube, Wii.
+
+       How it runs:
+       - readers get the first 1 MiB of each stream as it is hashed, in
+         the DAT's form (header stripped, byte order fixed), falling back
+         to the raw bytes;
+       - results go in `files.id_*` (migration 16, which also re-reads
+         files not matched yet) and show next to each file in Details;
+       - not yet read: 3DS, Switch, Xbox, GDI's high-density area.
+
+       On the real library:
+       - every cartridge and all 5 PS1 discs gave an ID;
+       - each one's serial leads back to its own game. PS1 serials match
+         one game exactly; 4-letter cartridge codes (`BPEE`, `ADZE`)
+         narrow to 1–3 titles, matched inside the full serial
+         (`AGB-BPEE-USA`) in step 6;
+       - the fan translation reads `AQ3J`, Dragon Quest III's code.
     4. *Parse names* (small to medium). `shiratsu-naming` (MIT, 1.1.0)
        tokenizes No-Intro, TOSEC and GoodTools names into base title,
        region, languages, revision, dev status and flags (`[b]`, `[!]`,

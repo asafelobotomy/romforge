@@ -14,6 +14,7 @@ pub mod extdb;
 pub mod fetch;
 pub mod hash;
 pub mod headers;
+pub mod ident;
 mod identify;
 pub mod launch;
 pub mod organize;
@@ -720,14 +721,17 @@ impl Library {
             let mut upsert = tx.prepare(
                 "INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
                                     stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at,
-                                    disk_size, mtime)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?13, ?14)
+                                    disk_size, mtime, id_kind, id_serial, id_title, id_region)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                         ?13, ?14, ?15, ?16, ?17, ?18)
                  ON CONFLICT(path, member) DO UPDATE SET root_id = excluded.root_id, size = excluded.size,
                    crc32 = excluded.crc32, md5 = excluded.md5, sha1 = excluded.sha1,
                    header_kind = excluded.header_kind, stripped_size = excluded.stripped_size,
                    stripped_crc32 = excluded.stripped_crc32, stripped_md5 = excluded.stripped_md5,
                    stripped_sha1 = excluded.stripped_sha1, scanned_at = excluded.scanned_at,
-                   disk_size = excluded.disk_size, mtime = excluded.mtime",
+                   disk_size = excluded.disk_size, mtime = excluded.mtime,
+                   id_kind = excluded.id_kind, id_serial = excluded.id_serial,
+                   id_title = excluded.id_title, id_region = excluded.id_region",
             )?;
             let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
@@ -801,6 +805,10 @@ impl Library {
                                 s.map(|s| &s.1.sha1),
                                 entry.stamp.map(|s| s.size),
                                 entry.stamp.map(|s| s.mtime),
+                                h.id.as_ref().map(|i| i.kind),
+                                h.id.as_ref().and_then(|i| i.serial.as_deref()),
+                                h.id.as_ref().and_then(|i| i.title.as_deref()),
+                                h.id.as_ref().and_then(|i| i.region.as_deref()),
                             ])
                             .map(drop);
                         report.hashed += 1;
