@@ -187,6 +187,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     4. *What the DAT names already say* (offline): region, languages,
        revision, and flags such as Proto, Beta, Demo, Unl, parsed from
        No-Intro / Redump / TOSEC naming. Shown in Details and Search.
+       *(Built with 12.4: Details' "Edition" line; Search next, with 12.6.)*
     5. *MAME software lists* (`hash/*.xml`, CC0-1.0) for consoles and
        handhelds, matched by SHA1 only (house rule 8): publisher, year,
        serial, release date, alternate (Japanese) title, cartridge hardware
@@ -337,6 +338,25 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        region, languages, revision, dev status and flags (`[b]`, `[!]`,
        `[h]`, `[tr en]`, `[T+Eng]`). It serves 11.4 too, and reads the file
        names of unknown files.
+
+       *(Built 2026-10-18.)* `names::parse` gives one `Name`: title,
+       regions (as written and as codes), languages, version, release
+       status, disc, bad / verified / alternate dump, hack, translation,
+       unlicensed. The order it tries:
+       - No-Intro (and Redump);
+       - TOSEC, when there is a date;
+       - GoodTools, only when a GoodTools-only token is present;
+       - otherwise a loose reading: the title before the first bracket;
+         an unknown first group as the region ("Czech"); `(Disc N)`; and
+         translation or hack markers ("(English v2.0)[Addendum]",
+         "[Hack by X]").
+
+       Over the 889,831 names in all imported DATs (under 2 s), 99.9% are
+       read by their own convention; the rest are BIOS short names and
+       hack entries, which the loose reading handles. 1G1R now ranks
+       with it: retail first, then region, then revision (now also
+       "Rev A"). Details shows an "Edition" line, e.g. "USA · Rev 1" or
+       "Japan · translation: English v2.0 Addendum".
     5. *A title index with vetoes* (medium), built per system from the
        DATs:
        - normalize articles, "&", accents and punctuation, turn Roman

@@ -499,69 +499,17 @@ pub fn base_title(name: &str) -> String {
         .to_lowercase()
 }
 
-fn tags(name: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut depth = 0;
-    for c in name.chars() {
-        match c {
-            '(' | '[' => {
-                depth += 1;
-                cur.clear();
-            }
-            ')' | ']' if depth > 0 => {
-                depth -= 1;
-                out.push(cur.trim().to_owned());
-            }
-            c if depth > 0 => cur.push(c),
-            _ => {}
-        }
-    }
-    out
-}
-
-const NOT_A_RELEASE: &[&str] = &[
-    "beta",
-    "proto",
-    "demo",
-    "sample",
-    "pirate",
-    "kiosk",
-    "debug",
-    "preview",
-    "promo",
-    "test program",
-];
-
-/// Higher is better: a release before a beta/proto, then the best region,
-/// then the highest `Rev`/`v` number.
+/// How good a release a DAT name is, for 1G1R: retail first, then the
+/// best region in `regions`, then the highest revision ([`names::parse`]).
 fn rank(name: &str, regions: &[String]) -> (bool, i64, Vec<u64>) {
-    let tags = tags(name);
-    let release = !tags.iter().any(|t| {
-        let t = t.to_lowercase();
-        NOT_A_RELEASE
-            .iter()
-            .any(|w| t.split([' ', ',']).next() == Some(w) || t == *w)
-    });
-    let region = tags
+    let n = crate::names::parse(name);
+    let region = n
+        .regions
         .iter()
-        .filter_map(|t| {
-            t.split(',')
-                .map(str::trim)
-                .filter_map(|r| regions.iter().position(|w| w.eq_ignore_ascii_case(r)))
-                .min()
-        })
+        .filter_map(|r| regions.iter().position(|w| w.eq_ignore_ascii_case(r)))
         .min()
         .map_or(-1, |p| (regions.len() - p) as i64);
-    let revision = tags
-        .iter()
-        .find_map(|t| {
-            let v = t.strip_prefix("Rev ").or_else(|| t.strip_prefix('v'))?;
-            let parts: Option<Vec<u64>> = v.split('.').map(|p| p.parse().ok()).collect();
-            parts
-        })
-        .unwrap_or_default();
-    (release, region, revision)
+    (n.is_retail(), region, n.revision())
 }
 
 /// Carry out a plan, journaling each move so [`undo`] can reverse it. A

@@ -17,6 +17,7 @@ pub mod headers;
 pub mod ident;
 mod identify;
 pub mod launch;
+pub mod names;
 pub mod organize;
 mod report;
 pub mod scan;

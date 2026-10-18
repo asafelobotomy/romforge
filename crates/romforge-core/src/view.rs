@@ -109,6 +109,9 @@ pub struct GameDetail {
     pub links: Vec<Link>,
     /// Games of the same franchise romforge has metadata for, oldest first.
     pub series: Vec<SeriesEntry>,
+    /// What the row's title (a DAT name, or a file name) says: regions,
+    /// languages, version, flags.
+    pub name: crate::names::Name,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -663,6 +666,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
         });
     }
     Ok(GameDetail {
+        name: crate::names::parse(&row.title),
         row,
         fields,
         art,

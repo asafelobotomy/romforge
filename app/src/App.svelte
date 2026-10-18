@@ -431,6 +431,23 @@
     dims[kind] = [e.currentTarget.naturalWidth, e.currentTarget.naturalHeight];
   }
 
+  // What the name says, as one line: "USA · En, Ja · Rev 1 · Beta".
+  function edition(n) {
+    if (!n) return "";
+    return [
+      n.regions.join(", "),
+      n.languages.join(", "),
+      n.version,
+      n.status,
+      n.disc && `Disc ${n.disc}`,
+      n.translation && `translation: ${n.translation}`,
+      n.hack && `hack: ${n.hack}`,
+      n.bad_dump && "bad dump",
+      n.alternate && "alternate dump",
+      n.unlicensed && "unlicensed",
+    ].filter(Boolean).join(" · ");
+  }
+
   function caption(kind) {
     const d = dims[kind];
     const src = detail?.art_sources?.[kind];
@@ -962,6 +979,7 @@
                   {#if f.publisher}<dt>Publisher</dt><dd>{f.publisher}</dd>{/if}
                   {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
                   {#if f.community_rating}<dt>Community</dt><dd>{f.community_rating}</dd>{/if}
+                  {#if edition(detail.name)}<dt>Edition</dt><dd>{edition(detail.name)}</dd>{/if}
                   <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
                 </dl>
               </div>
