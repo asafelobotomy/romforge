@@ -27,6 +27,28 @@ pub struct Hashes {
     /// What the game's own header or boot files say it is
     /// ([`crate::ident`]), read from the data in the DAT's form.
     pub id: Option<crate::ident::GameId>,
+    /// For a cue sheet: the file names its FILE lines give, in order (no
+    /// folders), to compare with a game's tracks by content.
+    pub sheet: Option<Vec<String>>,
+}
+
+/// The FILE names of a small text file that reads as a cue sheet.
+fn sheet_of(data: &[u8], size: u64) -> Option<Vec<String>> {
+    if size > 64 * 1024 || data.contains(&0) {
+        return None;
+    }
+    let text = String::from_utf8_lossy(data);
+    if !text
+        .lines()
+        .any(|l| l.trim_start().to_ascii_uppercase().starts_with("TRACK "))
+    {
+        return None;
+    }
+    let names: Vec<String> = crate::disc::parse_cue(&text)
+        .into_iter()
+        .map(|f| f.name.rsplit(['/', '\\']).next().unwrap_or(&f.name).to_owned())
+        .collect();
+    (!names.is_empty()).then_some(names)
 }
 
 /// The first [`ident::PREFIX_LEN`] bytes of a stream, for [`ident::read`].
@@ -90,6 +112,7 @@ impl RawHasher {
             id: self.1.id(),
             raw: self.0.finish(),
             stripped: None,
+            sheet: None,
         }
     }
 }
@@ -165,6 +188,7 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
         raw: raw.finish(),
         stripped: stripped.map(|(h, s)| (h.kind, s.finish())),
         id: prefix.id().or_else(|| raw_prefix.id()),
+        sheet: sheet_of(&raw_prefix.0, size),
     })
 }
 

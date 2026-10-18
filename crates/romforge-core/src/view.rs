@@ -46,6 +46,9 @@ pub struct GameRow {
     pub system_name: Option<String>,
     pub status: RowStatus,
     pub cue_differs: bool,
+    /// The differing cue sheet still names exactly the game's tracks (a
+    /// rewritten sheet, file status `sheet`).
+    pub cue_fits: bool,
     pub files: usize,
     pub size: u64,
     pub metadata: bool,
@@ -262,6 +265,27 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             owner.entry(*f).or_default().push(key.clone());
         }
     }
+    // Rewritten cue sheets that fit a complete game's tracks join it.
+    let mut cue_fits: BTreeSet<(i64, String)> = BTreeSet::new();
+    for r in conn
+        .prepare(
+            "SELECT DISTINCT m.file_id, d.system_id, g.name FROM matches m
+             JOIN files f ON f.file_id = m.file_id AND f.status = 'sheet'
+             JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
+             JOIN dats d ON d.dat_id = g.dat_id
+             WHERE m.via = 'sheet' AND d.system_id IS NOT NULL",
+        )?
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
+        })?
+    {
+        let (file, system, name) = r?;
+        let key = (system, name);
+        if games.contains_key(&key) {
+            owner.entry(file).or_default().push(key.clone());
+            cue_fits.insert(key);
+        }
+    }
     // Members of an archive holding a game stay with that game.
     let mut by_path: HashMap<&str, Vec<(i64, String)>> = HashMap::new();
     for f in &files {
@@ -322,6 +346,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             system_name: sys.map(|s| s.name.to_owned()),
             status: RowStatus::Verified,
             cue_differs: games.get(&key).is_some_and(|g| g.0),
+            cue_fits: cue_fits.contains(&key),
             files: 0,
             size: 0,
             metadata: meta.contains(&key),
@@ -404,6 +429,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 system_name: sys.map(|s| s.name.to_owned()),
                 status,
                 cue_differs: false,
+                cue_fits: false,
                 files: 0,
                 size: 0,
                 metadata: key.as_ref().is_some_and(|k| meta.contains(k)),

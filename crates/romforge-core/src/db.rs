@@ -218,6 +218,49 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE manual_ids ADD COLUMN base TEXT;
      ALTER TABLE manual_ids ADD COLUMN relation TEXT;
      ALTER TABLE manual_ids ADD COLUMN tag TEXT;",
+    // 18: a cue sheet's FILE names (JSON), to tell a rewritten sheet that
+    // fits its game's tracks (status 'sheet'). SQLite can't change a CHECK,
+    // so the table is rebuilt as in 9 (matches kept aside). Cue sheets not
+    // matched are read again on their next scan.
+    "CREATE TEMP TABLE matches_keep AS SELECT * FROM matches;
+     CREATE TABLE files_new (
+        file_id        INTEGER PRIMARY KEY,
+        root_id        INTEGER NOT NULL REFERENCES scan_roots(root_id) ON DELETE CASCADE,
+        path           TEXT NOT NULL,
+        member         TEXT NOT NULL DEFAULT '',
+        size           INTEGER NOT NULL,
+        crc32          TEXT NOT NULL,
+        md5            TEXT NOT NULL,
+        sha1           TEXT NOT NULL,
+        header_kind    TEXT,
+        stripped_size  INTEGER,
+        stripped_crc32 TEXT,
+        stripped_md5   TEXT,
+        stripped_sha1  TEXT,
+        status         TEXT NOT NULL DEFAULT 'unknown'
+            CHECK (status IN ('matched', 'candidate', 'unknown', 'wrong_system', 'duplicate', 'manual', 'sheet')),
+        scanned_at     TEXT NOT NULL,
+        disk_size      INTEGER,
+        mtime          INTEGER,
+        id_kind        TEXT,
+        id_serial      TEXT,
+        id_title       TEXT,
+        id_region      TEXT,
+        sheet_files    TEXT,
+        UNIQUE (path, member)
+     );
+     INSERT INTO files_new SELECT file_id, root_id, path, member, size, crc32, md5, sha1, header_kind,
+        stripped_size, stripped_crc32, stripped_md5, stripped_sha1, status, scanned_at, disk_size, mtime,
+        id_kind, id_serial, id_title, id_region, NULL
+        FROM files;
+     DROP TABLE files;
+     ALTER TABLE files_new RENAME TO files;
+     CREATE INDEX files_root ON files(root_id);
+     INSERT INTO matches SELECT * FROM matches_keep;
+     DROP TABLE matches_keep;
+     UPDATE files SET mtime = NULL WHERE path IN (
+       SELECT path FROM files WHERE status <> 'matched'
+         AND lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.cue');",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
@@ -310,7 +353,7 @@ CREATE INDEX files_root ON files(root_id);
 CREATE TABLE matches (
     file_id INTEGER NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
     rom_id  INTEGER NOT NULL REFERENCES roms(rom_id) ON DELETE CASCADE,
-    -- 'sha1', 'md5' or 'crc32'
+    -- 'sha1', 'md5' or 'crc32'; 'sheet' for a rewritten cue sheet (migration 18)
     via     TEXT NOT NULL,
     -- 1 when the stripped (headerless) hashes matched
     stripped INTEGER NOT NULL,

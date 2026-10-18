@@ -52,16 +52,21 @@ pub enum Status {
     /// No hash match; the owner named it in Search (house rule 8: never
     /// counted as verified).
     Manual,
+    /// A cue sheet with no hash match whose FILE lines name exactly a
+    /// game's tracks, all hash-matched beside it (a rewritten sheet; never
+    /// counted as verified).
+    Sheet,
 }
 
 impl Status {
-    pub const ALL: [Status; 6] = [
+    pub const ALL: [Status; 7] = [
         Status::Matched,
         Status::Candidate,
         Status::Unknown,
         Status::WrongSystem,
         Status::Duplicate,
         Status::Manual,
+        Status::Sheet,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -72,6 +77,7 @@ impl Status {
             Status::WrongSystem => "wrong_system",
             Status::Duplicate => "duplicate",
             Status::Manual => "manual",
+            Status::Sheet => "sheet",
         }
     }
 
@@ -258,6 +264,97 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
             ])?;
         }
         set_status.execute(params![file.file_id, status.as_str()])?;
+    }
+    fit_sheets(tx)?;
+    Ok(())
+}
+
+/// Unknown cue sheets whose FILE lines name exactly a game's tracks (in
+/// order), every one hash-matched in the same archive or folder: status
+/// `sheet`, with a match to the game's cue ROM (`via` = 'sheet', which
+/// never counts as had).
+fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
+    let sheets: Vec<(i64, String, String, String)> = tx
+        .prepare(
+            "SELECT file_id, path, member, sheet_files FROM files
+             WHERE status = 'unknown' AND sheet_files IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<_, _>>()?;
+    if sheets.is_empty() {
+        return Ok(());
+    }
+    // Hash-matched files beside it: in the same archive, or loose in the
+    // same folder.
+    let mut beside_archive = tx.prepare(
+        "SELECT file_id, member FROM files WHERE path = ?1 AND member <> ''
+           AND status IN ('matched', 'duplicate')",
+    )?;
+    let mut beside_folder = tx.prepare(
+        "SELECT file_id, path FROM files WHERE member = '' AND status IN ('matched', 'duplicate')
+           AND path LIKE ?1 || '/%' AND instr(substr(path, length(?1) + 2), '/') = 0",
+    )?;
+    let mut games_of = tx.prepare(
+        "SELECT DISTINCT r.game_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id
+         WHERE m.file_id = ?1 AND m.via IN ('sha1', 'md5') AND m.out_of_scope = 0",
+    )?;
+    let mut roms_of = tx.prepare(
+        "SELECT rom_id, name, lower(name) LIKE '%.cue' FROM roms
+         WHERE game_id = ?1 AND coalesce(status, '') <> 'nodump' ORDER BY rom_id",
+    )?;
+    let mut matched_by =
+        tx.prepare("SELECT 1 FROM matches WHERE rom_id = ?1 AND file_id = ?2 AND via IN ('sha1', 'md5')")?;
+    let mut insert = tx.prepare(
+        "INSERT INTO matches (file_id, rom_id, via, stripped, out_of_scope) VALUES (?1, ?2, 'sheet', 0, 0)",
+    )?;
+    let mut set_status = tx.prepare("UPDATE files SET status = 'sheet' WHERE file_id = ?1")?;
+    for (file_id, path, member, names) in sheets {
+        let Ok(names) = serde_json::from_str::<Vec<String>>(&names) else {
+            continue;
+        };
+        let beside: Vec<i64> = if member.is_empty() {
+            let dir = std::path::Path::new(&path)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            beside_folder
+                .query_map([&dir], |r| r.get(0))?
+                .collect::<Result<_, _>>()?
+        } else {
+            beside_archive
+                .query_map([&path], |r| r.get(0))?
+                .collect::<Result<_, _>>()?
+        };
+        let mut games = std::collections::BTreeSet::new();
+        for f in &beside {
+            for g in games_of.query_map([f], |r| r.get::<_, i64>(0))? {
+                games.insert(g?);
+            }
+        }
+        for game in games {
+            let roms: Vec<(i64, String, bool)> = roms_of
+                .query_map([game], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<_, _>>()?;
+            let tracks: Vec<&(i64, String, bool)> = roms.iter().filter(|r| !r.2).collect();
+            let fits = tracks.len() == names.len()
+                && tracks
+                    .iter()
+                    .zip(&names)
+                    .all(|(t, n)| t.1.eq_ignore_ascii_case(n))
+                && tracks.iter().all(|t| {
+                    beside
+                        .iter()
+                        .any(|f| matched_by.exists(params![t.0, f]).unwrap_or(false))
+                });
+            if !fits {
+                continue;
+            }
+            for cue in roms.iter().filter(|r| r.2) {
+                insert.execute(params![file_id, cue.0])?;
+            }
+            set_status.execute([file_id])?;
+            break;
+        }
     }
     Ok(())
 }

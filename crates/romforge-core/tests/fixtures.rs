@@ -1236,3 +1236,88 @@ fn game_ids_from_headers_and_boot_files() {
     let ps1 = id_of("silent");
     assert_eq!((ps1.kind, ps1.serial.as_deref()), ("ps1", Some("SLUS_007.07")));
 }
+
+/// A cue sheet rewritten by some tool (CRLF here) matches no hash, but when
+/// its FILE lines name exactly the game's tracks, all matched beside it,
+/// it is a `sheet` with the game, not an unknown file. In a folder and in a
+/// zip; one naming other files stays unknown.
+#[test]
+fn rewritten_cue_sheets_fit_their_tracks() {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = body("cue-t1", 2352 * 4);
+    let t2 = body("cue-t2", 2352 * 3);
+    let redump = "FILE \"Game (USA) (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (USA) (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n";
+    let rewritten = redump.replace('\n', "\r\n");
+    let wrong = rewritten.replace("(Track 2)", "(Track 9)");
+    let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+    let rom = |name: &str, d: &[u8]| {
+        let x = h(d);
+        format!(
+            r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        )
+    };
+    std::fs::write(
+        dir.path().join("psx.dat"),
+        format!(
+            r#"<datafile><header><name>Sony - PlayStation</name></header><game name="Game (USA)">{}{}{}</game></datafile>"#,
+            rom("Game (USA).cue", redump.as_bytes()),
+            rom("Game (USA) (Track 1).bin", &t1),
+            rom("Game (USA) (Track 2).bin", &t2),
+        ),
+    )
+    .unwrap();
+    let roms = dir.path().join("roms");
+    for (sub, cue) in [("folder", &rewritten), ("other", &wrong)] {
+        let d = roms.join(sub);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("Game (USA) (Track 1).bin"), &t1).unwrap();
+        std::fs::write(d.join("Game (USA) (Track 2).bin"), &t2).unwrap();
+        std::fs::write(d.join("Game (USA).cue"), cue).unwrap();
+    }
+    {
+        let mut z = zip::ZipWriter::new(std::fs::File::create(roms.join("Game (USA).zip")).unwrap());
+        for (n, d) in [
+            ("Game (USA) (Track 1).bin", &t1[..]),
+            ("Game (USA) (Track 2).bin", &t2[..]),
+            ("Game (USA).cue", rewritten.as_bytes()),
+        ] {
+            z.start_file(n, zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(d).unwrap();
+        }
+        z.finish().unwrap();
+    }
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("psx.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    let status_of = |needle: &str| {
+        files
+            .iter()
+            .filter(|f| f.display_path().contains(needle) && f.display_path().ends_with(".cue"))
+            .map(|f| f.status)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(status_of("/folder/"), [Status::Sheet]);
+    assert_eq!(status_of(".zip#"), [Status::Sheet]);
+    assert_eq!(
+        status_of("/other/"),
+        [Status::Unknown],
+        "it names a track the game lacks"
+    );
+
+    let v = lib.library_view().unwrap();
+    let rows: Vec<_> = v.rows.iter().filter(|r| r.title == "Game (USA)").collect();
+    assert!(!rows.is_empty());
+    assert!(rows.iter().all(|r| r.cue_differs && r.cue_fits), "{rows:?}");
+    // The fitting cue is one of the game's files, not a row of its own.
+    assert!(
+        !v.rows
+            .iter()
+            .any(|r| r.title.ends_with("(USA).cue") && r.id.starts_with("f:") && {
+                let d = lib.game_detail(&r.id).unwrap();
+                d.files.iter().any(|f| !f.path.contains("/other/"))
+            })
+    );
+}

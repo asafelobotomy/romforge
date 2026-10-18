@@ -478,6 +478,23 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        rewritten with CRLF or other spacing then shows as "cue fits", not
        as an unknown file. The library's Symphony of the Night cue is 252
        bytes against Redump's 282, with the same two tracks.
+
+       *(Built 2026-10-18.)* A DAT keeps a cue's hash, not its text, so
+       "by content" means by its tracks:
+       - **Scan:** keeps the FILE names of every small text file that
+         reads as a cue sheet (`files.sheet_files`).
+       - **Identify:** a cue with no hash match whose FILE lines name
+         exactly a game's DAT tracks, in order, all hash-matched in the
+         same archive or folder, gets the new file status `sheet`. It is
+         matched to the game's cue ROM with `via = 'sheet'`, which never
+         counts as had or verified.
+       - **Library:** the sheet joins its game's row, which shows "cue
+         rewritten" instead of "cue differs" (`cue_fits`).
+       - **Migration 18:** rebuilds `files` for the new status (SQLite
+         can't change a CHECK) and re-reads cue sheets not matched.
+       - **On the real library:** the Symphony of the Night cue is now a
+         `sheet` of its game, and only the fan translation stays unknown.
+       - **Not yet:** GDI sheets (Dreamcast).
     9. *Containers* (large, last). RVZ/WIA/WBFS/CISO/GCZ store the disc's
        6-byte ID and size (RVZ: `iso_file_size`) but no hash of the
        original ISO. ID + size gives a suggestion at once; a strict match
