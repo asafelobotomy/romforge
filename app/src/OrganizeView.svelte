@@ -1,0 +1,79 @@
+<script>
+  // Always mounted, so the folders and the plan last while you look at other
+  // screens; drawn only while `active`. `run` is the app's invoke with
+  // progress on the status line; `load` reloads the library.
+  let { active, busy, note = $bindable(""), confirmUndo = $bindable(false), run, load } = $props();
+
+  let from = $state("");
+  let dest = $state("");
+  let oneG1R = $state(false);
+  let plan = $state(null);
+  // The inputs `plan` was made from: Move uses exactly these.
+  let planned = $state(null);
+
+  async function planOrganize() {
+    const inputs = { from, dest, oneG1r: oneG1R };
+    plan = await run("Planning…", "organize_plan", inputs);
+    planned = plan ? inputs : null;
+  }
+
+  // Changing what to organize makes the plan on screen stale.
+  function replan() {
+    plan = null;
+    planned = null;
+  }
+
+  async function applyOrganize() {
+    if (!planned) return;
+    const r = await run("Moving files…", "organize_apply", planned);
+    if (r) note = r.batch_id ? `Batch #${r.batch_id}: moved ${r.moved}, failed ${r.failed.length}. Undo moves them back.` : "Nothing to move";
+    replan();
+    await load();
+  }
+
+  async function undoOrganize() {
+    confirmUndo = false;
+    const r = await run("Moving files back…", "organize_undo", {});
+    if (r) note = `Batch #${r.batch_id}: restored ${r.restored}, failed ${r.failed.length}`;
+    replan();
+    await load();
+  }
+</script>
+
+{#if active}
+  <section class="wide">
+    <div class="bar">
+      <input placeholder="Organize files in, /home/me/roms" bind:value={from} oninput={replan} />
+      <input placeholder="Into, /home/me/roms-sorted" bind:value={dest} oninput={replan} />
+      <label><input type="checkbox" bind:checked={oneG1R} onchange={replan} /> 1G1R</label>
+      <button onclick={planOrganize} disabled={!from || !dest || !!busy}>Plan</button>
+      <button onclick={applyOrganize} disabled={!plan || !planned || !plan.moves.length || !!busy}>Move {plan ? plan.moves.length : ""} files</button>
+      {#if confirmUndo}
+        <span>Move the last batch back?</span>
+        <button onclick={undoOrganize} disabled={!!busy}>Yes, move back</button>
+        <button onclick={() => (confirmUndo = false)}>Cancel</button>
+      {:else}
+        <button onclick={() => (confirmUndo = true)} disabled={!!busy}>Undo last batch…</button>
+      {/if}
+    </div>
+    {#if plan}
+      <p class="meta">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
+      <table>
+        <thead><tr><th>From</th><th>To</th></tr></thead>
+        <tbody>
+          {#each plan.moves as m}
+            <tr><td class="path"><bdi>{m.from}</bdi></td><td class="path"><bdi>{m.to}</bdi></td></tr>
+          {/each}
+          {#each plan.skipped as s}
+            <tr class="stay"><td class="path"><bdi>{s.path}</bdi></td><td>stays: {s.reason}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
+{/if}
+
+<style>
+  .path { font-family: ui-monospace, monospace; font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; direction: rtl; text-align: left; }
+  tr.stay td { color: var(--muted); }
+</style>

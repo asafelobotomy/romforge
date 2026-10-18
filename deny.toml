@@ -1,0 +1,38 @@
+# House rule 9: dependencies must be MIT, Apache-2.0, BSD, Zlib, ISC,
+# Unlicense or similar. `cargo deny check licenses` runs in CI.
+
+[graph]
+all-features = false
+
+[licenses]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "Zlib",
+    "ISC",
+    "Unlicense",
+    "CC0-1.0",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    # bzip2's own licence (BSD-style), via sevenz-rust2.
+    "bzip2-1.0.6",
+]
+
+# MPL-2.0 (file-level copyleft), only in the app and only through Tauri
+# (its HTML parsing and `dirs`). Used unmodified; nothing in romforge-core
+# or the CLI may need these.
+exceptions = [
+    { name = "cssparser", allow = ["MPL-2.0"] },
+    { name = "cssparser-macros", allow = ["MPL-2.0"] },
+    { name = "dtoa-short", allow = ["MPL-2.0"] },
+    { name = "selectors", allow = ["MPL-2.0"] },
+    { name = "option-ext", allow = ["MPL-2.0"] },
+]

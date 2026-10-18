@@ -1,0 +1,129 @@
+<script>
+  import { invoke } from "@tauri-apps/api/core";
+
+  // `call` is the app's invoke that reports errors on the status line;
+  // `load` reloads the library.
+  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), selected, call, load } = $props();
+
+  // Cleanup and rename dialog: a plan first, applied on confirmation.
+  let cleanOnly = $state(false); // just the selected game
+  let cleanPlan = $state(null);
+  let cleanBatches = $state([]);
+  let cleanError = $state("");
+  let confirmCleanUndo = $state(false);
+
+  export async function openCleanup() {
+    cleanOnly = false;
+    confirmCleanUndo = false;
+    open = true;
+    await planCleanup();
+  }
+
+  async function planCleanup() {
+    cleanError = "";
+    try {
+      cleanPlan = await invoke("cleanup_plan", { only: cleanOnly && selected ? [selected] : null });
+    } catch (e) {
+      cleanPlan = null;
+      cleanError = String(e).replace(/^settings: /, "");
+    }
+    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at);
+  }
+
+  async function applyCleanup() {
+    cleanError = "";
+    busy = `Repacking ${cleanPlan.items.length} games…`;
+    try {
+      const r = await invoke("cleanup_apply", { only: cleanOnly && selected ? [selected] : null });
+      note = r.batch_id
+        ? `Batch #${r.batch_id}: wrote ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals to .romforge-trash`}` +
+          (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "")
+        : "Nothing was written" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
+      open = false;
+    } catch (e) {
+      cleanError = String(e);
+    }
+    busy = "";
+    await load();
+  }
+
+  async function undoCleanup() {
+    confirmCleanUndo = false;
+    cleanError = "";
+    busy = "Undoing the last cleanup…";
+    try {
+      const r = await invoke("cleanup_undo");
+      note = `Batch #${r.batch_id}: removed ${r.removed} new files, restored ${r.restored} originals` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
+      open = false;
+    } catch (e) {
+      cleanError = String(e);
+    }
+    busy = "";
+    await load();
+  }
+
+  const base = (p) => p.split("/").pop();
+</script>
+
+{#if open}
+  <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (open = false)}>
+    <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="clean-title">
+      <h2 id="clean-title">Cleanup and rename</h2>
+      <p class="hint">
+        Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
+        details in a folder beside it). Every new file is read back and checked against the original hashes before anything
+        else happens. Nothing is ever overwritten.
+      </p>
+      <label class="toggle">
+        <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
+        Only the selected game
+      </label>
+      {#if cleanPlan}
+        <p class="meta">
+          Into <bdi>{cleanPlan.dest}</bdi> ·
+          {cleanPlan.keep_originals ? "originals stay untouched" : "originals go to .romforge-trash next to them, until you undo or empty it"}
+        </p>
+        {#if cleanPlan.items.length}
+          <ul class="choices">
+            {#each cleanPlan.items as it}
+              <li title={it.parts.map((p) => p.name).join("\n")}>
+                <span class="ctitle">{base(it.target)}</span>
+                <span class="sys">{it.system} · {it.parts.length} file{it.parts.length === 1 ? "" : "s"}{it.kept.length ? " · original stays (holds other files)" : ""}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="hint">Nothing to do: no identified game in the Source that isn't processed yet.</p>
+        {/if}
+        {#if cleanPlan.skipped.length}
+          <details>
+            <summary class="hint">{cleanPlan.skipped.length} skipped</summary>
+            <ul class="files">
+              {#each cleanPlan.skipped as [t, why]}<li>{t}: {why}</li>{/each}
+            </ul>
+          </details>
+        {/if}
+      {/if}
+      {#if cleanError}<p class="err" role="alert">{cleanError}</p>{/if}
+      <div class="actions">
+        {#if cleanBatches.length}
+          {#if confirmCleanUndo}
+            <button onclick={undoCleanup} disabled={!!busy}>Yes, undo batch #{cleanBatches[cleanBatches.length - 1].batch_id}</button>
+          {:else}
+            <button onclick={() => (confirmCleanUndo = true)} disabled={!!busy} title="Remove the last batch's new files and put its originals back">Undo last…</button>
+          {/if}
+        {/if}
+        <span class="spacer"></span>
+        <button onclick={() => (open = false)} disabled={!!busy}>Close</button>
+        <button class="primary" onclick={applyCleanup} disabled={!cleanPlan?.items.length || !!busy}>
+          {busy || `Repack ${cleanPlan?.items.length ?? 0}`}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .choices { list-style: none; padding: 0; margin: 0.4rem 0 0; max-height: 16rem; overflow-y: auto; }
+  .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }
+</style>

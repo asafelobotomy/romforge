@@ -566,20 +566,11 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 
 ## Code review follow-ups (2026-10-18)
 
-A full review found about 90 items. The serious ones are fixed: batch 1
-(data safety and crashes), batch 2 (wrong results), batch 3 (speed) and
-batch 4 (medium items). Still open, all low or medium:
+A full review found about 90 items; all are fixed except one that waits
+on someone else:
 
 - **Network.** Redump serves no HTTPS (its server resets TLS), so its DATs
   stay on HTTP until it does.
-- **App.**
-  - `App.svelte` is about 1,450 lines and could be split by dialog.
-  - Details sends every image as base64 with no size cap.
-  - Unused commands: `game_info`, `systems`, `library`.
-  - Naming a translation by hand (not from a suggestion) isn't reachable
-    from the app.
-- **Licences.** Tauri brings MPL-2.0 crates (cssparser, selectors); add a
-  `cargo-deny` check for rule 9.
 
 ## Later ideas (parked, do not build yet)
 

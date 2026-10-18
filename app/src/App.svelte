@@ -1,7 +1,12 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-  import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { size } from "./lib.js";
+  import SettingsDialog from "./SettingsDialog.svelte";
+  import CleanupDialog from "./CleanupDialog.svelte";
+  import SearchDialog from "./SearchDialog.svelte";
+  import DatsView from "./DatsView.svelte";
+  import OrganizeView from "./OrganizeView.svelte";
 
   // Which screen: the library (default), DATs, or organize.
   let view = $state("library");
@@ -18,253 +23,18 @@
   let adding = $state(false);
   let addDir = $state("");
 
-  // Settings panel: a working copy, saved on "Save".
+  // The dialogs and the DATs and organize screens keep their own state;
+  // these are their instances (for openSettings() and the like) and what
+  // the app needs to know of them: which dialog is open (Escape, arrow
+  // keys) and the organize screen's undo prompt (reset on every screen
+  // change).
+  let settings = $state(null);
+  let cleanup = $state(null);
+  let search = $state(null);
+  let dats = $state(null);
   let settingsOpen = $state(false);
-  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {}, show_empty_media: false });
-  let defaultStaging = $state("");
-  let settingsError = $state("");
-
-  async function openSettings() {
-    settingsError = "";
-    const s = await call("get_settings");
-    if (!s) return;
-    draft = s;
-    defaultStaging = (await call("settings_info"))?.default_staging ?? "";
-    settingsOpen = true;
-  }
-
-  async function browse(field) {
-    const dir = await pickFolder({ directory: true, multiple: false, defaultPath: draft[field] ?? undefined });
-    if (typeof dir === "string") draft[field] = dir;
-  }
-
-  async function saveSettings() {
-    settingsError = "";
-    try {
-      draft = await invoke("save_settings", { settings: draft });
-      showEmpty = draft.show_empty_media;
-      settingsOpen = false;
-      note = "Settings saved. Refresh scans the Source and Library folders.";
-    } catch (e) {
-      settingsError = String(e).replace(/^settings: /, "");
-    }
-  }
-
-  // Cleanup and rename dialog: a plan first, applied on confirmation.
   let cleanOpen = $state(false);
-  let cleanOnly = $state(false); // just the selected game
-  let cleanPlan = $state(null);
-  let cleanBatches = $state([]);
-  let cleanError = $state("");
-  let confirmCleanUndo = $state(false);
-
-  async function openCleanup() {
-    cleanOnly = false;
-    confirmCleanUndo = false;
-    cleanOpen = true;
-    await planCleanup();
-  }
-
-  async function planCleanup() {
-    cleanError = "";
-    try {
-      cleanPlan = await invoke("cleanup_plan", { only: cleanOnly && selected ? [selected] : null });
-    } catch (e) {
-      cleanPlan = null;
-      cleanError = String(e).replace(/^settings: /, "");
-    }
-    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at);
-  }
-
-  async function applyCleanup() {
-    cleanError = "";
-    busy = `Repacking ${cleanPlan.items.length} games…`;
-    try {
-      const r = await invoke("cleanup_apply", { only: cleanOnly && selected ? [selected] : null });
-      note = r.batch_id
-        ? `Batch #${r.batch_id}: wrote ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals to .romforge-trash`}` +
-          (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "")
-        : "Nothing was written" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
-      cleanOpen = false;
-    } catch (e) {
-      cleanError = String(e);
-    }
-    busy = "";
-    await load();
-  }
-
-  async function undoCleanup() {
-    confirmCleanUndo = false;
-    cleanError = "";
-    busy = "Undoing the last cleanup…";
-    try {
-      const r = await invoke("cleanup_undo");
-      note = `Batch #${r.batch_id}: removed ${r.removed} new files, restored ${r.restored} originals` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
-      cleanOpen = false;
-    } catch (e) {
-      cleanError = String(e);
-    }
-    busy = "";
-    await load();
-  }
-
-  const base = (p) => p.split("/").pop();
-
-  // Search dialog, after tinyMediaManager's: one queue item at a time, a
-  // scraper and search text on top, results | picture | details, then what
-  // to fetch once a result is taken.
   let searchOpen = $state(false);
-  let queue = $state([]);
-  let qi = $state(0);
-  let qDetail = $state(null);
-  let scraper = $state("dat");
-  let sText = $state("");
-  let sSystem = $state("");
-  let results = $state([]);
-  let picked = $state(-1);
-  let preview = $state(null);
-  let searching = $state(false);
-  let ownTitle = $state("");
-  let qError = $state("");
-  let allSystems = $state([]);
-  const fetchItems = [
-    ["wikidata", "Wikidata details"],
-    ["boxart", "Box art"],
-    ["title", "Title screen"],
-    ["snap", "Screenshot"],
-    ["box3d", "3D box"],
-    ["hero", "Hero"],
-    ["logo", "Logo"],
-    ["icon", "Icon"],
-  ];
-  let fetchOn = $state(["wikidata", "boxart", "title", "snap"]);
-  let noOverwrite = $state(true);
-  let searchSeq = 0;
-
-  async function openSearch() {
-    qError = "";
-    queue = (await call("search_queue")) ?? [];
-    if (!queue.length) {
-      note = "Nothing needs identifying: every game is matched by hash or named by you, and Wikidata is settled.";
-      return;
-    }
-    if (!allSystems.length) allSystems = (await call("all_systems")) ?? [];
-    const start = queue.findIndex((q) => q.row_id === selected);
-    qi = start >= 0 ? start : 0;
-    searchOpen = true;
-    await loadItem();
-  }
-
-  async function loadItem() {
-    qError = "";
-    const item = queue[qi];
-    if (!item) return;
-    scraper = item.need === "wikidata" ? "wikidata" : "dat";
-    sSystem = item.system ?? "";
-    sText = "";
-    ownTitle = "";
-    results = [];
-    preview = null;
-    searching = true;
-    const d = await call("game_detail", { id: item.row_id });
-    // Stepped on to another item while this one loaded.
-    if (queue[qi]?.row_id !== item.row_id) return;
-    qDetail = d;
-    await doSearch();
-  }
-
-  async function doSearch() {
-    const seq = ++searchSeq;
-    qError = "";
-    searching = true;
-    results = [];
-    picked = -1;
-    preview = null;
-    try {
-      const r = await invoke("search_find", { rowId: queue[qi].row_id, scraper, text: sText || null, system: sSystem || null });
-      if (seq !== searchSeq) return;
-      results = r;
-      if (r.length) await pick(0);
-    } catch (e) {
-      if (seq === searchSeq) qError = String(e);
-    }
-    if (seq === searchSeq) searching = false;
-  }
-
-  async function pick(i) {
-    picked = i;
-    preview = null;
-    const found = results[i];
-    const p = await call("search_preview", { rowId: queue[qi].row_id, found });
-    if (results[picked] === found) preview = p;
-  }
-
-  async function step(d) {
-    qi = Math.max(0, Math.min(queue.length - 1, qi + d));
-    await loadItem();
-  }
-
-  // After an answer: drop the item and go on with the next one.
-  async function answered(msg) {
-    note = msg;
-    queue = queue.filter((_, i) => i !== qi);
-    await load();
-    if (!queue.length) {
-      searchOpen = false;
-      note = msg + " That was the last one.";
-      return;
-    }
-    qi = Math.min(qi, queue.length - 1);
-    await loadItem();
-  }
-
-  async function take(found) {
-    qError = "";
-    busy = `Taking ${found.title}…`;
-    try {
-      const r = await invoke("search_choose", {
-        rowId: queue[qi].row_id,
-        found,
-        system: sSystem || null,
-        art: fetchOn.filter((k) => k !== "wikidata"),
-        wikidata: fetchOn.includes("wikidata"),
-        overwrite: !noOverwrite,
-      });
-      busy = "";
-      const e = r.enrich;
-      const fetched = e.art_saved ? `; ${e.art_saved} images saved` : "";
-      const what = found.scraper === "wikidata" ? `matched to ${found.id}` : "identified by you";
-      await answered(`${found.title}: ${what}${fetched}.` + (e.errors?.length ? ` Fetching: ${e.errors.join("; ")}` : ""));
-    } catch (e) {
-      busy = "";
-      qError = String(e);
-    }
-  }
-
-  function takeOwn() {
-    take({ scraper: "dat", id: ownTitle.trim(), title: ownTitle.trim(), system: sSystem || null, year: null, score: 1, description: null });
-  }
-
-  function toggleFetch(k) {
-    fetchOn = fetchOn.includes(k) ? fetchOn.filter((x) => x !== k) : [...fetchOn, k];
-  }
-
-  function reveal() {
-    const f = qDetail?.files?.[0]?.path;
-    if (f) revealItemInDir(f.split("#")[0]).catch((e) => (qError = String(e)));
-  }
-
-  let summary = $state({ files_by_status: [], dats: [] });
-  let datId = $state(null);
-  let datGames = $state([]);
-  let gameFilter = $state("all");
-
-  let from = $state("");
-  let dest = $state("");
-  let oneG1R = $state(false);
-  let plan = $state(null);
-  // The inputs `plan` was made from: Move uses exactly these.
-  let planned = $state(null);
   let confirmUndo = $state(false);
 
   async function call(cmd, args) {
@@ -305,7 +75,7 @@
     error = "";
     note = "";
     confirmUndo = false;
-    if (v === "dats") loadDats();
+    if (v === "dats") dats.loadDats();
   }
 
   async function refresh() {
@@ -351,79 +121,6 @@
     if (!row) return;
     const r = await run(`Starting ${row.title}…`, "launch", { rowId: row.id });
     if (r) note = r;
-  }
-
-  // Third-party databases the user downloads (milestone 11).
-  let extdbs = $state([]);
-  let extBusy = $state("");
-
-  async function loadExtdbs() {
-    extdbs = (await call("extdb_list")) ?? [];
-  }
-
-  async function getExtdb(d) {
-    extBusy = d.db;
-    note = `Downloading ${d.name}… (runs in the background; the rest of romforge stays usable)`;
-    try {
-      const r = await invoke("extdb_download", { name: d.db });
-      note = `${r.name}: ${r.entries?.toLocaleString()} entries. Enrich now uses it to fill what libretro and Wikidata leave empty.`;
-    } catch (e) {
-      error = `${d.name}: ${e}`;
-    }
-    extBusy = "";
-    await loadExtdbs();
-  }
-
-  async function dropExtdb(d) {
-    await call("extdb_remove", { name: d.db });
-    note = `${d.name} removed. What Enrich already filled from it stays until you enrich with refresh.`;
-    await loadExtdbs();
-  }
-
-  async function loadDats() {
-    loadExtdbs();
-    summary = (await call("summary")) ?? { files_by_status: [], dats: [] };
-    if (datId !== null) await openDat(datId);
-  }
-
-  async function openDat(id) {
-    datId = id;
-    datGames = (await call("dat_games", { datId: id })) ?? [];
-  }
-
-  async function downloadDats() {
-    const r = await run("Downloading DATs… (a few minutes the first time)", "download_dats", { extras: false });
-    if (r) note = `DATs: ${r.imported} imported, ${r.unchanged} unchanged` + (r.errors.length ? `; errors: ${r.errors.join("; ")}` : "");
-    await loadDats();
-    await load();
-  }
-
-  async function planOrganize() {
-    const inputs = { from, dest, oneG1r: oneG1R };
-    plan = await run("Planning…", "organize_plan", inputs);
-    planned = plan ? inputs : null;
-  }
-
-  // Changing what to organize makes the plan on screen stale.
-  function replan() {
-    plan = null;
-    planned = null;
-  }
-
-  async function applyOrganize() {
-    if (!planned) return;
-    const r = await run("Moving files…", "organize_apply", planned);
-    if (r) note = r.batch_id ? `Batch #${r.batch_id}: moved ${r.moved}, failed ${r.failed.length}. Undo moves them back.` : "Nothing to move";
-    replan();
-    await load();
-  }
-
-  async function undoOrganize() {
-    confirmUndo = false;
-    const r = await run("Moving files back…", "organize_undo", {});
-    if (r) note = `Batch #${r.batch_id}: restored ${r.restored}, failed ${r.failed.length}`;
-    replan();
-    await load();
   }
 
   const statusLabel = {
@@ -525,10 +222,6 @@
       .join("-");
   }
 
-  function size(n) {
-    return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MiB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${n} B`;
-  }
-
   let rows = $derived(
     lib.rows.filter(
       (r) =>
@@ -563,8 +256,6 @@
     }
   }
   let f = $derived(detail?.fields ?? {});
-  let visibleGames = $derived(datGames.filter((g) => gameFilter === "all" || (gameFilter === "have") === g.have));
-  let currentDat = $derived(summary.dats.find((d) => d.dat_id === datId));
 
   load();
   call("get_settings").then((s) => s && (showEmpty = s.show_empty_media));
@@ -590,17 +281,17 @@
     <button class="tool" onclick={() => (adding = !adding)} disabled={!!busy} title="Scan a new folder">
       <span class="glyph">＋</span>Add folder
     </button>
-    <button class="tool" onclick={openSearch} disabled={!!busy} title="Identify games one by one: DAT title suggestions or your own title, and settle Wikidata matches">
+    <button class="tool" onclick={() => search.openSearch()} disabled={!!busy} title="Identify games one by one: DAT title suggestions or your own title, and settle Wikidata matches">
       <span class="glyph">⌕</span>Search
     </button>
     <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
       <span class="glyph">✦</span>Enrich
     </button>
-    <button class="tool" onclick={openCleanup} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
+    <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
       <span class="glyph">✎</span>Cleanup and rename
     </button>
     <span class="spacer"></span>
-    <button class="tool" onclick={openSettings} disabled={!!busy} title="Source and Library folders, cleanup options">
+    <button class="tool" onclick={() => settings.openSettings()} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
     </button>
     <button class="tool" onclick={play} disabled={!row || !row.playable || !!busy} title="Start the selected game">
@@ -608,266 +299,11 @@
     </button>
   </header>
 
-  {#if settingsOpen}
-    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (settingsOpen = false)}>
-      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <h2 id="settings-title">Settings</h2>
+  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty {call} />
 
-        <section class="setting">
-          <label for="source">Source</label>
-          <p class="hint">Where your unprocessed ROMs are. Refresh scans it.</p>
-          <div class="pick">
-            <input id="source" bind:value={draft.source_dir} placeholder="Not set" />
-            <button onclick={() => browse("source_dir")}>Browse…</button>
-            {#if draft.source_dir}<button onclick={() => (draft.source_dir = null)}>Clear</button>{/if}
-          </div>
-        </section>
+  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {call} {load} />
 
-        <section class="setting">
-          <label for="library">Library <span class="hint">(optional)</span></label>
-          <p class="hint">Where Cleanup and rename puts processed games, sorted by platform. Refresh scans it too, and Play uses what's there.</p>
-          <div class="pick">
-            <input id="library" bind:value={draft.library_dir} placeholder="Not set" />
-            <button onclick={() => browse("library_dir")}>Browse…</button>
-            {#if draft.library_dir}<button onclick={() => { draft.library_dir = null; draft.keep_originals = false; }}>Clear</button>{/if}
-          </div>
-        </section>
-
-        <section class="setting">
-          <label class="toggle">
-            <input type="checkbox" bind:checked={draft.keep_originals} disabled={!draft.library_dir} />
-            Keep originals
-          </label>
-          <p class="hint">
-            {#if draft.library_dir}
-              {draft.keep_originals
-                ? "Source files stay untouched. Cleanup writes each repacked game into the Library."
-                : "Cleanup writes each repacked game into the Library; the originals go to .romforge-trash next to them once the new file is verified."}
-            {:else}
-              Needs a Library folder for the processed copies.
-            {/if}
-          </p>
-        </section>
-
-        <section class="setting">
-          <label for="staging">Staging folder</label>
-          <p class="hint">Scratch space for cleanup (tracks inside 7z archives are unpacked here). Must be outside the Source and Library.</p>
-          <div class="pick">
-            <input id="staging" bind:value={draft.staging_dir} placeholder={defaultStaging} />
-            <button onclick={() => browse("staging_dir")}>Browse…</button>
-            {#if draft.staging_dir}<button onclick={() => (draft.staging_dir = null)}>Use default</button>{/if}
-          </div>
-        </section>
-
-        <section class="setting">
-          <label class="toggle">
-            <input type="checkbox" bind:checked={draft.show_empty_media} />
-            Show empty media boxes
-          </label>
-          <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
-        </section>
-
-        <section class="setting">
-          <h3 class="sub">Online sources <span class="hint">(optional)</span></h3>
-          <p class="hint">Free sources that need no account are always used first. These fill only what they leave empty.</p>
-          <label for="sgdb">SteamGridDB API key</label>
-          <input id="sgdb" type="password" autocomplete="off" bind:value={draft.keys.steamgriddb_key} placeholder="Not set" />
-          <div class="two">
-            <div><label for="igdb-id">IGDB client ID</label><input id="igdb-id" autocomplete="off" bind:value={draft.keys.igdb_client_id} placeholder="Twitch app" /></div>
-            <div><label for="igdb-secret">IGDB client secret</label><input id="igdb-secret" type="password" autocomplete="off" bind:value={draft.keys.igdb_client_secret} /></div>
-          </div>
-          <div class="two">
-            <div><label for="ss-dev">ScreenScraper developer ID</label><input id="ss-dev" autocomplete="off" bind:value={draft.keys.screenscraper_dev_id} /></div>
-            <div><label for="ss-devpw">Developer password</label><input id="ss-devpw" type="password" autocomplete="off" bind:value={draft.keys.screenscraper_dev_password} /></div>
-          </div>
-          <div class="two">
-            <div><label for="ss-user">ScreenScraper user</label><input id="ss-user" autocomplete="off" bind:value={draft.keys.screenscraper_user} placeholder="Optional" /></div>
-            <div><label for="ss-pw">Password</label><input id="ss-pw" type="password" autocomplete="off" bind:value={draft.keys.screenscraper_password} /></div>
-          </div>
-          <p class="hint">Stored in romforge's database on this computer.</p>
-        </section>
-
-        {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
-        <div class="actions">
-          <button onclick={() => (settingsOpen = false)}>Cancel</button>
-          <button class="primary" onclick={saveSettings}>Save</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if cleanOpen}
-    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (cleanOpen = false)}>
-      <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="clean-title">
-        <h2 id="clean-title">Cleanup and rename</h2>
-        <p class="hint">
-          Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
-          details in a folder beside it). Every new file is read back and checked against the original hashes before anything
-          else happens. Nothing is ever overwritten.
-        </p>
-        <label class="toggle">
-          <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
-          Only the selected game
-        </label>
-        {#if cleanPlan}
-          <p class="meta">
-            Into <bdi>{cleanPlan.dest}</bdi> ·
-            {cleanPlan.keep_originals ? "originals stay untouched" : "originals go to .romforge-trash next to them, until you undo or empty it"}
-          </p>
-          {#if cleanPlan.items.length}
-            <ul class="choices">
-              {#each cleanPlan.items as it}
-                <li title={it.parts.map((p) => p.name).join("\n")}>
-                  <span class="ctitle">{base(it.target)}</span>
-                  <span class="sys">{it.system} · {it.parts.length} file{it.parts.length === 1 ? "" : "s"}{it.kept.length ? " · original stays (holds other files)" : ""}</span>
-                </li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="hint">Nothing to do: no identified game in the Source that isn't processed yet.</p>
-          {/if}
-          {#if cleanPlan.skipped.length}
-            <details>
-              <summary class="hint">{cleanPlan.skipped.length} skipped</summary>
-              <ul class="files">
-                {#each cleanPlan.skipped as [t, why]}<li>{t}: {why}</li>{/each}
-              </ul>
-            </details>
-          {/if}
-        {/if}
-        {#if cleanError}<p class="err" role="alert">{cleanError}</p>{/if}
-        <div class="actions">
-          {#if cleanBatches.length}
-            {#if confirmCleanUndo}
-              <button onclick={undoCleanup} disabled={!!busy}>Yes, undo batch #{cleanBatches[cleanBatches.length - 1].batch_id}</button>
-            {:else}
-              <button onclick={() => (confirmCleanUndo = true)} disabled={!!busy} title="Remove the last batch's new files and put its originals back">Undo last…</button>
-            {/if}
-          {/if}
-          <span class="spacer"></span>
-          <button onclick={() => (cleanOpen = false)} disabled={!!busy}>Close</button>
-          <button class="primary" onclick={applyCleanup} disabled={!cleanPlan?.items.length || !!busy}>
-            {busy || `Repack ${cleanPlan?.items.length ?? 0}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if searchOpen && queue[qi]}
-    {@const item = queue[qi]}
-    {@const chosen = results[picked]}
-    <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (searchOpen = false)}>
-      <div class="dialog search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
-        <div class="qhead">
-          <h2 id="search-title">Search</h2>
-          <span class="qnav">
-            <button class="mini" onclick={() => step(-1)} disabled={qi === 0 || !!busy} aria-label="Previous">‹</button>
-            <span class="hint">{qi + 1} of {queue.length}</span>
-            <button class="mini" onclick={() => step(1)} disabled={qi >= queue.length - 1 || !!busy} aria-label="Next">›</button>
-          </span>
-        </div>
-        <div class="spath">
-          <span class="fpath" title={qDetail?.files?.[0]?.path}><bdi>{qDetail?.files?.[0]?.path ?? item.title}</bdi></span>
-          <span class="badge {item.status}">{item.need === "wikidata" ? (item.wikidata === "ambiguous" ? "Wikidata: several match" : "Wikidata: no match") : item.status.replace("_", " ")}</span>
-          <button class="mini" onclick={reveal} title="Show in the file manager" aria-label="Show in the file manager">📂</button>
-        </div>
-
-        <div class="sform">
-          <label for="scraper">Scraper</label>
-          <div class="pick">
-            <select id="scraper" bind:value={scraper} onchange={doSearch}>
-              <option value="dat">DAT titles (offline)</option>
-              <option value="wikidata">Wikidata</option>
-            </select>
-            <input bind:value={sText} placeholder={qDetail ? (item.need === "identify" ? qDetail.row.title.split("#").pop() : item.title) : ""} aria-label="Search text" onkeydown={(e) => e.key === "Enter" && doSearch()} />
-            <button onclick={doSearch} disabled={searching}>⌕ Search</button>
-          </div>
-          <label for="splat">Platform</label>
-          <div class="pick">
-            <select id="splat" bind:value={sSystem} onchange={doSearch}>
-              <option value="">{scraper === "dat" ? "Any that fits the file" : "Pick one…"}</option>
-              {#each allSystems as s}<option value={s.key}>{s.name}</option>{/each}
-            </select>
-          </div>
-        </div>
-
-        <div class="sgrid">
-          <div class="stable" role="listbox" aria-label="Search results">
-            <div class="srow shead"><span>Search result</span><span>Year</span><span>Platform</span><span>ID</span><span title="How well it fits">%</span></div>
-            {#each results as r, i}
-              <div
-                class="srow"
-                class:sel={i === picked}
-                role="option"
-                aria-selected={i === picked}
-                tabindex="0"
-                onclick={() => pick(i)}
-                ondblclick={() => take(r)}
-                onkeydown={(e) => e.key === "Enter" && take(r)}
-              >
-                <span class="ctitle" title={r.title}>{r.title}</span>
-                <span>{r.year ?? ""}</span>
-                <span class="sys">{r.system ?? ""}</span>
-                <span class="sys" title={r.band ? `${r.description}: never counted as verified` : ""}>{r.scraper === "wikidata" ? r.id : (r.description?.split(":")[0] ?? "")}</span>
-                <span class="score">{Math.round(r.score * 100)}%</span>
-              </div>
-            {:else}
-              <p class="hint empty">{searching ? "Searching…" : scraper === "dat" ? "No DAT game fits it: not by name, header, serial or CRC." : "Wikidata knows nothing by that name."}</p>
-            {/each}
-          </div>
-          <div class="sposter">
-            {#if preview?.image}<img src={preview.image} alt="Box art of {preview.title}" />{:else}<span class="hint">{chosen ? (preview ? "No box art" : "…") : ""}</span>{/if}
-          </div>
-          <div class="sinfo">
-            {#if chosen}
-              <h3 class="sub">{chosen.title}{chosen.year ? ` (${chosen.year})` : ""}</h3>
-              {#if preview?.system_name}<p class="meta">{preview.system_name}</p>{/if}
-              {#if chosen.evidence?.length}
-                <p class="meta">{chosen.description} (a suggestion, never verified)</p>
-                <ul class="evidence">
-                  {#each chosen.evidence as e}<li class:agrees={e.agrees}><span aria-hidden="true">{e.agrees ? "+" : "−"}</span> {e.text}</li>{/each}
-                </ul>
-              {/if}
-              {#if preview?.description}<p class="desc">{preview.description}</p>{/if}
-              {#if preview?.facts?.length}
-                <dl class="facts">
-                  {#each preview.facts as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}
-                </dl>
-              {/if}
-            {/if}
-            <div class="own">
-              <label for="own">Not listed?</label>
-              <div class="pick">
-                <input id="own" bind:value={ownTitle} placeholder="Your own title (e.g. a translation)" />
-                <button onclick={takeOwn} disabled={!ownTitle.trim() || !sSystem || !!busy} title={sSystem ? "Name it yourself: shown as identified by you, never as verified" : "Pick a platform first"}>Use</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <section class="setting">
-          <span class="flabel">Fetch after choosing</span>
-          <div class="chips">
-            {#each fetchItems as [k, label]}
-              <button class="chip" class:on={fetchOn.includes(k)} aria-pressed={fetchOn.includes(k)} onclick={() => toggleFetch(k)}>
-                {label}{#if fetchOn.includes(k)} <span aria-hidden="true">×</span>{/if}
-              </button>
-            {/each}
-          </div>
-          <label class="toggle"><input type="checkbox" bind:checked={noOverwrite} /> Do not overwrite existing data</label>
-        </section>
-
-        {#if qError}<p class="err" role="alert">{qError}</p>{/if}
-        <div class="actions">
-          <button onclick={() => step(1)} disabled={qi >= queue.length - 1 || !!busy}>Skip</button>
-          <span class="spacer"></span>
-          <button onclick={() => (searchOpen = false)} disabled={!!busy}>Cancel</button>
-          <button class="primary" onclick={() => take(chosen)} disabled={!chosen || !!busy}>{busy || "OK"}</button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 
   {#if viewer}
     {@const k = viewer.kind}
@@ -1126,109 +562,9 @@
           {/if}
         {/if}
       </section>
-    {:else if view === "dats"}
-      <section class="wide">
-        <div class="bar"><button onclick={downloadDats} disabled={!!busy}>Download DATs for all systems</button></div>
-        <section class="extdbs" aria-labelledby="extdb-title">
-          <h3 id="extdb-title">Game databases <span class="hint">(optional, downloaded by you)</span></h3>
-          <p class="hint">
-            Free to download, but published without a licence, so romforge doesn't include them: you fetch them from their
-            makers onto this computer. Enrich then uses them only to fill what libretro and Wikidata leave empty.
-          </p>
-          <ul>
-            {#each extdbs as d}
-              <li>
-                <div class="ehead">
-                  <a href={d.homepage} onclick={(e) => { e.preventDefault(); openUrl(d.homepage).catch((err) => (error = String(err))); }}>{d.name}</a>
-                  <span class="hint">
-                    {d.downloaded_at
-                      ? `downloaded ${d.downloaded_at.slice(0, 10)} · ${d.entries?.toLocaleString()} entries · ${size(d.bytes)}`
-                      : "not downloaded"}
-                  </span>
-                  <span class="spacer"></span>
-                  {#if d.downloaded_at}<button onclick={() => dropExtdb(d)} disabled={!!extBusy}>Remove</button>{/if}
-                  <button onclick={() => getExtdb(d)} disabled={!!extBusy}>
-                    {extBusy === d.db ? "Downloading…" : d.downloaded_at ? "Update" : "Download"}
-                  </button>
-                </div>
-                <p class="hint">{d.about}</p>
-              </li>
-            {/each}
-          </ul>
-        </section>
-        <div class="dats">
-          <div class="datpane">
-            <table>
-              <thead><tr><th>DAT</th><th>System</th><th class="num">Have</th><th class="num">Missing</th></tr></thead>
-              <tbody>
-                {#each summary.dats as d (d.dat_id)}
-                  <tr class:selected={d.dat_id === datId} onclick={() => openDat(d.dat_id)}>
-                    <td>{d.name}{d.version ? ` · v${d.version}` : ""}</td>
-                    <td>{d.system ?? "—"}</td>
-                    <td class="num">{d.have} / {d.games}</td>
-                    <td class="num">{d.missing}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-          {#if currentDat}
-            <div class="datpane">
-              <h2>{currentDat.name}</h2>
-              <p class="meta">From {currentDat.source_path}, imported {currentDat.imported_at}</p>
-              <div class="bar">
-                {#each ["all", "have", "missing"] as v}
-                  <label><input type="radio" bind:group={gameFilter} value={v} /> {v}</label>
-                {/each}
-              </div>
-              <table>
-                <thead><tr><th></th><th>Game</th><th class="num">ROMs</th></tr></thead>
-                <tbody>
-                  {#each visibleGames as g (g.game_id)}
-                    <tr>
-                      <td><span class="badge {g.have ? 'verified' : 'unknown'}">{g.have ? "have" : "missing"}</span></td>
-                      <td>{g.name}</td>
-                      <td class="num">{g.roms_have}/{g.roms_total}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        </div>
-      </section>
-    {:else}
-      <section class="wide">
-        <div class="bar">
-          <input placeholder="Organize files in, /home/me/roms" bind:value={from} oninput={replan} />
-          <input placeholder="Into, /home/me/roms-sorted" bind:value={dest} oninput={replan} />
-          <label><input type="checkbox" bind:checked={oneG1R} onchange={replan} /> 1G1R</label>
-          <button onclick={planOrganize} disabled={!from || !dest || !!busy}>Plan</button>
-          <button onclick={applyOrganize} disabled={!plan || !planned || !plan.moves.length || !!busy}>Move {plan ? plan.moves.length : ""} files</button>
-          {#if confirmUndo}
-            <span>Move the last batch back?</span>
-            <button onclick={undoOrganize} disabled={!!busy}>Yes, move back</button>
-            <button onclick={() => (confirmUndo = false)}>Cancel</button>
-          {:else}
-            <button onclick={() => (confirmUndo = true)} disabled={!!busy}>Undo last batch…</button>
-          {/if}
-        </div>
-        {#if plan}
-          <p class="meta">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
-          <table>
-            <thead><tr><th>From</th><th>To</th></tr></thead>
-            <tbody>
-              {#each plan.moves as m}
-                <tr><td class="path"><bdi>{m.from}</bdi></td><td class="path"><bdi>{m.to}</bdi></td></tr>
-              {/each}
-              {#each plan.skipped as s}
-                <tr class="stay"><td class="path"><bdi>{s.path}</bdi></td><td>stays: {s.reason}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      </section>
     {/if}
+    <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
+    <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {run} {load} />
   </div>
 </div>
 
@@ -1261,18 +597,18 @@
   }
   :global(body) { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }
   .app { display: flex; flex-direction: column; height: 100vh; }
-  button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.75rem; cursor: pointer; }
-  button:disabled { opacity: 0.45; cursor: default; }
-  input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
+  :global(.app button) { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.75rem; cursor: pointer; }
+  :global(.app button:disabled) { opacity: 0.45; cursor: default; }
+  :global(.app input) { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
   h1 { font-size: 1.25rem; margin: 0; font-weight: 600; }
-  h2 { font-size: 1rem; margin: 0 0 0.25rem; }
-  h3 { font-size: 0.9rem; margin: 1rem 0 0.25rem; color: var(--muted); font-weight: 600; }
+  :global(.app h2) { font-size: 1rem; margin: 0 0 0.25rem; }
+  :global(.app h3) { font-size: 0.9rem; margin: 1rem 0 0.25rem; color: var(--muted); font-weight: 600; }
 
   .toolbar { display: flex; gap: 0.25rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel); }
   .tool { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.2rem 0.6rem; font-size: 0.8rem; gap: 0.1rem; }
   .tool:hover:not(:disabled) { background: var(--accent-bg); }
   .glyph { font-size: 1.25rem; line-height: 1.2rem; }
-  .spacer { flex: 1; }
+  :global(.app .spacer) { flex: 1; }
   .addbar { display: flex; gap: 0.5rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); }
   .addbar input { flex: 1; }
   .status { margin: 0; padding: 0.2rem 0.75rem; min-height: 1.4em; color: var(--accent); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1307,7 +643,7 @@
   .tr:hover { background: var(--accent-bg); }
   .tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 var(--accent); }
   .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sys { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+  :global(.app .sys) { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
   .ind { text-align: center; color: var(--muted); }
   .ind.yes, .ind.verified { color: var(--ok); }
   .ind.incomplete, .ind.candidate, .ind.duplicate { color: var(--warn); }
@@ -1339,13 +675,13 @@
   .logo { align-self: flex-start; }
   .logo .shot img { max-height: 4.5rem; max-width: 16rem; margin: 0; }
   .logo.empty span { height: 3rem; width: 10rem; }
-  .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; align-content: start; font-size: 0.9rem; }
+  :global(.app .facts) { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; align-content: start; font-size: 0.9rem; }
   .facts.wide { max-width: 40rem; }
-  dt { color: var(--muted); }
-  dd { margin: 0; }
+  :global(.app dt) { color: var(--muted); }
+  :global(.app dd) { margin: 0; }
   .detail h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
   .detail h3 .src { font-weight: 400; font-size: 0.8rem; }
-  .desc { line-height: 1.55; margin: 0; }
+  :global(.app .desc) { line-height: 1.55; margin: 0; }
   .gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; }
   .media .shot img { max-height: 10rem; max-width: min(100%, 18rem); background: #0002; }
   .media.empty span { height: 6rem; width: 8rem; }
@@ -1354,11 +690,11 @@
   .viewer img { max-width: 92vw; max-height: 82vh; object-fit: contain; box-shadow: 0 8px 30px #0008; }
   .viewer img.pixels { image-rendering: pixelated; max-width: none; max-height: none; }
   .viewer figcaption { color: #ddd; font-size: 0.85rem; padding-top: 0.5rem; }
-  .files { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
-  .files li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.15rem 0; overflow: hidden; }
+  :global(.app .files) { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
+  :global(.app .files li) { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.15rem 0; overflow: hidden; }
   /* rtl on the box and <bdi> inside: long paths are cut at the start, the
      file name stays visible, and the text itself keeps its order */
-  .fpath { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; min-width: 0; }
+  :global(.app .fpath) { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; min-width: 0; }
   .fid { flex-shrink: 0; color: var(--muted); font-size: 0.75rem; }
   .group h3 { margin-top: 0.5rem; }
   .group + .group { border-top: 1px solid var(--line); margin-top: 0.75rem; }
@@ -1374,96 +710,42 @@
   .links li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.25rem 0; }
   .links a { color: var(--accent); min-width: 9rem; }
   .links .host { font-size: 0.8rem; }
-  .hint { color: var(--muted); font-size: 0.85rem; }
-  .empty { padding: 2rem 1rem; color: var(--muted); text-align: center; }
+  :global(.app .hint) { color: var(--muted); font-size: 0.85rem; }
+  :global(.app .empty) { padding: 2rem 1rem; color: var(--muted); text-align: center; }
   .empty h2 { color: var(--text); }
 
-  .badge { display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.75rem; white-space: nowrap; background: var(--line); }
-  .badge.verified { color: var(--ok); }
-  .badge.incomplete, .badge.candidate, .badge.duplicate { color: var(--warn); }
-  .badge.unknown, .badge.wrong_system { color: var(--bad); }
+  :global(.app .badge) { display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.75rem; white-space: nowrap; background: var(--line); }
+  :global(.app .badge.verified) { color: var(--ok); }
+  :global(.app .badge.incomplete), :global(.app .badge.candidate), :global(.app .badge.duplicate) { color: var(--warn); }
+  :global(.app .badge.unknown), :global(.app .badge.wrong_system) { color: var(--bad); }
 
-  .wide { grid-column: 2 / 4; overflow: auto; padding: 0 0.75rem 1rem; }
-  .bar { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; flex-wrap: wrap; }
-  .extdbs { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
-  .extdbs h3 { font-size: 0.95rem; margin: 0 0 0.2rem; }
-  .extdbs ul { list-style: none; padding: 0; margin: 0.4rem 0 0; }
-  .extdbs li { padding: 0.4rem 0; border-top: 1px solid var(--line); }
-  .extdbs .ehead { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
-  .extdbs .ehead a { color: var(--accent); font-weight: 600; }
-  .extdbs li .hint { margin: 0.15rem 0 0; }
-  .bar input { flex: 1; min-width: 12rem; }
-  .dats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; align-items: start; }
-  .datpane { overflow-x: auto; min-width: 0; }
-  table { border-collapse: collapse; width: 100%; background: var(--panel); }
-  th, td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.9rem; }
-  th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 0.8rem; }
-  .num { text-align: right; white-space: nowrap; }
-  tr.selected { background: var(--accent-bg); }
-  .datpane tbody tr { cursor: pointer; }
-  .path { font-family: ui-monospace, monospace; font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; direction: rtl; text-align: left; }
-  tr.stay td { color: var(--muted); }
-  .meta { color: var(--muted); font-size: 0.85rem; }
+  :global(.app .wide) { grid-column: 2 / 4; overflow: auto; padding: 0 0.75rem 1rem; }
+  :global(.app .bar) { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; flex-wrap: wrap; }
+  :global(.app .bar input) { flex: 1; min-width: 12rem; }
+  :global(.app table) { border-collapse: collapse; width: 100%; background: var(--panel); }
+  :global(.app th), :global(.app td) { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.9rem; }
+  :global(.app th) { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  :global(.app .num) { text-align: right; white-space: nowrap; }
+  :global(.app .meta) { color: var(--muted); font-size: 0.85rem; }
 
-  .scrim { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
-  .dialog { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
-  .dialog h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
-  .setting { padding: 0.6rem 0; border-top: 1px solid var(--line); }
-  .setting > label { font-weight: 600; }
-  .setting .hint { margin: 0.15rem 0 0.4rem; }
-  .pick { display: flex; gap: 0.4rem; }
-  .pick input { flex: 1; min-width: 0; }
-  .toggle { display: flex; gap: 0.5rem; align-items: center; }
-  .setting label { display: block; font-size: 0.85rem; margin-top: 0.4rem; }
-  .setting > input { width: 100%; box-sizing: border-box; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .two input { width: 100%; box-sizing: border-box; }
-  h3.sub { color: var(--text); margin: 0; }
-  .err { color: var(--bad); }
-  .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
-  .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
-  .search-dialog { width: min(64rem, calc(100vw - 2rem)); }
-  .qnav { display: flex; gap: 0.4rem; align-items: center; }
-  .mini { padding: 0.1rem 0.45rem; }
-  .spath { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
-  .spath .fpath { flex: 1; font-size: 0.85rem; }
-  .sform { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.6rem; align-items: center; margin-bottom: 0.6rem; }
-  .sform label { font-weight: 600; font-size: 0.9rem; }
-  .sform .pick select { max-width: 16rem; }
-  .sgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) 9.5rem minmax(0, 1fr); gap: 0.75rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
-  .stable { border: 1px solid var(--line); border-radius: 4px; height: 17rem; overflow-y: auto; font-size: 0.85rem; }
-  .srow { display: grid; grid-template-columns: minmax(0, 1fr) 3rem 5.5rem 5.5rem 2.6rem; gap: 0.4rem; padding: 0.2rem 0.5rem; cursor: default; align-items: baseline; }
-  .srow:nth-child(even):not(.shead) { background: color-mix(in srgb, var(--line) 35%, transparent); }
-  .srow.sel { background: var(--accent-bg); }
-  .srow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .shead { position: sticky; top: 0; background: var(--panel); color: var(--muted); border-bottom: 1px solid var(--line); font-size: 0.8rem; }
-  .stable .empty { padding: 0.5rem; }
-  .sposter { height: 13rem; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
-  .sposter img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .sinfo { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; max-height: 17rem; overflow-y: auto; }
-  .sinfo .desc { font-size: 0.85rem; color: var(--muted); }
-  .sinfo .facts { gap: 0.15rem 0.6rem; font-size: 0.8rem; }
-  .sinfo .facts dd { overflow-wrap: anywhere; }
-  .own { margin-top: auto; padding-top: 0.4rem; }
-  .own label { font-size: 0.85rem; font-weight: 600; }
-  .flabel { font-weight: 600; font-size: 0.9rem; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0; }
-  .chip { padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.8rem; opacity: 0.6; }
-  .chip.on { opacity: 1; background: var(--accent-bg); }
-  @media (max-width: 52rem) {
-    .sgrid { grid-template-columns: 1fr; }
-    .sposter { height: 10rem; }
-  }
-  .qhead { display: flex; justify-content: space-between; align-items: baseline; }
-  .choices { list-style: none; padding: 0; margin: 0.4rem 0 0; max-height: 16rem; overflow-y: auto; }
-  .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }
-  .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .score { width: 2.6rem; color: var(--muted); font-size: 0.8rem; text-align: right; }
+  :global(.app .scrim) { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
+  :global(.app .dialog) { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
+  :global(.app .dialog h2) { font-size: 1.15rem; margin-bottom: 0.75rem; }
+  :global(.app .setting) { padding: 0.6rem 0; border-top: 1px solid var(--line); }
+  :global(.app .setting > label) { font-weight: 600; }
+  :global(.app .setting .hint) { margin: 0.15rem 0 0.4rem; }
+  :global(.app .pick) { display: flex; gap: 0.4rem; }
+  :global(.app .pick input) { flex: 1; min-width: 0; }
+  :global(.app .toggle) { display: flex; gap: 0.5rem; align-items: center; }
+  :global(.app .setting label) { display: block; font-size: 0.85rem; margin-top: 0.4rem; }
+  :global(.app .setting > input) { width: 100%; box-sizing: border-box; }
+  :global(.app h3.sub) { color: var(--text); margin: 0; }
+  :global(.app .err) { color: var(--bad); }
+  :global(.app .actions) { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
+  :global(.app button.primary) { background: var(--accent); border-color: var(--accent); color: white; }
+  :global(.app .wide-dialog) { width: min(48rem, calc(100vw - 2rem)); }
+  :global(.app .search-dialog) { width: min(64rem, calc(100vw - 2rem)); }
+  :global(.app .ctitle) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button.link { background: none; border: none; padding: 0 0.3rem; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
-  .evidence { list-style: none; padding: 0; margin: 0.2rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); }
-  .evidence li.agrees { color: inherit; }
-  .evidence span { display: inline-block; width: 1em; }
-  .pick select { max-width: 14rem; }
-  .badge.by_you, .ind.by_you, .badge.derivative, .ind.derivative { color: var(--accent); }
+  :global(.app .badge.by_you), .ind.by_you, :global(.app .badge.derivative), .ind.derivative { color: var(--accent); }
 </style>

@@ -5,8 +5,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
@@ -17,9 +16,7 @@ use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
 use romforge_core::search::{Chosen, Found, Preview, QueueItem, Scraper};
 use romforge_core::settings::{Settings, default_staging_dir};
 use romforge_core::view::{GameDetail, LibraryView};
-use romforge_core::{
-    DatGame, Library, LibraryFile, LibraryFilter, ScanReport, Scope, Status, Summary, SystemInfo,
-};
+use romforge_core::{DatGame, Library, ScanReport, Scope, Summary};
 
 /// The library twice: `write` for commands that change it, `read` for
 /// those that only look (a second connection to the same database).
@@ -59,24 +56,6 @@ async fn read<T: Send + 'static>(
     f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
 ) -> Res<T> {
     on(&db.read, f).await
-}
-
-#[tauri::command]
-async fn library(
-    db: tauri::State<'_, Db>,
-    system_id: Option<i64>,
-    status: Option<String>,
-) -> Res<Vec<LibraryFile>> {
-    let status = match status {
-        Some(s) => Some(Status::parse(&s).ok_or_else(|| format!("unknown status {s:?}"))?),
-        None => None,
-    };
-    read(&db, move |lib| lib.files(&LibraryFilter { system_id, status })).await
-}
-
-#[tauri::command]
-async fn systems(db: tauri::State<'_, Db>) -> Res<Vec<SystemInfo>> {
-    read(&db, move |lib| lib.systems_in_use()).await
 }
 
 #[tauri::command]
@@ -282,10 +261,7 @@ async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
     let mut d = read(&db, move |lib| lib.game_detail(&id)).await?;
     // Paths become data: URLs the page can show without file access.
     for path in d.art.values_mut() {
-        *path = match std::fs::read(&*path) {
-            Ok(img) => data_url(&img),
-            Err(_) => String::new(),
-        };
+        *path = image_url(Path::new(&*path)).unwrap_or_default();
     }
     d.art.retain(|_, v| !v.is_empty());
     Ok(d)
@@ -323,10 +299,7 @@ async fn search_preview(db: tauri::State<'_, Db>, row_id: String, found: Found) 
         )
     })
     .await?;
-    p.image = p
-        .image
-        .and_then(|path| std::fs::read(path).ok())
-        .map(|img| PathBuf::from(data_url(&img)));
+    p.image = p.image.and_then(|path| image_url(&path)).map(PathBuf::from);
     Ok(p)
 }
 
@@ -387,42 +360,24 @@ async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
     Ok(out)
 }
 
-#[derive(serde::Serialize)]
-struct Info {
-    title: String,
-    system: String,
-    fields: BTreeMap<String, String>,
-    /// kind -> `data:image/...;base64,...`
-    art: BTreeMap<String, String>,
-}
-
-#[tauri::command]
-async fn game_info(db: tauri::State<'_, Db>, query: String) -> Res<Vec<Info>> {
-    let found = read(&db, move |lib| lib.game_info(&query)).await?;
-    Ok(found
-        .into_iter()
-        .map(|g| Info {
-            art: g
-                .art
-                .iter()
-                .filter_map(|(k, p)| {
-                    let png = std::fs::read(p).ok()?;
-                    Some((k.as_str().to_owned(), data_url(&png)))
-                })
-                .collect(),
-            title: g.title,
-            system: g.system,
-            fields: g.fields,
-        })
-        .collect())
-}
-
 #[tauri::command]
 /// Start one library row (exactly its files).
 async fn launch(db: tauri::State<'_, Db>, row_id: String) -> Res<String> {
     let spec = read(&db, move |lib| lib.launch_row(&Env::detect(), &row_id, None)).await?;
     romforge_core::launch::spawn(&spec).map_err(|e| e.to_string())?;
     Ok(format!("{} started with {}", spec.game, spec.emulator))
+}
+
+/// Pictures over this are left out of Details: every one is sent to the
+/// page as base64 (a third larger), and a fanart can be tens of MB.
+const MAX_IMAGE: u64 = 8 << 20;
+
+/// The image at `path` as a `data:` URL, if it is there and not too big.
+fn image_url(path: &Path) -> Option<String> {
+    if std::fs::metadata(path).ok()?.len() > MAX_IMAGE {
+        return None;
+    }
+    Some(data_url(&std::fs::read(path).ok()?))
 }
 
 /// An image as a `data:` URL with its real type (PNG, JPEG or WebP).
@@ -465,8 +420,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(db)
         .invoke_handler(tauri::generate_handler![
-            library,
-            systems,
             summary,
             dat_games,
             scan,
@@ -482,7 +435,6 @@ fn main() {
             cleanup_undo,
             cleanup_batches,
             enrich,
-            game_info,
             launch,
             library_view,
             game_detail,
