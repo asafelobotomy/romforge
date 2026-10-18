@@ -601,11 +601,26 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       by hand are identified, and renamed only by an import plan.
     - The CLI and app find the folder through `~/.config/romforge/location`
       (or `ROMFORGE_HOME`); `--db` / `ROMFORGE_DB` still override.
-    - **Open:** moving an existing RomForge folder from Settings (today:
-      move it by hand and `home create` on the new place); what Organize's
-      1G1R mode becomes (a filter on the import plan); a copy outside that
-      matches a game already in Games/ is skipped ("already exists")
-      rather than trashed as a copy. Not yet run on the real collection.
+    - Not yet run on the real collection.
+
+    Decided 2026-10-18 for what was left open (to build, in this order):
+    1. *Copies.* A verified copy outside RomForge of a game already in
+       `Games/` is trashed with the import as a copy (undo restores it),
+       unless Keep originals is on or its file holds other games.
+    2. *Moving the folder.* The database records the folder it was last
+       opened in; opened somewhere else (moved by hand), it rewrites its
+       stored paths (files, scan roots, art, journals) to the new place.
+       Settings gets "Move RomForge…": pick a new parent, the folder moves
+       (verified, never overwriting), the pointer file follows.
+    3. *Versions grouped, not filtered* (replaces 1G1R). Every version
+       imports and is kept: regions, revisions, translations, hacks. The
+       library list shows one row per game, its main version chosen by
+       a region order set in Settings (e.g. USA, Europe, Japan); the row
+       expands to every version you have. Groups come from the clone
+       lists (milestone 12, `clone_groups`) and DAT `cloneof`, then the
+       base title; translations and hacks join their base game's group.
+    4. *Organize* stays for setups without a RomForge folder; with one,
+       its screen and command point to Import.
 
 ## Code review follow-ups (2026-10-18)
 
