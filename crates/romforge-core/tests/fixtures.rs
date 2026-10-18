@@ -1120,3 +1120,61 @@ fn other_byte_orders_match_the_dat() {
     }
     assert_eq!(matched, 2, "the N64 game and the Mega Drive one");
 }
+
+/// Serials from a DAT and from a libretro serial list (matched to the DAT
+/// game by CRC when the names differ); they outlive the DAT's re-import.
+#[test]
+fn serials_from_dats_and_libretro_lists() {
+    let dir = tempfile::tempdir().unwrap();
+    let psx = dir.path().join("psx.dat");
+    std::fs::write(
+        &psx,
+        r#"<datafile><header><name>Sony - PlayStation</name></header>
+  <game name="Final Fantasy VII (USA) (Disc 1)"><category>Games</category><serial>SCUS-94163</serial><rom name="a.bin" size="1" crc="00000001"/></game>
+  <game name="Final Fantasy VII (USA) (Disc 2)"><serial>SCUS-94163</serial><rom name="b.bin" size="1" crc="00000002"/></game>
+</datafile>"#,
+    )
+    .unwrap();
+    let snes = dir.path().join("snes.dat");
+    std::fs::write(
+        &snes,
+        r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
+  <game name="Dragon Quest III - Soshite Densetsu e... (Japan)"><rom name="x.sfc" size="4194304" crc="13836bd2"/></game>
+</datafile>"#,
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&psx, None).unwrap();
+    lib.import_dat(&snes, None).unwrap();
+    assert_eq!(
+        lib.titles_by_serial("PlayStation", "SCUS_941.63").unwrap(),
+        [
+            "Final Fantasy VII (USA) (Disc 1)",
+            "Final Fantasy VII (USA) (Disc 2)"
+        ],
+        "a serial narrows, here to two discs"
+    );
+    let list = b"clrmamepro ( name \"x\" )\ngame (\n\tcomment \"Dragon Quest III (Japan)\"\n\tserial \"SHVC-AQ3J-JPN\"\n\trom ( crc 13836BD2 )\n)\n";
+    assert_eq!(
+        lib.store_serials("SNES", list).unwrap(),
+        2,
+        "its own title and the DAT's"
+    );
+    assert_eq!(
+        lib.titles_by_serial("SNES", "SHVC-AQ3J-JPN").unwrap(),
+        [
+            "Dragon Quest III (Japan)",
+            "Dragon Quest III - Soshite Densetsu e... (Japan)"
+        ]
+    );
+    // A new version of the DAT replaces the old; the serials stay.
+    std::fs::write(
+        &snes,
+        std::fs::read_to_string(&snes)
+            .unwrap()
+            .replace("</datafile>", "<!-- v2 --></datafile>"),
+    )
+    .unwrap();
+    assert!(lib.import_dat(&snes, None).unwrap().replaced.is_some());
+    assert_eq!(lib.titles_by_serial("SNES", "SHVCAQ3JJPN").unwrap().len(), 2);
+}

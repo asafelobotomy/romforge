@@ -184,6 +184,26 @@ const MIGRATIONS: &[&str] = &[
        SELECT path FROM files
        WHERE lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.[vn]64'
           OR lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.smd');",
+    // 15: more of each DAT game (parent, region, Redump category), and
+    // product codes by system and title, from the DATs and libretro's
+    // serial lists; kept by title so they outlive a DAT's re-import.
+    // DATs are read again on their next download (their stored hash is
+    // cleared) so the new fields fill in.
+    "ALTER TABLE games ADD COLUMN cloneof TEXT;
+     ALTER TABLE games ADD COLUMN region TEXT;
+     ALTER TABLE games ADD COLUMN category TEXT;
+     CREATE TABLE serials (
+         system_id INTEGER NOT NULL REFERENCES systems(system_id),
+         title     TEXT NOT NULL,
+         serial    TEXT NOT NULL,
+         -- letters and digits only, upper case (dat::serial_key)
+         key       TEXT NOT NULL,
+         -- 'dat' or 'libretro'
+         source    TEXT NOT NULL,
+         PRIMARY KEY (system_id, title, serial)
+     );
+     CREATE INDEX serials_key ON serials(key);
+     UPDATE dats SET source_sha256 = '';",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

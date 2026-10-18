@@ -271,12 +271,28 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        Cleanup still copies such files as they are (a `.v64` in a zip
        named `.z64`). Writing the DAT's byte order instead is a cleanup
        follow-up: the new file would then hash exactly as the DAT says.
-    2. *Keep more of the DAT* (small): `cloneof`/`romof`, region and
-       serial. libretro's `metadat/redump` mirror has a serial on each
-       game and rom (checked: SLUS-00067 is Symphony of the Night, USA),
-       and `metadat/serial` covers 35 cartridge systems. Both are CC BY-SA
-       4.0 and downloaded like DATs. Parent/clone feeds 1G1R (replaces the
-       parked idea below).
+    2. *Keep more of the DAT* (small) *(built 2026-10-18)*. Games keep
+       `cloneof`, `region` (libretro's No-Intro mirror has it on most
+       games) and Redump's `category`. Serials go in a `serials` table by
+       system and title, so they outlive a DAT's re-import, with a key of
+       letters and digits only (`SLUS_000.67` = `SLUS-00067`). Sources:
+       - Redump DATs are now fetched as `datfile/<code>/serial,version`,
+         which lists each game's serials without an account (PS1: 10,641
+         of 10,914 games); same source family as before, so it replaces
+         the old import. Redump leaves `&` unescaped in some serials
+         (`H&D/CDCRYST/E`), so a bare `&` is escaped before parsing;
+       - for cartridge systems, libretro's `metadat/serial` list
+         (CC BY-SA 4.0) right after the No-Intro DATs. It is stored under
+         its own title and under every DAT game with the same CRC32.
+
+       `Library::titles_by_serial` narrows by serial: several discs or
+       versions share one (Final Fantasy VII's three discs). Migration 15
+       clears the DATs' stored hashes, so the next download reads them
+       all again. Parent/clone has no free source after all: libretro's
+       mirror and Redump carry none, and No-Intro's own parent/clone DATs
+       need DAT-o-MATIC's form. So 1G1R stays by name for now (MAME
+       software lists, 11.5, and Retool's clone lists are the
+       candidates).
     3. *Read the game's own ID* (medium), with one table of readers per
        system, like `headers.rs`:
        - SNES internal title, region and checksum (LoROM or HiROM by the
@@ -366,6 +382,6 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 - Play history and favourites.
 
 - Redump update check without re-downloading (Redump has no version index).
-- The regions seed from remustwo for 1G1R (parent/clone data is in
-  milestone 12).
+- The regions seed from remustwo for 1G1R; parent/clone data (no free
+  source yet, see 12.2).
 - RAR support needs a free pure-Rust decoder; none known yet.

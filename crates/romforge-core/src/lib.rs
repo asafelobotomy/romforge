@@ -256,16 +256,95 @@ impl Library {
         })
     }
 
+    /// Store a libretro serial list (`fetch::Source::Serials`) for
+    /// `system_key`: each record under its own title, and under the name of
+    /// every DAT game of the system with one of its CRC32s (No-Intro may
+    /// have renamed it since). Returns how many serials were stored. A
+    /// system libretro has no list for stores none.
+    pub fn download_serials(&mut self, system_key: &str, source: fetch::Source) -> Result<usize, Error> {
+        let Some(url) = source.url() else {
+            return Ok(0);
+        };
+        let Some(body) = fetch::get_optional(&url)? else {
+            return Ok(0);
+        };
+        self.store_serials(system_key, &body)
+    }
+
+    /// DAT titles of `system_key` with `serial` (compared by
+    /// [`dat::serial_key`]). Several discs or versions can share a serial,
+    /// so this narrows, never identifies (house rule 8).
+    pub fn titles_by_serial(&self, system_key: &str, serial: &str) -> Result<Vec<String>, Error> {
+        let system =
+            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+        Ok(self
+            .conn
+            .prepare("SELECT DISTINCT title FROM serials WHERE system_id = ?1 AND key = ?2 ORDER BY title")?
+            .query_map(params![system.id, dat::serial_key(serial)], |r| r.get(0))?
+            .collect::<Result<_, _>>()?)
+    }
+
+    /// [`Library::download_serials`] with the list already in hand.
+    pub fn store_serials(&mut self, system_key: &str, list: &[u8]) -> Result<usize, Error> {
+        let system =
+            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+        let records = dat::parse_cmp_records(&String::from_utf8_lossy(list))?;
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM serials WHERE system_id = ?1 AND source = 'libretro'",
+            [system.id],
+        )?;
+        let mut stored = 0;
+        {
+            let mut put = tx.prepare(
+                "INSERT OR IGNORE INTO serials (system_id, title, serial, key, source)
+                 VALUES (?1, ?2, ?3, ?4, 'libretro')",
+            )?;
+            let mut by_crc = tx.prepare(
+                "SELECT DISTINCT g.name FROM roms r JOIN games g ON g.game_id = r.game_id
+                 JOIN dats d ON d.dat_id = g.dat_id WHERE d.system_id = ?1 AND r.crc32 = ?2",
+            )?;
+            for rec in &records {
+                let serials: Vec<String> = rec
+                    .fields
+                    .iter()
+                    .filter(|(k, _)| k == "serial")
+                    .flat_map(|(_, v)| dat::split_serials(v))
+                    .chain(rec.serials.iter().flat_map(|v| dat::split_serials(v)))
+                    .collect();
+                let mut titles: Vec<String> = rec.title.iter().cloned().collect();
+                for crc in &rec.crcs {
+                    for name in by_crc.query_map(params![system.id, crc], |r| r.get::<_, String>(0))? {
+                        titles.push(name?);
+                    }
+                }
+                titles.sort();
+                titles.dedup();
+                for title in &titles {
+                    for serial in &serials {
+                        stored += put.execute(params![system.id, title, serial, dat::serial_key(serial)])?;
+                    }
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(stored)
+    }
+
     /// Download a source's DATs and import them for `system_key`: one DAT,
     /// or every DAT of a TOSEC system. Downloading the same DAT again changes
     /// nothing; a newer one replaces the old. An empty result means the
     /// TOSEC release is already imported for this system, so the pack was not
-    /// fetched.
+    /// fetched (or, for `Serials`, that the list was stored).
     pub fn download_dat(
         &mut self,
         system_key: &str,
         source: fetch::Source,
     ) -> Result<Vec<ImportedDat>, Error> {
+        if let fetch::Source::Serials(_) = source {
+            self.download_serials(system_key, source)?;
+            return Ok(Vec::new());
+        }
         if let fetch::Source::Tosec(name) = source {
             let url = fetch::tosec_pack_url()?;
             let prefix = format!("{url}#TOSEC/{name} - ");
@@ -503,14 +582,32 @@ impl Library {
         }
         let mut roms = 0;
         {
-            let mut add_game =
-                tx.prepare("INSERT INTO games (dat_id, name, description) VALUES (?1, ?2, ?3)")?;
+            let mut add_game = tx.prepare(
+                "INSERT INTO games (dat_id, name, description, cloneof, region, category)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
             let mut add_rom = tx.prepare(
                 "INSERT INTO roms (game_id, name, size, crc32, md5, sha1, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
+            let mut add_serial = tx.prepare(
+                "INSERT OR IGNORE INTO serials (system_id, title, serial, key, source)
+                 VALUES (?1, ?2, ?3, ?4, 'dat')",
+            )?;
             for game in &dat.games {
-                add_game.execute(params![dat_id, game.name, game.description])?;
+                add_game.execute(params![
+                    dat_id,
+                    game.name,
+                    game.description,
+                    game.cloneof,
+                    game.region,
+                    game.category
+                ])?;
                 let game_id = tx.last_insert_rowid();
+                if let Some(system) = system {
+                    for serial in &game.serials {
+                        add_serial.execute(params![system.id, game.name, serial, dat::serial_key(serial)])?;
+                    }
+                }
                 for rom in &game.roms {
                     add_rom.execute(params![
                         game_id, rom.name, rom.size, rom.crc32, rom.md5, rom.sha1, rom.status

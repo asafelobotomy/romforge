@@ -26,7 +26,34 @@ pub struct Dat {
 pub struct Game {
     pub name: String,
     pub description: Option<String>,
+    /// The parent game's name (`cloneof`), when the DAT groups versions.
+    pub cloneof: Option<String>,
+    /// e.g. "USA" (libretro's No-Intro mirror; Redump has it in the name).
+    pub region: Option<String>,
+    /// Redump's category: "Games", "Demos", "Applications", ...
+    pub category: Option<String>,
+    /// Product codes (Redump with `serial` asked for, some libretro DATs).
+    /// Several discs or versions can share one, so a serial only narrows.
+    pub serials: Vec<String>,
     pub roms: Vec<Rom>,
+}
+
+/// "SLUS-00067, SLUS-00067GHA" -> both.
+pub fn split_serials(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A serial as compared: letters and digits only, upper case, so a disc's
+/// `SLUS_000.67`, Redump's `SLUS-00067` and `SCPS 45196` meet.
+pub fn serial_key(s: &str) -> String {
+    s.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -44,9 +71,11 @@ pub struct Rom {
 pub fn parse_any(bytes: &[u8]) -> Result<Dat, Error> {
     let start = bytes.iter().position(|b| !b.is_ascii_whitespace());
     match start.map(|i| bytes[i]) {
-        Some(b'<') => parse(bytes),
+        Some(b'<') => parse(&*escape_bare_ampersands(bytes)),
         // Skip a UTF-8 BOM.
-        Some(0xef) if bytes[start.unwrap_or(0)..].starts_with(b"\xef\xbb\xbf<") => parse(bytes),
+        Some(0xef) if bytes[start.unwrap_or(0)..].starts_with(b"\xef\xbb\xbf<") => {
+            parse(&*escape_bare_ampersands(bytes))
+        }
         _ => {
             let text = String::from_utf8_lossy(bytes);
             let looks_like_cmp = text
@@ -61,6 +90,27 @@ pub fn parse_any(bytes: &[u8]) -> Result<Dat, Error> {
             parse_cmp(&text)
         }
     }
+}
+
+/// Redump leaves `&` unescaped in serials (`H&D/CDCRYST/E`). A bare `&` is
+/// never valid XML, so escaping it changes nothing else.
+fn escape_bare_ampersands(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let is_ref = |rest: &[u8]| {
+        let end = rest.iter().take(12).position(|&b| b == b';');
+        end.is_some_and(|n| n > 0 && rest[..n].iter().all(|b| b.is_ascii_alphanumeric() || *b == b'#'))
+    };
+    let bare = |i: usize| bytes[i] == b'&' && !is_ref(&bytes[i + 1..]);
+    if !(0..bytes.len()).any(bare) {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let mut out = Vec::with_capacity(bytes.len() + 64);
+    for (i, &b) in bytes.iter().enumerate() {
+        out.push(b);
+        if bare(i) {
+            out.extend_from_slice(b"amp;");
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 /// Parse a Logiqx XML DAT.
@@ -86,6 +136,7 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
                     (Some("header"), "clrmamepro") => dat.header_hint = attr(e, "header")?,
                     (Some("datafile"), "game" | "machine") => dat.games.push(Game {
                         name: attr(e, "name")?.unwrap_or_default(),
+                        cloneof: attr(e, "cloneof")?,
                         ..Game::default()
                     }),
                     (Some("game" | "machine"), "rom") => {
@@ -127,9 +178,17 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
                     (Some("header"), "author") => dat.author = value,
                     (Some("header"), "homepage") => dat.homepage = value,
                     (Some("header"), "url") => dat.url = value,
-                    (Some("game" | "machine"), "description") => {
+                    (Some("game" | "machine"), field) => {
                         if let Some(g) = dat.games.last_mut() {
-                            g.description = value;
+                            match field {
+                                "description" => g.description = value,
+                                "category" => g.category = value,
+                                "region" => g.region = value,
+                                "serial" => g
+                                    .serials
+                                    .extend(value.as_deref().map(split_serials).unwrap_or_default()),
+                                _ => {}
+                            }
                         }
                     }
                     _ => {}
@@ -291,6 +350,10 @@ pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
         dat.games.push(Game {
             name: g.get_owned("name").unwrap_or_default(),
             description: g.get_owned("description"),
+            cloneof: g.get_owned("cloneof"),
+            region: g.get_owned("region"),
+            category: g.get_owned("category"),
+            serials: g.get("serial").map(split_serials).unwrap_or_default(),
             roms: g
                 .blocks("rom")
                 .map(|r| Rom {
@@ -526,6 +589,56 @@ game (
         assert_eq!(r[1].title.as_deref(), Some("Silent Hill (USA)"));
         assert!(r[1].fields.contains(&("developer".into(), "KCET".into())));
         assert_eq!(r[1].serials, ["SLUS-00707"]);
+    }
+
+    /// Parent, region, Redump category and serials, in both formats.
+    #[test]
+    fn keeps_parent_region_category_and_serials() {
+        let xml = r#"<datafile><header><name>Sony - PlayStation</name></header>
+  <game name="Silent Hill (USA)">
+    <category>Games</category>
+    <serial>SLUS-00707, SLUS-00707GHA</serial>
+    <description>Silent Hill (USA)</description>
+    <rom name="Silent Hill (USA).cue" size="1" crc="00000001"/>
+  </game>
+  <game name="Silent Hill (Europe)" cloneof="Silent Hill (USA)"><rom name="x" size="1"/></game>
+</datafile>"#;
+        let dat = parse_any(xml.as_bytes()).unwrap();
+        let sh = &dat.games[0];
+        assert_eq!(sh.category.as_deref(), Some("Games"));
+        assert_eq!(sh.serials, ["SLUS-00707", "SLUS-00707GHA"]);
+        assert_eq!(sh.description.as_deref(), Some("Silent Hill (USA)"));
+        assert_eq!(dat.games[1].cloneof.as_deref(), Some("Silent Hill (USA)"));
+
+        let cmp = r#"clrmamepro ( name "Nintendo - Super Nintendo Entertainment System" )
+game (
+	name "Dragon Quest III - Soshite Densetsu e... (Japan)"
+	region "Japan"
+	serial "SHVC-AQ3J-JPN"
+	rom ( name "x.sfc" size 4194304 crc 13836BD2 )
+)
+"#;
+        let dat = parse_any(cmp.as_bytes()).unwrap();
+        assert_eq!(dat.games[0].region.as_deref(), Some("Japan"));
+        assert_eq!(dat.games[0].serials, ["SHVC-AQ3J-JPN"]);
+    }
+
+    #[test]
+    fn bare_ampersands_are_read_as_text() {
+        let xml = r#"<datafile><header><name>IBM - PC compatible</name></header>
+  <game name="Hidden &amp; Dangerous (Europe)"><serial>H&D/CDCRYST/E</serial><rom name="x" size="1"/></game>
+</datafile>"#;
+        let dat = parse_any(xml.as_bytes()).unwrap();
+        assert_eq!(dat.games[0].name, "Hidden & Dangerous (Europe)");
+        assert_eq!(dat.games[0].serials, ["H&D/CDCRYST/E"]);
+    }
+
+    #[test]
+    fn serial_keys_meet() {
+        assert_eq!(serial_key("SLUS-00067"), "SLUS00067");
+        assert_eq!(serial_key("SLUS_000.67"), "SLUS00067", "as a PS1 disc boots it");
+        assert_eq!(serial_key("SCPS 45196"), "SCPS45196");
+        assert_eq!(serial_key("shvc-aq3j-jpn"), "SHVCAQ3JJPN");
     }
 
     #[test]

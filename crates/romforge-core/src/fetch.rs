@@ -7,13 +7,17 @@
 //!   from DAT-o-MATIC by hand, the public `profile.xml` says which are out of
 //!   date.
 //! - `redump`: Redump serves DATs at `http://redump.org/datfile/<code>/`
-//!   (game DATs as zips, BIOS DATs as plain clrmamepro text).
+//!   (game DATs as zips, BIOS DATs as plain clrmamepro text); with
+//!   `serial,version` after it, each game also lists its serials.
 //! - `tosec`: TOSEC publishes one zip of all its DATs per release (about
 //!   100 MB). The latest release is found on tosecdev.org's download page;
 //!   the pack is fetched at most once per batch and not at all when its
 //!   DATs for a system are already imported.
 //! - `hacks`, `homebrew`: libretro-database's own small DATs, fetched only
 //!   when asked for ([`sources`] with `extras`).
+//! - serials: libretro-database's `metadat/serial` lists (title, serial,
+//!   CRC32) for cartridge systems, beside their No-Intro DATs. Discs get
+//!   theirs from Redump.
 //!
 //! Requests to one host are spaced out ([`delay_for`]; DAT-o-MATIC's
 //! robots.txt asks for 5 s). Downloads stay in memory and are never written
@@ -75,6 +79,9 @@ pub enum Source {
     Hacks(&'static str),
     /// A file in libretro-database's `homebrew` folder.
     Homebrew(&'static str),
+    /// A file in libretro-database's `serial` folder: product codes, not a
+    /// DAT ([`crate::Library::download_dat`] stores them in `serials`).
+    Serials(&'static str),
 }
 
 impl Source {
@@ -84,10 +91,11 @@ impl Source {
         let libretro = |dir: &str, name: &str| format!("{LIBRETRO_BASE}/{dir}/{}.dat", percent_encode(name));
         match *self {
             Source::NoIntro(name) => Some(libretro("no-intro", name)),
-            Source::Redump(code) => Some(format!("{REDUMP_BASE}/datfile/{code}/")),
+            Source::Redump(code) => Some(format!("{REDUMP_BASE}/datfile/{code}/serial,version")),
             Source::Tosec(_) => None,
             Source::Hacks(name) => Some(libretro("hacks", name)),
             Source::Homebrew(name) => Some(libretro("homebrew", name)),
+            Source::Serials(name) => Some(libretro("serial", name)),
         }
     }
 
@@ -106,14 +114,22 @@ impl std::fmt::Display for Source {
             Source::Tosec(n) => write!(f, "TOSEC {n}"),
             Source::Hacks(n) => write!(f, "hacks (libretro) {n}"),
             Source::Homebrew(n) => write!(f, "homebrew (libretro) {n}"),
+            Source::Serials(n) => write!(f, "serials (libretro) {n}"),
         }
     }
 }
 
 /// Every DAT `dat download` fetches for `system`: No-Intro, Redump games
-/// and BIOS, TOSEC, and with `extras` the hacks and homebrew DATs.
+/// and BIOS, TOSEC, libretro's serial list for No-Intro systems, and with
+/// `extras` the hacks and homebrew DATs.
 pub fn sources(system: &System, extras: bool) -> Vec<Source> {
+    let serials = (!system.nointro.is_empty())
+        .then(|| crate::enrich::libretro_name(system))
+        .flatten();
+    // Serials right after the No-Intro DATs, whose games they are matched
+    // to by CRC.
     let mut out: Vec<Source> = (system.nointro.iter().copied().map(Source::NoIntro))
+        .chain(serials.map(Source::Serials))
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
         .collect();
@@ -128,8 +144,13 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
 /// replaces: one from the same URL, from any TOSEC release, or (for files)
 /// any file.
 pub(crate) fn source_family(source_path: &str) -> &str {
+    let redump = format!("{REDUMP_BASE}/datfile/");
     if source_path.starts_with(TOSEC_BASE) {
         "tosec"
+    } else if let Some(rest) = source_path.strip_prefix(redump.as_str()) {
+        // With or without the fields asked for (`serial,version`).
+        let code = rest.find('/').map_or(rest.len(), |i| i + 1);
+        &source_path[..redump.len() + code]
     } else if source_path.starts_with("http://") || source_path.starts_with("https://") {
         source_path
     } else {
@@ -565,8 +586,8 @@ mod tests {
         assert_eq!(
             urls,
             [
-                "http://redump.org/datfile/psx/",
-                "http://redump.org/datfile/psx-bios/"
+                "http://redump.org/datfile/psx/serial,version",
+                "http://redump.org/datfile/psx-bios/serial,version"
             ]
         );
         assert_eq!(sources(psx, true).len(), 3, "plus the PlayStation hacks DAT");
@@ -574,6 +595,11 @@ mod tests {
         assert_eq!(
             gba[0].url().unwrap(),
             "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro/Nintendo%20-%20Game%20Boy%20Advance.dat"
+        );
+        assert_eq!(
+            gba[2],
+            Source::Serials("Nintendo - Game Boy Advance"),
+            "after both No-Intro DATs"
         );
         let c64 = sources(systems::by_key("Commodore 64").unwrap(), false);
         assert_eq!(c64.last(), Some(&Source::Tosec("Commodore C64")));
@@ -611,6 +637,11 @@ mod tests {
         assert_eq!(
             source_family("http://redump.org/datfile/psx/"),
             "http://redump.org/datfile/psx/"
+        );
+        assert_eq!(
+            source_family("http://redump.org/datfile/psx/serial,version"),
+            "http://redump.org/datfile/psx/",
+            "the same family with serials asked for"
         );
         assert_eq!(source_family("/home/me/x.dat"), "file");
     }
