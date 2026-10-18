@@ -142,6 +142,7 @@ fn facts(
     d: &view::GameDetail,
     text: Option<&str>,
     system: Option<&str>,
+    patches: &mut crate::patch::PatchFinder,
 ) -> Result<Facts, Error> {
     let text = text
         .filter(|t| !t.trim().is_empty())
@@ -201,7 +202,7 @@ fn facts(
     for id in d.row.file_ids() {
         let (path, member, crc, sha1): (String, String, String, String) =
             file.query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-        for data in crate::patch::beside(std::path::Path::new(&path), &member) {
+        for data in patches.beside(std::path::Path::new(&path), &member) {
             let Some(info) = crate::patch::info(&data) else {
                 continue;
             };
@@ -568,6 +569,8 @@ type Names = (BTreeMap<String, Vec<i64>>, titles::TitleIndex);
 #[derive(Default)]
 pub struct Suggester {
     indexes: BTreeMap<Vec<i64>, Names>,
+    /// Folders and archives listed for patches, once each.
+    patches: crate::patch::PatchFinder,
 }
 
 impl Suggester {
@@ -579,7 +582,7 @@ impl Suggester {
         system: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Suggestion>, Error> {
-        let f = facts(conn, d, text, system)?;
+        let f = facts(conn, d, text, system, &mut self.patches)?;
         if !self.indexes.contains_key(&f.systems) {
             let names = dat_names(conn, &f.systems)?;
             let index = titles::TitleIndex::new(names.keys().cloned());

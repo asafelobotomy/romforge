@@ -195,11 +195,15 @@ pub fn header_fits(header: &str, title: &str) -> bool {
     score(header, title) >= 0.85 || (h.len() >= 6 && t.starts_with(&h))
 }
 
-/// DAT titles, keyed once, found by any shared word.
+/// DAT titles, keyed once, found by any shared word. Grouped by their hard
+/// tokens: a title whose numbers or edition words differ from the query's
+/// scores 0 anyway, so only the query's own group is looked at (a common
+/// word like "game" or "super" no longer makes every title a candidate).
 #[derive(Debug, Default)]
 pub struct TitleIndex {
     entries: Vec<(TitleKey, String)>,
-    by_word: HashMap<String, Vec<usize>>,
+    /// hard tokens -> word -> entries
+    groups: HashMap<BTreeSet<String>, HashMap<String, Vec<usize>>>,
 }
 
 impl TitleIndex {
@@ -212,8 +216,9 @@ impl TitleIndex {
             }
             let k = key(&t);
             let n = idx.entries.len();
+            let group = idx.groups.entry(k.hard.clone()).or_default();
             for w in k.main.iter().chain(&k.sub).collect::<BTreeSet<_>>() {
-                idx.by_word.entry(w.clone()).or_default().push(n);
+                group.entry(w.clone()).or_default().push(n);
             }
             idx.entries.push((k, t));
         }
@@ -223,11 +228,14 @@ impl TitleIndex {
     /// Titles alike to `text`, best first, ties by name; at most `limit`.
     pub fn find(&self, text: &str, limit: usize) -> Vec<(String, f32)> {
         let q = key(text);
+        let Some(group) = self.groups.get(&q.hard) else {
+            return Vec::new();
+        };
         let mut ids: Vec<usize> = q
             .main
             .iter()
             .chain(&q.sub)
-            .filter_map(|w| self.by_word.get(w))
+            .filter_map(|w| group.get(w))
             .flatten()
             .copied()
             .collect();
@@ -350,6 +358,40 @@ mod tests {
         assert!(!header_fits("SUPER JEDI", "Super Mario World (USA)"));
         assert!(!header_fits("DRAGONQUEST3", "Dragon Quest I & II (Japan)"));
         assert!(!header_fits("MARIO", "Mario Paint (USA)"), "too short to tell");
+    }
+
+    /// The grouped index finds exactly what scoring every title would.
+    #[test]
+    fn index_matches_scoring_everything() {
+        let titles: Vec<String> = [
+            "Street Fighter II (USA)",
+            "Street Fighter II Turbo (USA)",
+            "Street Fighter Alpha 2 (USA)",
+            "Super Mario World (USA)",
+            "Super Mario World 2 - Yoshi's Island (USA)",
+            "Super Street Fighter II (USA)",
+            "1942 (Japan, USA)",
+            "Final Fantasy III (USA)",
+            "Final Fantasy VI (Japan)",
+        ]
+        .map(String::from)
+        .to_vec();
+        let idx = TitleIndex::new(titles.clone());
+        for q in [
+            "street fighter 2",
+            "Super Mario World",
+            "final fantasy 3",
+            "1942",
+            "super street fighter ii",
+        ] {
+            let mut brute: Vec<(String, f32)> = titles
+                .iter()
+                .map(|t| (t.clone(), score(q, t)))
+                .filter(|(_, s)| *s > 0.0)
+                .collect();
+            brute.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            assert_eq!(idx.find(q, 50), brute, "{q}");
+        }
     }
 
     #[test]

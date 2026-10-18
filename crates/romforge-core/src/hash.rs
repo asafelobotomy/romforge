@@ -104,6 +104,102 @@ impl Hasher {
     }
 }
 
+/// From this size on, MD5 and SHA1 each get a thread of their own (a disc
+/// image hashes about twice as fast where cores are free; CRC32 costs
+/// next to nothing).
+const SPLIT_AT: u64 = 64 << 20;
+
+/// The raw data's hasher: all three in one thread, or split.
+enum Raw {
+    One(Hasher),
+    Split(Split),
+}
+
+impl Raw {
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            Raw::One(h) => h.update(data),
+            Raw::Split(s) => s.update(data),
+        }
+    }
+
+    fn size(&self) -> u64 {
+        match self {
+            Raw::One(h) => h.size,
+            Raw::Split(s) => s.size,
+        }
+    }
+
+    fn finish(self) -> Digest {
+        match self {
+            Raw::One(h) => h.finish(),
+            Raw::Split(s) => s.finish(),
+        }
+    }
+}
+
+/// CRC32 here; MD5 and SHA1 on their own threads, fed the same chunks over
+/// bounded channels (at most 8 chunks waiting each).
+struct Split {
+    size: u64,
+    crc: crc32fast::Hasher,
+    md5: Worker,
+    sha1: Worker,
+}
+
+struct Worker {
+    tx: std::sync::mpsc::SyncSender<std::sync::Arc<[u8]>>,
+    done: std::thread::JoinHandle<Vec<u8>>,
+}
+
+impl Worker {
+    fn new<D: sha1::Digest + Send + 'static>() -> Worker {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<std::sync::Arc<[u8]>>(8);
+        let done = std::thread::spawn(move || {
+            let mut d = D::new();
+            for chunk in rx {
+                d.update(&chunk);
+            }
+            d.finalize().to_vec()
+        });
+        Worker { tx, done }
+    }
+
+    fn finish(self) -> Vec<u8> {
+        drop(self.tx);
+        self.done.join().expect("hashing thread")
+    }
+}
+
+impl Split {
+    fn new() -> Split {
+        Split {
+            size: 0,
+            crc: crc32fast::Hasher::new(),
+            md5: Worker::new::<Md5>(),
+            sha1: Worker::new::<Sha1>(),
+        }
+    }
+
+    fn update(&mut self, data: &[u8]) {
+        self.size += data.len() as u64;
+        self.crc.update(data);
+        let chunk: std::sync::Arc<[u8]> = data.into();
+        // A worker only stops when its sender goes, so a send never fails.
+        let _ = self.md5.tx.send(chunk.clone());
+        let _ = self.sha1.tx.send(chunk);
+    }
+
+    fn finish(self) -> Digest {
+        Digest {
+            size: self.size,
+            crc32: format!("{:08x}", self.crc.finalize()),
+            md5: hex(&self.md5.finish()),
+            sha1: hex(&self.sha1.finish()),
+        }
+    }
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -132,7 +228,8 @@ impl RawHasher {
 /// Hash `reader`, whose total length must be `size` (needed up front for the
 /// size-based SNES header rule). Errors if the stream length differs.
 pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
-    let mut buf = vec![0u8; 64 * 1024];
+    let big = size >= SPLIT_AT;
+    let mut buf = vec![0u8; if big { 1 << 20 } else { 64 * 1024 }];
 
     // Fill at least the header prefix before deciding on a header.
     let mut filled = 0;
@@ -145,7 +242,11 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
     }
     let header = headers::detect(&buf[..filled.min(PREFIX_LEN)], size);
 
-    let mut raw = Hasher::default();
+    let mut raw = if big {
+        Raw::Split(Split::new())
+    } else {
+        Raw::One(Hasher::default())
+    };
     let mut stripped = header.map(|h| (h, Hasher::default()));
     // Bytes after the header not reordered yet (less than one unit), and
     // the reordered output.
@@ -153,8 +254,8 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
     // The first bytes as they are and in the DAT's form, for the ID
     // readers (the size-only SNES rule may fire on a disc track by chance).
     let (mut raw_prefix, mut prefix) = (Prefix::default(), Prefix::default());
-    let mut feed = |chunk: &[u8], raw: &mut Hasher| {
-        let start = raw.size;
+    let mut feed = |chunk: &[u8], raw: &mut Raw| {
+        let start = raw.size();
         raw.update(chunk);
         raw_prefix.take(chunk);
         let Some((h, s)) = stripped.as_mut() else {
@@ -190,10 +291,10 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
         s.update(&pending);
         prefix.take(&pending);
     }
-    if raw.size != size {
+    if raw.size() != size {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("expected {size} bytes, read {}", raw.size),
+            format!("expected {size} bytes, read {}", raw.size()),
         ));
     }
     Ok(Hashes {
@@ -273,6 +374,21 @@ mod tests {
                 assert_eq!(d, plain.raw, "{want}");
             }
         }
+    }
+
+    /// A big stream (MD5 and SHA1 on their own threads) hashes exactly as
+    /// the same data in one thread.
+    #[test]
+    fn big_streams_hash_the_same_split() {
+        let data: Vec<u8> = (0..(SPLIT_AT + 12345))
+            .map(|i| ((i * 2654435761) >> 13) as u8)
+            .collect();
+        let split = hash_stream(&data[..], data.len() as u64).unwrap().raw;
+        let mut one = Hasher::default();
+        one.update(&data);
+        assert_eq!(split, one.finish());
+        // A short read is still an error, and nothing hangs.
+        assert!(hash_stream(&data[..SPLIT_AT as usize], data.len() as u64).is_err());
     }
 
     #[test]

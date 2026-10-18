@@ -7,6 +7,9 @@
 //! but no longer a guess. Patches are read, never written, and nothing is
 //! applied to files on disk.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
 /// The patch formats romforge reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -284,62 +287,75 @@ pub(crate) fn read_entry(path: &std::path::Path, member: &str) -> Option<Vec<u8>
     }
 }
 
-/// Patches beside a ROM: files of the same name with a patch extension,
-/// next to it on disk or in the same archive.
-pub(crate) fn beside(path: &std::path::Path, member: &str) -> Vec<Vec<u8>> {
-    let stem_of = |name: &str| -> String {
-        let n = name.rsplit('/').next().unwrap_or(name);
-        n.rsplit_once('.').map_or(n, |(s, _)| s).to_owned()
-    };
-    let is_patch = |name: &str| {
-        name.rsplit_once('.')
-            .is_some_and(|(_, e)| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
-    };
-    let mut out = Vec::new();
-    if member.is_empty() {
-        let Some(dir) = path.parent() else { return out };
-        let stem = stem_of(&path.to_string_lossy());
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return out;
-        };
-        for e in entries.flatten() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if is_patch(&name)
-                && stem_of(&name) == stem
-                && let Some(d) = read_entry(&e.path(), "")
-            {
-                out.push(d);
-            }
+/// Finds the patches beside ROMs: files of the same name with a patch
+/// extension, next to it on disk or in the same archive. Each folder and
+/// archive is listed once, however many ROMs are asked about.
+#[derive(Default)]
+pub(crate) struct PatchFinder {
+    /// folder -> its patch files
+    dirs: HashMap<PathBuf, Vec<PathBuf>>,
+    /// archive -> its patch members
+    archives: HashMap<PathBuf, Vec<String>>,
+}
+
+fn stem_of(name: &str) -> String {
+    let n = name.rsplit('/').next().unwrap_or(name);
+    n.rsplit_once('.').map_or(n, |(s, _)| s).to_owned()
+}
+
+fn is_patch(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(_, e)| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+impl PatchFinder {
+    /// The patches for the ROM at `path` (or its `member` in that archive).
+    pub(crate) fn beside(&mut self, path: &Path, member: &str) -> Vec<Vec<u8>> {
+        if member.is_empty() {
+            let Some(dir) = path.parent() else {
+                return Vec::new();
+            };
+            let patches = self.dirs.entry(dir.to_path_buf()).or_insert_with(|| {
+                std::fs::read_dir(dir)
+                    .map(|entries| {
+                        entries
+                            .flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.file_name().is_some_and(|n| is_patch(&n.to_string_lossy())))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            });
+            let stem = stem_of(&path.to_string_lossy());
+            return patches
+                .iter()
+                .filter(|p| stem_of(&p.to_string_lossy()) == stem)
+                .filter_map(|p| read_entry(p, ""))
+                .collect();
         }
-        return out;
+        let names = self.archives.entry(path.to_path_buf()).or_insert_with(|| {
+            let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+            let all: Vec<String> = match ext.as_deref() {
+                Some("zip") => std::fs::File::open(path)
+                    .ok()
+                    .and_then(|f| zip::ZipArchive::new(std::io::BufReader::new(f)).ok())
+                    .map(|z| {
+                        z.file_names()
+                            .filter_map(|n| n.ok().map(|n| n.into_owned()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                Some("7z") => sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty())
+                    .map(|a| a.archive().files.iter().map(|e| e.name().to_owned()).collect())
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            all.into_iter().filter(|n| is_patch(n)).collect()
+        });
+        let stem = stem_of(member);
+        let wanted: Vec<String> = names.iter().filter(|n| stem_of(n) == stem).cloned().collect();
+        wanted.iter().filter_map(|n| read_entry(path, n)).collect()
     }
-    let stem = stem_of(member);
-    let names: Vec<String> = match path
-        .extension()
-        .map(|e| e.to_string_lossy().to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("zip") => zip::ZipArchive::new(std::io::BufReader::new(match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return out,
-        }))
-        .map(|z| {
-            z.file_names()
-                .filter_map(|n| n.ok().map(|n| n.into_owned()))
-                .collect()
-        })
-        .unwrap_or_default(),
-        Some("7z") => sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty())
-            .map(|a| a.archive().files.iter().map(|e| e.name().to_owned()).collect())
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    for n in names.iter().filter(|n| is_patch(n) && stem_of(n) == stem) {
-        if let Some(d) = read_entry(path, n) {
-            out.push(d);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
