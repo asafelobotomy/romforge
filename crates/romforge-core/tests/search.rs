@@ -546,3 +546,37 @@ fn nkit_images_by_id_and_original_crc() {
     assert_eq!(s.title, "Super Smash Bros. Melee (USA) (En,Ja)");
     assert!(s.evidence.iter().any(|e| e.kind == "nkit" && e.agrees));
 }
+
+/// A pick in Search takes effect on a file that has only a CRC32 hit (a
+/// candidate); on files already matched by hash it says so.
+#[test]
+fn picks_outrank_crc_only_hits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/CRC Only.gb"), dir.join("CRC Only.gb")).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), dir.join("Test GB.gb")).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let crc = rows
+        .iter()
+        .find(|r| r.status == RowStatus::Candidate)
+        .expect("a candidate")
+        .id
+        .clone();
+    lib.identify_as(&crc, "Game Boy", "CRC Only (My Copy)").unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let mine = rows
+        .iter()
+        .find(|r| r.title == "CRC Only (My Copy)")
+        .expect("named");
+    assert_eq!(mine.status, RowStatus::ByYou);
+    let verified = rows.iter().find(|r| r.title == "Test GB").unwrap().id.clone();
+    let err = lib
+        .identify_as(&verified, "Game Boy", "Other")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("already identified by its hashes"), "{err}");
+}

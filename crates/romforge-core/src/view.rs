@@ -315,14 +315,19 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
         art.entry((s, t)).or_default().push(k);
     }
 
-    // What lone files were matched as, for their row title and system.
+    // What lone files were matched as, for their row title and system:
+    // only the hits their status rests on (an unknown file's CRC32 hit
+    // never names it).
     let mut seen_as: HashMap<i64, BTreeSet<(Option<i64>, String)>> = HashMap::new();
     for row in conn
-        .prepare(
+        .prepare(&format!(
             "SELECT m.file_id, d.system_id, g.name FROM matches m
+             JOIN files f ON f.file_id = m.file_id
              JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
-             JOIN dats d ON d.dat_id = g.dat_id",
-        )?
+             JOIN dats d ON d.dat_id = g.dat_id
+             WHERE {}",
+            crate::report::RELEVANT_MATCH
+        ))?
         .query_map([], |r| {
             Ok((
                 r.get::<_, i64>(0)?,

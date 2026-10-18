@@ -210,7 +210,14 @@ pub fn identify(
     }
     let sys = systems::by_key(system).ok_or_else(|| Error::UnknownSystem(system.to_owned()))?;
     let d = view::detail(conn, row_id)?;
-    if matches!(d.row.status, RowStatus::Verified) {
+    // Files matched by hash in their folder's scope stay matched: a pick
+    // would have no effect, so say so (an incomplete game's files too).
+    if matches!(d.row.status, RowStatus::Verified)
+        || (!d.files.is_empty()
+            && d.files
+                .iter()
+                .all(|f| matches!(f.status.as_str(), "matched" | "duplicate")))
+    {
         return Err(Error::Search(format!(
             "{} is already identified by its hashes",
             d.row.title

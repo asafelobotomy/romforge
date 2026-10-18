@@ -44,19 +44,17 @@ pub struct TitleKey {
     pub hard: BTreeSet<String>,
 }
 
-/// Roman numerals II to XX as digits. A lone "I" counts only at the end
+/// Roman numerals II to XX as digits (not a lone V or X). A lone "I" counts only at the end
 /// of a main title ("Final Fantasy I"), since it is also a word.
 fn roman(w: &str, last: bool) -> Option<&'static str> {
     const R: &[(&str, &str)] = &[
         ("ii", "2"),
         ("iii", "3"),
         ("iv", "4"),
-        ("v", "5"),
         ("vi", "6"),
         ("vii", "7"),
         ("viii", "8"),
         ("ix", "9"),
-        ("x", "10"),
         ("xi", "11"),
         ("xii", "12"),
         ("xiii", "13"),
@@ -68,6 +66,8 @@ fn roman(w: &str, last: bool) -> Option<&'static str> {
         ("xix", "19"),
         ("xx", "20"),
     ];
+    // A lone V or X is too often a name ("Mega Man X", "X-Men", "V-Rally")
+    // to be a number; DAT names keep their numerals as written anyway.
     if w == "i" {
         return last.then_some("1");
     }
@@ -146,6 +146,10 @@ fn is_hard(w: &str) -> bool {
 pub fn score_keys(a: &TitleKey, b: &TitleKey) -> f32 {
     if a.main.is_empty() || b.main.is_empty() || a.hard != b.hard {
         return 0.0;
+    }
+    // The same words: the same title, even one made of numbers ("1942").
+    if a.main == b.main && a.sub == b.sub {
+        return 1.0;
     }
     let all_a: Vec<String> = a.main.iter().chain(&a.sub).cloned().collect();
     let all_b: Vec<String> = b.main.iter().chain(&b.sub).cloned().collect();
@@ -261,6 +265,17 @@ mod tests {
         assert_eq!(key("Ghouls & Ghosts").main, ["ghouls", "and", "ghosts"]);
         assert_eq!(key("Final Fantasy I").main, ["final", "fantasy", "1"]);
         assert_eq!(key("I Am Setsuna").main, ["i", "am", "setsuna"]);
+    }
+
+    #[test]
+    fn number_titles_and_lone_letters() {
+        assert_eq!(score("1942", "1942 (Japan, USA)"), 1.0);
+        assert_eq!(score("1942", "1943 - The Battle of Midway (USA)"), 0.0);
+        // A lone X is a letter, not 10.
+        assert_eq!(score("Mega Man X (USA)", "Mega Man 10 (USA)"), 0.0);
+        assert_eq!(score("Mega Man X", "Mega Man X (USA)"), 1.0);
+        assert_eq!(key("X-Men (USA)").main, ["x", "men"]);
+        assert_eq!(key("Final Fantasy VI (Japan)").hard, BTreeSet::from(["6".into()]));
     }
 
     #[test]

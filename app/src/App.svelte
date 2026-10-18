@@ -166,7 +166,10 @@
     results = [];
     preview = null;
     searching = true;
-    qDetail = await call("game_detail", { id: item.row_id });
+    const d = await call("game_detail", { id: item.row_id });
+    // Stepped on to another item while this one loaded.
+    if (queue[qi]?.row_id !== item.row_id) return;
+    qDetail = d;
     await doSearch();
   }
 
@@ -260,6 +263,8 @@
   let dest = $state("");
   let oneG1R = $state(false);
   let plan = $state(null);
+  // The inputs `plan` was made from: Move uses exactly these.
+  let planned = $state(null);
   let confirmUndo = $state(false);
 
   async function call(cmd, args) {
@@ -289,6 +294,8 @@
   async function open(id) {
     selected = id;
     const d = await call("game_detail", { id });
+    // Another row was picked while this one loaded: its details win.
+    if (selected !== id) return;
     if (d?.row?.id !== detail?.row?.id) dims = {};
     detail = d;
   }
@@ -377,13 +384,22 @@
   }
 
   async function planOrganize() {
-    plan = await run("Planning…", "organize_plan", { from, dest, oneG1r: oneG1R });
+    const inputs = { from, dest, oneG1r: oneG1R };
+    plan = await run("Planning…", "organize_plan", inputs);
+    planned = plan ? inputs : null;
+  }
+
+  // Changing what to organize makes the plan on screen stale.
+  function replan() {
+    plan = null;
+    planned = null;
   }
 
   async function applyOrganize() {
-    const r = await run("Moving files…", "organize_apply", { from, dest, oneG1r: oneG1R });
+    if (!planned) return;
+    const r = await run("Moving files…", "organize_apply", planned);
     if (r) note = r.batch_id ? `Batch #${r.batch_id}: moved ${r.moved}, failed ${r.failed.length}. Undo moves them back.` : "Nothing to move";
-    plan = null;
+    replan();
     await load();
   }
 
@@ -391,7 +407,7 @@
     confirmUndo = false;
     const r = await run("Moving files back…", "organize_undo", {});
     if (r) note = `Batch #${r.batch_id}: restored ${r.restored}, failed ${r.failed.length}`;
-    plan = null;
+    replan();
     await load();
   }
 
@@ -1166,11 +1182,11 @@
     {:else}
       <section class="wide">
         <div class="bar">
-          <input placeholder="Organize files in, /home/me/roms" bind:value={from} />
-          <input placeholder="Into, /home/me/roms-sorted" bind:value={dest} />
-          <label><input type="checkbox" bind:checked={oneG1R} /> 1G1R</label>
+          <input placeholder="Organize files in, /home/me/roms" bind:value={from} oninput={replan} />
+          <input placeholder="Into, /home/me/roms-sorted" bind:value={dest} oninput={replan} />
+          <label><input type="checkbox" bind:checked={oneG1R} onchange={replan} /> 1G1R</label>
           <button onclick={planOrganize} disabled={!from || !dest || !!busy}>Plan</button>
-          <button onclick={applyOrganize} disabled={!plan || !plan.moves.length || !!busy}>Move {plan ? plan.moves.length : ""} files</button>
+          <button onclick={applyOrganize} disabled={!plan || !planned || !plan.moves.length || !!busy}>Move {plan ? plan.moves.length : ""} files</button>
           {#if confirmUndo}
             <span>Move the last batch back?</span>
             <button onclick={undoOrganize} disabled={!!busy}>Yes, move back</button>

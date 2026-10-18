@@ -193,7 +193,9 @@ pub fn default_cache_dir() -> PathBuf {
 
 /// libretro's name for a system (its database and thumbnail folders).
 pub fn libretro_name(system: &systems::System) -> Option<&'static str> {
-    system.nointro.first().or(system.dat_names.first()).copied()
+    (!system.libretro.is_empty())
+        .then_some(system.libretro)
+        .or_else(|| system.nointro.first().or(system.dat_names.first()).copied())
 }
 
 /// libretro's thumbnail file name: `&*/:`<>?\|"` become `_`.
@@ -332,12 +334,14 @@ pub fn enrich(
         let Some(system) = systems::by_id(*system_id) else {
             continue;
         };
-        let Some(lr_name) = libretro_name(system) else {
-            continue;
-        };
+        // libretro's name for the system: only its own metadata and
+        // thumbnails need it; the other sources run for every system.
+        let lr_name = libretro_name(system);
 
         // Metadata: one file per field; a missing file is fine.
-        if opts.refresh || games_without_meta(conn, *system_id, games)? {
+        if let Some(lr_name) = lr_name
+            && (opts.refresh || games_without_meta(conn, *system_id, games)?)
+        {
             let mut found: HashMap<&String, Vec<(String, String)>> = HashMap::new();
             let mut fetch_failed = false;
             for field in FIELDS {
@@ -454,7 +458,8 @@ pub fn enrich(
                     continue;
                 }
                 // libretro has no such kind, or didn't have this one before.
-                let Some(url) = thumbnail_url(&opts.thumbnails_base, lr_name, kind, lr_game)
+                let Some(url) = lr_name
+                    .and_then(|n| thumbnail_url(&opts.thumbnails_base, n, kind, lr_game))
                     .filter(|_| opts.refresh || !matches!(known, Some(None)))
                 else {
                     missing.push(kind);

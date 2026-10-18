@@ -244,12 +244,15 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
                 }
                 Status::Matched
             }
+        } else if manual.contains(&(file.raw.sha1.clone(), file.raw.size)) {
+            // The owner's pick outranks weak evidence (a CRC32-only hit, a
+            // hash hit outside the folder's scope); only a match in scope
+            // comes first.
+            Status::Manual
         } else if hits.iter().any(|h| h.in_scope) {
             Status::Candidate
         } else if hits.iter().any(|h| h.via.strong()) {
             Status::WrongSystem
-        } else if manual.contains(&(file.raw.sha1.clone(), file.raw.size)) {
-            Status::Manual
         } else {
             Status::Unknown
         };

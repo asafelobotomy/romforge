@@ -45,9 +45,16 @@ pub(crate) const IS_HAVE: &str = "
 
 /// The matches that explain a file's status: in-scope hits, or for
 /// `wrong_system` the out-of-scope SHA1/MD5 hits.
-const RELEVANT_MATCH: &str = "
-    ((f.status = 'wrong_system' AND m.out_of_scope = 1 AND m.via <> 'crc32')
-     OR (f.status <> 'wrong_system' AND m.out_of_scope = 0))";
+/// The matches that say what a file is, by its status: SHA1/MD5 hits in
+/// scope for a matched or duplicate file, its CRC32 hits for a candidate,
+/// out-of-scope SHA1/MD5 hits for `wrong_system`, the sheet match for a
+/// `sheet`. An unknown file has none: a CRC32 alone never names it (house
+/// rule 8). Needs `f` (files) and `m` (matches).
+pub(crate) const RELEVANT_MATCH: &str = "
+    ((f.status IN ('matched', 'duplicate') AND m.out_of_scope = 0 AND m.via IN ('sha1', 'md5'))
+     OR (f.status = 'candidate' AND m.out_of_scope = 0)
+     OR (f.status = 'wrong_system' AND m.out_of_scope = 1 AND m.via IN ('sha1', 'md5'))
+     OR (f.status = 'sheet' AND m.via = 'sheet'))";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DatSummary {

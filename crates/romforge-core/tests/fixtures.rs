@@ -1415,3 +1415,36 @@ fn unreadable_files_keep_their_rows() {
     let again = lib.scan(&roms, Scope::All).unwrap();
     assert_eq!((again.hashed, again.unchanged), (1, 0), "{again:?}");
 }
+
+/// A CRC32 alone never names a file (house rule 8): an unknown file whose
+/// CRC32 and size happen to equal another system's ROM keeps its own name.
+#[test]
+fn crc_only_hits_never_name_unknown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    let data = body("crc-twin", 1024);
+    std::fs::write(roms.join("my file.gb"), &data).unwrap();
+    let h = hash_stream(&data[..], data.len() as u64).unwrap().raw;
+    // Another system's DAT lists a ROM with only that size and CRC32.
+    std::fs::write(
+        dir.path().join("nes.dat"),
+        format!(
+            r#"<datafile><header><name>Nintendo - Nintendo Entertainment System</name></header><game name="Twin (USA)"><rom name="Twin (USA).nes" size="{}" crc="{}"/></game></datafile>"#,
+            h.size, h.crc32
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("nes.dat"), None).unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    let gb = dat_id(&lib, "Nintendo - Game Boy");
+    lib.scan(&roms, Scope::Dat(gb)).unwrap();
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    assert_eq!(files[0].status, Status::Unknown);
+    assert!(files[0].games.is_empty(), "{:?}", files[0].games);
+    let v = lib.library_view().unwrap();
+    assert_eq!(v.rows.len(), 1);
+    assert_eq!(v.rows[0].title, "my file.gb", "not named after the NES game");
+    assert_eq!(v.rows[0].system, None);
+}

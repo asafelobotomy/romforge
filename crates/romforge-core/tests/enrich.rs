@@ -193,3 +193,45 @@ fn derivatives_show_their_base() {
     assert_eq!(detail.fields.get("genre").map(String::as_str), Some("Puzzle"));
     assert!(detail.art.contains_key("boxart"), "{:?}", detail.art);
 }
+
+/// A Redump-only system (no No-Intro DAT) still gets libretro's art under
+/// libretro's own name for it, and its other sources run.
+#[test]
+fn redump_only_systems_get_art() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let disc = vec![3u8; 4096];
+    std::fs::write(dir.join("melee.iso"), &disc).unwrap();
+    let h = romforge_core::hash::hash_stream(&disc[..], disc.len() as u64)
+        .unwrap()
+        .raw;
+    let dat = tmp.path().join("gc.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - GameCube</name></header><game name="Melee (USA)"><rom name="Melee (USA).iso" size="{}" crc="{}" md5="{}" sha1="{}"/></game></datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, Some("GameCube")).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+
+    let mut files = HashMap::new();
+    files.insert(
+        "/thumbs/Nintendo%20-%20GameCube/Named_Boxarts/Melee%20(USA).png".to_owned(),
+        b"\x89PNG\r\n\x1a\nfake".to_vec(),
+    );
+    let (base, _log) = serve(files);
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    opts.metadata_base = format!("{base}/meta");
+    opts.thumbnails_base = format!("{base}/thumbs");
+    opts.art = vec![ArtKind::Boxart];
+    opts.wikidata = None;
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.art_saved, 1, "{report:?}");
+}
