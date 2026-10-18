@@ -805,6 +805,281 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     Debian's and Fedora's package names for the recommended emulators are
     unchecked.
 
+16. **Trash, two matching fixes, deterministic zips** (decided
+    2026-10-18; not built).
+    1. *Empty the trash.* Import and cleanup keep originals in
+       `.romforge-trash/<batch>/` for undo, and nothing ever removes them
+       (the app even says "until you undo or empty it"). An "Empty trash"
+       action in the app and `cleanup empty-trash` in the CLI: every
+       batch, or those older than N days; it shows what goes and how much
+       space it frees, asks first, deletes for good, and marks those
+       batches as no longer undoable (their journal says so).
+    2. *Shared audio tracks.* A second copy of a track two discs share is
+       marked "duplicate" by path order even when it belongs to the other
+       disc; the copy beside each disc's other tracks should count for
+       that disc.
+    3. *Unknown extensions shown.* Files the scan skips for their
+       extension are only counted; list them (path and extension) in the
+       scan report and the app, so a format romforge doesn't know is
+       visible.
+    4. *Deterministic zips.* Import writes zips with the current time, so
+       the same game zips to different bytes each time. Fixed timestamps,
+       members in a fixed order, one compression setting (TorrentZip's
+       rules, as far as the `zip` crate allows): the same game always
+       gives the same file, so re-checks, syncs and backups are exact.
+
+17. **Arcade: MAME and FBNeo** (decided 2026-10-18; not designed yet).
+    The Arcade system has no DATs and no extensions today. Needs: their
+    DATs (libretro mirrors FBNeo's and MAME's), zips as sets rather than
+    single ROMs, and matching that knows merged, split and non-merged
+    sets, parents, clones and BIOS / device sets. To decide before
+    building: which DATs (a set only runs in the core version its DAT
+    belongs to: `fbneo`, `mame2003_plus`, current MAME), whether import
+    rebuilds sets (e.g. to non-merged) or only moves verified ones, and
+    how CHDs of arcade games are handled.
+
+## Launcher (milestone 18; researched 2026-10-18, not built)
+
+Folded in from the separate launcher plan the owner kept apart until it was
+decided.
+
+### Goal
+
+romforge becomes a self-contained launcher, like RetroDECK or LaunchBox /
+Big Box: pick a game, it plays, with no emulator UI, setup or desktop in
+between. Emulators run "headless" where possible, meaning romforge owns
+their window, config, folders, hotkeys and exit.
+
+### Where we start
+
+Milestone 5 already launches. `launch.rs` finds RetroArch (on `PATH` or
+the Flatpak `org.libretro.RetroArch`) and its cores, and 16 standalone
+emulators (`KNOWN_EMULATORS`; milestone 14 added DOSBox Staging, DOSBox-X,
+ScummVM and MAME), using the `cores` and `emulators` columns of
+`systems.rs`. It builds a command line and spawns it; a Flatpak emulator is
+given the game's folder for that run. What is missing:
+- romforge does not own any emulator's config, so each one opens with its
+  own UI, windowed, with its own save folders and hotkeys;
+- no way to install an emulator or core from romforge;
+- no BIOS check, no unified saves, no controller-driven exit;
+- only ScummVM, RetroArch's ScummVM core and DOSBox Pure have been run
+  for real (milestone 14); the console emulators only with stand-in
+  scripts.
+
+### What "headless" can mean
+
+| Approach | Fits | Cost |
+|---|---|---|
+| **A. Drive external emulators headlessly**: RetroArch and standalone emulators started fullscreen, with configs and folders romforge writes | every system, including 3D (GameCube, PS2, PS3, Switch...) | small; no linking |
+| **B. Embed libretro cores**: romforge loads `*_libretro.so` itself and draws the frames | software-rendered cores (8/16-bit, handhelds, PS1 software, arcade) | large; audio/video sync, input, states |
+| **C. Embed HW-rendered cores** (Dolphin, LRPS2, Flycast, Mupen64Plus-Next, Beetle PSX HW) | 3D systems | very large: GL/Vulkan context negotiation (`SET_HW_RENDER`, `libretro_vulkan.h`) |
+| **D. Host standalone emulators inside romforge's window** (a nested Wayland compositor) | systems with no libretro core: PS3, Wii U, Xbox, Vita, Switch, Xbox 360 | very large; no launcher found that does it |
+
+No mainstream launcher embeds cores. ES-DE, Playnite and LaunchBox all start
+RetroArch or standalone emulators; RetroDECK bundles them in one Flatpak and
+pre-writes their configs (romforge itself is not a Flatpak: milestone 15).
+
+**Decided 2026-10-18:** romforge first *feels* like one app, the RetroDECK /
+Big Box way (A, stages 1 and 2): it hands the screen to a fullscreen
+emulator behind a splash and takes it back on one controller combo. *Truly
+one window for everything* (B, C and D) is a planned future stage (stage 3),
+built only after stages 1 and 2 are solid. Stage 1 stays as its fallback.
+
+### Stage 1: own the emulators (approach A)
+
+#### 1.1 One emulator table
+
+Extend `KNOWN_EMULATORS` (one table, rule 4) after ES-DE's model:
+- find rules in order: `PATH`, Flatpak (`/var/lib/flatpak/exports/bin`,
+  `~/.local/share/flatpak/exports/bin`), AppImage globs
+  (`~/Applications/<name>*.AppImage`), `RomForge/Emulators/`, a user path;
+- a command template with variables (`{rom}`, `{core}`, `{config}`,
+  `{saves}`, `{states}`, `{bios}`);
+- per emulator: fullscreen/no-UI flags, how to point it at a config dir,
+  whether it reads archives, how to quit cleanly.
+
+ES-DE's `es_find_rules.xml` and `es_systems.xml` are MIT and can be adapted
+with attribution. Playnite's `emulator.yaml` definitions are MIT too, but
+Windows-oriented.
+
+#### 1.2 RomForge folder grows
+
+```
+RomForge/
+  Emulators/            cores and AppImages romforge downloaded for you
+  Emulators/config/     romforge-owned configs, one folder per emulator
+  Bios/                 RetroArch's system layout
+  Saves/<System>/       SRAM / memory cards
+  States/<System>/      save states
+  Screenshots/<System>/
+```
+
+Saves in one tree means backup or sync is a copy of one folder (rclone or
+Syncthing, outside romforge).
+
+#### 1.3 Owned configs, written as patches
+
+romforge writes only the keys it manages (paths, fullscreen, hotkeys,
+RetroAchievements login, menu off) and records what it wrote, so drift after
+an emulator update can be seen and re-applied. Other keys are the user's
+and are never touched. Config schemas are versioned per emulator, with
+migrations in the core (RetroDECK's `post_update` idea). "Reset to
+romforge's settings" per emulator.
+
+- **RetroArch:** `retroarch -f -L <core> --config <RomForge>/Emulators/config/retroarch/retroarch.cfg --appendconfig <per-game.cfg> <rom>`.
+  The config sets `savefile_directory`, `savestate_directory`,
+  `system_directory`, `screenshot_directory` into RomForge,
+  `config_save_on_exit = "false"`, `pause_nonactive = "false"`, the menu
+  toggle unbound, and `network_cmd_enable = "true"` (UDP 55355). Then
+  romforge can send `PAUSE_TOGGLE`, `SAVE_STATE`, `LOAD_STATE`,
+  `SCREENSHOT`, `RESET`, `QUIT`, and poll `GET_STATUS`.
+- **Standalone** (flags to check with `--help` on real installs):
+
+  | Emulator | Start without UI | Owned config dir |
+  |---|---|---|
+  | DuckStation | `-batch -fullscreen -nogui` (checked in source) | `portable.txt` *(unverified)* |
+  | PCSX2 | `-batch -nogui -fullscreen -- <file>` | `-portable` |
+  | Dolphin | `-b -e <file>` | `-u <dir>` |
+  | PPSSPP | `--fullscreen` | *(to check)* |
+  | RPCS3 | `--no-gui` *(unverified)* | *(to check)* |
+  | Cemu | `-g <file> -f` *(unverified)* | *(to check)* |
+  | xemu | `-full-screen -dvd_path` *(unverified)* | *(to check)* |
+  | Flycast | *(to research)* | *(to check)* |
+
+  Flatpak emulators keep config under `~/.var/app/<id>/`; they get
+  `--filesystem=<RomForge>` and config written there, or a portable dir
+  where the emulator supports one.
+
+#### 1.4 Get emulators from inside romforge
+
+Like rule 10's "the user downloads it": never shipped, fetched on request.
+- **Cores** from the libretro buildbot
+  (`buildbot.libretro.com/nightly/linux/x86_64/latest/`, no published terms
+  found; RetroArch's own updater does the same), into
+  `RomForge/Emulators/cores/`. Read each core's `.info` (licence,
+  extensions, firmware). Show the licence before download and warn on
+  non-commercial ones (Genesis Plus GX, the Snes9x family, PicoDrive, the
+  MAME 2000–2014 family, FB Alpha, fMSX, Opera; FinalBurn Neo
+  *(unverified)*).
+- **RetroArch and standalone emulators:** offer the Flathub install (user
+  scope) or the project's AppImage, then detect it. romforge itself never
+  bundles a GPL emulator, so its MIT licence and rule 9 stay intact.
+
+#### 1.5 BIOS check
+
+Per system: required, optional, present, wrong hash, by MD5 against
+libretro-database's `System.dat` (CC BY-SA 4.0; downloaded like the DATs,
+or shipped with attribution as data only). Reuse the existing hashing.
+Name the exact file and folder that is missing. RetroDECK's `bios.json` is
+GPL-3.0: not used.
+
+#### 1.6 Seamless start and exit
+
+- A borderless fullscreen splash (box art, title) from Play until the
+  emulator's window maps; borderless over exclusive fullscreen. Under
+  gamescope, just start the child.
+- Graceful exit: the emulator's own quit (RetroArch `QUIT`, a hotkey
+  chord), then SIGTERM, then kill after a timeout. Never kill first, or
+  the save is lost.
+- Play time and last played recorded from the process lifetime (the
+  parked "play history" idea).
+
+### Stage 2: controllers and a 10-foot mode
+
+- Gamepads read in Rust with `gilrs` (MIT/Apache-2.0), sent to the UI as
+  events. Not WebKitGTK's Gamepad API: it is a build option some distros
+  turn off. Remove Steam's virtual pad (28de:11ff) duplicates.
+- One hotkey scheme for every emulator, as RetroDECK does: each config binds
+  the same keyboard chords (save/load state, pause, fast-forward, quit), and
+  romforge watches a controller combo (e.g. Select+Start) to send them or
+  quit cleanly.
+- A controller-first fullscreen view of the library (Big Box style).
+- Later: a pause menu over the game (save/load state, reset, quit), driven
+  through RetroArch's UDP interface or the hotkey chords.
+- Optional: RetroAchievements login written into RetroArch, PCSX2 and
+  DuckStation configs as one global setting; Steam Deck integration
+  (`shortcuts.vdf` entry plus art, a Steam Input template).
+
+### Stage 3 (future): truly one window for everything
+
+Planned, not scheduled: starts only after stages 1 and 2 are solid on the
+real library. Every game then plays inside romforge's own window: no
+fullscreen handoff, and the pause menu is romforge's UI drawn over the game.
+Stage 1 stays the fallback for any emulator stage 3 can't host yet.
+
+#### 3.1 One window that holds the library and the game
+
+The Tauri webview can't take a game's frames directly (frames over IPC to
+WebKitGTK cost latency and drop frames), so romforge's window becomes a
+native winit window that both share:
+- the game drawn with wgpu (or glow for OpenGL cores);
+- the library and pause menu as a wry webview inside the same window
+  (`build_as_child`), shown over the game or instead of it. To test early
+  on Wayland.
+
+Games run in a child process (`romforge-play`) that renders into a surface
+romforge owns, so a crashing core or emulator can't take the library down.
+
+#### 3.2 Built-in libretro player, software cores (approach B)
+
+- `libloading` (ISC) loads a core; `rust-libretro-sys` (MIT) for the
+  types. `retro-rs` exists but has no visible licence: check before use;
+- audio with dynamic rate control (cores run at e.g. 60.098 fps), SRAM
+  flushed on exit, save states through `retro_serialize`, input from
+  `gilrs` mapped to the RetroPad, the same `Bios/`, `Saves/`, `States/`;
+- covers 8/16-bit, handhelds, PS1 (software), arcade.
+
+Reference frontends: Ludo (Go, libretro org, non-GL cores), nanoarch (one C
+file), rustro_arch (small Rust tutorial), GameLord (Electron, frames to a
+WebGL canvas).
+
+#### 3.3 3D libretro cores (approach C)
+
+The core draws into a GPU context romforge provides (`SET_HW_RENDER`):
+create the context and its framebuffer, give `get_proc_address`, call
+`context_reset` / `context_destroy` when the window is recreated (resize,
+fullscreen), keep the core and its context on one thread. OpenGL first
+(Mupen64Plus-Next, Flycast, Beetle PSX HW, PPSSPP, Dolphin), then Vulkan
+(`libretro_vulkan.h`; LRPS2, Dolphin, paraLLEl). Where a core lags its
+standalone emulator (Dolphin), the user can pick the standalone one.
+
+#### 3.4 Standalone emulators inside the window (approach D)
+
+For systems with no libretro core (PS3 / RPCS3, Wii U / Cemu, Xbox / xemu,
+Vita / Vita3K, Switch, Xbox 360), and for any standalone emulator the user
+prefers. On Wayland one program can't embed another's window, so romforge
+runs a small nested Wayland compositor (Smithay, MIT) that the emulator
+connects to as its display; romforge shows its output in the game area,
+X11-only emulators through Xwayland. romforge then also owns input focus and
+can draw its pause menu over the emulator. Gamescope does the nesting part
+(in its own window) and is the model to study. No launcher found that does
+this: an experiment first, on one emulator.
+
+Licensing: romforge never ships cores or emulators. The user downloads each
+one, so an MIT program loading a GPL core at runtime places no obligation
+on romforge's distribution. Non-commercial cores carry their warning as in
+1.4.
+
+### Not planned
+
+- Shaders and overlays in the built-in player.
+- Copying RetroDECK's or EmuDeck's configs (GPL-3.0); only their ideas.
+
+### Open
+
+- Check every flag and config dir above on the real emulators (RetroArch,
+  ScummVM, MAME and the DOSBox Flatpaks are installed on the dev machine
+  now; the console emulators are not).
+- Whether Flatpak emulators can take a portable config dir, or only
+  `~/.var/app`.
+- A licence for `retro-rs`, or write the small frontend layer ourselves
+  (stage 3).
+- Whether a wry child webview over a wgpu surface works on Plasma Wayland
+  (stage 3.1), and whether a Smithay-nested emulator runs at full speed
+  (stage 3.4).
+- Whether RetroArch's UDP interface is enough for a pause menu (it saves
+  only to the current slot).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
@@ -815,12 +1090,10 @@ on someone else:
 
 ## Later ideas (parked, do not build yet)
 
-- Arcade: MAME / FBNeo DATs (libretro mirrors them); merged/split sets need
-  their own matching rules.
 - Online lookups for files that stay unknown: RetroAchievements hashes
   (login token), ScreenScraper (keys); Hasheous needs neither, see
   milestone 11.
-- Play history and favourites.
+- Favourites (play history: milestone 18, 1.6).
 
 - Redump update check without re-downloading (Redump has no version index).
 - The regions seed from remustwo for 1G1R (clone lists: 12.2).
