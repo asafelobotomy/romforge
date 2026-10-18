@@ -67,7 +67,7 @@ fn serve(busy: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
                     format!(
                         r#"{{"g":{},"label":{},"alias":{}}}"#,
                         uri("Q201"),
-                        lit("Shared Hash"),
+                        lit("Shared Hash Classic"),
                         lit("Shared Hash (Rev A)")
                     ),
                     format!(
@@ -210,7 +210,7 @@ fn matches_fills_and_lists_the_series() {
     let asked = searches(&all);
     assert_eq!(asked.len(), 1, "{asked:?}");
     assert!(
-        asked[0].contains("\"test gb haswbstatement:P400=Q186437 haswbstatement:P31=Q7889\""),
+        asked[0].contains("\"test gb haswbstatement:P400=Q186437 haswbstatement:P31=Q7889|P31=Q60997816\""),
         "{}",
         asked[0]
     );

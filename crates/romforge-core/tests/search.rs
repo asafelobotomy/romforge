@@ -117,7 +117,8 @@ fn find_preview_and_choose_a_dat_title() {
     let dir = tmp.path().join("roms");
     std::fs::create_dir(&dir).unwrap();
     std::fs::write(dir.join("Test GB (Hack).gb"), vec![42u8; 1024]).unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
+    let db = tmp.path().join("romforge.db");
+    let mut lib = Library::open(&db).unwrap();
     lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
     lib.scan(&dir, Scope::All).unwrap();
     let row = lib.search_queue(None).unwrap()[0].row_id.clone();
@@ -164,6 +165,23 @@ fn find_preview_and_choose_a_dat_title() {
     let d = lib.game_detail(&chosen.row_id).unwrap();
     assert_eq!(d.row.status, RowStatus::Derivative);
     assert_eq!(d.derived.unwrap().base, "Test GB");
+    // Wikidata has no item for a hack; it shows its base game's, so a
+    // lookup that found nothing under its own name asks nothing of you.
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute(
+            "INSERT INTO wikidata_match (system_id, title, status, candidates, checked_at)
+             SELECT system_id, 'Test GB [Hack]', 'none', '[]', '' FROM systems WHERE key = 'Game Boy'",
+            [],
+        )
+        .unwrap();
+    assert!(
+        lib.search_queue(None)
+            .unwrap()
+            .iter()
+            .all(|q| q.row_id != chosen.row_id),
+        "a derivative needs no Wikidata match"
+    );
 
     // A Wikidata pick on an unidentified row needs a platform.
     let other = tmp.path().join("other");

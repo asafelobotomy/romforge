@@ -294,6 +294,9 @@ const MIGRATIONS: &[&str] = &[
     // 23: which clone list a row came from, so a new version of the list
     // replaces its own rows (and old titles go).
     "ALTER TABLE clone_groups ADD COLUMN list TEXT NOT NULL DEFAULT '';",
+    // 24: Wikidata editions ("Director's Cut") are candidates too; `work` is
+    // the game an edition belongs to (P629), whose facts fill its gaps.
+    "ALTER TABLE wikidata_candidates ADD COLUMN work TEXT;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

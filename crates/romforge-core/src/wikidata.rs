@@ -64,7 +64,15 @@ pub struct Candidate {
     pub years: BTreeSet<i32>,
     #[serde(skip)]
     pub names: BTreeSet<String>,
+    /// For an edition (Q60997816), the game it is an edition of (P629).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<String>,
 }
+
+/// Wikidata's classes for a game: video game, and video game edition (a
+/// "Director's Cut" or "Greatest Hits" release with an item of its own).
+const GAME: &str = "Q7889";
+const EDITION: &str = "Q60997816";
 
 /// Lowercase letters and digits only, "&" as "and", words single-spaced;
 /// region tags and a trailing article ("Zelda, The") handled first.
@@ -90,22 +98,89 @@ pub fn pick<'a>(
     year: Option<i32>,
     candidates: &'a [Candidate],
 ) -> Result<&'a Candidate, Vec<&'a Candidate>> {
-    let want = normalize(title);
-    let named: Vec<&Candidate> = candidates.iter().filter(|c| c.names.contains(&want)).collect();
-    match named.as_slice() {
-        [one] => Ok(one),
-        [] => Err(Vec::new()),
-        many => {
-            let by_year: Vec<&Candidate> = match year {
-                Some(y) => many.iter().copied().filter(|c| c.years.contains(&y)).collect(),
-                None => Vec::new(),
-            };
-            match by_year.as_slice() {
-                [one] => Ok(one),
-                _ => Err(many.to_vec()),
+    // The full name first; only when nothing has it, the name without an
+    // edition tag ("Resident Evil - Director's Cut - Dual Shock Ver." is
+    // the Director's Cut). An ambiguous full name stays ambiguous.
+    for want in names_for(title) {
+        let named: Vec<&Candidate> = candidates.iter().filter(|c| c.names.contains(&want)).collect();
+        match named.as_slice() {
+            [] => continue,
+            [one] => return Ok(one),
+            many => {
+                // A game beats its own edition of the same name.
+                let games: Vec<&Candidate> = many
+                    .iter()
+                    .copied()
+                    .filter(|c| !c.work.as_ref().is_some_and(|w| many.iter().any(|o| &o.qid == w)))
+                    .collect();
+                if let [one] = games.as_slice() {
+                    return Ok(one);
+                }
+                let many = games.as_slice();
+                // An item whose own label is the name beats one that only
+                // has it as an alias (Rondo of Blood is also "Dracula X").
+                let own: Vec<&Candidate> = many
+                    .iter()
+                    .copied()
+                    .filter(|c| normalize(&c.label) == want)
+                    .collect();
+                if let [one] = own.as_slice() {
+                    return Ok(one);
+                }
+                let by_year: Vec<&Candidate> = match year {
+                    Some(y) => many.iter().copied().filter(|c| c.years.contains(&y)).collect(),
+                    None => Vec::new(),
+                };
+                return match by_year.as_slice() {
+                    [one] => Ok(one),
+                    _ => Err(many.to_vec()),
+                };
             }
         }
     }
+    Err(Vec::new())
+}
+
+/// The names a DAT title is looked for under: its own, then without the
+/// edition tags it ends in, one by one ("Dual Shock Ver.", "Greatest Hits",
+/// "Platinum", ...). Only parts that are clearly an edition go, so a
+/// subtitle that names the game ("The Empire Strikes Back") never does.
+pub fn names_for(title: &str) -> Vec<String> {
+    let mut out = vec![normalize(title)];
+    let mut t = crate::view::search_title(title);
+    while let Some((head, last)) = t.rsplit_once(" - ") {
+        if !is_edition(last) {
+            break;
+        }
+        t = head.to_owned();
+        let n = normalize(&t);
+        if !n.is_empty() && !out.contains(&n) {
+            out.push(n);
+        }
+    }
+    out.retain(|n| !n.is_empty());
+    out
+}
+
+/// A title part that names an edition of the game, not the game.
+fn is_edition(part: &str) -> bool {
+    let p = part.trim().to_lowercase();
+    p.ends_with(" ver.")
+        || p == "ver."
+        || [
+            "dual shock",
+            "greatest hits",
+            "platinum",
+            "the best",
+            "player's choice",
+            "players choice",
+            "big in japan",
+            "limited edition",
+            "collector's edition",
+            "nintendo selects",
+        ]
+        .iter()
+        .any(|w| p.contains(w))
 }
 
 fn sparql(endpoint: &str, query: &str) -> Result<Vec<HashMap<String, String>>, Error> {
@@ -170,23 +245,25 @@ pub fn candidates(endpoint: &str, platform: &str, names: &[String]) -> Result<Ve
         .iter()
         .map(|n| {
             format!(
-                "\"{} haswbstatement:P400={platform} haswbstatement:P31=Q7889\" ",
+                "\"{} haswbstatement:P400={platform} haswbstatement:P31={GAME}|P31={EDITION}\" ",
                 search_words(n)
             )
         })
         .collect();
     let q = format!(
-        "SELECT ?g ?label ?alias ?date WHERE {{
+        "SELECT ?g ?label ?alias ?date ?work WHERE {{
            VALUES ?search {{ {searches} }}
            SERVICE wikibase:mwapi {{
              bd:serviceParam wikibase:api \"Search\"; wikibase:endpoint \"www.wikidata.org\";
                              mwapi:srsearch ?search; mwapi:srlimit \"20\"; wikibase:limit \"once\".
              ?g wikibase:apiOutputItem mwapi:title.
            }}
-           ?g wdt:P31 wd:Q7889; wdt:P400 wd:{platform}; rdfs:label ?label.
+           VALUES ?kind {{ wd:{GAME} wd:{EDITION} }}
+           ?g wdt:P31 ?kind; wdt:P400 wd:{platform}; rdfs:label ?label.
            FILTER(LANG(?label) IN (\"en\", \"mul\"))
            OPTIONAL {{ ?g skos:altLabel ?alias. FILTER(LANG(?alias) IN (\"en\", \"mul\")) }}
            OPTIONAL {{ ?g wdt:P577 ?date }}
+           OPTIONAL {{ ?g wdt:P31 wd:{EDITION}; wdt:P629 ?work }}
          }}"
     );
     let mut by_qid: BTreeMap<String, Candidate> = BTreeMap::new();
@@ -208,6 +285,9 @@ pub fn candidates(endpoint: &str, platform: &str, names: &[String]) -> Result<Ve
         if let Some(y) = row.get("date").and_then(|d| year_of(d)) {
             c.years.insert(y);
         }
+        if let Some(w) = row.get("work") {
+            c.work = Some(w.clone());
+        }
     }
     Ok(by_qid.into_values().collect())
 }
@@ -222,15 +302,17 @@ fn remember(
     let tx = conn.transaction()?;
     for c in found {
         tx.execute(
-            "INSERT INTO wikidata_candidates (platform, qid, label, names, years) VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO wikidata_candidates (platform, qid, label, names, years, work)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(platform, qid) DO UPDATE SET label = excluded.label, names = excluded.names,
-               years = excluded.years",
+               years = excluded.years, work = excluded.work",
             params![
                 platform,
                 c.qid,
                 c.label,
                 serde_json::to_string(&c.names).unwrap_or_default(),
-                serde_json::to_string(&c.years).unwrap_or_default()
+                serde_json::to_string(&c.years).unwrap_or_default(),
+                c.work
             ],
         )?;
     }
@@ -258,7 +340,7 @@ fn searched(conn: &Connection, platform: &str) -> Result<BTreeSet<String>, Error
 /// Every candidate kept for `platforms`, one per item.
 fn kept(conn: &Connection, platforms: &[&str]) -> Result<Vec<Candidate>, Error> {
     let mut stmt =
-        conn.prepare("SELECT qid, label, names, years FROM wikidata_candidates WHERE platform = ?1")?;
+        conn.prepare("SELECT qid, label, names, years, work FROM wikidata_candidates WHERE platform = ?1")?;
     let mut by_qid: BTreeMap<String, Candidate> = BTreeMap::new();
     for platform in platforms {
         let rows = stmt.query_map(params![platform], |r| {
@@ -267,10 +349,11 @@ fn kept(conn: &Connection, platforms: &[&str]) -> Result<Vec<Candidate>, Error> 
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
                 r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         })?;
         for row in rows {
-            let (qid, label, names, years) = row?;
+            let (qid, label, names, years, work) = row?;
             let c = by_qid.entry(qid.clone()).or_insert_with(|| Candidate {
                 qid,
                 label,
@@ -280,13 +363,56 @@ fn kept(conn: &Connection, platforms: &[&str]) -> Result<Vec<Candidate>, Error> 
                 .extend(serde_json::from_str::<BTreeSet<String>>(&names).unwrap_or_default());
             c.years
                 .extend(serde_json::from_str::<BTreeSet<i32>>(&years).unwrap_or_default());
+            c.work = c.work.take().or(work);
         }
     }
     Ok(by_qid.into_values().collect())
 }
 
-/// field -> values for each of `qids`.
+/// field -> values for each of `qids`; an edition's empty fields are
+/// filled from the game it is an edition of.
 fn details(
+    endpoint: &str,
+    qids: &[String],
+) -> Result<HashMap<String, BTreeMap<String, BTreeSet<String>>>, Error> {
+    let mut out = item_details(endpoint, qids)?;
+    let works: BTreeMap<String, String> = out
+        .iter_mut()
+        .filter_map(|(q, f)| Some((q.clone(), f.remove("work")?.pop_first()?)))
+        .collect();
+    if works.is_empty() {
+        return Ok(out);
+    }
+    let wanted: Vec<String> = works
+        .values()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut of_work = item_details(endpoint, &wanted)?;
+    for (q, w) in works {
+        let Some(from) = of_work.get_mut(&w) else { continue };
+        from.remove("work");
+        let fields = out.entry(q).or_default();
+        inherit(fields, from);
+    }
+    Ok(out)
+}
+
+/// Fill the fields `fields` lacks from `from` (the series and its Q id go
+/// together).
+fn inherit(fields: &mut BTreeMap<String, BTreeSet<String>>, from: &BTreeMap<String, BTreeSet<String>>) {
+    let has_series = fields.contains_key("series");
+    for (f, v) in from {
+        let series = matches!(f.as_str(), "series" | "series_qid" | "series_ordinal");
+        if (series && has_series) || fields.contains_key(f) {
+            continue;
+        }
+        fields.insert(f.clone(), v.clone());
+    }
+}
+
+fn item_details(
     endpoint: &str,
     qids: &[String],
 ) -> Result<HashMap<String, BTreeMap<String, BTreeSet<String>>>, Error> {
@@ -304,6 +430,7 @@ fn details(
            UNION {{ ?g p:P179 ?st. ?st pq:P1545 ?v. BIND(\"series_ordinal\" AS ?p) }}
            UNION {{ ?a schema:about ?g; schema:isPartOf <https://en.wikipedia.org/>; schema:name ?v.
                     BIND(\"wikipedia\" AS ?p) }}
+           UNION {{ ?g wdt:P31 wd:{EDITION}; wdt:P629 ?v. BIND(\"work\" AS ?p) }}
            SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"en,mul\". }}
          }}"
     );
@@ -325,6 +452,11 @@ fn details(
                 ("series", label)
             }
             "series_ordinal" | "wikipedia" => (p.as_str(), v.clone()),
+            "work" => {
+                let fields = out.entry(g.clone()).or_default();
+                fields.entry("work".into()).or_default().insert(v.clone());
+                continue;
+            }
             other => match field_of.get(other) {
                 Some(f) if LABEL_FIELDS.iter().any(|(_, lf)| lf == f) => {
                     (*f, row.get("vLabel").cloned().unwrap_or_else(|| v.clone()))
@@ -433,11 +565,7 @@ pub fn enrich(
         // Look up only the titles not searched yet on each platform item
         // (`refresh` forgets earlier searches); what was found is kept, so
         // a run cut short resumes where it stopped.
-        let names: BTreeSet<String> = todo
-            .iter()
-            .map(|t| normalize(t))
-            .filter(|n| !n.is_empty())
-            .collect();
+        let names: BTreeSet<String> = todo.iter().flat_map(|t| names_for(t)).collect();
         let mut ready = names.clone();
         for platform in system.wikidata {
             if refresh && !halted {
@@ -614,6 +742,7 @@ mod tests {
             label: names[0].into(),
             years: years.iter().copied().collect(),
             names: names.iter().map(|n| normalize(n)).collect(),
+            work: None,
         }
     }
 
@@ -656,6 +785,103 @@ mod tests {
             "ambiguous without a year"
         );
         assert!(pick("Unknown Game (USA)", None, &c).unwrap_err().is_empty());
+    }
+
+    #[test]
+    fn own_label_beats_an_alias() {
+        let c = [
+            cand(
+                "Q2421908",
+                &["Castlevania: Rondo of Blood", "Castlevania: Dracula X"],
+                &[1993, 1995],
+            ),
+            cand("Q2607689", &["Castlevania: Dracula X"], &[1995]),
+        ];
+        assert_eq!(
+            pick("Castlevania - Dracula X (USA)", None, &c).unwrap().qid,
+            "Q2607689"
+        );
+    }
+
+    #[test]
+    fn edition_tags_fall_back_to_the_game() {
+        let c = [
+            cand("Q1", &["Resident Evil: Director's Cut"], &[1997]),
+            cand("Q2", &["Super Star Wars"], &[1992]),
+        ];
+        assert_eq!(
+            pick("Resident Evil - Director's Cut - Dual Shock Ver. (USA)", None, &c)
+                .unwrap()
+                .qid,
+            "Q1"
+        );
+        assert!(
+            pick("Super Star Wars - The Empire Strikes Back (USA)", None, &c).is_err(),
+            "a subtitle that names the game is kept"
+        );
+        assert_eq!(
+            names_for("Resident Evil - Director's Cut - Dual Shock Ver. (USA)"),
+            [
+                "resident evil director s cut dual shock ver",
+                "resident evil director s cut"
+            ]
+        );
+        assert_eq!(
+            names_for("Pokemon - Gold Version (USA)"),
+            ["pokemon gold version"]
+        );
+    }
+
+    #[test]
+    fn an_edition_inherits_what_it_lacks() {
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+        let mut edition = BTreeMap::from([
+            ("publisher".to_string(), set(&["Capcom"])),
+            ("wikipedia".to_string(), set(&["Resident Evil (1996 video game)"])),
+        ]);
+        let game = BTreeMap::from([
+            ("publisher".to_string(), set(&["Virgin"])),
+            ("developer".to_string(), set(&["Capcom"])),
+            ("series".to_string(), set(&["Resident Evil"])),
+            ("series_qid".to_string(), set(&["Q1"])),
+            ("series_ordinal".to_string(), set(&["1"])),
+        ]);
+        inherit(&mut edition, &game);
+        assert_eq!(
+            edition["publisher"],
+            set(&["Capcom"]),
+            "the edition's own value stays"
+        );
+        assert_eq!(edition["developer"], set(&["Capcom"]));
+        assert_eq!(edition["series_ordinal"], set(&["1"]));
+
+        let mut own_series = BTreeMap::from([("series".to_string(), set(&["Other"]))]);
+        inherit(&mut own_series, &game);
+        assert!(
+            !own_series.contains_key("series_ordinal"),
+            "a series comes whole or not at all"
+        );
+    }
+
+    #[test]
+    fn a_game_beats_its_own_edition() {
+        let game = cand("Q1", &["Tomba!"], &[1997]);
+        let mut edition = cand("Q2", &["Tomba!"], &[1998]);
+        edition.work = Some("Q1".into());
+        let other = cand("Q3", &["Tomba!"], &[1999]);
+        assert_eq!(
+            pick("Tomba! (USA)", None, &[game.clone(), edition.clone()])
+                .unwrap()
+                .qid,
+            "Q1"
+        );
+        assert_eq!(
+            pick("Tomba! (USA)", None, &[game, edition, other])
+                .unwrap_err()
+                .len(),
+            2,
+            "two games of that name stay ambiguous"
+        );
     }
 
     #[test]

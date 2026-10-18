@@ -88,7 +88,9 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
                 wikidata: None,
                 suggestion,
             });
-        } else if let Some(system) = &r.system
+        } else if r.status != RowStatus::Derivative
+            // A translation or hack shows its base game's Wikidata facts.
+            && let Some(system) = &r.system
             && let Some(st) = wd.get(&(system.clone(), r.title.clone()))
         {
             out.push(QueueItem {

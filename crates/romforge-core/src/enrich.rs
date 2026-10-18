@@ -13,7 +13,7 @@
 //! of one of its ROMs within that system's file. Only games with a matched
 //! file are looked up. Nothing is written next to the ROMs.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -601,7 +601,18 @@ pub fn enrich(
     // Wikidata after libretro, so a release year is there to tell apart
     // games of the same name.
     if let Some(endpoint) = &opts.wikidata {
-        match crate::wikidata::enrich(conn, endpoint, &have, opts.refresh, |step| {
+        // Translations and hacks are not on Wikidata; they show their base
+        // game's facts, and the base is in `have`.
+        let derived: BTreeSet<(i64, String)> = conn
+            .prepare("SELECT DISTINCT system_id, title FROM manual_ids WHERE base IS NOT NULL")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let titled: BTreeMap<(i64, String), Vec<String>> = have
+            .iter()
+            .filter(|(k, _)| !derived.contains(*k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, |step| {
             progress(EnrichEvent::Wikidata { step })
         }) {
             Ok(w) => report.wikidata = Some(w),
