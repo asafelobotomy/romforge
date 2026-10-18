@@ -222,6 +222,46 @@ romforge opens it in a new place it rewrites the paths it stores. With a
 RomForge folder, Organize hands over to Import (its earlier batches can
 still be undone).
 
+## DOS, ScummVM and Japanese computers (milestone 14)
+
+```bash
+romforge-cli dat download DOS          # TOSEC's PC disks + libretro's DOS.dat
+romforge-cli search name f:12 --system DOS --title "Commander Keen 1 (1990)"
+romforge-cli scummvm read              # ScummVM's own game list, from your ScummVM
+romforge-cli scummvm import list.dat   # or one you saved: scummvm --dump-all-detection-entries
+```
+
+DOS and ScummVM games are folders of many files, so a folder is one game:
+
+- **DOS.** libretro's `DOS.dat` knows a game only by its program's size
+  and CRC32, so a hit is a suggestion ("Likely: CRC match" in Search),
+  never a match. Once you confirm it, the folder around the program (or
+  the zip it is in) is the game, and the other files in it join its row.
+  A program loose in a scanned folder isn't taken as a folder game: put
+  each game in its own folder. Import packs the whole folder into
+  `Games/DOS/<Title>.zip`; the folder goes to the trash in one piece. Play
+  uses the `dosbox_pure` core (zip or image as is), else DOSBox Staging or
+  DOSBox-X with the game's program. TOSEC disk images still verify by
+  hash as before.
+- **ScummVM.** romforge asks the installed ScummVM (on `PATH` or the
+  Flatpak) for its detection list once (Settings → **Read ScummVM's
+  list**) and keeps it in `Databases/`; it is ScummVM's data (GPL), made
+  on your machine and never shipped. A folder is a game when every file
+  an entry lists is in it with that size and the MD5 of its first (or
+  last) bytes, as ScummVM decides; such a game is "identified by
+  ScummVM's list", never verified. Import copies the folder to
+  `Games/ScummVM/<Title>/` with a `<id>.scummvm` file for RetroArch's core;
+  Play uses the `scummvm` core or ScummVM itself (`--auto-detect`). Not
+  checked yet: whether the classic SCUMM games (Monkey Island, ...) are in
+  that list.
+- **Disk sets.** When every disk of a set ("Disk 1 of 4", "Disc 2") is
+  imported, a `<Set>.m3u` lists them next to the files, and Play starts
+  the playlist so the emulator can swap disks. Undo removes it.
+- **Japanese computers.** PC-88 gets the `quasi88` core, PC-98 more disk
+  formats and libretro's own PC-98 DAT, Sharp X1 the `x1` core; FM-7
+  (TOSEC) and FM Towns start in MAME (`mame-fm7`, `mame-fmtowns`; MAME
+  needs those machines' own ROMs).
+
 ## Cleanup and rename (dry run, apply, undo)
 
 ```bash

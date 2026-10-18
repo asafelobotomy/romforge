@@ -69,6 +69,9 @@ enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
+    /// ScummVM games: named by ScummVM's own detection list (milestone 14)
+    #[command(subcommand)]
+    Scummvm(ScummvmCommand),
     /// Rename and move identified files into a tidy folder (milestone 2)
     #[command(subcommand)]
     Organize(OrganizeCommand),
@@ -261,6 +264,17 @@ enum HomeCommand {
 }
 
 #[derive(Subcommand)]
+enum ScummvmCommand {
+    /// Ask the installed ScummVM for its detection list
+    /// (`--dump-all-detection-entries`), keep it in the databases folder
+    /// and name the ScummVM games in every scanned folder by it
+    Read,
+    /// The same from a list you saved yourself
+    /// (`scummvm --dump-all-detection-entries > list.dat`)
+    Import { file: PathBuf },
+}
+
+#[derive(Subcommand)]
 enum CleanupCommand {
     /// Show what would be written; changes nothing
     Plan {
@@ -448,6 +462,7 @@ fn main() -> Result<()> {
                 bail!("no RomForge folder yet (`romforge-cli home create <parent>`)");
             };
             let new = romforge_core::home::relocate(old, new_parent)?;
+            new.remember()?;
             // Opening it once fixes the paths it stores.
             Library::open(new.db())?;
             println!("moved to {}", new.root().display());
@@ -753,6 +768,20 @@ fn main() -> Result<()> {
             }
         }
         Command::Home(_) => unreachable!("handled before the library opens"),
+        Command::Scummvm(cmd) => {
+            let r = match cmd {
+                ScummvmCommand::Read => lib.scummvm_read(&launch::Env::detect())?,
+                ScummvmCommand::Import { file } => {
+                    let bytes =
+                        std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+                    lib.scummvm_import(&bytes)?
+                }
+            };
+            println!(
+                "ScummVM list: {} entries; {} ScummVM game(s) in your folders",
+                r.entries, r.games
+            );
+        }
         Command::Import { dir, apply, verbose } => {
             if lib.home().is_none() {
                 bail!("no RomForge folder yet: `romforge-cli home create <parent>` first");
@@ -1275,7 +1304,14 @@ fn print_cleanup(plan: &romforge_core::cleanup::CleanupPlan, verbose: bool) {
             println!(
                 "  {}  already there; {} copy file(s) outside go to the trash",
                 it.target.display(),
-                it.trash.len()
+                it.copies.len()
+            );
+        } else if let Some(folder) = &it.folder {
+            println!(
+                "  {}  <-  the whole of {} ({} file(s))",
+                it.target.display(),
+                folder.display(),
+                it.parts.len()
             );
         } else {
             println!("  {}  <-  {} file(s)", it.target.display(), it.parts.len());

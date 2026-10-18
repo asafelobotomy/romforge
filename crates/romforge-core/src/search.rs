@@ -64,10 +64,7 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
         if only.is_some_and(|ids| !ids.contains(&r.id)) {
             continue;
         }
-        let identified = matches!(
-            r.status,
-            RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
-        );
+        let identified = r.status.identified();
         if !identified && r.status != RowStatus::Duplicate {
             let d = view::detail_in(conn, &v, &r.id)?;
             let suggestion = suggester.suggest(conn, &d, None, None, 1)?.into_iter().next();
@@ -578,10 +575,7 @@ pub fn choose(
     opts: &crate::enrich::EnrichOptions,
 ) -> Result<Chosen, Error> {
     let d = view::detail(conn, row_id)?;
-    let identified = matches!(
-        d.row.status,
-        RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
-    );
+    let identified = d.row.status.identified();
     let need_system = || {
         system
             .or(found.system.as_deref())

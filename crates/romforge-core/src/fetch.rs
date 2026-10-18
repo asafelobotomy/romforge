@@ -47,6 +47,7 @@ pub const USER_AGENT: &str = concat!(
 );
 pub const REDUMP_BASE: &str = "http://redump.org";
 pub const LIBRETRO_BASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat";
+pub const LIBRETRO_DAT_BASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/dat";
 pub const LIBRETRO_NOINTRO_BASE: &str =
     "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro";
 pub const TOSEC_BASE: &str = "https://www.tosecdev.org";
@@ -98,6 +99,8 @@ pub enum Source {
     Hacks(&'static str),
     /// A file in libretro-database's `homebrew` folder.
     Homebrew(&'static str),
+    /// One of libretro-database's own DATs (`dat/<name>.dat`), e.g. DOS.
+    Libretro(&'static str),
     /// A file in libretro-database's `serial` folder: product codes, not a
     /// DAT ([`crate::Library::download_dat`] stores them in `serials`).
     Serials(&'static str),
@@ -120,6 +123,7 @@ impl Source {
             Source::Tosec(_) => None,
             Source::Hacks(name) => Some(libretro("hacks", name)),
             Source::Homebrew(name) => Some(libretro("homebrew", name)),
+            Source::Libretro(name) => Some(format!("{LIBRETRO_DAT_BASE}/{}.dat", percent_encode(name))),
             Source::Serials(name) => Some(libretro("serial", name)),
             Source::CloneList(name, group) => Some(format!(
                 "{CLONELISTS_BASE}/{}",
@@ -143,6 +147,7 @@ impl std::fmt::Display for Source {
             Source::Tosec(n) => write!(f, "TOSEC {n}"),
             Source::Hacks(n) => write!(f, "hacks (libretro) {n}"),
             Source::Homebrew(n) => write!(f, "homebrew (libretro) {n}"),
+            Source::Libretro(n) => write!(f, "libretro {n}"),
             Source::Serials(n) => write!(f, "serials (libretro) {n}"),
             Source::CloneList(n, g) => write!(f, "clone list (Retool) {n} ({g})"),
         }
@@ -150,7 +155,8 @@ impl std::fmt::Display for Source {
 }
 
 /// Every DAT `dat download` fetches for `system`: No-Intro, Redump games
-/// and BIOS, TOSEC, libretro's serial list for No-Intro systems, and with
+/// and BIOS, TOSEC, libretro's own DATs, its serial list for No-Intro
+/// systems, and with
 /// `extras` the hacks and homebrew DATs.
 pub fn sources(system: &System, extras: bool) -> Vec<Source> {
     let serials = (!system.nointro.is_empty())
@@ -162,6 +168,7 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
         .chain(serials.map(Source::Serials))
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
+        .chain(system.dats.iter().copied().map(Source::Libretro))
         .collect();
     // Clone lists for the system's No-Intro and Redump DATs, by DAT name
     // (PSP has both; a list that doesn't exist is skipped).

@@ -422,6 +422,51 @@ pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
     Ok(out)
 }
 
+/// A `game ( ... )` block of a clrmamepro-style file as plain pairs: its
+/// own fields (lower-case keys) and each `rom ( ... )` block's.
+pub(crate) struct CmpGame {
+    pub fields: std::collections::HashMap<String, String>,
+    pub roms: Vec<CmpRom>,
+}
+
+/// One `rom ( ... )` block's pairs, in order, keys in lower case.
+pub(crate) struct CmpRom(Vec<(String, String)>);
+
+impl CmpRom {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(String, String)> {
+        self.0.iter()
+    }
+}
+
+/// Every `game` block of a clrmamepro-style file, whatever its header
+/// (ScummVM's detection list has its own).
+pub(crate) fn cmp_games(text: &str) -> Result<Vec<CmpGame>, Error> {
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let pairs = |b: &Cmp| -> Vec<(String, String)> {
+        match b {
+            Cmp::Block(items) => items
+                .iter()
+                .filter_map(|(k, v)| match v {
+                    Cmp::Atom(a) => Some((k.to_ascii_lowercase(), (*a).to_owned())),
+                    Cmp::Block(_) => None,
+                })
+                .collect(),
+            Cmp::Atom(_) => Vec::new(),
+        }
+    };
+    Ok(root
+        .blocks("game")
+        .map(|g| CmpGame {
+            fields: pairs(g).into_iter().collect(),
+            roms: g.blocks("rom").map(|r| CmpRom(pairs(r))).collect(),
+        })
+        .collect())
+}
+
 fn cmp_hash(h: Option<&str>) -> Option<String> {
     h.map(str::to_ascii_lowercase)
         .filter(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit()))

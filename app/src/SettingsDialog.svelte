@@ -6,6 +6,27 @@
   let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call } = $props();
   let moving = $state(false);
   let regionsText = $state("");
+  let scummvmNote = $state("");
+  let readingList = $state(false);
+
+  // ScummVM names its games itself: read its list from the installed
+  // ScummVM, or from a file saved with --dump-all-detection-entries.
+  async function readScummvm(fromFile) {
+    let file = null;
+    if (fromFile) {
+      file = await pickFolder({ multiple: false, title: "ScummVM's detection list", filters: [{ name: "DAT", extensions: ["dat", "txt"] }] });
+      if (typeof file !== "string") return;
+    }
+    scummvmNote = "";
+    readingList = true;
+    try {
+      const r = await invoke("scummvm_list", { file });
+      scummvmNote = `${r.entries} entries; ${r.games} ScummVM game${r.games === 1 ? "" : "s"} in your folders.`;
+    } catch (e) {
+      scummvmNote = String(e).replace(/^launch: /, "");
+    }
+    readingList = false;
+  }
 
   // Pick a new parent folder; RomForge moves into it as a whole.
   async function moveHome() {
@@ -136,6 +157,16 @@
         <label for="regions">Preferred regions</label>
         <p class="hint">Every version of a game is kept and listed under one row; that row shows the version from the first region here that you have.</p>
         <input id="regions" bind:value={regionsText} placeholder="USA, World, Europe, Japan" />
+      </section>
+
+      <section class="setting">
+        <span class="flabel">ScummVM games</span>
+        <p class="hint">ScummVM games are named by ScummVM's own game list, read from the ScummVM installed here (kept on this computer, never shared). Read it again after updating ScummVM.</p>
+        <div class="pick">
+          <button onclick={() => readScummvm(false)} disabled={readingList}>{readingList ? "Reading…" : "Read ScummVM's list"}</button>
+          <button onclick={() => readScummvm(true)} disabled={readingList} title="A list saved with: scummvm --dump-all-detection-entries">From a file…</button>
+        </div>
+        {#if scummvmNote}<p class="hint" role="status">{scummvmNote}</p>{/if}
       </section>
 
       <section class="setting">

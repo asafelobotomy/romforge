@@ -95,6 +95,45 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-g", "{rom}"],
         false,
     ),
+    // A folder is mounted as C:, a program run from its folder; images
+    // and archives need the core.
+    emu(
+        "dosbox-staging",
+        &["dosbox-staging", "dosbox"],
+        "io.github.dosbox-staging",
+        &["{rom}"],
+        false,
+    ),
+    emu(
+        "dosbox-x",
+        &["dosbox-x"],
+        "com.dosbox_x.DOSBox-X",
+        &["{rom}"],
+        false,
+    ),
+    // ScummVM finds the game in the folder itself.
+    emu(
+        "scummvm",
+        &["scummvm"],
+        "org.scummvm.ScummVM",
+        &["--path={rom}", "--auto-detect"],
+        false,
+    ),
+    // MAME needs the machine's own ROMs in its rompath.
+    emu(
+        "mame-fm7",
+        &["mame"],
+        "org.mamedev.MAME",
+        &["fm7", "-flop1", "{rom}"],
+        false,
+    ),
+    emu(
+        "mame-fmtowns",
+        &["mame"],
+        "org.mamedev.MAME",
+        &["fmtowns", "-cdrom", "{rom}"],
+        false,
+    ),
 ];
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
@@ -430,6 +469,21 @@ pub fn plan_row(
         files.push((PathBuf::from(path), member));
     }
     files.sort();
+    if let Some(folder) = &row.folder {
+        let folder = PathBuf::from(folder);
+        // A DOS game in a folder starts from its program (DOSBox mounts the
+        // folder around it); in an archive, from the archive. A folder of
+        // its own (ScummVM) is handed over as the folder.
+        if folder.is_dir() {
+            let program = files
+                .iter()
+                .find(|f| f.1.is_empty() && crate::view::is_program(&f.0.to_string_lossy()))
+                .cloned();
+            files = vec![program.unwrap_or((folder, String::new()))];
+        } else {
+            files.retain(|f| f.0 == folder && !f.1.is_empty());
+        }
+    }
     start(conn, env, &row.title, &system, &files, emulator)
 }
 
@@ -469,6 +523,8 @@ fn start(
         (None, Some(s)) => (s, false),
         (None, None) => (first.0.clone(), false),
     };
+    // One disk of a set: start the set's playlist, so disks can be swapped.
+    let rom = playlist_for(&rom).unwrap_or(rom);
 
     let spec = |emulator: String, runner: &Runner, args: Vec<String>| {
         let (program, args) = command(runner, args);
@@ -506,12 +562,26 @@ fn start(
             if !wanted(&name) && !wanted("retroarch") {
                 continue;
             }
+            // A folder goes to a core as the `.scummvm` file in it.
+            let content = if rom.is_dir() {
+                match scummvm_file(&rom) {
+                    Some(f) => f,
+                    None => {
+                        why_not.push(format!(
+                            "{name}: no .scummvm file in the folder (import writes one)"
+                        ));
+                        continue;
+                    }
+                }
+            } else {
+                rom.clone()
+            };
             match env.core(core) {
                 Some(c) => {
                     let args = vec![
                         "-L".to_owned(),
                         c.to_string_lossy().into_owned(),
-                        rom.to_string_lossy().into_owned(),
+                        content.to_string_lossy().into_owned(),
                     ];
                     return Ok(spec(name, &ra, args));
                 }
@@ -579,6 +649,64 @@ fn own_sheet(track: &Path, is_sheet: &dyn Fn(&Path) -> bool) -> Option<PathBuf> 
         Some(Ok(listed)) => listed.iter().any(|f| f == track),
         _ => false,
     })
+}
+
+/// The `.scummvm` file in a game's folder (its game id, for RetroArch).
+fn scummvm_file(dir: &Path) -> Option<PathBuf> {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("scummvm")))
+        .collect();
+    found.sort();
+    found.into_iter().next()
+}
+
+/// An `.m3u` beside `disk` that lists it (import writes one per complete
+/// multi-disk set).
+fn playlist_for(disk: &Path) -> Option<PathBuf> {
+    let dir = disk.parent()?;
+    let mut lists: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u")))
+        .collect();
+    lists.sort();
+    lists.into_iter().find(|l| {
+        std::fs::read_to_string(l).is_ok_and(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .any(|line| dir.join(line) == disk)
+        })
+    })
+}
+
+/// ScummVM's detection list, from the installed ScummVM (on `PATH` or
+/// Flatpak): `--dump-all-detection-entries`, which prints it and exits.
+pub fn scummvm_list(env: &Env) -> Result<Vec<u8>, Error> {
+    let e = KNOWN_EMULATORS
+        .iter()
+        .find(|e| e.name == "scummvm")
+        .ok_or_else(|| Error::Launch("scummvm is not a known emulator".into()))?;
+    let runner = env
+        .known(e)
+        .ok_or_else(|| Error::Launch("ScummVM isn't installed (on PATH or as a Flatpak)".into()))?;
+    let (program, args) = command(&runner, vec!["--dump-all-detection-entries".to_owned()]);
+    let out = std::process::Command::new(&program)
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return Err(Error::Launch(format!(
+            "{} gave no detection list ({}); it needs a ScummVM with --dump-all-detection-entries",
+            program.display(),
+            out.status
+        )));
+    }
+    Ok(out.stdout)
 }
 
 /// Start the emulator and return its process id. romforge doesn't wait for

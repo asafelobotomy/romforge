@@ -11,7 +11,10 @@
 //! be checked once keys are entered); `launchbox` its platform names in the
 //! LaunchBox Games Database (a download the user makes, see `extdb`);
 //! `ident` the kinds of game ID (`ident.rs`) its games carry; `libretro`
-//! its name on libretro's servers when no DAT name gives it.
+//! its name on libretro's servers when no DAT name gives it; `dats`
+//! libretro-database's own DATs (`dat/<name>.dat`) for it; `folders` that
+//! a game is a whole folder (or archive) of files, as DOS and ScummVM
+//! games are, not one ROM.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct System {
@@ -64,6 +67,22 @@ pub struct System {
     /// libretro's name for the system (thumbnails, metadata), where its
     /// No-Intro or DAT names don't give it (Redump-only systems).
     pub libretro: &'static str,
+    /// libretro-database's own DATs (`dat/<name>.dat`, without `.dat`).
+    pub dats: &'static [&'static str],
+    /// Whether a game is a folder of files (or the archive holding it),
+    /// and how import keeps it.
+    pub folders: Folders,
+}
+
+/// How a system's games are stored ([`System::folders`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Folders {
+    /// One ROM, disc or disk set per game.
+    No,
+    /// A folder of files, imported as one zip (DOSBox Pure runs it).
+    Zip,
+    /// A folder of files, imported as a folder (ScummVM reads no archives).
+    Kept,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -105,6 +124,8 @@ const fn s(
         launchbox: &[],
         ident: &[],
         libretro: "",
+        dats: &[],
+        folders: Folders::No,
     }
 }
 
@@ -171,6 +192,16 @@ impl System {
 
     const fn libretro(mut self, name: &'static str) -> Self {
         self.libretro = name;
+        self
+    }
+
+    const fn dats(mut self, names: &'static [&'static str]) -> Self {
+        self.dats = names;
+        self
+    }
+
+    const fn folders(mut self, how: Folders) -> Self {
+        self.folders = how;
         self
     }
 }
@@ -243,7 +274,7 @@ pub const SYSTEMS: &[System] = &[
     s(64, "Odyssey2", "Magnavox Odyssey2 / Philips Videopac", "Magnavox", 2, 1978, "CRC32", 0, 0, &["Magnavox - Odyssey 2"], &["bin"]).nointro(&["Magnavox - Odyssey2"]).cores(&["o2em"]).launchbox(&["Magnavox Odyssey 2", "Philips Videopac+"]),
     s(65, "Supervision", "Watara Supervision", "Watara", 4, 1992, "CRC32", 0, 1, &["Watara - Supervision"], &["sv"]).nointro(&["Watara - Supervision"]).cores(&["potator"]).launchbox(&["Watara Supervision"]),
     s(66, "Pocket Challenge V2", "Benesse Pocket Challenge V2", "Benesse", 5, 1999, "CRC32", 0, 1, &[], &["pc2"]).nointro(&["Benesse - Pocket Challenge V2"]),
-    s(67, "PC-98", "NEC PC-98", "NEC", 3, 1982, "CRC32", 0, 0, &[], &["hdi", "fdi", "d88"]).tosec(&["NEC PC-9801", "NEC PC-9821"]).cores(&["np2kai"]).launchbox(&["NEC PC-9801"]).libretro("NEC - PC-98"),
+    s(67, "PC-98", "NEC PC-98", "NEC", 3, 1982, "CRC32", 0, 0, &[], &["hdi", "fdi", "d88", "hdm", "nhd", "fdd", "thd", "hdd", "nfd", "d98", "98d", "xdf", "dup", "2hd", "tfd", "dcp", "dcu"]).tosec(&["NEC PC-9801", "NEC PC-9821"]).cores(&["np2kai"]).launchbox(&["NEC PC-9801"]).libretro("NEC - PC-98").dats(&["NEC - PC-98"]),
     s(68, "Interton VC 4000", "Interton VC 4000", "Interton", 2, 1978, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Interton - VC 4000"]).launchbox(&["Interton VC 4000"]),
     s(69, "Arcadia 2001", "Emerson Arcadia 2001", "Emerson", 2, 1982, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Emerson - Arcadia 2001"]).launchbox(&["Emerson Arcadia 2001"]),
     s(70, "Vectrex", "GCE Vectrex", "GCE", 2, 1982, "CRC32", 0, 0, &["GCE - Vectrex"], &["vec", "gam", "bin"]).nointro(&["GCE - Vectrex"]).homebrew(&["GCE - Vectrex"]).cores(&["vecx"]).launchbox(&["GCE Vectrex"]),
@@ -257,14 +288,14 @@ pub const SYSTEMS: &[System] = &[
     s(78, "Casio PV-1000", "Casio PV-1000", "Casio", 2, 1983, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Casio - PV-1000"]).launchbox(&["Casio PV-1000"]),
     s(79, "Super A'Can", "Funtech Super A'Can", "Funtech", 4, 1995, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Funtech - Super Acan"]).launchbox(&["Funtech Super Acan"]),
     s(80, "Casio Loopy", "Casio Loopy", "Casio", 5, 1995, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Casio - Loopy"]).launchbox(&["Casio Loopy"]),
-    s(81, "Sharp X1", "Sharp X1", "Sharp", 3, 1982, "CRC32", 0, 0, &[], &["2d", "d88", "tap"]).nointro(&["Sharp - X1"]).tosec(&["Sharp X1", "Sharp X1 Turbo"]).launchbox(&["Sharp X1"]),
+    s(81, "Sharp X1", "Sharp X1", "Sharp", 3, 1982, "CRC32", 0, 0, &[], &["2d", "d88", "tap", "dx1", "2hd", "tfd", "88d", "hdm", "xdf", "dup"]).nointro(&["Sharp - X1"]).tosec(&["Sharp X1", "Sharp X1 Turbo"]).cores(&["x1"]).launchbox(&["Sharp X1"]),
     s(82, "X68000", "Sharp X68000", "Sharp", 4, 1987, "CRC32", 0, 0, &[], &["dim", "xdf", "hdf", "d88"]).nointro(&["Sharp - X68000"]).tosec(&["Sharp X68000"]).cores(&["px68k"]).launchbox(&["Sharp X68000"]),
-    s(83, "PC", "IBM PC Compatible", "IBM", 5, 1981, "MD5", 1, 0, &[], &["iso", "img"]).redump(&["pc"]).tosec(&["IBM PC Compatibles"]).launchbox(&["MS-DOS", "Windows", "Windows 3.X"]),
+    s(83, "PC", "IBM PC Compatible", "IBM", 5, 1981, "MD5", 1, 0, &[], &["iso", "img"]).redump(&["pc"]).cores(&["dosbox_pure"]).launchbox(&["Windows", "Windows 3.X"]),
     s(84, "PlayStation 4", "Sony PlayStation 4", "Sony", 8, 2013, "SHA1", 1, 0, &[], &["pkg"]).launchbox(&["Sony Playstation 4"]).libretro("Sony - PlayStation 4"),
     s(85, "Xbox One", "Microsoft Xbox One", "Microsoft", 8, 2013, "SHA1", 1, 0, &[], &[]).launchbox(&["Microsoft Xbox One"]),
     s(86, "Mac", "Apple Macintosh", "Apple", 3, 1984, "MD5", 1, 0, &[], &["dsk", "img", "hfv"]).redump(&["mac"]).tosec(&["Apple Macintosh"]).launchbox(&["Apple Mac OS"]),
-    s(87, "FM Towns", "Fujitsu FM Towns", "Fujitsu", 4, 1989, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump(&["fmt"]).tosec(&["Fujitsu FM Towns"]).launchbox(&["Fujitsu FM Towns Marty"]),
-    s(88, "PC-88", "NEC PC-8801", "NEC", 3, 1981, "CRC32", 0, 0, &[], &["d88", "t88"]).tosec(&["NEC PC-8801"]).launchbox(&["NEC PC-8801"]),
+    s(87, "FM Towns", "Fujitsu FM Towns", "Fujitsu", 4, 1989, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump(&["fmt"]).tosec(&["Fujitsu FM Towns"]).emulators(&["mame-fmtowns"]).launchbox(&["Fujitsu FM Towns Marty"]),
+    s(88, "PC-88", "NEC PC-8801", "NEC", 3, 1981, "CRC32", 0, 0, &[], &["d88", "t88", "cmt", "u88"]).tosec(&["NEC PC-8801"]).cores(&["quasi88"]).launchbox(&["NEC PC-8801"]).libretro("NEC - PC-88"),
     s(89, "CDTV", "Commodore CDTV", "Commodore", 4, 1991, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump(&["cdtv"]).launchbox(&["Commodore CDTV"]).libretro("Commodore - CDTV"),
     s(90, "Amiga CD", "Amiga CD", "Commodore", 4, 1993, "MD5", 1, 0, &[], &["cue", "bin", "chd", "iso"]).redump(&["acd"]),
     s(91, "Archimedes", "Acorn Archimedes", "Acorn", 4, 1987, "MD5", 1, 0, &[], &["adf", "apd"]).redump(&["arch"]).tosec(&["Acorn Archimedes"]).launchbox(&["Acorn Archimedes"]),
@@ -289,6 +320,9 @@ pub const SYSTEMS: &[System] = &[
     s(110, "Game Master", "Hartung Game Master", "Hartung", 4, 1990, "CRC32", 0, 1, &[], &["bin"]).nointro(&["Hartung - Game Master"]).launchbox(&["Hartung Game Master"]),
     s(111, "Symbian", "Mobile Symbian", "Nokia", 7, 2000, "CRC32", 0, 1, &[], &["sis"]).nointro(&["Mobile - Symbian"]),
     s(112, "Adventure Vision", "Entex Adventure Vision", "Entex", 2, 1982, "CRC32", 0, 0, &[], &["bin"]).nointro(&["Entex - Adventure Vision"]).launchbox(&["Entex Adventure Vision"]),
+    s(113, "DOS", "MS-DOS", "Microsoft", 4, 1981, "MD5", 0, 0, &[], &["exe", "com", "bat", "ima", "imd", "td0", "vfd"]).tosec(&["IBM PC Compatibles"]).dats(&["DOS"]).cores(&["dosbox_pure", "dosbox_core", "dosbox_svn"]).emulators(&["dosbox-staging", "dosbox-x"]).wikidata(&["Q47604"]).ss(135).igdb(&[13]).launchbox(&["MS-DOS"]).libretro("DOS").folders(Folders::Zip),
+    s(114, "ScummVM", "ScummVM", "ScummVM", 0, 2001, "MD5", 0, 0, &[], &[]).cores(&["scummvm"]).emulators(&["scummvm"]).ss(123).libretro("ScummVM").folders(Folders::Kept),
+    s(115, "FM-7", "Fujitsu FM-7 / FM-77", "Fujitsu", 3, 1982, "CRC32", 0, 0, &[], &["d77", "t77"]).tosec(&["Fujitsu FM-7"]).emulators(&["mame-fm7"]).launchbox(&["Fujitsu FM-7"]),
 ];
 
 /// Find a system by its key (case-insensitive), e.g. `NES` or `game boy`.

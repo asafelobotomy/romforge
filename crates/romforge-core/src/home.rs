@@ -147,6 +147,7 @@ const ROOT_KEY: &str = "home_root";
 /// Every stored path, by table and column: rewritten when the folder moves.
 const PATH_COLUMNS: &[(&str, &str)] = &[
     ("files", "path"),
+    ("folder_games", "path"),
     ("scan_roots", "path"),
     ("art", "path"),
     ("dats", "source_path"),
@@ -197,8 +198,8 @@ pub(crate) fn heal(conn: &mut rusqlite::Connection, root: &Path) -> Result<bool,
 /// Move the whole folder into `new_parent` (as `new_parent/RomForge`),
 /// with no connection open on its database: one rename on the same drive,
 /// else file by file, each copy checked before its original goes. Nothing
-/// is ever replaced. The pointer file follows; the database fixes its
-/// stored paths the next time it opens ([`heal`]).
+/// is ever replaced. The caller records the new place ([`Home::remember`]);
+/// the database fixes its stored paths the next time it opens ([`heal`]).
 pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
     let parent = std::path::absolute(new_parent)?;
     let to = if parent.file_name().is_some_and(|n| n == DIR) {
@@ -227,7 +228,6 @@ pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
     }
     let new = Home::at(&to)
         .ok_or_else(|| Error::Settings(format!("{} has no marker after the move", to.display())))?;
-    new.remember()?;
     Ok(new)
 }
 
@@ -285,7 +285,7 @@ pub fn adopt(home: &Home, old_db: &Path, old_art: &Path) -> Result<Adopted, Erro
 
 /// Move every file under `from` to the same place under `to`, then remove
 /// the folders left empty. Returns the number of files moved.
-fn move_tree(from: &Path, to: &Path) -> Result<usize, Error> {
+pub(crate) fn move_tree(from: &Path, to: &Path) -> Result<usize, Error> {
     let mut n = 0;
     for e in walkdir::WalkDir::new(from).follow_links(false) {
         let e = e.map_err(std::io::Error::from)?;

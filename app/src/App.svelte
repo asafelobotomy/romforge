@@ -143,6 +143,7 @@
     duplicate: "Duplicate",
     by_you: "Identified by you",
     derivative: "Translation or hack (identified by you)",
+    detected: "Identified by ScummVM's game list",
     unknown: "Unknown",
   };
   const artLabel = {
@@ -424,7 +425,7 @@
               <button class="tr" class:sel={r.id === selected} class:version={!r.main} onclick={() => open(r.id)}>
                 <span class="title">{r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
-                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "unknown" ? "?" : "~"}</span>
+                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "detected" ? "◆" : r.status === "unknown" ? "?" : "~"}</span>
                 <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
                 {#each ["boxart", "title", "snap"] as k}
                   <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>
@@ -503,6 +504,7 @@
                   {#if detail.derived}<dt>{detail.derived.relation === "translation" ? "Translation of" : "Hack of"}</dt><dd>{detail.derived.base}{detail.derived.tag ? ` (${detail.derived.tag})` : ""}</dd>{/if}
                   {#if edition(detail.name)}<dt>Edition</dt><dd>{edition(detail.name)}</dd>{/if}
                   <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
+                  {#if row.folder}<dt>Folder</dt><dd class="fpath" title="The game is this whole folder (or archive): Import and Play take all of it"><bdi>{row.folder}</bdi></dd>{/if}
                 </dl>
               </div>
             </div>
@@ -796,5 +798,5 @@
   :global(.app .search-dialog) { width: min(64rem, calc(100vw - 2rem)); }
   :global(.app .ctitle) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button.link { background: none; border: none; padding: 0 0.3rem; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
-  :global(.app .badge.by_you), .ind.by_you, :global(.app .badge.derivative), .ind.derivative { color: var(--accent); }
+  :global(.app .badge.by_you), .ind.by_you, :global(.app .badge.derivative), .ind.derivative, :global(.app .badge.detected), .ind.detected { color: var(--accent); }
 </style>

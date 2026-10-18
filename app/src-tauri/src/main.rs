@@ -274,7 +274,8 @@ async fn home_move(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
         };
         *w = Library::open_in_memory()?;
         *r = Library::open_in_memory()?;
-        let moved = romforge_core::home::relocate(&old, Path::new(&parent));
+        let moved =
+            romforge_core::home::relocate(&old, Path::new(&parent)).and_then(|h| h.remember().map(|()| h));
         let at = moved.as_ref().map_or_else(|_| old.db(), |h| h.db());
         *w = Library::open(&at)?;
         *r = Library::open(&at)?;
@@ -327,6 +328,17 @@ async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<Sett
 #[derive(serde::Serialize)]
 struct SettingsInfo {
     default_staging: String,
+}
+
+/// Read ScummVM's detection list from the installed ScummVM, or from
+/// `file` (one saved with `scummvm --dump-all-detection-entries`).
+#[tauri::command]
+async fn scummvm_list(db: tauri::State<'_, Db>, file: Option<String>) -> Res<romforge_core::ScummvmList> {
+    with(&db, move |lib| match file {
+        Some(f) => lib.scummvm_import(&std::fs::read(f)?),
+        None => lib.scummvm_read(&romforge_core::launch::Env::detect()),
+    })
+    .await
 }
 
 #[tauri::command]
@@ -558,6 +570,7 @@ fn main() {
             get_settings,
             save_settings,
             settings_info,
+            scummvm_list,
             search_queue,
             search_find,
             search_preview,

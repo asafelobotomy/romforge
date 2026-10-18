@@ -623,8 +623,10 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     4. *Organize* stays for setups without a RomForge folder; with one,
        its screen and command point to Import.
 
-14. **DOS, ScummVM and Japanese computers** (decided 2026-10-18; not
-    built). Researched: PC-88 and PC-98 are already systems with TOSEC
+14. **DOS, ScummVM and Japanese computers** (decided 2026-10-18; *built*
+    the same day: `scummvm.rs`, folder rows in `view.rs`, folder imports
+    in `cleanup.rs`, `scummvm read|import`; not yet run with real games or
+    emulators). Researched: PC-88 and PC-98 are already systems with TOSEC
     DATs; `PC` has TOSEC and Redump but nothing to run it; libretro's
     `dat/DOS.dat` (24,631 games) names each game by one `.exe`, size and
     CRC only; `dat/ScummVM.dat` only maps ScummVM game ids to titles.
@@ -662,8 +664,17 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        the emulator can swap disks; launch starts the playlist.
     6. *More Japanese computers.* Launchers for Sharp X1 (`x1` core),
        FM-7 and FM Towns where a free emulator exists (to check which).
-    **Open:** check the systems' new emulator rows against the real
-    programs; none of these emulators is on the dev machine yet.
+    As built: a new `DOS` system takes TOSEC's IBM PC DATs and `DOS.dat`
+    from `PC` (which keeps Redump's CDs and Windows); `ScummVM` and `FM-7`
+    are new systems. A ScummVM folder is "identified by ScummVM's list"
+    (its own status), worked out again after every scan. A program loose
+    in a scanned folder is not taken as a folder game. Playlists list the
+    zips (or CHDs) as imported.
+    **Open:** check the new emulator rows against the real programs (none
+    of them is on the dev machine; tested with stand-in scripts); whether
+    each floppy core reads zips listed in an `.m3u`; whether the SCUMM
+    engine's games are in ScummVM's dump; the TOSEC name "Fujitsu FM-7" is
+    unchecked; naming a ScummVM folder by hand is not built.
 
 ## Code review follow-ups (2026-10-18)
 

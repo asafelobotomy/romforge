@@ -47,6 +47,11 @@ pub enum Format {
     ChdCd,
     /// A DVD image (`.iso`) into a DVD CHD.
     ChdDvd,
+    /// A game that is a folder (or an archive of one), every file of it
+    /// into one zip (DOS).
+    Folder,
+    /// A game that is a folder, copied as a folder (ScummVM).
+    Dir,
 }
 
 /// One ROM of a game and where its data is now.
@@ -88,6 +93,14 @@ pub struct Item {
     /// is written, its `copies` outside only go to the trash.
     #[serde(default)]
     pub existing: bool,
+    /// For a game that is a folder: the folder, or the archive holding it.
+    /// Everything in it goes, and it goes to the trash whole.
+    #[serde(default)]
+    pub folder: Option<PathBuf>,
+    /// For a ScummVM game: its game id, written as `<id>.scummvm` in the
+    /// folder for RetroArch's core.
+    #[serde(default)]
+    pub code: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -104,6 +117,9 @@ pub struct CleanupReport {
     pub batch_id: i64,
     pub done: usize,
     pub trashed: usize,
+    /// `.m3u` playlists written for complete multi-disk sets.
+    #[serde(default)]
+    pub playlists: usize,
     pub failed: Vec<(String, String)>,
 }
 
@@ -186,10 +202,7 @@ pub fn plan(
         if only.is_some_and(|ids| !ids.contains(&row.id)) {
             continue;
         }
-        if !matches!(
-            row.status,
-            RowStatus::Verified | RowStatus::ByYou | RowStatus::Derivative
-        ) {
+        if !row.status.identified() {
             if only.is_some() {
                 plan.skipped
                     .push((row.title.clone(), "identify it first (Search)".into()));
@@ -199,6 +212,37 @@ pub fn plan(
         let Some(system) = row.system.as_deref().and_then(systems::by_key) else {
             continue;
         };
+        if let Some(place) = &row.folder {
+            match folder_item(
+                conn,
+                &row,
+                system,
+                Path::new(place),
+                &dest,
+                &source,
+                games.as_deref(),
+            )? {
+                Ok(None) => {}
+                Ok(Some(mut it)) => {
+                    if it.target.exists() {
+                        plan.skipped.push((
+                            row.title.clone(),
+                            format!("{} already exists", it.target.display()),
+                        ));
+                    } else if !taken.insert(it.target.clone()) {
+                        plan.skipped
+                            .push((row.title.clone(), "another game has the same name".into()));
+                    } else {
+                        if !s.keep_originals {
+                            it.trash.push(it.folder.clone().unwrap_or_default());
+                        }
+                        items.push(it);
+                    }
+                }
+                Err(why) => plan.skipped.push((row.title.clone(), why)),
+            }
+            continue;
+        }
         let parts = match row.status {
             RowStatus::Verified => verified_parts(conn, system.id, &row.title, &source)?,
             _ => named_parts(conn, &row.id, &source)?,
@@ -238,6 +282,8 @@ pub fn plan(
                         copies: outside,
                         sheet: None,
                         existing: true,
+                        folder: None,
+                        code: None,
                     });
                 }
                 continue;
@@ -317,20 +363,22 @@ pub fn plan(
             copies,
             sheet,
             existing: false,
+            folder: None,
+            code: None,
         });
     }
 
     // Originals: trashed only when everything in them is taken by the batch
     // (an archive's own member list decides, not just what was scanned).
     let mut used: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
-    for it in &items {
+    for it in items.iter().filter(|it| it.folder.is_none()) {
         for p in it.parts.iter().chain(&it.copies).chain(&it.sheet) {
             used.entry(p.path.clone()).or_default().insert(p.member.clone());
         }
     }
     let batch: BTreeSet<String> = items.iter().map(|it| it.row_id.clone()).collect();
     let mut files_at = conn.prepare("SELECT file_id FROM files WHERE path = ?1")?;
-    for it in &mut items {
+    for it in items.iter_mut().filter(|it| it.folder.is_none()) {
         let paths: BTreeSet<&PathBuf> = it
             .parts
             .iter()
@@ -387,6 +435,11 @@ fn safe_member_name(name: &str) -> bool {
 
 /// Every file in a zip or 7z archive.
 fn archive_names(path: &Path) -> Result<Vec<String>, Error> {
+    Ok(archive_entries(path)?.into_iter().map(|(n, _)| n).collect())
+}
+
+/// Every file in a zip or 7z archive, with its size.
+fn archive_entries(path: &Path) -> Result<Vec<(String, u64)>, Error> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
     match ext.as_deref() {
         Some("zip") => {
@@ -395,7 +448,7 @@ fn archive_names(path: &Path) -> Result<Vec<String>, Error> {
             for i in 0..zip.len() {
                 let m = zip.by_index_raw(i)?;
                 if !m.is_dir() {
-                    out.push(m.name()?.into_owned());
+                    out.push((m.name()?.into_owned(), m.size()));
                 }
             }
             Ok(out)
@@ -406,13 +459,287 @@ fn archive_names(path: &Path) -> Result<Vec<String>, Error> {
                 .files
                 .iter()
                 .filter(|e| !e.is_directory())
-                .map(|e| e.name().to_owned())
+                .map(|e| (e.name().to_owned(), e.size()))
                 .collect())
         }
         _ => Err(Error::Cleanup(format!(
             "{} isn't an archive romforge reads",
             path.display()
         ))),
+    }
+}
+
+/// The import of a game that is a folder: every file in it (or in the
+/// archive holding it) under its own path. `Ok(Err(why))` when it can't
+/// go; `Ok(Ok(None))` when it is in RomForge already or outside what is
+/// imported.
+fn folder_item(
+    conn: &Connection,
+    row: &view::GameRow,
+    system: &systems::System,
+    place: &Path,
+    dest: &Path,
+    source: &Source,
+    games: Option<&Path>,
+) -> Result<Result<Option<Item>, String>, Error> {
+    if games.is_some_and(|g| place.starts_with(g)) || !source.contains(place) {
+        return Ok(Ok(None));
+    }
+    let mut parts = Vec::new();
+    if place.is_dir() {
+        for e in walkdir::WalkDir::new(place)
+            .follow_links(false)
+            .sort_by_file_name()
+        {
+            let e = e.map_err(std::io::Error::from)?;
+            if !e.file_type().is_file() {
+                continue;
+            }
+            let rel = e.path().strip_prefix(place).unwrap_or(e.path());
+            parts.push(Part {
+                name: rel.to_string_lossy().replace('\\', "/"),
+                path: e.path().to_owned(),
+                member: String::new(),
+                size: e.metadata().map_err(std::io::Error::from)?.len(),
+                sha1: String::new(),
+            });
+        }
+    } else {
+        for (name, size) in archive_entries(place)? {
+            parts.push(Part {
+                name: name.clone(),
+                path: place.to_owned(),
+                member: name,
+                size,
+                sha1: String::new(),
+            });
+        }
+    }
+    if parts.is_empty() {
+        return Ok(Err("the folder is empty".into()));
+    }
+    if let Some(bad) = parts.iter().find(|p| !safe_member_name(&p.name)) {
+        return Ok(Err(format!(
+            "it holds {:?}, which can't be imported safely",
+            bad.name
+        )));
+    }
+    let name = sanitize(&row.title);
+    let dir = dest.join(sanitize(system.key));
+    let (format, target) = match system.folders {
+        systems::Folders::Kept if place.is_dir() => (Format::Dir, dir.join(&name)),
+        systems::Folders::Kept => {
+            return Ok(Err("ScummVM games are imported as folders, not archives".into()));
+        }
+        _ => (Format::Folder, dir.join(format!("{name}.zip"))),
+    };
+    let code = match row.id.strip_prefix("d:").and_then(|id| id.parse::<i64>().ok()) {
+        Some(id) => Some(conn.query_row(
+            "SELECT code FROM folder_games WHERE folder_id = ?1",
+            [id],
+            |r| r.get(0),
+        )?),
+        None => None,
+    };
+    Ok(Ok(Some(Item {
+        row_id: row.id.clone(),
+        title: row.title.clone(),
+        system: system.key.to_owned(),
+        format,
+        target,
+        sidecar: None,
+        parts,
+        trash: Vec::new(),
+        kept: Vec::new(),
+        copies: Vec::new(),
+        sheet: None,
+        existing: false,
+        folder: Some(place.to_owned()),
+        code,
+    })))
+}
+
+/// A reader that hashes what passes through it.
+struct Sha1Read<R> {
+    inner: R,
+    sha1: sha1::Sha1,
+}
+
+impl<R: Read> Read for Sha1Read<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use sha1::Digest as _;
+        let n = self.inner.read(buf)?;
+        self.sha1.update(&buf[..n]);
+        Ok(n)
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The SHA1 of a whole stream.
+fn sha1_of(r: impl Read) -> std::io::Result<String> {
+    use sha1::Digest as _;
+    let mut h = Sha1Read {
+        inner: r,
+        sha1: sha1::Sha1::new(),
+    };
+    std::io::copy(&mut h, &mut std::io::sink())?;
+    Ok(hex(&h.sha1.finalize()))
+}
+
+/// Copy `r` into `w`, returning the SHA1 of what was copied.
+fn copy_hashed(r: impl Read, w: &mut impl Write) -> std::io::Result<String> {
+    use sha1::Digest as _;
+    let mut h = Sha1Read {
+        inner: r,
+        sha1: sha1::Sha1::new(),
+    };
+    std::io::copy(&mut h, w)?;
+    Ok(hex(&h.sha1.finalize()))
+}
+
+/// A folder game (or the archive holding it) into one zip, every file
+/// under its own path, then read back: each must hash as it was read.
+fn write_folder_zip(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<(), Error> {
+    let src = item.folder.as_deref().unwrap_or(Path::new(""));
+    let mut zip = zip::ZipWriter::new(File::create_new(out)?);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .large_file(true);
+    let mut sums: Vec<(String, String)> = Vec::new();
+    let ext = src.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+    if src.is_dir() {
+        for p in &item.parts {
+            zip.start_file(&p.name, opts)?;
+            sums.push((
+                p.name.clone(),
+                copy_hashed(BufReader::new(File::open(&p.path)?), &mut zip)?,
+            ));
+        }
+    } else if ext.as_deref() == Some("zip") {
+        let mut a = zip::ZipArchive::new(BufReader::new(File::open(src)?))?;
+        for i in 0..a.len() {
+            let mut m = a.by_index(i)?;
+            if m.is_dir() {
+                continue;
+            }
+            let name = m.name()?.into_owned();
+            zip.start_file(&name, opts)?;
+            sums.push((name, copy_hashed(&mut m, &mut zip)?));
+        }
+    } else {
+        // A 7z is one stream: its members are copied in order, in one pass.
+        let mut a = sevenz_rust2::ArchiveReader::open(src, sevenz_rust2::Password::empty())?;
+        let mut failed: Option<Error> = None;
+        a.for_each_entries(|entry, reader| {
+            if entry.is_directory() {
+                return Ok(true);
+            }
+            let r = (|| -> Result<String, Error> {
+                zip.start_file(entry.name(), opts)?;
+                Ok(copy_hashed(&mut *reader, &mut zip)?)
+            })();
+            match r {
+                Ok(sum) => {
+                    sums.push((entry.name().to_owned(), sum));
+                    Ok(true)
+                }
+                Err(e) => {
+                    failed = Some(e);
+                    Ok(false)
+                }
+            }
+        })?;
+        if let Some(e) = failed {
+            return Err(e);
+        }
+    }
+    for (name, data) in extras {
+        zip.start_file(format!("romforge/{name}"), opts)?;
+        zip.write_all(data)?;
+    }
+    zip.finish()?.sync_all()?;
+    if sums.len() != item.parts.len() {
+        return Err(Error::Cleanup(format!(
+            "{} changed since the plan ({} files, {} now)",
+            src.display(),
+            item.parts.len(),
+            sums.len()
+        )));
+    }
+    let mut back = zip::ZipArchive::new(BufReader::new(File::open(out)?))?;
+    for (name, sum) in &sums {
+        if sha1_of(back.by_name(name)?)? != *sum {
+            return Err(Error::Cleanup(format!(
+                "{}: {name} doesn't hash as before",
+                out.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A folder game copied as a folder into `out` (which must not exist),
+/// each file read back and checked; its art and details go in
+/// `romforge/`, and a ScummVM game gets its `<id>.scummvm`.
+fn copy_folder(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<(), Error> {
+    std::fs::create_dir(out)?;
+    for p in &item.parts {
+        let to = out.join(&p.name);
+        if let Some(d) = to.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let mut w = File::create_new(&to)?;
+        let sum = copy_hashed(BufReader::new(File::open(&p.path)?), &mut w)?;
+        w.sync_all()?;
+        if sha1_of(BufReader::new(File::open(&to)?))? != sum {
+            return Err(Error::Cleanup(format!(
+                "{}: {} doesn't hash as before",
+                out.display(),
+                p.name
+            )));
+        }
+    }
+    if !extras.is_empty() && !out.join("romforge").exists() {
+        std::fs::create_dir(out.join("romforge"))?;
+        for (name, data) in extras {
+            std::fs::write(out.join("romforge").join(name), data)?;
+        }
+    }
+    if let Some(code) = &item.code {
+        let has = item
+            .parts
+            .iter()
+            .any(|p| p.name.to_ascii_lowercase().ends_with(".scummvm"));
+        if !has {
+            std::fs::write(out.join(format!("{}.scummvm", sanitize(code))), code)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move a file, or a folder whole (one rename on the same drive, else file
+/// by file).
+fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    if !from.is_dir() {
+        return move_file(from, to).map(|_| ());
+    }
+    if to.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("{} exists", to.display()),
+        ));
+    }
+    if let Some(p) = to.parent() {
+        std::fs::create_dir_all(p)?;
+    }
+    match std::fs::rename(from, to) {
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => crate::home::move_tree(from, to)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::other(e.to_string())),
+        r => r,
     }
 }
 
@@ -658,6 +985,7 @@ pub fn details_md(d: &view::GameDetail) -> String {
             );
             &derived
         }
+        RowStatus::Detected => "identified by ScummVM's detection list",
         _ => "not identified",
     };
     s += &format!(
@@ -1017,6 +1345,26 @@ pub fn apply(
             }
             let dir = item.target.parent().unwrap_or(Path::new("."));
             std::fs::create_dir_all(dir)?;
+            if item.format == Format::Dir {
+                let name = item.target.file_name().unwrap_or_default().to_string_lossy();
+                let part = dir.join(format!(".{name}.romforge-part"));
+                let _ = std::fs::remove_dir_all(&part);
+                let extras = extras(conn, &item.row_id)?;
+                if let Err(e) = copy_folder(item, &extras, &part) {
+                    let _ = std::fs::remove_dir_all(&part);
+                    return Err(e);
+                }
+                if item.target.exists() {
+                    let _ = std::fs::remove_dir_all(&part);
+                    return Err(Error::Cleanup(format!(
+                        "{} already exists",
+                        item.target.display()
+                    )));
+                }
+                std::fs::rename(&part, &item.target)?;
+                journal_output(conn, batch_id, &item.target, "dir")?;
+                return Ok(false);
+            }
             let name = item
                 .target
                 .file_name()
@@ -1028,6 +1376,7 @@ pub fn apply(
             let extras = extras(conn, &item.row_id)?;
             let written = match item.format {
                 Format::Zip => write_zip(item, &extras, &staging, &part).map(|()| false),
+                Format::Folder => write_folder_zip(item, &extras, &part).map(|()| false),
                 _ => write_chd(item, &staging, &part),
             };
             let took_sheet = match written {
@@ -1081,6 +1430,11 @@ pub fn apply(
         }
     }
     let _ = std::fs::remove_dir_all(&staging_root);
+    let written: Vec<&Item> = ok.iter().copied().filter(|i| !i.existing).collect();
+    match write_playlists(conn, batch_id, &written) {
+        Ok(n) => report.playlists = n,
+        Err(e) => report.failed.push(("playlists".into(), e.to_string())),
+    }
     // Originals last, once every game in them is safely written.
     if !plan.keep_originals {
         for item in ok {
@@ -1099,6 +1453,79 @@ pub fn apply(
         report.batch_id = 0;
     }
     Ok(report)
+}
+
+/// A title's disk or disc number, the set size if it says ("Disk 1 of 4",
+/// TOSEC; "Disc 2", Redump), and the title without that group.
+pub fn disk_of(title: &str) -> Option<(u32, Option<u32>, String)> {
+    for word in ["(Disk ", "(Disc "] {
+        let Some(at) = title.find(word) else { continue };
+        let rest = &title[at + word.len()..];
+        let end = rest.find(')')?;
+        let inner = &rest[..end];
+        let (n, of) = match inner.split_once(" of ") {
+            Some((n, m)) => (n.trim().parse().ok()?, Some(m.trim().parse().ok()?)),
+            None => (inner.trim().parse().ok()?, None),
+        };
+        let base = format!("{}{}", &title[..at], &rest[end + 1..]);
+        let base = base.split_whitespace().collect::<Vec<_>>().join(" ");
+        return Some((n, of, base.trim().to_owned()));
+    }
+    None
+}
+
+/// For each multi-disk set this batch wrote a disk of, a `<set>.m3u` in
+/// the same folder listing its disks in order, once every disk is there
+/// (all "of N", else disks 1, 2, ... with no gap). An existing playlist
+/// is left alone. Journaled, so undo removes it.
+fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) -> Result<usize, Error> {
+    let mut sets: BTreeSet<(PathBuf, String)> = BTreeSet::new();
+    for it in written {
+        if let (Some((_, _, base)), Some(dir)) = (disk_of(&it.title), it.target.parent()) {
+            sets.insert((dir.to_owned(), base));
+        }
+    }
+    let mut n = 0;
+    for (dir, base) in sets {
+        let list = dir.join(format!("{}.m3u", sanitize(&base)));
+        if list.exists() {
+            continue;
+        }
+        // Every game file of the set in the folder, by disk number.
+        let mut disks: BTreeMap<u32, (Option<u32>, String)> = BTreeMap::new();
+        for e in std::fs::read_dir(&dir)?.filter_map(Result::ok) {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Some((stem, ext)) = name.rsplit_once('.') else {
+                continue;
+            };
+            if !["zip", "chd", "7z"].contains(&ext.to_ascii_lowercase().as_str()) || !e.path().is_file() {
+                continue;
+            }
+            if let Some((d, of, b)) = disk_of(stem)
+                && sanitize(&b) == sanitize(&base)
+            {
+                disks.entry(d).or_insert((of, name));
+            }
+        }
+        let count = disks.values().find_map(|(of, _)| *of);
+        let complete = disks.len() >= 2
+            && disks.keys().copied().eq(1..=disks.len() as u32)
+            && count.is_none_or(|c| c as usize == disks.len());
+        if !complete {
+            continue;
+        }
+        let body: String = disks.values().map(|(_, f)| format!("{f}\n")).collect();
+        let tmp = dir.join(format!(".{}.romforge-part", sanitize(&base)));
+        std::fs::write(&tmp, body)?;
+        if list.exists() {
+            let _ = std::fs::remove_file(&tmp);
+            continue;
+        }
+        std::fs::rename(&tmp, &list)?;
+        journal_output(conn, batch, &list, "file")?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &str) -> Result<(), Error> {
@@ -1133,7 +1560,7 @@ fn trash(conn: &Connection, batch: i64, original: &Path, home: Option<&Home>) ->
         "INSERT INTO cleanup_trash (batch_id, original, trashed) VALUES (?1, ?2, ?3)",
         params![batch, original.to_string_lossy(), to.to_string_lossy()],
     )?;
-    if let Err(e) = move_file(original, &to) {
+    if let Err(e) = move_path(original, &to) {
         conn.execute(
             "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
             params![batch, to.to_string_lossy()],
@@ -1182,7 +1609,7 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
             )?;
             continue;
         }
-        match move_file(Path::new(&at), Path::new(&original)) {
+        match move_path(Path::new(&at), Path::new(&original)) {
             Ok(_) => {
                 conn.execute(
                     "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
@@ -1297,6 +1724,20 @@ mod tests {
         ] {
             assert!(!ok(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn disk_numbers() {
+        assert_eq!(
+            disk_of("Ys (1987)(Nihon Falcom)(Disk 2 of 3)"),
+            Some((2, Some(3), "Ys (1987)(Nihon Falcom)".into()))
+        );
+        assert_eq!(
+            disk_of("Final Fantasy VII (USA) (Disc 1)"),
+            Some((1, None, "Final Fantasy VII (USA)".into()))
+        );
+        assert_eq!(disk_of("Game (Disk A)"), None);
+        assert_eq!(disk_of("Game (USA)"), None);
     }
 
     use super::*;

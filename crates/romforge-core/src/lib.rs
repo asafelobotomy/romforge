@@ -23,6 +23,7 @@ pub mod organize;
 pub mod patch;
 mod report;
 pub mod scan;
+pub mod scummvm;
 pub mod search;
 pub mod settings;
 pub mod suggest;
@@ -111,6 +112,14 @@ pub struct ScanReport {
 
 /// One source folder's rescan: its report, or the folder and why it failed.
 pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
+
+/// What [`Library::scummvm_import`] kept: entries in the list, ScummVM
+/// games found in the scanned folders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ScummvmList {
+    pub entries: usize,
+    pub games: usize,
+}
 
 /// Running totals passed to the progress callback after every file or member.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
@@ -773,6 +782,7 @@ impl Library {
             })
             .collect();
 
+        let scummvm_list = self.extdb_dir().map(|d| d.join(scummvm::LIST_FILE));
         let tx = self.conn.transaction()?;
         let root_str = root.to_string_lossy().into_owned();
         // What is already known under the folder (from any scan made with the
@@ -965,8 +975,33 @@ impl Library {
             )?;
         }
         identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
+        scummvm::refresh(&tx, scummvm_list.as_deref())?;
         tx.commit()?;
         Ok(report)
+    }
+
+    /// Keep ScummVM's detection list (as `scummvm
+    /// --dump-all-detection-entries` writes it) in the databases folder and
+    /// name the ScummVM games in every scanned folder by it.
+    pub fn scummvm_import(&mut self, list: &[u8]) -> Result<ScummvmList, Error> {
+        let entries = scummvm::parse(&String::from_utf8_lossy(list))?.len();
+        let dir = self
+            .extdb_dir()
+            .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM list".into()))?;
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(scummvm::LIST_FILE);
+        let tmp = dir.join(format!(".{}.part", scummvm::LIST_FILE));
+        std::fs::write(&tmp, list)?;
+        std::fs::rename(&tmp, &path)?;
+        let games = scummvm::refresh(&self.conn, Some(&path))?;
+        Ok(ScummvmList { entries, games })
+    }
+
+    /// Ask the installed ScummVM for its detection list, then
+    /// [`Library::scummvm_import`] it.
+    pub fn scummvm_read(&mut self, env: &launch::Env) -> Result<ScummvmList, Error> {
+        let list = launch::scummvm_list(env)?;
+        self.scummvm_import(&list)
     }
 
     /// Recompute all matches, e.g. after removing a DAT.

@@ -136,3 +136,66 @@ fn art_and_databases_live_in_romforge() {
     assert_eq!(elsewhere.home(), None);
     assert_eq!(elsewhere.extdb_dir(), Some(tmp.path().join("databases")));
 }
+
+/// A Logiqx DAT for `system` with one ROM per game: (game, rom name, data).
+fn write_dat(path: &Path, name: &str, games: &[(&str, &str, &[u8])]) {
+    let mut xml = format!("<?xml version=\"1.0\"?>\n<datafile><header><name>{name}</name></header>\n");
+    for (game, rom, data) in games {
+        let h = romforge_core::hash::hash_stream(*data, data.len() as u64)
+            .unwrap()
+            .raw;
+        xml += &format!(
+            "<game name=\"{game}\"><rom name=\"{rom}\" size=\"{}\" crc=\"{}\" sha1=\"{}\"/></game>\n",
+            data.len(),
+            h.crc32,
+            h.sha1
+        );
+    }
+    xml += "</datafile>\n";
+    std::fs::write(path, xml).unwrap();
+}
+
+/// Importing every disk of a set writes its playlist; undo removes it.
+#[test]
+fn import_writes_a_playlist_for_a_complete_disk_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    let disks: Vec<Vec<u8>> = (1u8..=2).map(|n| vec![n; 4096]).collect();
+    let games: Vec<(String, String)> = (1..=2)
+        .map(|n| {
+            (
+                format!("Ys (1987)(Nihon Falcom)(Disk {n} of 2)"),
+                format!("Ys (1987)(Nihon Falcom)(Disk {n} of 2).d88"),
+            )
+        })
+        .collect();
+    let rows: Vec<(&str, &str, &[u8])> = games
+        .iter()
+        .zip(&disks)
+        .map(|((g, r), d)| (g.as_str(), r.as_str(), d.as_slice()))
+        .collect();
+    let dat = tmp.path().join("pc98.dat");
+    write_dat(&dat, "NEC PC-9801 - Games - [D88]", &rows);
+    for ((_, rom), data) in games.iter().zip(&disks) {
+        std::fs::write(incoming.join(rom), data).unwrap();
+    }
+
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.import_dat(&dat, Some("PC-98")).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let plan = lib.import_plan(Some(&incoming)).unwrap();
+    assert_eq!(plan.items.len(), 2, "{plan:?}");
+    let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.playlists, 1);
+    let list = home.games().join("PC-98/Ys (1987)(Nihon Falcom).m3u");
+    assert_eq!(
+        std::fs::read_to_string(&list).unwrap(),
+        "Ys (1987)(Nihon Falcom)(Disk 1 of 2).zip\nYs (1987)(Nihon Falcom)(Disk 2 of 2).zip\n"
+    );
+    lib.cleanup_undo(None).unwrap();
+    assert!(!list.exists());
+    assert_eq!(files_under(&home.games()), Vec::<String>::new());
+}

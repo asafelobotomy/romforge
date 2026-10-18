@@ -297,6 +297,17 @@ const MIGRATIONS: &[&str] = &[
     // 24: Wikidata editions ("Director's Cut") are candidates too; `work` is
     // the game an edition belongs to (P629), whose facts fill its gaps.
     "ALTER TABLE wikidata_candidates ADD COLUMN work TEXT;",
+    // 25: games that are a folder of files, named by ScummVM's detection
+    // list (milestone 14): worked out again after every scan.
+    "CREATE TABLE folder_games (
+         folder_id INTEGER PRIMARY KEY,
+         path      TEXT NOT NULL UNIQUE,
+         system_id INTEGER NOT NULL REFERENCES systems(system_id),
+         title     TEXT NOT NULL,
+         code      TEXT NOT NULL,
+         files     INTEGER NOT NULL,
+         size      INTEGER NOT NULL
+     );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
