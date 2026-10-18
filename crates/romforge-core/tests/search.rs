@@ -402,3 +402,51 @@ fn translations_and_hacks() {
             .any(|i| i.row_id == chosen.row_id)
     );
 }
+
+/// A GameCube RVZ: its header gives the game ID and the ISO's size, so it
+/// is "Likely: compressed image" of the game with that serial and size,
+/// never verified (that needs the whole image decompressed).
+#[test]
+fn compressed_images_by_id_and_size() {
+    use romforge_core::suggest::Band;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let iso_size = 1_459_978_240u64;
+    let dat = tmp.path().join("gc.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - GameCube</name></header>
+  <game name="Super Smash Bros. Melee (USA) (En,Ja)"><serial>DL-DOL-GALE-USA</serial><rom name="Super Smash Bros. Melee (USA) (En,Ja).iso" size="{iso_size}" crc="12345678" md5="0123456789abcdef0123456789abcdef" sha1="0123456789abcdef0123456789abcdef01234567"/></game>
+</datafile>"#
+        ),
+    )
+    .unwrap();
+    let mut rvz = vec![0u8; 0x1000];
+    rvz[..4].copy_from_slice(b"RVZ\x01");
+    rvz[0x24..0x2C].copy_from_slice(&iso_size.to_be_bytes());
+    rvz[0x58..0x5E].copy_from_slice(b"GALE01");
+    rvz[0x58 + 0x1C..0x58 + 0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
+    rvz[0x58 + 0x20..0x58 + 0x37].copy_from_slice(b"Super Smash Bros. Melee");
+    std::fs::write(dir.join("melee.rvz"), &rvz).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, Some("GameCube")).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+
+    let q = lib.search_queue(None).unwrap();
+    let s = q[0].suggestion.clone().expect("a suggestion");
+    assert_eq!(s.band, Band::LikelyCompressed, "{s:?}");
+    assert_eq!(s.title, "Super Smash Bros. Melee (USA) (En,Ja)");
+    assert!(
+        s.evidence
+            .iter()
+            .any(|e| e.kind == "size" && e.agrees && e.text.starts_with("holds an image"))
+    );
+    assert!(
+        s.evidence
+            .iter()
+            .any(|e| e.kind == "serial" && e.text.contains("DL-DOL-GALE-USA"))
+    );
+    assert_eq!(q[0].need, Need::Identify, "not verified");
+}

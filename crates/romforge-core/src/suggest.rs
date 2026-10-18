@@ -22,6 +22,10 @@ pub enum Band {
     /// CRC32 and size agree, but the DAT's SHA1 or MD5 doesn't (or it has
     /// none).
     LikelyCrc,
+    /// A compressed disc image (RVZ, WIA, GCZ, CSO, ZSO) holding an image
+    /// of the game's size, its ID in the game's serial. Only decompressing
+    /// it all could verify it.
+    LikelyCompressed,
     /// The same size as the game's ROM and its name or serial agrees: a bad
     /// dump, a hack or a translation of it.
     LikelyModified,
@@ -35,6 +39,7 @@ impl Band {
     pub fn label(self) -> &'static str {
         match self {
             Band::LikelyCrc => "Likely: CRC match",
+            Band::LikelyCompressed => "Likely: compressed image",
             Band::LikelyModified => "Likely: modified copy",
             Band::Suggested => "Suggested: name match",
             Band::Possible => "Possible: similar name",
@@ -134,7 +139,12 @@ fn facts(
         .filter(|t| !t.trim().is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| crate::search::default_text(d));
-    let sizes: Vec<u64> = d.files.iter().map(|f| f.size).collect();
+    // A compressed disc image counts by the plain image it holds.
+    let sizes: Vec<u64> = d
+        .files
+        .iter()
+        .map(|f| f.game_id.as_ref().and_then(|i| i.image_size).unwrap_or(f.size))
+        .collect();
     let ids: Vec<GameId> = d.files.iter().filter_map(|f| f.game_id.clone()).collect();
     let mut systems: Vec<i64> = match system.or(d.row.system.as_deref()) {
         Some(key) => systems::by_key(key).map(|s| vec![s.id]).unwrap_or_default(),
@@ -216,7 +226,12 @@ fn by_serial(conn: &Connection, f: &Facts) -> Result<BTreeMap<(i64, String), Str
     )?;
     for id in &f.ids {
         let Some(serial) = &id.serial else { continue };
-        let key = dat::serial_key(serial);
+        let mut key = dat::serial_key(serial);
+        // GameCube / Wii: "GALE01" is game code GALE and maker 01; Redump's
+        // serials ("DL-DOL-GALE-USA") carry the game code only.
+        if matches!(id.kind, "gc" | "wii") {
+            key.truncate(4);
+        }
         if key.len() < 4 {
             continue;
         }
@@ -327,14 +342,16 @@ fn assess(
         .query_map(params![system_id, title], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     let same_size = f.sizes.iter().any(|s| rom_sizes.contains(s));
+    let compressed = f.ids.iter().any(|i| i.image_size.is_some());
     if let (Some(mine), Some(theirs)) = (f.sizes.first(), rom_sizes.first()) {
         ev.push(Evidence {
             kind: "size".into(),
             agrees: same_size,
-            text: if same_size {
-                format!("the same size as its ROM ({})", mib(*mine))
-            } else {
-                format!("{} here, its ROM {}", mib(*mine), mib(*theirs))
+            text: match (same_size, compressed) {
+                (true, true) => format!("holds an image the size of its ROM ({})", mib(*mine)),
+                (true, false) => format!("the same size as its ROM ({})", mib(*mine)),
+                (false, true) => format!("holds a {} image, its ROM {}", mib(*mine), mib(*theirs)),
+                (false, false) => format!("{} here, its ROM {}", mib(*mine), mib(*theirs)),
             },
         });
     }
@@ -430,6 +447,8 @@ fn assess(
 
     let band = if crc && same_size {
         Band::LikelyCrc
+    } else if compressed && same_size && serial.is_some() {
+        Band::LikelyCompressed
     } else if patched == Some(true) || (same_size && (score >= 0.85 || serial.is_some())) {
         Band::LikelyModified
     } else if score >= 0.9 || (serial.is_some() && (score >= 0.5 || header_fits)) {

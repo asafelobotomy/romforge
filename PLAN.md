@@ -502,6 +502,36 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        CSO/ZSO/PBP work the same way for PSP and PS1. NKit keeps only the
        source CRC32, so it gives a candidate at most.
 
+       *(Built 2026-10-18.)* `ident::read_container` reads just a plain
+       file's header and first block (seeking; the 1 MiB prefix can't
+       hold GCZ's or CSO's block tables). What it reads:
+       - RVZ / WIA (Dolphin's layout: big-endian ISO size at 0x24, the
+         disc's first 0x80 bytes at 0x58);
+       - WBFS (the disc head after the first HD sector);
+       - Wii/GC CISO (the disc from 0x8000);
+       - GCZ (header with the disc size, then the first zlib block);
+       - PSP/PS2 CSO (deflate) and ZSO (LZ4, `lz4_flex`, MIT): the first
+         1 MiB of blocks, read as an ISO for `UMD_DATA.BIN` /
+         `SYSTEM.CNF`;
+       - PBP's PARAM.SFO (DISC_ID, TITLE; CATEGORY "ME" is a PS1
+         classic).
+
+       How it is used:
+       - the plain image's size goes in `files.id_size` (migration 19,
+         which re-reads such files);
+       - suggestions compare that size with the DAT's, and a GameCube /
+         Wii ID's 4-letter game code with Redump's serials
+         (`DL-DOL-GALE-USA`);
+       - a new band, *Likely: compressed image*, means the image size
+         and serial agree. A strict match still needs the whole image
+         decompressed, which romforge doesn't do;
+       - NKit isn't read.
+
+    Milestone 12 is done (2026-10-18). On the real library 28 of 30
+    files match by hash, the Symphony of the Night cue is a `sheet` of its
+    game, and the one unknown file (a fan translation) is suggested as a
+    translation of Dragon Quest III (Japan) with five points of evidence.
+
     Not used:
     - RetroAchievements' hash database needs an account key. Its
       per-system hashing rules (MIT, in rcheevos) can guide steps 1 and 3.

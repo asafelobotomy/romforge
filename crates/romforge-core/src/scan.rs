@@ -279,7 +279,12 @@ fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut imp
 fn hash_file(path: &Path) -> std::io::Result<Hashes> {
     let file = File::open(path)?;
     let size = file.metadata()?.len();
-    hash_stream(BufReader::new(file), size)
+    let mut hashes = hash_stream(BufReader::new(file), size)?;
+    // A compressed disc image: its own header says what it holds.
+    if hashes.id.is_none() {
+        hashes.id = crate::ident::read_container(&mut BufReader::new(File::open(path)?));
+    }
+    Ok(hashes)
 }
 
 fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Result<(), Error> {

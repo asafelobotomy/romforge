@@ -25,6 +25,10 @@ pub struct GameId {
     pub title: Option<String>,
     /// Region as the header says it, e.g. `Japan`, `USA`, or a raw code.
     pub region: Option<String>,
+    /// For a compressed disc image (RVZ, WIA, GCZ, CSO, ZSO): the size of
+    /// the plain image it holds, to compare with the DAT's.
+    #[serde(default)]
+    pub image_size: Option<u64>,
 }
 
 impl GameId {
@@ -34,6 +38,7 @@ impl GameId {
         serial: Option<String>,
         title: Option<String>,
         region: Option<String>,
+        image_size: Option<u64>,
     ) -> Option<GameId> {
         let kind = KINDS.iter().find(|k| Some(**k) == kind.as_deref())?;
         Some(GameId {
@@ -41,6 +46,7 @@ impl GameId {
             serial,
             title,
             region,
+            image_size,
         })
     }
 }
@@ -87,6 +93,7 @@ fn id(kind: &'static str, serial: Option<String>, title: Option<String>, region:
         serial,
         title,
         region: region.map(str::to_owned),
+        image_size: None,
     }
 }
 
@@ -185,6 +192,7 @@ fn md(p: &[u8]) -> Option<GameId> {
         serial,
         title,
         region,
+        image_size: None,
     })
 }
 
@@ -380,6 +388,161 @@ fn gamecube_wii(p: &[u8]) -> Option<GameId> {
     Some(id(kind, c, text(&h[0x20..0x60]), region))
 }
 
+// ------------------------------------------------------------ containers
+
+/// A disc image inside a container romforge can't hash as the DAT's plain
+/// image: GameCube / Wii as RVZ, WIA, WBFS, CISO or GCZ; PSP / PS2 as CSO
+/// or ZSO; PS1 / PSP as PBP. Gives the game ID (and the plain image's size
+/// where the container stores it) by reading just its header and first
+/// block, never the whole file.
+pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<GameId> {
+    let mut head = [0u8; 0x100];
+    let n = read_at(f, 0, &mut head)?;
+    let head = &head[..n];
+    let be64 = |b: &[u8]| u64::from_be_bytes(b.try_into().unwrap_or_default());
+    let le32 = |b: &[u8]| u32::from_le_bytes(b.try_into().unwrap_or_default());
+    let le64 = |b: &[u8]| u64::from_le_bytes(b.try_into().unwrap_or_default());
+    match head.get(..4)? {
+        // Dolphin's docs/WiaAndRvz.md: big-endian; the ISO's size at 0x24,
+        // its first 0x80 bytes at 0x58.
+        b"WIA\x01" | b"RVZ\x01" => {
+            let mut id = gamecube_wii(head.get(0x58..0xD8)?)?;
+            id.image_size = Some(be64(head.get(0x24..0x2C)?));
+            Some(id)
+        }
+        // WBFS: the disc's first 0x100 bytes follow the first HD sector.
+        b"WBFS" => {
+            let sector = 1u64.checked_shl(*head.get(8)? as u32)?;
+            let mut disc = [0u8; 0x100];
+            read_at(f, sector, &mut disc)?;
+            gamecube_wii(&disc)
+        }
+        b"CISO" | b"ZISO" => {
+            let header = le32(head.get(4..8)?);
+            if head[0] == b'C' && header > 0x18 {
+                // Wii / GameCube CISO: a block size, a block map, then the
+                // disc from 0x8000.
+                let mut disc = [0u8; 0x100];
+                read_at(f, 0x8000, &mut disc)?;
+                return gamecube_wii(&disc);
+            }
+            // PSP / PS2 CSO (deflate) or ZSO (LZ4).
+            let total = le64(head.get(8..16)?);
+            let block = le32(head.get(16..20)?) as u64;
+            let shift = *head.get(21)? as u32;
+            let lz4 = head[0] == b'Z';
+            let blocks = (PREFIX_LEN as u64 / block.max(1)).min(total.div_ceil(block.max(1)));
+            let mut index = vec![0u8; (blocks as usize + 1) * 4];
+            read_at(f, 0x18, &mut index)?;
+            let index: Vec<u32> = index.as_chunks::<4>().0.iter().map(|w| le32(w)).collect();
+            let mut prefix = Vec::with_capacity(PREFIX_LEN);
+            for w in index.windows(2) {
+                let plain = w[0] & 0x8000_0000 != 0;
+                let start = ((w[0] & 0x7FFF_FFFF) as u64) << shift;
+                let end = ((w[1] & 0x7FFF_FFFF) as u64) << shift;
+                let mut raw = vec![0u8; end.checked_sub(start)? as usize];
+                read_at(f, start, &mut raw)?;
+                if plain || raw.len() as u64 >= block {
+                    raw.truncate(block as usize);
+                    prefix.extend_from_slice(&raw);
+                } else if lz4 {
+                    prefix.extend_from_slice(&lz4_flex::block::decompress(&raw, block as usize).ok()?);
+                } else {
+                    let mut out = Vec::with_capacity(block as usize);
+                    std::io::Read::read_to_end(&mut flate2::read::DeflateDecoder::new(&raw[..]), &mut out)
+                        .ok()?;
+                    prefix.extend_from_slice(&out);
+                }
+            }
+            let mut id = disc(&prefix)?;
+            id.image_size = Some(total);
+            Some(id)
+        }
+        // PBP (PS1 classics, PSP): PARAM.SFO's offset at 0x08, the next
+        // part's at 0x0C.
+        b"\0PBP" => {
+            let (from, to) = (le32(head.get(8..12)?) as u64, le32(head.get(12..16)?) as u64);
+            let mut sfo = vec![0u8; to.checked_sub(from)?.min(64 * 1024) as usize];
+            read_at(f, from, &mut sfo)?;
+            param_sfo(&sfo)
+        }
+        _ if head.len() >= 32 && le32(&head[..4]) == 0xB10B_C001 => {
+            // Dolphin's GCZ: header, then u64 block pointers and u32 hashes
+            // per block, then zlib blocks (top pointer bit: stored plain).
+            let size = le64(&head[16..24]);
+            let blocks = le32(&head[28..32]) as u64;
+            let data = 32 + 12 * blocks;
+            let mut ptr = [0u8; 16];
+            read_at(f, 32, &mut ptr)?;
+            let (p0, p1) = (le64(&ptr[..8]), le64(&ptr[8..]));
+            let flag = 1u64 << 63;
+            let len = if blocks > 1 {
+                (p1 & !flag).checked_sub(p0 & !flag)?
+            } else {
+                0x8000
+            };
+            let mut raw = vec![0u8; len.min(1 << 22) as usize];
+            read_at(f, data + (p0 & !flag), &mut raw)?;
+            let first = if p0 & flag != 0 {
+                raw
+            } else {
+                let mut out = Vec::new();
+                std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&raw[..]), &mut out).ok()?;
+                out
+            };
+            let mut id = gamecube_wii(&first)?;
+            id.image_size = Some(size);
+            Some(id)
+        }
+        _ => None,
+    }
+}
+
+/// Read up to `buf.len()` bytes at `at`; how many were read.
+fn read_at<R: std::io::Read + std::io::Seek>(f: &mut R, at: u64, buf: &mut [u8]) -> Option<usize> {
+    f.seek(std::io::SeekFrom::Start(at)).ok()?;
+    let mut n = 0;
+    while n < buf.len() {
+        match f.read(&mut buf[n..]).ok()? {
+            0 => break,
+            k => n += k,
+        }
+    }
+    (n > 0).then_some(n)
+}
+
+/// PARAM.SFO: DISC_ID and TITLE; CATEGORY "ME" is a PS1 classic.
+fn param_sfo(sfo: &[u8]) -> Option<GameId> {
+    if sfo.get(..4)? != b"\0PSF" {
+        return None;
+    }
+    let le16 = |b: &[u8]| u16::from_le_bytes([b[0], b[1]]) as usize;
+    let le32 = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let (keys, data, n) = (
+        le32(sfo.get(8..12)?),
+        le32(sfo.get(12..16)?),
+        le32(sfo.get(16..20)?),
+    );
+    let field = |want: &str| -> Option<String> {
+        for i in 0..n.min(64) {
+            let e = sfo.get(20 + i * 16..36 + i * 16)?;
+            let key = sfo.get(keys + le16(&e[..2])..)?;
+            let key = &key[..key.iter().position(|&b| b == 0)?];
+            if key == want.as_bytes() {
+                let at = data + le32(&e[12..16]);
+                return text(sfo.get(at..at + le32(&e[4..8]))?);
+            }
+        }
+        None
+    };
+    let kind = if field("CATEGORY").as_deref() == Some("ME") {
+        "ps1"
+    } else {
+        "psp"
+    };
+    Some(id(kind, field("DISC_ID"), field("TITLE"), None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,6 +688,174 @@ mod tests {
         let id = read(&gc).unwrap();
         assert_eq!((id.kind, id.serial.as_deref()), ("gc", Some("GALE01")));
         assert_eq!(id.region.as_deref(), Some("USA"));
+    }
+
+    /// A GameCube disc's first bytes.
+    fn gc_disc() -> Vec<u8> {
+        let mut d = vec![0u8; 0x8000];
+        d[..6].copy_from_slice(b"GALE01");
+        d[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
+        d[0x20..0x31].copy_from_slice(b"Super Smash Bros.");
+        d
+    }
+
+    fn container(bytes: &[u8]) -> Option<GameId> {
+        read_container(&mut std::io::Cursor::new(bytes))
+    }
+
+    #[test]
+    fn gamecube_and_wii_containers() {
+        let disc = gc_disc();
+        // RVZ / WIA: big-endian ISO size at 0x24, disc head at 0x58.
+        let mut rvz = vec![0u8; 0x100];
+        rvz[..4].copy_from_slice(b"RVZ\x01");
+        rvz[0x24..0x2C].copy_from_slice(&1_459_978_240u64.to_be_bytes());
+        rvz[0x58..0xD8].copy_from_slice(&disc[..0x80]);
+        let id = container(&rvz).unwrap();
+        assert_eq!((id.kind, id.serial.as_deref()), ("gc", Some("GALE01")));
+        assert_eq!(id.image_size, Some(1_459_978_240));
+        // WBFS: disc head after the first HD sector (2^9 = 512).
+        let mut wbfs = vec![0u8; 0x400];
+        wbfs[..4].copy_from_slice(b"WBFS");
+        wbfs[8] = 9;
+        wbfs[0x200..0x300].copy_from_slice(&disc[..0x100]);
+        assert_eq!(container(&wbfs).unwrap().serial.as_deref(), Some("GALE01"));
+        // Wii/GC CISO: block size, map, disc at 0x8000.
+        let mut ciso = vec![0u8; 0x8000];
+        ciso[..4].copy_from_slice(b"CISO");
+        ciso[4..8].copy_from_slice(&0x20_0000u32.to_le_bytes());
+        ciso.extend_from_slice(&disc[..0x100]);
+        assert_eq!(container(&ciso).unwrap().serial.as_deref(), Some("GALE01"));
+        // GCZ: header, 2 block pointers and hashes, zlib blocks.
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut z, &disc).unwrap();
+        let block0 = z.finish().unwrap();
+        let mut gcz = Vec::new();
+        gcz.extend_from_slice(&0xB10B_C001u32.to_le_bytes());
+        gcz.extend_from_slice(&0u32.to_le_bytes());
+        gcz.extend_from_slice(&0u64.to_le_bytes());
+        gcz.extend_from_slice(&1_459_978_240u64.to_le_bytes());
+        gcz.extend_from_slice(&0x8000u32.to_le_bytes());
+        gcz.extend_from_slice(&2u32.to_le_bytes());
+        gcz.extend_from_slice(&0u64.to_le_bytes());
+        gcz.extend_from_slice(&(block0.len() as u64).to_le_bytes());
+        gcz.extend_from_slice(&[0u8; 8]);
+        gcz.extend_from_slice(&block0);
+        let id = container(&gcz).unwrap();
+        assert_eq!(
+            (id.serial.as_deref(), id.image_size),
+            (Some("GALE01"), Some(1_459_978_240))
+        );
+    }
+
+    /// A plain 2048-byte-sector ISO with one file in its root.
+    fn iso(name: &str, content: &[u8]) -> Vec<u8> {
+        let mut user = vec![[0u8; 2048]; 24];
+        let pvd = &mut user[16];
+        pvd[0] = 1;
+        pvd[1..6].copy_from_slice(b"CD001");
+        pvd[156] = 34;
+        pvd[158..162].copy_from_slice(&18u32.to_le_bytes());
+        pvd[166..170].copy_from_slice(&2048u32.to_le_bytes());
+        let n = format!("{name};1");
+        let dir = &mut user[18];
+        dir[0] = (33 + n.len()) as u8;
+        dir[2..6].copy_from_slice(&19u32.to_le_bytes());
+        dir[10..14].copy_from_slice(&(content.len() as u32).to_le_bytes());
+        dir[32] = n.len() as u8;
+        dir[33..33 + n.len()].copy_from_slice(n.as_bytes());
+        user[19][..content.len()].copy_from_slice(content);
+        user.concat()
+    }
+
+    /// CSO (deflate) or ZSO (LZ4) of `image`, 2048-byte blocks.
+    fn cso(image: &[u8], lz4: bool) -> Vec<u8> {
+        let blocks: Vec<Vec<u8>> = image
+            .chunks(2048)
+            .map(|b| {
+                if lz4 {
+                    lz4_flex::block::compress(b)
+                } else {
+                    let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+                    std::io::Write::write_all(&mut e, b).unwrap();
+                    e.finish().unwrap()
+                }
+            })
+            .collect();
+        let mut out = Vec::new();
+        out.extend_from_slice(if lz4 { b"ZISO" } else { b"CISO" });
+        out.extend_from_slice(&0x18u32.to_le_bytes());
+        out.extend_from_slice(&(image.len() as u64).to_le_bytes());
+        out.extend_from_slice(&2048u32.to_le_bytes());
+        out.extend_from_slice(&[1, 0, 0, 0]);
+        let mut at = 0x18 + 4 * (blocks.len() as u32 + 1);
+        let mut index = Vec::new();
+        for b in &blocks {
+            index.extend_from_slice(&at.to_le_bytes());
+            at += b.len() as u32;
+        }
+        index.extend_from_slice(&at.to_le_bytes());
+        out.extend_from_slice(&index);
+        for b in &blocks {
+            out.extend_from_slice(b);
+        }
+        out
+    }
+
+    #[test]
+    fn psp_cso_zso_and_pbp() {
+        let image = iso("UMD_DATA.BIN", b"ULUS-10041|0001|G|");
+        assert_eq!(read(&image).unwrap().serial.as_deref(), Some("ULUS-10041"));
+        for lz4 in [false, true] {
+            let id = container(&cso(&image, lz4)).unwrap();
+            assert_eq!(
+                (id.kind, id.serial.as_deref()),
+                ("psp", Some("ULUS-10041")),
+                "lz4 {lz4}"
+            );
+            assert_eq!(id.image_size, Some(image.len() as u64));
+        }
+        // PBP: PARAM.SFO with DISC_ID, TITLE and CATEGORY ME (a PS1 classic).
+        let fields = [
+            ("CATEGORY", "ME"),
+            ("DISC_ID", "SLUS00067"),
+            ("TITLE", "Castlevania SOTN"),
+        ];
+        let mut keys = Vec::new();
+        let mut data = Vec::new();
+        let mut entries = Vec::new();
+        for (k, v) in fields {
+            entries.extend_from_slice(&(keys.len() as u16).to_le_bytes());
+            entries.extend_from_slice(&0x0204u16.to_le_bytes());
+            entries.extend_from_slice(&(v.len() as u32 + 1).to_le_bytes());
+            entries.extend_from_slice(&(v.len() as u32 + 1).to_le_bytes());
+            entries.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            keys.extend_from_slice(k.as_bytes());
+            keys.push(0);
+            data.extend_from_slice(v.as_bytes());
+            data.push(0);
+        }
+        let keys_at = 20 + entries.len();
+        let mut sfo = b"\0PSF".to_vec();
+        sfo.extend_from_slice(&0x0101u32.to_le_bytes());
+        sfo.extend_from_slice(&(keys_at as u32).to_le_bytes());
+        sfo.extend_from_slice(&((keys_at + keys.len()) as u32).to_le_bytes());
+        sfo.extend_from_slice(&(fields.len() as u32).to_le_bytes());
+        sfo.extend_from_slice(&entries);
+        sfo.extend_from_slice(&keys);
+        sfo.extend_from_slice(&data);
+        let mut pbp = b"\0PBP".to_vec();
+        pbp.extend_from_slice(&0x10000u32.to_le_bytes());
+        let after = 0x28 + sfo.len() as u32;
+        pbp.extend_from_slice(&0x28u32.to_le_bytes());
+        for _ in 0..7 {
+            pbp.extend_from_slice(&after.to_le_bytes());
+        }
+        pbp.extend_from_slice(&sfo);
+        let id = container(&pbp).unwrap();
+        assert_eq!((id.kind, id.serial.as_deref()), ("ps1", Some("SLUS00067")));
+        assert_eq!(id.title.as_deref(), Some("Castlevania SOTN"));
+        assert_eq!(container(&[0x5A; 512]), None);
     }
 
     #[test]

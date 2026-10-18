@@ -22,6 +22,8 @@ ureq = { version = "3.4", default-features = false, features = ["rustls-no-provi
 chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }
 shiratsu-naming = "1.1"
 strsim = "0.11"
+flate2 = "1"
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
 
 [dev-dependencies]
 chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }

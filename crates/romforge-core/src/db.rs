@@ -261,6 +261,13 @@ const MIGRATIONS: &[&str] = &[
      UPDATE files SET mtime = NULL WHERE path IN (
        SELECT path FROM files WHERE status <> 'matched'
          AND lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.cue');",
+    // 19: the plain image's size a compressed disc image (RVZ, WIA, GCZ,
+    // CSO, ZSO) holds; container files are read again on their next scan.
+    "ALTER TABLE files ADD COLUMN id_size INTEGER;
+     UPDATE files SET mtime = NULL WHERE member = '' AND (
+       lower(path) GLOB '*.rvz' OR lower(path) GLOB '*.wia' OR lower(path) GLOB '*.wbfs'
+       OR lower(path) GLOB '*.ciso' OR lower(path) GLOB '*.gcz' OR lower(path) GLOB '*.cso'
+       OR lower(path) GLOB '*.zso' OR lower(path) GLOB '*.pbp');",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
