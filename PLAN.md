@@ -806,7 +806,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     unchecked.
 
 16. **Trash, two matching fixes, deterministic zips** (decided
-    2026-10-18; not built).
+    2026-10-18; *built* the same day, tested on scratch folders).
     1. *Empty the trash.* Import and cleanup keep originals in
        `.romforge-trash/<batch>/` for undo, and nothing ever removes them
        (the app even says "until you undo or empty it"). An "Empty trash"
@@ -827,6 +827,16 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        members in a fixed order, one compression setting (TorrentZip's
        rules, as far as the `zip` crate allows): the same game always
        gives the same file, so re-checks, syncs and backups are exact.
+    As built: `cleanup empty-trash [--older-than N] [--yes]` and "Empty
+    trash…" in the dialog; a batch is marked emptied (migration 28) before
+    anything is deleted, and undo refuses it. ROM ownership is per ROM and
+    recorded (`matches.owns`, migration 29, seeded from the old rule until
+    the next scan): a game's row lists the copies that own its ROMs and
+    their duplicates, and import prefers the owning copy. Scan reports
+    carry `skipped_kinds`. Zips: fixed date, 0644, level 6, members by
+    lower-case name, zip64 only when needed; a folder game from a 7z is
+    unpacked to staging first, and one that changed since the plan is
+    refused (it goes to the trash whole).
 
 17. **Arcade: MAME and FBNeo** (decided 2026-10-18; not designed yet).
     The Arcade system has no DATs and no extensions today. Needs: their

@@ -279,7 +279,9 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             crate::report::strong!(),
             "
          JOIN files f ON f.file_id = m.file_id AND f.status IN ",
-            crate::report::holding!()
+            crate::report::holding!(),
+            "
+              AND (m.owns = 1 OR f.status = 'duplicate')"
         ),
         HAD = HAD,
         GAME_HAVE = GAME_HAVE,

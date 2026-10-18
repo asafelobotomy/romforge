@@ -101,6 +101,10 @@ pub struct ScanReport {
     pub bytes_hashed: u64,
     /// Files and archive members without a ROM extension (not hashed).
     pub skipped: usize,
+    /// What those were, by extension, most first, so a format romforge
+    /// doesn't know shows here. Left out: details files (`.romforge.md`)
+    /// and the `romforge/` folder inside archives.
+    pub skipped_kinds: Vec<SkippedKind>,
     /// Symlinked folders inside the tree (not followed).
     pub skipped_links: Vec<PathBuf>,
     /// Files (or archives) unchanged since the last scan, not read again.
@@ -109,6 +113,50 @@ pub struct ScanReport {
     /// Loose `.cue`/`.gdi` sheets and the track files they name that are
     /// missing.
     pub sheet_problems: Vec<(PathBuf, String)>,
+}
+
+/// Files a scan skipped for their extension, by extension.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SkippedKind {
+    /// Lower case, without the dot; empty for none.
+    pub ext: String,
+    pub count: usize,
+    /// One of them (`path` or `path#member`).
+    pub example: String,
+}
+
+impl SkippedKind {
+    /// Several scans' kinds as one list, most first.
+    pub fn merge<'a>(lists: impl IntoIterator<Item = &'a [SkippedKind]>) -> Vec<SkippedKind> {
+        let mut by: std::collections::BTreeMap<String, SkippedKind> = Default::default();
+        for k in lists.into_iter().flatten() {
+            by.entry(k.ext.clone())
+                .and_modify(|e| e.count += k.count)
+                .or_insert_with(|| k.clone());
+        }
+        let mut v: Vec<SkippedKind> = by.into_values().collect();
+        v.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.ext.cmp(&b.ext)));
+        v
+    }
+
+    /// `.txt 5, .nfo 3, no extension 2, and 4 more kinds`, at most `n`.
+    pub fn summary(kinds: &[SkippedKind], n: usize) -> String {
+        let mut parts: Vec<String> = kinds
+            .iter()
+            .take(n)
+            .map(|k| {
+                if k.ext.is_empty() {
+                    format!("no extension {}", k.count)
+                } else {
+                    format!(".{} {}", k.ext, k.count)
+                }
+            })
+            .collect();
+        if kinds.len() > n {
+            parts.push(format!("and {} more kinds", kinds.len() - n));
+        }
+        parts.join(", ")
+    }
 }
 
 /// One source folder's rescan: its report, or the folder and why it failed.
@@ -841,6 +889,7 @@ impl Library {
             root: root.clone(),
             ..ScanReport::default()
         };
+        let mut skipped_kinds: std::collections::BTreeMap<String, SkippedKind> = Default::default();
         {
             let mut upsert = tx.prepare(
                 concat!("INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
@@ -870,8 +919,33 @@ impl Library {
                 }
                 let entry = match visit {
                     Visit::Hashed(entry) => entry,
-                    Visit::Skipped { .. } => {
+                    Visit::Skipped { path, member } => {
                         report.skipped += 1;
+                        let name = if member.is_empty() {
+                            path.file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default()
+                        } else {
+                            member.clone()
+                        };
+                        if !layout::is_extra(&member) && !layout::is_extra(&name) {
+                            let ext = std::path::Path::new(&name)
+                                .extension()
+                                .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                                .unwrap_or_default();
+                            skipped_kinds
+                                .entry(ext.clone())
+                                .and_modify(|k: &mut SkippedKind| k.count += 1)
+                                .or_insert_with(|| SkippedKind {
+                                    ext,
+                                    count: 1,
+                                    example: if member.is_empty() {
+                                        path.display().to_string()
+                                    } else {
+                                        format!("{}#{member}", path.display())
+                                    },
+                                });
+                        }
                         return;
                     }
                     Visit::SkippedLink(path) => {
@@ -985,6 +1059,8 @@ impl Library {
         identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
         scummvm::refresh(&tx, scummvm_list.as_deref())?;
         tx.commit()?;
+        let kinds: Vec<SkippedKind> = skipped_kinds.into_values().collect();
+        report.skipped_kinds = SkippedKind::merge([kinds.as_slice()]);
         Ok(report)
     }
 
@@ -1148,6 +1224,16 @@ impl Library {
 
     pub fn cleanup_batches(&self) -> Result<Vec<cleanup::Batch>, Error> {
         cleanup::batches(&self.conn)
+    }
+
+    /// What is in the trash (all of it, or batches older than N days).
+    pub fn trash_contents(&self, older_than_days: Option<u32>) -> Result<cleanup::TrashSummary, Error> {
+        cleanup::trash_contents(&self.conn, older_than_days)
+    }
+
+    /// Delete those originals for good; their batches can't be undone after.
+    pub fn empty_trash(&mut self, older_than_days: Option<u32>) -> Result<cleanup::TrashSummary, Error> {
+        cleanup::empty_trash(&self.conn, older_than_days)
     }
 
     /// Fetch metadata and art for the games you have (milestone 3).

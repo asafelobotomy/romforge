@@ -285,3 +285,223 @@ fn an_amiga_set_is_zipped_with_an_m3u() {
         "Ys (1987)(Nihon Falcom)(Disk 1 of 2).zip\nYs (1987)(Nihon Falcom)(Disk 2 of 2).zip\n"
     );
 }
+
+/// Emptying the trash deletes the originals kept for undo, for good: the
+/// batch can't be undone after, and its new files stay.
+#[test]
+fn emptying_the_trash_ends_undo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), incoming.join("Test GB.gb")).unwrap();
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let plan = lib.import_plan(Some(&incoming)).unwrap();
+    let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert_eq!(r.trashed, 1);
+
+    assert!(
+        lib.trash_contents(Some(1)).unwrap().batches.is_empty(),
+        "nothing a day old yet"
+    );
+    let t = lib.trash_contents(None).unwrap();
+    assert_eq!((t.batches.len(), t.files), (1, 1), "{t:?}");
+    assert!(t.bytes > 0);
+    assert_eq!(files_under(&home.trash()).len(), 1, "listing deletes nothing");
+
+    let gone = lib.empty_trash(None).unwrap();
+    assert!(gone.failed.is_empty(), "{:?}", gone.failed);
+    assert_eq!(gone.files, 1);
+    assert!(files_under(&home.trash()).is_empty());
+    assert!(home.trash().is_dir(), "the trash folder itself stays");
+    assert!(lib.trash_contents(None).unwrap().batches.is_empty());
+
+    let err = lib.cleanup_undo(None).unwrap_err().to_string();
+    assert!(
+        err.contains("nothing to undo"),
+        "the latest undoable batch is none: {err}"
+    );
+    let err = lib.cleanup_undo(Some(r.batch_id)).unwrap_err().to_string();
+    assert!(err.contains("can't be undone"), "{err}");
+    assert!(
+        home.games().join("Game Boy/Test GB.zip").is_file(),
+        "the new file stays"
+    );
+    let b = lib.cleanup_batches().unwrap();
+    assert!(b[0].emptied_at.is_some());
+}
+
+/// A game of a test DAT: its name and its ROMs (name, data).
+type DatGame<'a> = (&'a str, Vec<(&'a str, &'a [u8])>);
+
+/// A Logiqx DAT whose games have several ROMs.
+fn write_multi_dat(path: &Path, games: &[DatGame]) {
+    let mut xml = "<?xml version=\"1.0\"?>\n<datafile><header><name>Discs</name></header>\n".to_owned();
+    for (game, roms) in games {
+        xml += &format!("<game name=\"{game}\">");
+        for (rom, data) in roms {
+            let h = romforge_core::hash::hash_stream(*data, data.len() as u64)
+                .unwrap()
+                .raw;
+            xml += &format!(
+                "<rom name=\"{rom}\" size=\"{}\" crc=\"{}\" sha1=\"{}\"/>",
+                data.len(),
+                h.crc32,
+                h.sha1
+            );
+        }
+        xml += "</game>\n";
+    }
+    xml += "</datafile>\n";
+    std::fs::write(path, xml).unwrap();
+}
+
+/// Two discs share an identical audio track, each folder has its own copy:
+/// each copy belongs to the disc beside it, neither is a duplicate.
+#[test]
+fn a_shared_track_belongs_to_each_disc() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (a1, b1, shared) = (vec![1u8; 2352 * 3], vec![2u8; 2352 * 3], vec![9u8; 2352 * 2]);
+    let dat = tmp.path().join("discs.dat");
+    write_multi_dat(
+        &dat,
+        &[
+            (
+                "Disc A (USA)",
+                vec![
+                    ("Disc A (USA) (Track 1).bin", &a1[..]),
+                    ("Disc A (USA) (Track 2).bin", &shared[..]),
+                ],
+            ),
+            (
+                "Disc B (USA)",
+                vec![
+                    ("Disc B (USA) (Track 1).bin", &b1[..]),
+                    ("Disc B (USA) (Track 2).bin", &shared[..]),
+                ],
+            ),
+        ],
+    );
+    let root = tmp.path().join("discs");
+    for (dir, t1) in [("A", &a1), ("B", &b1)] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+        std::fs::write(root.join(dir).join("track1.bin"), t1).unwrap();
+        std::fs::write(root.join(dir).join("track2.bin"), &shared).unwrap();
+    }
+    let mut lib = Library::open(tmp.path().join("lib.db")).unwrap();
+    lib.import_dat(&dat, Some("PlayStation")).unwrap();
+    lib.scan(&root, Scope::All).unwrap();
+    let files = lib.files(&romforge_core::LibraryFilter::default()).unwrap();
+    for f in &files {
+        assert_eq!(f.status.as_str(), "matched", "{}", f.display_path());
+    }
+    let rows = lib.library_view().unwrap().rows;
+    for (title, dir) in [("Disc A (USA)", "A"), ("Disc B (USA)", "B")] {
+        let row = rows.iter().find(|r| r.title == title).unwrap();
+        assert_eq!(row.status, RowStatus::Verified);
+        let d = lib.game_detail(&row.id).unwrap();
+        let mine: Vec<&str> = d
+            .files
+            .iter()
+            .filter(|f| f.status == "matched")
+            .map(|f| f.path.as_str())
+            .collect();
+        assert!(
+            mine.iter().all(|p| p.contains(&format!("/{dir}/"))),
+            "{title}'s own copies are its: {mine:?}"
+        );
+    }
+}
+
+/// Files skipped for their extension are listed by kind (details files
+/// left out), so a format romforge doesn't know shows. A loose folder named
+/// `romforge` could be the owner's, so what is in it is listed.
+#[test]
+fn skipped_files_are_listed_by_kind() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("mixed");
+    std::fs::create_dir_all(dir.join("romforge")).unwrap();
+    for f in [
+        "a.txt",
+        "b.TXT",
+        "c.nfo",
+        "README",
+        "Game.romforge.md",
+        "romforge/boxart.png",
+    ] {
+        std::fs::write(dir.join(f), b"x").unwrap();
+    }
+    let mut lib = Library::open(tmp.path().join("lib.db")).unwrap();
+    let r = lib.scan(&dir, Scope::All).unwrap();
+    assert_eq!(r.skipped, 6);
+    let kinds: Vec<(&str, usize)> = r
+        .skipped_kinds
+        .iter()
+        .map(|k| (k.ext.as_str(), k.count))
+        .collect();
+    assert_eq!(
+        kinds,
+        [("txt", 2), ("", 1), ("nfo", 1), ("png", 1)],
+        "{:?}",
+        r.skipped_kinds
+    );
+    assert_eq!(
+        romforge_core::SkippedKind::summary(&r.skipped_kinds, 2),
+        ".txt 2, no extension 1, and 2 more kinds"
+    );
+}
+
+/// The same game always zips to the same bytes, wherever it came from: no
+/// clock in the zip, members in one order (milestone 16).
+#[test]
+fn the_same_game_zips_to_the_same_bytes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (one, two) = (vec![3u8; 3000], vec![4u8; 5000]);
+    let dat = tmp.path().join("set.dat");
+    write_multi_dat(
+        &dat,
+        &[(
+            "Two Parts (USA)",
+            vec![("b-part.bin", &two[..]), ("A-part.bin", &one[..])],
+        )],
+    );
+    let mut made = Vec::new();
+    for (i, zipped) in [true, false].into_iter().enumerate() {
+        let home = Home::create(&tmp.path().join(format!("h{i}"))).unwrap();
+        let src = tmp.path().join(format!("src{i}"));
+        std::fs::create_dir_all(&src).unwrap();
+        if zipped {
+            // Members in the other order, with a time of their own.
+            let mut z = zip::ZipWriter::new(std::fs::File::create(src.join("x.zip")).unwrap());
+            let o = zip::write::SimpleFileOptions::default()
+                .last_modified_time(zip::DateTime::from_date_and_time(2020, 5, 6, 7, 8, 10).unwrap());
+            z.start_file("b-part.bin", o).unwrap();
+            std::io::Write::write_all(&mut z, &two).unwrap();
+            z.start_file("A-part.bin", o).unwrap();
+            std::io::Write::write_all(&mut z, &one).unwrap();
+            z.finish().unwrap();
+        } else {
+            std::fs::write(src.join("A-part.bin"), &one).unwrap();
+            std::fs::write(src.join("b-part.bin"), &two).unwrap();
+        }
+        let mut lib = Library::open(home.db()).unwrap();
+        lib.import_dat(&dat, Some("Game Boy")).unwrap();
+        lib.scan(&src, Scope::All).unwrap();
+        let plan = lib.import_plan(Some(&src)).unwrap();
+        let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+        assert!(r.failed.is_empty(), "{:?}", r.failed);
+        made.push(std::fs::read(home.games().join("Game Boy/Two Parts (USA).zip")).unwrap());
+    }
+    assert_eq!(made[0], made[1], "same game, same bytes");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&made[0])).unwrap();
+    let names: Vec<String> = (0..z.len())
+        .map(|i| z.by_index(i).unwrap().name().unwrap().into_owned())
+        .collect();
+    assert_eq!(names[..2], ["A-part.bin", "b-part.bin"], "by lower-case name");
+    assert_eq!(
+        z.by_index(0).unwrap().last_modified(),
+        Some(zip::DateTime::default())
+    );
+}

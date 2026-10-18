@@ -305,6 +305,16 @@ async fn cleanup_undo(db: tauri::State<'_, Db>) -> Res<CleanupUndone> {
 }
 
 #[tauri::command]
+async fn trash_contents(db: tauri::State<'_, Db>) -> Res<romforge_core::cleanup::TrashSummary> {
+    read(&db, move |lib| lib.trash_contents(None)).await
+}
+
+#[tauri::command]
+async fn empty_trash(db: tauri::State<'_, Db>) -> Res<romforge_core::cleanup::TrashSummary> {
+    with(&db, move |lib| lib.empty_trash(None)).await
+}
+
+#[tauri::command]
 async fn cleanup_batches(db: tauri::State<'_, Db>) -> Res<Vec<CleanupBatch>> {
     read(&db, move |lib| lib.cleanup_batches()).await
 }
@@ -468,6 +478,8 @@ struct Refreshed {
     folders: usize,
     entries: usize,
     problems: Vec<String>,
+    /// Files skipped for their extension, by kind (`.txt 5, .nfo 3`).
+    skipped: String,
 }
 
 #[tauri::command]
@@ -477,12 +489,15 @@ async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
         folders: 0,
         entries: 0,
         problems: Vec::new(),
+        skipped: String::new(),
     };
+    let mut kinds = Vec::new();
     for r in results {
         match r {
             Ok(report) => {
                 out.folders += 1;
                 out.entries += report.hashed;
+                kinds.push(report.skipped_kinds.clone());
                 out.problems.extend(
                     report
                         .errors
@@ -493,6 +508,10 @@ async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
             Err((path, e)) => out.problems.push(format!("{}: {e}", path.display())),
         }
     }
+    out.skipped = romforge_core::SkippedKind::summary(
+        &romforge_core::SkippedKind::merge(kinds.iter().map(Vec::as_slice)),
+        6,
+    );
     Ok(out)
 }
 
@@ -568,6 +587,8 @@ fn main() {
             cleanup_apply,
             cleanup_undo,
             cleanup_batches,
+            trash_contents,
+            empty_trash,
             home_info,
             home_create,
             home_move,

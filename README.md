@@ -306,6 +306,8 @@ romforge-cli cleanup plan -v      # changes nothing
 romforge-cli cleanup apply
 romforge-cli cleanup undo         # latest batch, or --batch N
 romforge-cli cleanup history
+romforge-cli cleanup empty-trash --older-than 30          # shows what would go
+romforge-cli cleanup empty-trash --older-than 30 --yes    # deletes it for good
 ```
 
 Every game in the Source folder that is verified by hash (or identified by
@@ -320,7 +322,18 @@ happens, and nothing is ever overwritten. Without Keep originals, the old
 files (and other verified copies in Source) then move to `.romforge-trash/`
 next to them, but only when everything in them was repacked; an archive
 holding anything else stays. `undo` deletes the new files and puts the
-originals back. Refresh never scans `.romforge-trash`.
+originals back. Refresh never scans `.romforge-trash`. **Empty trash** (in
+the Import / Cleanup dialog, or `cleanup empty-trash`) deletes those
+originals for good, all of them or only batches older than N days; those
+batches can't be undone after, and their new files stay.
+
+Every zip romforge writes is deterministic: no clock (1980-01-01), the same
+permissions and compression for every member, members in lower-case name
+order. The same game always gives the same bytes, wherever it came from,
+so a re-check or a sync compares exactly.
+
+A scan lists the files it skipped for their extension, by kind (`.txt 5,
+.nfo 3, …`), so a format romforge doesn't know is visible.
 
 ## Desktop app
 

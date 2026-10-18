@@ -297,6 +297,16 @@ enum CleanupCommand {
     },
     /// List applied batches
     History,
+    /// Delete the originals kept in the trash for undo, for good (their
+    /// batches can't be undone after). Shows what would go unless --yes
+    EmptyTrash {
+        /// Only batches made more than this many days ago
+        #[arg(long, value_name = "DAYS")]
+        older_than: Option<u32>,
+        /// Delete them
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -667,6 +677,12 @@ fn main() -> Result<()> {
             }
             if report.skipped > 0 {
                 line += &format!("; skipped {} non-ROM files", report.skipped);
+                if !report.skipped_kinds.is_empty() {
+                    line += &format!(
+                        " ({})",
+                        romforge_core::SkippedKind::summary(&report.skipped_kinds, 6)
+                    );
+                }
             }
             if !report.skipped_links.is_empty() {
                 let n = report.skipped_links.len();
@@ -880,11 +896,46 @@ fn main() -> Result<()> {
                 bail!("{} steps could not be undone", u.failed.len());
             }
         }
+        Command::Cleanup(CleanupCommand::EmptyTrash { older_than, yes }) => {
+            let t = if yes {
+                lib.empty_trash(older_than)?
+            } else {
+                lib.trash_contents(older_than)?
+            };
+            for b in &t.batches {
+                println!(
+                    "#{:<4} {}  {:>6} files  {}",
+                    b.batch_id,
+                    b.created_at,
+                    b.files,
+                    bytes(b.bytes)
+                );
+            }
+            for f in &t.failed {
+                eprintln!("error: {f}");
+            }
+            if yes {
+                println!(
+                    "deleted {} files ({}) from {} batch(es); those can no longer be undone",
+                    t.files,
+                    bytes(t.bytes),
+                    t.batches.len()
+                );
+            } else {
+                println!(
+                    "{} files ({}) in {} batch(es); nothing deleted (run with --yes to delete them for good)",
+                    t.files,
+                    bytes(t.bytes),
+                    t.batches.len()
+                );
+            }
+        }
         Command::Cleanup(CleanupCommand::History) => {
             for b in lib.cleanup_batches()? {
-                let state = match &b.undone_at {
-                    Some(t) => format!("undone {t}"),
-                    None => "applied".into(),
+                let state = match (&b.undone_at, &b.emptied_at) {
+                    (Some(t), _) => format!("undone {t}"),
+                    (None, Some(t)) => format!("trash emptied {t}"),
+                    (None, None) => "applied".into(),
                 };
                 let keep = if b.keep_originals {
                     "kept originals"

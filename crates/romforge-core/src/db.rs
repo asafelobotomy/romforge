@@ -339,6 +339,17 @@ const MIGRATIONS: &[&str] = &[
          title       TEXT NOT NULL
      );
      CREATE INDEX scummvm_ids_fingerprint ON scummvm_ids(fingerprint);",
+    // 28: when a batch's originals were deleted from the trash (milestone
+    // 16); such a batch can no longer be undone.
+    "ALTER TABLE cleanup_batches ADD COLUMN emptied_at TEXT;",
+    // 29: which copy owns each ROM (milestone 16): the one whose archive
+    // or folder holds the most of the ROM's game. A track two discs share
+    // is then each disc's own copy. Set by `identify`; until the next scan,
+    // a matched file owns its hash matches, as before.
+    "ALTER TABLE matches ADD COLUMN owns INTEGER NOT NULL DEFAULT 0;
+     UPDATE matches SET owns = 1
+       WHERE out_of_scope = 0 AND via IN ('sha1', 'md5')
+         AND file_id IN (SELECT file_id FROM files WHERE status = 'matched');",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

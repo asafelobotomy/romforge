@@ -46,7 +46,9 @@ fn import_scan_report() {
     );
 
     assert!(
-        out.contains("; skipped 12 non-ROM files; skipped 1 symlinked folder"),
+        out.contains(
+            "; skipped 12 non-ROM files (.dat 8, .mkv 1, .nfo 1, .txt 1, .url 1); skipped 1 symlinked folder"
+        ),
         "{out}"
     );
     assert!(!out.contains("CDRomance.url"), "{out}");

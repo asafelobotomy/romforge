@@ -14,6 +14,27 @@
   let cleanBatches = $state([]);
   let cleanError = $state("");
   let confirmCleanUndo = $state(false);
+  let trash = $state(null); // what Empty trash would delete, once asked
+
+  async function askEmptyTrash() {
+    trash = await call("trash_contents");
+  }
+
+  async function emptyTrash() {
+    cleanError = "";
+    busy = "Emptying the trash…";
+    try {
+      const r = await invoke("empty_trash");
+      note = `Deleted ${r.files} originals (${mib(r.bytes)}) from ${r.batches.length} batches; those can no longer be undone` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
+    } catch (e) {
+      cleanError = String(e);
+    }
+    trash = null;
+    busy = "";
+    await planCleanup();
+  }
+
+  const mib = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GiB` : `${(n / (1 << 20)).toFixed(1)} MiB`);
 
   export async function openCleanup(folder = null) {
     from = folder;
@@ -31,7 +52,7 @@
       cleanPlan = null;
       cleanError = String(e).replace(/^settings: /, "");
     }
-    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at);
+    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at && !b.emptied_at);
   }
 
   async function applyCleanup() {
@@ -137,6 +158,17 @@
           {:else}
             <button onclick={() => (confirmCleanUndo = true)} disabled={!!busy} title="Remove the last batch's new files and put its originals back">Undo last…</button>
           {/if}
+        {/if}
+        {#if trash}
+          {#if trash.files}
+            <span class="hint" role="status">Delete {trash.files} originals ({mib(trash.bytes)}) from {trash.batches.length} batches for good? They can't be undone after.</span>
+            <button onclick={emptyTrash} disabled={!!busy}>Yes, empty the trash</button>
+            <button onclick={() => (trash = null)} disabled={!!busy}>Cancel</button>
+          {:else}
+            <span class="hint" role="status">The trash is empty.</span>
+          {/if}
+        {:else}
+          <button onclick={askEmptyTrash} disabled={!!busy} title="Originals are kept in the trash so a batch can be undone; this deletes them for good">Empty trash…</button>
         {/if}
         <span class="spacer"></span>
         <button onclick={() => (open = false)} disabled={!!busy}>Close</button>

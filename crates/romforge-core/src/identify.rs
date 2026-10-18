@@ -356,8 +356,10 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
         all_hits.push(hits);
     }
 
-    // The copy that holds more of a game in one place (an archive or a
-    // folder) owns its ROMs; the others are duplicates. Ties go by path.
+    // Each ROM is owned by the copy whose place (an archive or a folder)
+    // holds the most of that ROM's game; the other copies are duplicates.
+    // Ties go by path. Per ROM, not per file: a track two discs share
+    // belongs, on each disc, to the copy beside that disc's other tracks.
     let mut held: HashMap<(&str, i64), HashSet<i64>> = HashMap::new();
     for (file, hits) in files.iter().zip(&all_hits) {
         for h in hits.iter().filter(|h| h.in_scope && h.via.strong()) {
@@ -366,39 +368,33 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                 .insert(h.rom_id);
         }
     }
-    let mut order: Vec<(usize, usize)> = files
-        .iter()
-        .zip(&all_hits)
-        .enumerate()
-        .map(|(i, (file, hits))| {
-            let most = hits
-                .iter()
-                .filter_map(|h| held.get(&(file.place.as_str(), h.game_id)))
-                .map(HashSet::len)
-                .max()
-                .unwrap_or(0);
-            (i, most)
-        })
-        .collect();
-    order.sort_by_key(|&(i, most)| (std::cmp::Reverse(most), i));
-    // ROM id -> file that claimed it.
-    let mut owners: HashMap<i64, i64> = HashMap::new();
-    for (i, _) in order {
-        let (file, hits) = (&files[i], &all_hits[i]);
-
+    // ROM id -> (how much of its game the owner's place holds, owner index).
+    let mut owners: HashMap<i64, (usize, usize)> = HashMap::new();
+    for (i, (file, hits)) in files.iter().zip(&all_hits).enumerate() {
+        for h in hits.iter().filter(|h| h.in_scope && h.via.strong()) {
+            let score = held
+                .get(&(file.place.as_str(), h.game_id))
+                .map_or(0, HashSet::len);
+            let best = owners.entry(h.rom_id).or_insert((score, i));
+            if score > best.0 {
+                *best = (score, i);
+            }
+        }
+    }
+    for (i, (file, hits)) in files.iter().zip(&all_hits).enumerate() {
         let strong_in_scope: Vec<i64> = hits
             .iter()
             .filter(|h| h.in_scope && h.via.strong())
             .map(|h| h.rom_id)
             .collect();
         let status = if !strong_in_scope.is_empty() {
-            if strong_in_scope.iter().all(|r| owners.contains_key(r)) {
-                Status::Duplicate
-            } else {
-                for r in &strong_in_scope {
-                    owners.entry(*r).or_insert(file.file_id);
-                }
+            if strong_in_scope
+                .iter()
+                .any(|r| owners.get(r).is_some_and(|o| o.1 == i))
+            {
                 Status::Matched
+            } else {
+                Status::Duplicate
             }
         } else if manual.contains(&(file.raw.sha1.clone(), file.raw.size)) {
             // The owner's pick outranks weak evidence (a CRC32-only hit, a
@@ -415,6 +411,23 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
         if status.as_str() != file.status {
             set_status.execute(params![file.file_id, status.as_str()])?;
         }
+    }
+    // Record who owns what, changing only what changed: the library lists
+    // a game with the copies that own its ROMs (and their duplicates).
+    let had: HashSet<(i64, i64)> = tx
+        .prepare("SELECT file_id, rom_id FROM matches WHERE owns = 1")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let want: HashSet<(i64, i64)> = owners
+        .iter()
+        .map(|(rom, (_, i))| (files[*i].file_id, *rom))
+        .collect();
+    let mut set_owns = tx.prepare("UPDATE matches SET owns = ?3 WHERE file_id = ?1 AND rom_id = ?2")?;
+    for (f, r) in had.difference(&want) {
+        set_owns.execute(params![f, r, false])?;
+    }
+    for (f, r) in want.difference(&had) {
+        set_owns.execute(params![f, r, true])?;
     }
     fit_sheets(tx)?;
     Ok(())

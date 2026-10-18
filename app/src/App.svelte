@@ -88,7 +88,7 @@
 
   async function refresh() {
     const r = await run("Rescanning your folders…", "refresh", {});
-    if (r) note = `Rescanned ${r.folders} folders, ${r.entries} entries` + (r.problems.length ? `; ${r.problems.length} problems: ${r.problems.join("; ")}` : "");
+    if (r) note = `Rescanned ${r.folders} folders, ${r.entries} entries` + (r.skipped ? `; skipped for their extension: ${r.skipped}` : "") + (r.problems.length ? `; ${r.problems.length} problems: ${r.problems.join("; ")}` : "");
     await load();
   }
 
@@ -99,7 +99,8 @@
         ...r.errors.map(([path, member, e]) => `${member ? `${path}#${member}` : path}: ${e}`),
         ...r.sheet_problems.map(([path, e]) => `${path}: ${e}`),
       ];
-      note = `Scanned ${r.hashed} entries in ${r.root}` + (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
+      const kinds = r.skipped_kinds.slice(0, 6).map((k) => (k.ext ? `.${k.ext} ${k.count}` : `no extension ${k.count}`)).join(", ");
+      note = `Scanned ${r.hashed} entries in ${r.root}` + (kinds ? `; skipped for their extension: ${kinds}${r.skipped_kinds.length > 6 ? ", …" : ""}` : "") + (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
       adding = false;
       addDir = "";
       await load();

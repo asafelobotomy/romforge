@@ -24,7 +24,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::hash::{hash_stream, hex};
 use crate::home::Home;
@@ -669,74 +669,148 @@ fn write_loose(
 }
 
 /// A folder game (or the archive holding it) into one zip, every file
-/// under its own path, then read back: each must hash as it was read.
-fn write_folder_zip(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<(), Error> {
-    let src = item.folder.as_deref().unwrap_or(Path::new(""));
-    let mut zip = zip::ZipWriter::new(File::create_new(out)?);
-    let opts = zip::write::SimpleFileOptions::default()
+/// The settings of every zip romforge writes: no clock (1980-01-01), the
+/// same permissions and compression for every member, so the same game
+/// always zips to the same bytes (as TorrentZip does; with
+/// [`zip_order`]). Zip64 only for a member that needs it.
+fn zip_options(size: u64) -> zip::write::SimpleFileOptions {
+    zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
-        .large_file(true);
-    let mut sums: Vec<(String, String)> = Vec::new();
-    let ext = src.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
-    if src.is_dir() {
-        for p in &item.parts {
-            zip.start_file(&p.name, opts)?;
-            sums.push((
-                p.name.clone(),
-                copy_hashed(BufReader::new(File::open(&p.path)?), &mut zip)?,
-            ));
-        }
-    } else if ext.as_deref() == Some("zip") {
-        let mut a = zip::ZipArchive::new(BufReader::new(File::open(src)?))?;
-        for i in 0..a.len() {
-            let mut m = a.by_index(i)?;
-            if m.is_dir() {
-                continue;
-            }
-            let name = m.name()?.into_owned();
-            zip.start_file(&name, opts)?;
-            sums.push((name, copy_hashed(&mut m, &mut zip)?));
-        }
-    } else {
-        // A 7z is one stream: its members are copied in order, in one pass.
-        let mut a = sevenz_rust2::ArchiveReader::open(src, sevenz_rust2::Password::empty())?;
-        let mut failed: Option<Error> = None;
-        a.for_each_entries(|entry, reader| {
-            if entry.is_directory() {
-                return Ok(true);
-            }
-            let r = (|| -> Result<String, Error> {
-                zip.start_file(entry.name(), opts)?;
-                Ok(copy_hashed(&mut *reader, &mut zip)?)
-            })();
-            match r {
-                Ok(sum) => {
-                    sums.push((entry.name().to_owned(), sum));
-                    Ok(true)
-                }
-                Err(e) => {
-                    failed = Some(e);
-                    Ok(false)
-                }
-            }
-        })?;
-        if let Some(e) = failed {
-            return Err(e);
-        }
-    }
-    for (name, data) in extras {
-        zip.start_file(format!("{}/{name}", layout::EXTRAS_DIR), opts)?;
+        .compression_level(Some(6))
+        .last_modified_time(zip::DateTime::default())
+        .unix_permissions(0o644)
+        .large_file(size >= u32::MAX as u64)
+}
+
+/// The order of a zip's members: by lower-case name (then exact name).
+fn zip_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+}
+
+/// Art and details into a zip's `romforge/` folder, in order.
+fn write_extras(zip: &mut zip::ZipWriter<File>, extras: &[(String, Vec<u8>)]) -> Result<(), Error> {
+    let mut sorted: Vec<&(String, Vec<u8>)> = extras.iter().collect();
+    sorted.sort_by(|a, b| zip_order(&a.0, &b.0));
+    for (name, data) in sorted {
+        zip.start_file(
+            format!("{}/{name}", layout::EXTRAS_DIR),
+            zip_options(data.len() as u64),
+        )?;
         zip.write_all(data)?;
     }
-    zip.finish()?.sync_all()?;
-    if sums.len() != item.parts.len() {
+    Ok(())
+}
+
+/// A folder game (or the archive holding it) into one zip, every file
+/// under its own path, in [`zip_order`], then read back: each must hash as
+/// it was read. A 7z (one compressed stream, read in its own order) is
+/// unpacked into `staging` first.
+fn write_folder_zip(
+    item: &Item,
+    extras: &[(String, Vec<u8>)],
+    staging: &Path,
+    out: &Path,
+) -> Result<(), Error> {
+    let src = item.folder.as_deref().unwrap_or(Path::new(""));
+    let source_is_zip =
+        |p: &Path| !p.is_dir() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    // (name in the zip, file on disk or member of the source zip, size)
+    let mut members: Vec<(String, PathBuf, u64)> = Vec::new();
+    let unpacked = staging.join("folder");
+    if src.is_dir() {
+        members.extend(
+            item.parts
+                .iter()
+                .map(|p| (p.name.clone(), p.path.clone(), p.size)),
+        );
+    } else if source_is_zip(src) {
+        members.extend(
+            item.parts
+                .iter()
+                .map(|p| (p.name.clone(), PathBuf::new(), p.size)),
+        );
+    } else {
+        std::fs::create_dir_all(&unpacked)?;
+        let mut a = sevenz_rust2::ArchiveReader::open(src, sevenz_rust2::Password::empty())?;
+        a.for_each_entries(|entry, reader| {
+            if !entry.is_directory() && safe_member_name(entry.name()) {
+                let to = unpacked.join(entry.name());
+                if let Some(d) = to.parent() {
+                    std::fs::create_dir_all(d)?;
+                }
+                std::io::copy(reader, &mut File::create(&to)?)?;
+            }
+            Ok(true)
+        })?;
+        members.extend(
+            item.parts
+                .iter()
+                .map(|p| (p.name.clone(), unpacked.join(&p.name), p.size)),
+        );
+    }
+    members.sort_by(|a, b| zip_order(&a.0, &b.0));
+    // The folder goes to the trash whole: it must hold just what was
+    // planned, nothing added since.
+    let now: BTreeSet<String> = if src.is_dir() {
+        walkdir::WalkDir::new(src)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                e.path()
+                    .strip_prefix(src)
+                    .ok()
+                    .map(|r| r.to_string_lossy().replace('\\', "/"))
+            })
+            .collect()
+    } else if source_is_zip(src) {
+        archive_names(src)?.into_iter().collect()
+    } else {
+        walkdir::WalkDir::new(&unpacked)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                e.path()
+                    .strip_prefix(&unpacked)
+                    .ok()
+                    .map(|r| r.to_string_lossy().into_owned())
+            })
+            .collect()
+    };
+    let planned: BTreeSet<String> = item.parts.iter().map(|p| p.name.clone()).collect();
+    if now != planned {
+        let _ = std::fs::remove_dir_all(&unpacked);
         return Err(Error::Cleanup(format!(
-            "{} changed since the plan ({} files, {} now)",
+            "{} changed since the plan ({} files planned, {} now); plan again",
             src.display(),
-            item.parts.len(),
-            sums.len()
+            planned.len(),
+            now.len()
         )));
     }
+    let mut source_zip = match source_is_zip(src) {
+        true => Some(zip::ZipArchive::new(BufReader::new(File::open(src)?))?),
+        false => None,
+    };
+    let mut zip = zip::ZipWriter::new(File::create_new(out)?);
+    let mut sums: Vec<(String, String)> = Vec::new();
+    for (name, path, size) in &members {
+        zip.start_file(name, zip_options(*size))?;
+        let sum = match source_zip.as_mut() {
+            Some(a) => copy_hashed(a.by_name(name)?, &mut zip)?,
+            None => copy_hashed(
+                BufReader::new(File::open(path).map_err(|e| {
+                    Error::Cleanup(format!("{} changed since the plan: {name}: {e}", src.display()))
+                })?),
+                &mut zip,
+            )?,
+        };
+        sums.push((name.clone(), sum));
+    }
+    write_extras(&mut zip, extras)?;
+    zip.finish()?.sync_all()?;
+    let _ = std::fs::remove_dir_all(&unpacked);
     let mut back = zip::ZipArchive::new(BufReader::new(File::open(out)?))?;
     for (name, sum) in &sums {
         if sha1_of(back.by_name(name)?)? != *sum {
@@ -825,7 +899,7 @@ fn verified_parts(
     source: &Source,
 ) -> Result<Option<PartsAndCopies>, Error> {
     let mut stmt = conn.prepare(concat!(
-        "SELECT g.game_id, r.rom_id, r.name, f.path, f.member, f.size, f.sha1, f.status
+        "SELECT g.game_id, r.rom_id, r.name, f.path, f.member, f.size, f.sha1, f.status, m.owns
          FROM games g JOIN dats d ON d.dat_id = g.dat_id
          JOIN roms r ON r.game_id = g.game_id
          LEFT JOIN matches m ON m.rom_id = r.rom_id AND m.out_of_scope = 0 AND m.via IN ",
@@ -850,9 +924,10 @@ fn verified_parts(
             r.get::<_, Option<u64>>(5)?,
             r.get::<_, Option<String>>(6)?,
             r.get::<_, Option<String>>(7)?,
+            r.get::<_, Option<bool>>(8)?,
         ))
     })? {
-        let (game, rom, name, path, member, size, sha1, status) = r?;
+        let (game, rom, name, path, member, size, sha1, status, owns) = r?;
         let entry = games
             .entry(game)
             .or_default()
@@ -862,7 +937,11 @@ fn verified_parts(
             (path, member, size, sha1, status)
         {
             let path = PathBuf::from(path);
-            let rank = (!source.contains(&path)) as u8 * 2 + (status != "matched") as u8;
+            // In Source first, then the copy that owns the ROM (beside the
+            // game's other files), then a matched file before a duplicate.
+            let rank = (!source.contains(&path)) as u8 * 4
+                + (owns != Some(true)) as u8 * 2
+                + (status != "matched") as u8;
             let part = Part {
                 name,
                 path,
@@ -1114,16 +1193,14 @@ pub fn details_md(d: &view::GameDetail) -> String {
 
 fn write_zip(item: &Item, extras: &[(String, Vec<u8>)], staging: &Path, out: &Path) -> Result<(), Error> {
     let mut zip = zip::ZipWriter::new(File::create_new(out)?);
-    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    for p in &item.parts {
-        zip.start_file(&p.name, opts)?;
+    let mut parts: Vec<&Part> = item.parts.iter().collect();
+    parts.sort_by(|a, b| zip_order(&a.name, &b.name));
+    for p in parts {
+        zip.start_file(&p.name, zip_options(p.size))?;
         let mut r = open_part(p, staging)?;
         std::io::copy(&mut r, &mut zip)?;
     }
-    for (name, data) in extras {
-        zip.start_file(format!("{}/{name}", layout::EXTRAS_DIR), opts)?;
-        zip.write_all(data)?;
-    }
+    write_extras(&mut zip, extras)?;
     zip.finish()?.sync_all()?;
     // Read it back: every ROM must hash as before.
     let mut back = zip::ZipArchive::new(BufReader::new(File::open(out)?))?;
@@ -1471,7 +1548,7 @@ pub fn apply(
             let extras = extras(conn, &item.row_id)?;
             let written = match item.format {
                 Format::Zip => write_zip(item, &extras, &staging, &part).map(|()| false),
-                Format::Folder => write_folder_zip(item, &extras, &part).map(|()| false),
+                Format::Folder => write_folder_zip(item, &extras, &staging, &part).map(|()| false),
                 _ => write_chd(item, &staging, &part),
             };
             let took_sheet = match written {
@@ -1722,12 +1799,25 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
         Some(b) => b,
         None => conn
             .query_row(
-                "SELECT max(batch_id) FROM cleanup_batches WHERE undone_at IS NULL",
+                "SELECT max(batch_id) FROM cleanup_batches WHERE undone_at IS NULL AND emptied_at IS NULL",
                 [],
                 |r| r.get::<_, Option<i64>>(0),
             )?
             .ok_or_else(|| Error::Cleanup("nothing to undo".into()))?,
     };
+    let emptied: Option<String> = conn
+        .query_row(
+            "SELECT emptied_at FROM cleanup_batches WHERE batch_id = ?1",
+            [batch_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if let Some(when) = emptied {
+        return Err(Error::Cleanup(format!(
+            "batch #{batch_id}'s originals were deleted when the trash was emptied ({when}); it can't be undone"
+        )));
+    }
     let mut u = CleanupUndone {
         batch_id,
         ..CleanupUndone::default()
@@ -1830,11 +1920,13 @@ pub struct Batch {
     pub outputs: i64,
     pub trashed: i64,
     pub undone_at: Option<String>,
+    /// When its originals were deleted from the trash: it can't be undone.
+    pub emptied_at: Option<String>,
 }
 
 pub fn batches(conn: &Connection) -> Result<Vec<Batch>, Error> {
     let mut stmt = conn.prepare(
-        "SELECT b.batch_id, b.created_at, b.keep_originals, b.undone_at,
+        "SELECT b.batch_id, b.created_at, b.keep_originals, b.undone_at, b.emptied_at,
                 (SELECT count(*) FROM cleanup_outputs o WHERE o.batch_id = b.batch_id AND o.kind = 'file'),
                 (SELECT count(*) FROM cleanup_trash t WHERE t.batch_id = b.batch_id)
          FROM cleanup_batches b ORDER BY b.batch_id",
@@ -1845,11 +1937,132 @@ pub fn batches(conn: &Connection) -> Result<Vec<Batch>, Error> {
             created_at: r.get(1)?,
             keep_originals: r.get(2)?,
             undone_at: r.get(3)?,
-            outputs: r.get(4)?,
-            trashed: r.get(5)?,
+            emptied_at: r.get(4)?,
+            outputs: r.get(5)?,
+            trashed: r.get(6)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// One batch's originals waiting in the trash.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TrashBatch {
+    pub batch_id: i64,
+    pub created_at: String,
+    pub files: usize,
+    pub bytes: u64,
+}
+
+/// What emptying the trash removes (or removed).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TrashSummary {
+    pub batches: Vec<TrashBatch>,
+    pub files: usize,
+    pub bytes: u64,
+    /// What couldn't be deleted (left in the trash).
+    pub failed: Vec<String>,
+}
+
+/// Files under a path (a trashed file, or a trashed folder game), and
+/// their size.
+fn on_disk(p: &Path) -> (usize, u64) {
+    walkdir::WalkDir::new(p)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .fold((0, 0), |(n, b), e| {
+            (n + 1, b + e.metadata().map_or(0, |m| m.len()))
+        })
+}
+
+/// The trash's batches (not undone, not emptied), with what each holds:
+/// all of them, or those made more than `older_than_days` ago.
+pub fn trash_contents(conn: &Connection, older_than_days: Option<u32>) -> Result<TrashSummary, Error> {
+    let cutoff = older_than_days.map(|d| format!("-{d} days"));
+    let ids: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT b.batch_id, b.created_at FROM cleanup_batches b
+             WHERE b.undone_at IS NULL AND b.emptied_at IS NULL
+               AND EXISTS (SELECT 1 FROM cleanup_trash t WHERE t.batch_id = b.batch_id)
+               AND (?1 IS NULL OR b.created_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?1))
+             ORDER BY b.batch_id",
+        )?
+        .query_map([cutoff], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut out = TrashSummary::default();
+    let mut paths = conn.prepare("SELECT trashed FROM cleanup_trash WHERE batch_id = ?1")?;
+    for (batch_id, created_at) in ids {
+        let (mut files, mut bytes) = (0, 0);
+        for p in paths.query_map([batch_id], |r| r.get::<_, String>(0))? {
+            let (n, b) = on_disk(Path::new(&p?));
+            files += n;
+            bytes += b;
+        }
+        out.files += files;
+        out.bytes += bytes;
+        out.batches.push(TrashBatch {
+            batch_id,
+            created_at,
+            files,
+            bytes,
+        });
+    }
+    Ok(out)
+}
+
+/// Delete the originals [`trash_contents`] lists, for good. Each batch is
+/// marked emptied first, so it can't be undone from then on (its new files
+/// would go with nothing to put back); what can't be deleted stays listed
+/// in `failed`, and in the journal.
+pub fn empty_trash(conn: &Connection, older_than_days: Option<u32>) -> Result<TrashSummary, Error> {
+    let mut out = trash_contents(conn, older_than_days)?;
+    for b in &out.batches {
+        conn.execute(
+            concat!(
+                "UPDATE cleanup_batches SET emptied_at = ",
+                crate::db::now!(),
+                " WHERE batch_id = ?1"
+            ),
+            [b.batch_id],
+        )?;
+        let rows: Vec<String> = conn
+            .prepare("SELECT trashed FROM cleanup_trash WHERE batch_id = ?1")?
+            .query_map([b.batch_id], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        for at in rows {
+            let p = Path::new(&at);
+            let r = if p.is_dir() {
+                std::fs::remove_dir_all(p)
+            } else {
+                std::fs::remove_file(p)
+            };
+            match r {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    out.failed.push(format!("{at}: {e}"));
+                    continue;
+                }
+            }
+            conn.execute(
+                "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
+                params![b.batch_id, at],
+            )?;
+            // The batch's folders in the trash go once empty.
+            let mut d = p.parent();
+            while let Some(dir) = d {
+                if dir.file_name().is_some_and(|n| n == layout::TRASH_DIR)
+                    || std::fs::remove_dir(dir).is_err()
+                {
+                    break;
+                }
+                d = dir.parent();
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
