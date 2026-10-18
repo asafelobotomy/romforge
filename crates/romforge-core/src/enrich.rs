@@ -207,6 +207,27 @@ pub fn thumbnail_file(game: &str) -> String {
     format!("{name}.png")
 }
 
+/// A game's file name in the art cache, without the extension: libretro's
+/// name when that is the title itself; otherwise (characters replaced, so
+/// "A: B" and "A? B" would share one file, or too long for a file name)
+/// cut to 200 bytes and marked with the start of the title's CRC32.
+pub(crate) fn cache_stem(game: &str) -> String {
+    let file = thumbnail_file(game);
+    let stem = file.strip_suffix(".png").unwrap_or(&file);
+    if stem == game && stem.len() <= 200 {
+        return stem.to_owned();
+    }
+    let mut cut = stem.len().min(200);
+    while !stem.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!(
+        "{} [{:08x}]",
+        stem[..cut].trim_end(),
+        crc32fast::hash(game.as_bytes())
+    )
+}
+
 pub fn thumbnail_url(base: &str, system_name: &str, kind: ArtKind, game: &str) -> Option<String> {
     Some(format!(
         "{base}/{}/{}/{}",
@@ -628,7 +649,7 @@ pub fn enrich(
             };
             let mut found: Vec<(&'static str, &'static str, String)> = Vec::new();
             if let Some(db) = &ovgdb {
-                match crate::extdb::openvgdb_lookup(db, &game_sha1s(conn, *system_id, game)?) {
+                match crate::extdb::openvgdb_lookup(db, &game_roms(conn, *system_id, game)?) {
                     Ok(Some(f)) => found.extend(f.fields.into_iter().map(|(k, v)| ("openvgdb", k, v))),
                     Ok(None) => {}
                     Err(e) => report.errors.push(format!("OpenVGDB: {e}")),
@@ -687,16 +708,15 @@ fn get_halting(url: &str, halted: &mut std::collections::HashSet<String>) -> Res
 }
 
 /// The SHA1s of a game's ROMs (from its DATs) or of the files you named it.
-fn game_sha1s(conn: &Connection, system_id: i64, title: &str) -> Result<Vec<String>, Error> {
+fn game_roms(conn: &Connection, system_id: i64, title: &str) -> Result<Vec<(String, u64)>, Error> {
     Ok(conn
         .prepare_cached(
-            // From the system's DATs down (games have no index by name).
-            "SELECT r.sha1 FROM dats d CROSS JOIN games g ON g.dat_id = d.dat_id
-               CROSS JOIN roms r ON r.game_id = g.game_id
-             WHERE d.system_id = ?1 AND g.name = ?2 AND +r.sha1 IS NOT NULL
-             UNION SELECT sha1 FROM manual_ids WHERE system_id = ?1 AND title = ?2",
+            "SELECT r.sha1, r.size FROM games g JOIN dats d ON d.dat_id = g.dat_id
+               JOIN roms r ON r.game_id = g.game_id
+             WHERE d.system_id = ?1 AND g.name = ?2 AND r.sha1 IS NOT NULL AND r.size IS NOT NULL
+             UNION SELECT sha1, size FROM manual_ids WHERE system_id = ?1 AND title = ?2",
         )?
-        .query_map(params![system_id, title], |r| r.get(0))?
+        .query_map(params![system_id, title], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?)
 }
 
@@ -730,14 +750,12 @@ fn keep(
     source: &str,
 ) -> Result<(), Error> {
     let ext = image_ext(data).unwrap_or("png");
-    let stem = thumbnail_file(game);
-    let stem = stem.strip_suffix(".png").unwrap_or(&stem);
     let path = opts
         .cache_dir
         .join("art")
         .join(system.key)
         .join(kind.as_str())
-        .join(format!("{stem}.{ext}"));
+        .join(format!("{}.{ext}", cache_stem(game)));
     save(&path, data).map_err(|e| Error::Http(format!("{}: {e}", path.display())))?;
     record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)
 }
@@ -822,6 +840,16 @@ pub fn info(conn: &Connection, query: &str) -> Result<Vec<GameInfo>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_names_never_collide_or_overflow() {
+        assert_eq!(cache_stem("Super Mario World (USA)"), "Super Mario World (USA)");
+        assert_ne!(cache_stem("A: B"), cache_stem("A? B"));
+        assert!(cache_stem("A: B").starts_with("A_ B ["));
+        let long = "Ä".repeat(150);
+        let stem = cache_stem(&long);
+        assert!(stem.len() <= 211 && stem.ends_with(']'), "{stem}");
+    }
 
     #[test]
     fn thumbnail_names_and_urls() {

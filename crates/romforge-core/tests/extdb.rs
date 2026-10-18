@@ -21,10 +21,13 @@ fn openvgdb_zip(dir: &Path) -> Vec<u8> {
     let db = dir.join("openvgdb.sqlite");
     let c = rusqlite::Connection::open(&db).unwrap();
     c.execute_batch(
-        "CREATE TABLE ROMs (romID INTEGER PRIMARY KEY, romHashSHA1 TEXT);
+        "CREATE TABLE ROMs (romID INTEGER PRIMARY KEY, romHashSHA1 TEXT, romSize INTEGER);
          CREATE TABLE RELEASES (releaseID INTEGER PRIMARY KEY, romID INTEGER, releaseDescription TEXT,
            releaseDeveloper TEXT, releasePublisher TEXT, releaseGenre TEXT, releaseDate TEXT);
-         INSERT INTO ROMs VALUES (1, '845D41D57C6F24CCB31CE71ACD35CC74638ACD19');
+         INSERT INTO ROMs VALUES (1, '845D41D57C6F24CCB31CE71ACD35CC74638ACD19', 1024);
+         -- The same SHA1 at another size is another ROM: never this one.
+         INSERT INTO ROMs VALUES (2, '845D41D57C6F24CCB31CE71ACD35CC74638ACD19', 2048);
+         INSERT INTO RELEASES VALUES (0, 2, 'Not this one.', 'Wrong Studio', NULL, NULL, NULL);
          INSERT INTO RELEASES VALUES (1, 1, 'A test game, from OpenVGDB.', 'Hash Studio', NULL, 'Action,Platformer', 'Aug 13, 1991');",
     )
     .unwrap();
@@ -127,7 +130,7 @@ fn download_then_fill_only_what_is_missing() {
     let dir = tmp.path().join("databases");
     assert!(extdb::list(&dir).iter().all(|i| i.downloaded_at.is_none()));
     let o = extdb::download(ExtDb::OpenVgdb, &dir, &bases, |_| {}).unwrap();
-    assert_eq!(o.entries, Some(1));
+    assert_eq!(o.entries, Some(2));
     let l = extdb::download(ExtDb::LaunchBox, &dir, &bases, |_| {}).unwrap();
     assert_eq!(l.entries, Some(3), "only platforms romforge knows are kept");
     assert!(l.downloaded_at.is_some() && !dir.join("launchbox.zip").exists());

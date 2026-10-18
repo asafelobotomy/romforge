@@ -473,23 +473,28 @@ pub struct Found {
     pub images: Vec<(ArtKind, String)>,
 }
 
-/// OpenVGDB by any of the game's SHA1s.
-pub fn openvgdb_lookup(conn: &Connection, sha1s: &[String]) -> Result<Option<Found>, Error> {
+/// OpenVGDB by any of the game's ROMs (SHA1 and size). A SHA1 that is
+/// more than one OpenVGDB ROM says nothing.
+pub fn openvgdb_lookup(conn: &Connection, roms: &[(String, u64)]) -> Result<Option<Found>, Error> {
     let mut stmt = conn.prepare_cached(
-        "SELECT e.releaseDescription, e.releaseDeveloper, e.releasePublisher, e.releaseGenre, e.releaseDate
+        "SELECT r.romID, e.releaseDescription, e.releaseDeveloper, e.releasePublisher, e.releaseGenre,
+                e.releaseDate
          FROM ROMs r CROSS JOIN RELEASES e ON e.romID = r.romID
-         WHERE r.romHashSHA1 = ?1
-         ORDER BY (e.releaseDescription IS NULL), e.releaseID LIMIT 1",
+         WHERE r.romHashSHA1 = ?1 AND (r.romSize IS NULL OR r.romSize = ?2)
+         ORDER BY (e.releaseDescription IS NULL), e.releaseID",
     )?;
-    for sha1 in sha1s {
-        let row: Option<[Option<String>; 5]> = stmt
-            .query_row([sha1.to_ascii_uppercase()], |r| {
-                Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?])
-            })
-            .optional()?;
-        let Some([desc, dev, publ, genre, date]) = row else {
+    for (sha1, size) in roms {
+        let rows: Vec<(i64, [Option<String>; 5])> = stmt
+            .query_map(params![sha1.to_ascii_uppercase(), *size as i64], |r| {
+                Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?]))
+            })?
+            .collect::<Result<_, _>>()?;
+        let Some((rom, [desc, dev, publ, genre, date])) = rows.first().cloned() else {
             continue;
         };
+        if rows.iter().any(|(r, _)| *r != rom) {
+            continue;
+        }
         let mut f = Found::default();
         let mut put = |k: &'static str, v: Option<String>| {
             if let Some(v) = v.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty()) {

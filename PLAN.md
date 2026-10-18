@@ -570,14 +570,8 @@ A full review found about 90 items. The serious ones are fixed: batch 1
 (data safety and crashes), batch 2 (wrong results), batch 3 (speed) and
 batch 4 (medium items). Still open, all low or medium:
 
-- **DAT import.** DAT serials and TOSEC partial imports outlive a
-  replaced DAT. OpenVGDB is looked up by SHA1 with `LIMIT 1` and no size
-  check. SteamGridDB matches by title with no platform.
 - **Network.** Redump serves no HTTPS (its server resets TLS), so its DATs
-  stay on HTTP. ureq's global timeout covers the whole body, which a slow
-  link can exceed on the 110 MB LaunchBox download.
-- **Art cache.** Names collide (`A: B` and `A? B`); titles over 255 bytes
-  fail.
+  stay on HTTP until it does.
 - **Organize.** Symlinked files, rename races (no `RENAME_NOREPLACE`), GDI
   in the disc-set check, no fsync before a cross-drive delete.
 - **Cleanup.** `named_parts` takes duplicates of one sha1 as two parts and

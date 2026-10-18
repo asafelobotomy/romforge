@@ -546,7 +546,7 @@ fn preview_image(
         return Some(p);
     }
     let dir = cache_dir.join("preview").join(crate::organize::sanitize(sys.key));
-    let file = dir.join(format!("{}.png", crate::organize::sanitize(title)));
+    let file = dir.join(format!("{}.png", crate::enrich::cache_stem(title)));
     if file.exists() {
         return Some(file);
     }

@@ -70,7 +70,12 @@ fn serve() -> (String, Log) {
                     "application/json",
                     br#"{"success":true,"data":[{"id":70,"name":"Test GB Color"},{"id":7,"name":"Test GB"}]}"#.to_vec(),
                 ),
-                p if p.starts_with("/sgdb/") && p.contains("/game/7") => (
+                // Two games of that very title: SteamGridDB can't say which.
+                "/sgdb/search/autocomplete/MD5%20Only" => (
+                    "application/json",
+                    br#"{"success":true,"data":[{"id":80,"name":"MD5 Only"},{"id":81,"name":"MD5 Only"}]}"#.to_vec(),
+                ),
+                p if p.starts_with("/sgdb/") && (p.contains("/game/7") || p.contains("/game/8")) => (
                     "application/json",
                     format!(r#"{{"success":true,"data":[{{"url":"{host}/img/sgdb{}.jpg"}}]}}"#, p.len()).into_bytes(),
                 ),
@@ -158,6 +163,12 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         ss.0.contains("devid=dev") && ss.0.contains("sha1=") && ss.0.contains("systemeid=9"),
         "{}",
         ss.0
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|(p, _)| p.contains("/game/80") || p.contains("/game/81")),
+        "an ambiguous title gets nothing"
     );
     let sgdb = requests.iter().find(|(p, _)| p.starts_with("/sgdb/")).unwrap();
     assert_eq!(

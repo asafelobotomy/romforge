@@ -426,13 +426,18 @@ impl Library {
         }
         if let fetch::Source::Tosec(name) = source {
             let url = fetch::tosec_pack_url()?;
-            let prefix = format!("{url}#TOSEC/{name} - ");
-            let have: bool = self.conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM dats WHERE substr(source_path, 1, length(?1)) = ?1)",
-                [&prefix],
-                |r| r.get(0),
+            let (prefix, part) = tosec_paths(&url, name);
+            // Done when this release is in and no older one is left (an
+            // older DAT left over means the last run did not finish).
+            let (have, older): (bool, bool) = self.conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM dats WHERE substr(source_path, 1, length(?1)) = ?1),
+                        EXISTS (SELECT 1 FROM dats WHERE substr(source_path, 1, length(?2)) = ?2
+                                  AND instr(source_path, ?3) > 0
+                                  AND substr(source_path, 1, length(?1)) <> ?1)",
+                params![prefix, fetch::TOSEC_BASE, part],
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
-            if have {
+            if have && !older {
                 return Ok(Vec::new());
             }
             let pack = fetch::tosec_pack(&url)?;
@@ -455,6 +460,9 @@ impl Library {
                     }
                 }
                 if failed.is_empty() {
+                    if forget_older_tosec(&lib.conn, &url, name)? > 0 {
+                        lib.batch_dirty = true;
+                    }
                     Ok(imported)
                 } else {
                     Err(Error::Dat(format!(
@@ -672,6 +680,9 @@ impl Library {
                 "INSERT OR IGNORE INTO serials (system_id, title, serial, key, source)
                  VALUES (?1, ?2, ?3, ?4, 'dat')",
             )?;
+            // This DAT says what its games' serials are now.
+            let mut clear_serials =
+                tx.prepare("DELETE FROM serials WHERE system_id = ?1 AND title = ?2 AND source = 'dat'")?;
             for game in &dat.games {
                 add_game.execute(params![
                     dat_id,
@@ -683,6 +694,9 @@ impl Library {
                 ])?;
                 let game_id = tx.last_insert_rowid();
                 if let Some(system) = system {
+                    if replaced.is_some() {
+                        clear_serials.execute(params![system.id, game.name])?;
+                    }
                     for serial in &game.serials {
                         add_serial.execute(params![system.id, game.name, serial, dat::serial_key(serial)])?;
                     }
@@ -694,6 +708,9 @@ impl Library {
                     roms += 1;
                 }
             }
+        }
+        if replaced.is_some() {
+            forget_stale_serials(&tx)?;
         }
         if defer {
             self.batch_dirty = true;
@@ -1258,5 +1275,127 @@ impl Library {
 
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {
         report::systems_in_use(&self.conn)
+    }
+}
+
+/// The source paths of a TOSEC release's DATs for `name`, and the part
+/// every release's paths for it share.
+fn tosec_paths(url: &str, name: &str) -> (String, String) {
+    (format!("{url}#TOSEC/{name} - "), format!("#TOSEC/{name} - "))
+}
+
+/// Remove `name`'s DATs from TOSEC releases other than `url`'s: once a
+/// release is fully in, what it dropped or renamed goes too.
+fn forget_older_tosec(conn: &Connection, url: &str, name: &str) -> Result<usize, Error> {
+    let (prefix, part) = tosec_paths(url, name);
+    let gone = conn.execute(
+        "DELETE FROM dats WHERE substr(source_path, 1, length(?2)) = ?2
+           AND instr(source_path, ?3) > 0 AND substr(source_path, 1, length(?1)) <> ?1",
+        params![prefix, fetch::TOSEC_BASE, part],
+    )?;
+    if gone > 0 {
+        forget_stale_serials(conn)?;
+    }
+    Ok(gone)
+}
+
+/// DAT serials whose game no DAT of its system has any more (the DAT was
+/// replaced or removed). libretro's serials stay until its list is stored
+/// again.
+fn forget_stale_serials(conn: &Connection) -> Result<(), Error> {
+    conn.execute(
+        "DELETE FROM serials WHERE source = 'dat' AND NOT EXISTS (
+           SELECT 1 FROM games g JOIN dats d ON d.dat_id = g.dat_id
+           WHERE g.name = serials.title AND d.system_id = serials.system_id)",
+        [],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dat(name: &str, games: &[(&str, &str)]) -> String {
+        let games: String = games
+            .iter()
+            .map(|(g, serial)| {
+                format!(r#"<game name="{g}"><serial>{serial}</serial><rom name="{g}.gb" size="1" crc="0000000{}"/></game>"#, g.len() % 10)
+            })
+            .collect();
+        format!(r#"<datafile><header><name>{name}</name></header>{games}</datafile>"#)
+    }
+
+    fn serials(lib: &Library) -> Vec<(String, String)> {
+        lib.conn
+            .prepare("SELECT title, serial FROM serials ORDER BY title")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    /// A replaced DAT's serials go with it; a game's new serial replaces
+    /// its old one.
+    #[test]
+    fn serials_follow_their_dat() {
+        let mut lib = Library::open_in_memory().unwrap();
+        let v1 = dat(
+            "Nintendo - Game Boy",
+            &[("Gone", "DMG-AAAA"), ("Kept", "DMG-BBBB")],
+        );
+        let v2 = dat(
+            "Nintendo - Game Boy",
+            &[("Kept", "DMG-CCCC"), ("New", "DMG-DDDD")],
+        );
+        lib.import_dat_bytes(v1.as_bytes(), "https://example.org/gb.dat", None)
+            .unwrap();
+        lib.import_dat_bytes(v2.as_bytes(), "https://example.org/gb.dat", None)
+            .unwrap();
+        assert_eq!(
+            serials(&lib),
+            [
+                ("Kept".into(), "DMG-CCCC".into()),
+                ("New".into(), "DMG-DDDD".into())
+            ]
+        );
+    }
+
+    /// Once a TOSEC release is in, a DAT it no longer has goes (and its
+    /// serials); another system's TOSEC DATs stay.
+    #[test]
+    fn older_tosec_dats_go() {
+        let mut lib = Library::open_in_memory().unwrap();
+        let old = "https://www.tosecdev.org/downloads/category/58?download=1";
+        let new = "https://www.tosecdev.org/downloads/category/59?download=2";
+        let gb = |kind: &str| dat(&format!("Nintendo Game Boy - {kind}"), &[(kind, "DMG-EEEE")]);
+        lib.import_dat_bytes(
+            gb("Demos").as_bytes(),
+            &format!("{old}#TOSEC/Nintendo Game Boy - Demos (TOSEC-v1).dat"),
+            Some("Game Boy"),
+        )
+        .unwrap();
+        lib.import_dat_bytes(
+            gb("Games").as_bytes(),
+            &format!("{new}#TOSEC/Nintendo Game Boy - Games (TOSEC-v2).dat"),
+            Some("Game Boy"),
+        )
+        .unwrap();
+        let other = dat("Nintendo Game Boy Color - Games", &[("Color", "CGB-FFFF")]);
+        lib.import_dat_bytes(
+            other.as_bytes(),
+            &format!("{old}#TOSEC/Nintendo Game Boy Color - Games (TOSEC-v1).dat"),
+            Some("Game Boy Color"),
+        )
+        .unwrap();
+        assert_eq!(
+            forget_older_tosec(&lib.conn, new, "Nintendo Game Boy").unwrap(),
+            1
+        );
+        let names: Vec<String> = lib.summary().unwrap().dats.into_iter().map(|d| d.name).collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(!names.iter().any(|n| n.ends_with("Demos")), "{names:?}");
+        assert!(serials(&lib).iter().all(|(t, _)| t != "Demos"));
     }
 }

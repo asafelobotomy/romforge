@@ -417,7 +417,12 @@ fn agent() -> &'static ureq::Agent {
     AGENT.get_or_init(|| {
         ureq::Agent::config_builder()
             .user_agent(USER_AGENT)
-            .timeout_global(Some(Duration::from_secs(900)))
+            // Dead or silent servers fail fast; a body may take long on a
+            // slow link (LaunchBox's 110 MB, TOSEC's pack), so it gets
+            // hours rather than one deadline for the whole request.
+            .timeout_connect(Some(Duration::from_secs(30)))
+            .timeout_recv_response(Some(Duration::from_secs(120)))
+            .timeout_recv_body(Some(Duration::from_secs(3 * 3600)))
             .http_status_as_error(false)
             .tls_config(
                 TlsConfig::builder()

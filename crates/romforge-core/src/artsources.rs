@@ -4,8 +4,8 @@
 //!
 //! - ScreenScraper looks a game up by its ROM's hashes (the strongest
 //!   match): 2D and 3D box, wheel logo, fanart, title screen, screenshot.
-//! - SteamGridDB looks it up by title, accepting only an exact title:
-//!   600x900 grid (box), hero, logo, icon.
+//! - SteamGridDB looks it up by title, accepting only one game with
+//!   exactly that title (it knows no platforms): hero, logo, icon.
 //! - IGDB looks it up by title and platform, exact titles only: cover,
 //!   artwork (hero), screenshot.
 
@@ -234,14 +234,17 @@ fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, St
     else {
         return Ok(Vec::new());
     };
+    // It has no platforms to tell same-named games apart (a remake, a PC
+    // port), so two of that title are none.
     let want = wikidata::normalize(job.title);
-    let id = found["data"]
+    let named: Vec<u64> = found["data"]
         .as_array()
         .into_iter()
         .flatten()
-        .find(|g| g["name"].as_str().is_some_and(|n| wikidata::normalize(n) == want))
-        .and_then(|g| g["id"].as_u64());
-    let Some(id) = id else { return Ok(Vec::new()) };
+        .filter(|g| g["name"].as_str().is_some_and(|n| wikidata::normalize(n) == want))
+        .filter_map(|g| g["id"].as_u64())
+        .collect();
+    let [id] = named[..] else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     // No grids: they are Steam library capsules people design, not the
     // game's box, so they never stand in for box art.
