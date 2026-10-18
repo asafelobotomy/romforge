@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::report::{GAME_HAVE, HAD, IS_HAVE};
@@ -65,6 +65,15 @@ pub struct GameRow {
     pub art: Vec<String>,
     /// Identified (by hash, or by the owner), so Play may start it.
     pub playable: bool,
+    /// Versions of one game (regions, revisions, translations, hacks)
+    /// share a group (`v:<system id>:<key>`); `None` for a game with no
+    /// other version here.
+    pub group: Option<String>,
+    /// The version the list shows for its group (the best region in
+    /// Settings); every row not in a group is its own main row.
+    pub main: bool,
+    /// On a main row: how many versions its group has (1 without one).
+    pub versions: usize,
     #[serde(skip)]
     system_id: Option<i64>,
     #[serde(skip)]
@@ -373,6 +382,9 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             metadata: known.as_ref().is_some_and(|k| meta.contains(k)),
             art: known.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
             playable: false,
+            group: None,
+            main: true,
+            versions: 1,
             system_id,
             file_ids: Vec::new(),
         }
@@ -457,6 +469,9 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 metadata: key.as_ref().is_some_and(|k| meta.contains(k)),
                 art: key.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
                 playable: false,
+                group: None,
+                main: true,
+                versions: 1,
                 system_id,
                 file_ids: Vec::new(),
             })
@@ -478,8 +493,10 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             .cmp(&sort_key(&b.title))
             .then_with(|| a.system.cmp(&b.system))
     });
+    group_versions(conn, &mut rows)?;
+    // Games, not versions.
     let mut counts: BTreeMap<Option<i64>, usize> = BTreeMap::new();
-    for r in &rows {
+    for r in rows.iter().filter(|r| r.main) {
         *counts.entry(r.system_id).or_default() += 1;
     }
     let mut platforms: Vec<Platform> = counts
@@ -519,6 +536,82 @@ pub fn short_name(key: &str) -> String {
             .collect::<String>()
             .to_uppercase()
     }
+}
+
+/// Group the versions of each game: regions, revisions, translations and
+/// hacks of one game share a group, keyed by its clone-list group, else
+/// its DAT parent (`cloneof`), else its title without tags; translations
+/// and hacks by their base game. The main row is the best release in the
+/// Settings region order (a translation or hack only when nothing else is
+/// there). Unidentified files are never grouped.
+fn group_versions(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> {
+    use crate::organize::{base_title, rank};
+    let regions = crate::settings::load(conn)?.region_order();
+    let clones = crate::organize::clone_groups(conn)?;
+    let bases: HashMap<(i64, String), String> = conn
+        .prepare("SELECT DISTINCT system_id, title, base FROM manual_ids WHERE base IS NOT NULL")?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut parent_of = conn.prepare(
+        "SELECT g.cloneof FROM games g JOIN dats d ON d.dat_id = g.dat_id
+         WHERE g.name = ?2 AND d.system_id = ?1 AND g.cloneof IS NOT NULL AND g.cloneof <> ''
+         LIMIT 1",
+    )?;
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut priority: HashMap<usize, i64> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        let identified = matches!(
+            r.status,
+            RowStatus::Verified | RowStatus::Incomplete | RowStatus::ByYou | RowStatus::Derivative
+        );
+        let (Some(sid), Some(key)) = (r.system_id, r.system.as_deref()) else {
+            continue;
+        };
+        if !identified {
+            continue;
+        }
+        let name = bases
+            .get(&(sid, r.title.clone()))
+            .cloned()
+            .unwrap_or_else(|| r.title.clone());
+        let parent: Option<String> = parent_of.query_row(params![sid, name], |r| r.get(0)).optional()?;
+        let base = base_title(parent.as_deref().unwrap_or(&name));
+        let group = match clones.get(&(key.to_owned(), base.clone())) {
+            Some((grp, p)) => {
+                priority.insert(i, *p);
+                format!("v:{sid}:c:{}", grp.to_lowercase())
+            }
+            None => format!("v:{sid}:t:{base}"),
+        };
+        groups.entry(group).or_default().push(i);
+    }
+    for (group, idx) in groups {
+        if idx.len() < 2 {
+            continue;
+        }
+        let best = *idx
+            .iter()
+            .max_by_key(|&&i| {
+                let r = &rows[i];
+                let (retail, region, revision) = rank(&r.title, &regions);
+                (
+                    r.status != RowStatus::Derivative,
+                    r.status != RowStatus::Incomplete,
+                    retail,
+                    region,
+                    -priority.get(&i).copied().unwrap_or(1),
+                    revision,
+                    std::cmp::Reverse(r.title.clone()),
+                )
+            })
+            .unwrap_or(&idx[0]);
+        for &i in &idx {
+            rows[i].group = Some(group.clone());
+            rows[i].main = i == best;
+            rows[i].versions = if i == best { idx.len() } else { 1 };
+        }
+    }
+    Ok(())
 }
 
 /// Sort "Legend of Zelda, The - ..." under L, ignoring case.

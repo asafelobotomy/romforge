@@ -134,6 +134,10 @@ enum Command {
         /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
         #[arg(long)]
         staging: Option<String>,
+        /// Which region's version is a game's main row, best first
+        /// ("USA, Europe, Japan"; "" for the default)
+        #[arg(long)]
+        regions: Option<String>,
         /// Optional online-source credentials ("" clears). Values given here
         /// end up in your shell history.
         #[arg(long, value_name = "KEY")]
@@ -251,6 +255,9 @@ enum HomeCommand {
     Create { parent: PathBuf },
     /// Where the RomForge folder is
     Show,
+    /// Move the RomForge folder into NEW_PARENT (everything in it comes
+    /// along; nothing is ever replaced)
+    Move { new_parent: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -434,6 +441,16 @@ fn main() -> Result<()> {
             }
             new.remember()?;
             println!("using {}", new.root().display());
+            return Ok(());
+        }
+        Command::Home(HomeCommand::Move { new_parent }) => {
+            let Some(old) = &home else {
+                bail!("no RomForge folder yet (`romforge-cli home create <parent>`)");
+            };
+            let new = romforge_core::home::relocate(old, new_parent)?;
+            // Opening it once fixes the paths it stores.
+            Library::open(new.db())?;
+            println!("moved to {}", new.root().display());
             return Ok(());
         }
         Command::Home(HomeCommand::Show) => {
@@ -998,6 +1015,7 @@ fn main() -> Result<()> {
             library,
             keep_originals,
             staging,
+            regions,
             steamgriddb_key,
             igdb_client_id,
             igdb_client_secret,
@@ -1007,8 +1025,11 @@ fn main() -> Result<()> {
             screenscraper_password,
         } => {
             let mut s = lib.settings()?;
-            let mut changed =
-                source.is_some() || library.is_some() || keep_originals.is_some() || staging.is_some();
+            let mut changed = source.is_some()
+                || library.is_some()
+                || keep_originals.is_some()
+                || staging.is_some()
+                || regions.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
                 (igdb_client_id, &mut s.keys.igdb_client_id),
@@ -1036,6 +1057,13 @@ fn main() -> Result<()> {
             if let Some(p) = staging {
                 s.staging_dir = set(p);
             }
+            if let Some(r) = regions {
+                s.regions = r
+                    .split(',')
+                    .map(|r| r.trim().to_owned())
+                    .filter(|r| !r.is_empty())
+                    .collect();
+            }
             if changed {
                 s = lib.save_settings(&s)?;
             }
@@ -1044,6 +1072,7 @@ fn main() -> Result<()> {
             println!("library         {}", shown(&s.library_dir));
             println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
             println!("staging         {}", s.staging().display());
+            println!("regions         {}", s.region_order().join(", "));
             let key = |v: &Option<String>| v.as_deref().map_or("-".to_owned(), settings::mask);
             println!("steamgriddb     {}", key(&s.keys.steamgriddb_key));
             println!(
@@ -1242,7 +1271,15 @@ fn print_cleanup(plan: &romforge_core::cleanup::CleanupPlan, verbose: bool) {
     };
     println!("into {} ({what})", plan.dest.display());
     for it in &plan.items {
-        println!("  {}  <-  {} file(s)", it.target.display(), it.parts.len());
+        if it.existing {
+            println!(
+                "  {}  already there; {} copy file(s) outside go to the trash",
+                it.target.display(),
+                it.trash.len()
+            );
+        } else {
+            println!("  {}  <-  {} file(s)", it.target.display(), it.parts.len());
+        }
         if verbose {
             let from = |p: &romforge_core::cleanup::Part| {
                 if p.member.is_empty() {

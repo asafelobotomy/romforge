@@ -190,10 +190,14 @@ type CachedView = ((i64, u64), std::sync::Arc<view::LibraryView>);
 impl Library {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
-        let conn = db::open(path)?;
+        let mut conn = db::open(path)?;
+        let home = home::Home::of_db(path);
+        if let Some(h) = &home {
+            home::heal(&mut conn, h.root())?;
+        }
         Ok(Self {
             conn,
-            home: home::Home::of_db(path),
+            home,
             path: Some(std::path::absolute(path)?),
             batch_depth: 0,
             batch_dirty: false,
@@ -987,7 +991,16 @@ impl Library {
     }
 
     /// Work out where identified files would go (a dry run; nothing moves).
+    /// With a RomForge folder, Import does this job (milestone 13); only
+    /// undoing earlier batches is left to Organize there.
     pub fn organize_plan(&self, opts: &organize::OrganizeOptions) -> Result<organize::Plan, Error> {
+        if self.home.is_some() {
+            return Err(Error::Organize(
+                "with a RomForge folder, Import does this (every version kept and grouped); \
+                 undo still works for earlier Organize batches"
+                    .into(),
+            ));
+        }
         organize::plan(&self.conn, opts)
     }
 

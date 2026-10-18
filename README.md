@@ -197,6 +197,8 @@ romforge-cli home show
 romforge-cli import ~/roms/incoming          # scans it, shows the plan, changes nothing
 romforge-cli import ~/roms/incoming --apply  # moves its identified games into Games/
 romforge-cli cleanup undo                    # puts the last import back
+romforge-cli home move /mnt/big              # the whole folder moves (paths follow)
+romforge-cli settings --regions "USA, Europe, Japan"
 ```
 
 The desktop app asks where to create it on first run. Moving or backing up
@@ -206,8 +208,19 @@ says where it is (`ROMFORGE_HOME` overrides). Scanning still only reads:
 **Import** moves anything. Only verified games and games you named move;
 unidentified files stay where they are until Search identifies them.
 Originals go to `RomForge/.romforge-trash/<batch>/` (unless Keep originals)
-until you undo. Refresh also scans `Games/`. An import is a cleanup into
+until you undo; another copy outside of a game already in `Games/` goes
+there too. Refresh also scans `Games/`. An import is a cleanup into
 `Games/`, so everything below applies to it too.
+
+Every version of a game is kept: regions, revisions, translations, hacks.
+The library lists one row per game (grouped by the clone lists, the DAT's
+parent game, else the title without tags; translations and hacks with
+their base game), showing the version from the first of your **Preferred
+regions** (Settings; default USA, World, Europe, Japan); ▸ expands it to
+every version. Move the folder from Settings (**Move…**) or by hand: when
+romforge opens it in a new place it rewrites the paths it stores. With a
+RomForge folder, Organize hands over to Import (its earlier batches can
+still be undone).
 
 ## Cleanup and rename (dry run, apply, undo)
 

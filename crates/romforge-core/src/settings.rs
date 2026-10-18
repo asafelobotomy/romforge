@@ -34,6 +34,10 @@ pub struct Settings {
     /// in them (off: only the art there is).
     #[serde(default)]
     pub show_empty_media: bool,
+    /// Which region's version is a game's main row in the library, best
+    /// first ("USA", "Europe", "Japan"...). Empty: [`crate::organize::DEFAULT_REGIONS`].
+    #[serde(default)]
+    pub regions: Vec<String>,
 }
 
 /// Credentials for the online sources that need them. All optional.
@@ -151,6 +155,18 @@ pub fn default_staging_dir() -> PathBuf {
 }
 
 impl Settings {
+    /// [`Settings::regions`], or the default order when none is set.
+    pub fn region_order(&self) -> Vec<String> {
+        if self.regions.is_empty() {
+            crate::organize::DEFAULT_REGIONS
+                .iter()
+                .map(|r| (*r).to_owned())
+                .collect()
+        } else {
+            self.regions.clone()
+        }
+    }
+
     pub fn staging(&self) -> PathBuf {
         self.staging_dir.clone().unwrap_or_else(default_staging_dir)
     }
@@ -236,6 +252,12 @@ impl Settings {
             staging_dir: staging,
             keys,
             show_empty_media: self.show_empty_media,
+            regions: self
+                .regions
+                .iter()
+                .map(|r| r.trim().to_owned())
+                .filter(|r| !r.is_empty())
+                .collect(),
         })
     }
 }
@@ -261,6 +283,14 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
             igdb_client_secret: get("igdb_client_secret")?,
         },
         show_empty_media: get("show_empty_media")?.as_deref() == Some("1"),
+        regions: get("regions")?
+            .map(|v| {
+                v.split(',')
+                    .map(|r| r.trim().to_owned())
+                    .filter(|r| !r.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -306,6 +336,7 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 "show_empty_media",
                 Some(if s.show_empty_media { "1" } else { "0" }.to_owned()),
             ),
+            ("regions", Some(s.regions.join(", ")).filter(|r| !r.is_empty())),
         ]
         .into_iter()
         .chain(s.keys.fields())

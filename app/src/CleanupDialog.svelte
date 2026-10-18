@@ -109,7 +109,11 @@
             {#each cleanPlan.items as it}
               <li title={it.parts.map((p) => p.name).join("\n")}>
                 <span class="ctitle">{base(it.target)}</span>
-                <span class="sys">{it.system} · {it.parts.length} file{it.parts.length === 1 ? "" : "s"}{it.kept.length ? " · original stays (holds other files)" : ""}</span>
+                {#if it.existing}
+                  <span class="sys">{it.system} · already in RomForge · {it.trash.length} cop{it.trash.length === 1 ? "y" : "ies"} to the trash</span>
+                {:else}
+                  <span class="sys">{it.system} · {it.parts.length} file{it.parts.length === 1 ? "" : "s"}{it.kept.length ? " · original stays (holds other files)" : ""}</span>
+                {/if}
               </li>
             {/each}
           </ul>

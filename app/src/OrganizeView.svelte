@@ -2,7 +2,10 @@
   // Always mounted, so the folders and the plan last while you look at other
   // screens; drawn only while `active`. `run` is the app's invoke with
   // progress on the status line; `load` reloads the library.
-  let { active, busy, note = $bindable(""), confirmUndo = $bindable(false), run, load } = $props();
+  // With a RomForge folder (`homeRoot`) Import does this job: the screen
+  // says so and keeps only the undo of earlier batches; `openImport` opens
+  // the Import plan.
+  let { active, busy, note = $bindable(""), confirmUndo = $bindable(false), homeRoot = null, openImport, run, load } = $props();
 
   let from = $state("");
   let dest = $state("");
@@ -40,7 +43,25 @@
   }
 </script>
 
-{#if active}
+{#if active && homeRoot}
+  <section class="wide">
+    <p class="hint">
+      Your RomForge folder takes care of this: <b>Import</b> moves identified games into it, one file each, named by
+      the DAT and sorted by platform, with every version of a game kept and grouped. Organize is for setups without one.
+    </p>
+    <div class="bar">
+      <button class="primary" onclick={openImport} disabled={!!busy}>Open Import</button>
+      <span class="spacer"></span>
+      {#if confirmUndo}
+        <span>Move the last Organize batch back?</span>
+        <button onclick={undoOrganize} disabled={!!busy}>Yes, move back</button>
+        <button onclick={() => (confirmUndo = false)}>Cancel</button>
+      {:else}
+        <button onclick={() => (confirmUndo = true)} disabled={!!busy} title="Earlier Organize batches can still be undone">Undo last Organize batch…</button>
+      {/if}
+    </div>
+  </section>
+{:else if active}
   <section class="wide">
     <div class="bar">
       <input placeholder="Organize files in, /home/me/roms" bind:value={from} oninput={replan} />

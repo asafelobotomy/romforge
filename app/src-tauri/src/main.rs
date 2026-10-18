@@ -261,6 +261,30 @@ async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
     .map_err(|e| e.to_string())
 }
 
+/// Move the RomForge folder into `parent`: both connections close, the
+/// folder moves, and the library reopens there (fixing its stored paths).
+#[tauri::command]
+async fn home_move(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
+    let (write, read) = (db.write.clone(), db.read.clone());
+    tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
+        let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
+        let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(old) = w.home().cloned() else {
+            return Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
+        };
+        *w = Library::open_in_memory()?;
+        *r = Library::open_in_memory()?;
+        let moved = romforge_core::home::relocate(&old, Path::new(&parent));
+        let at = moved.as_ref().map_or_else(|_| old.db(), |h| h.db());
+        *w = Library::open(&at)?;
+        *r = Library::open(&at)?;
+        Ok(moved?.root().to_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
 /// `$ROMFORGE_DB`, else the RomForge folder's database, else the old
 /// default.
 fn db_path() -> PathBuf {
@@ -525,6 +549,7 @@ fn main() {
             cleanup_batches,
             home_info,
             home_create,
+            home_move,
             enrich,
             launch,
             library_view,

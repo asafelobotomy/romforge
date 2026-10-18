@@ -64,6 +64,11 @@ fn import_moves_games_into_romforge_and_undo_restores() {
     let trashed = files_under(&home.trash());
     assert_eq!(trashed.len(), 1);
     assert!(trashed[0].ends_with("incoming/Test GB.gb"), "{trashed:?}");
+    let files = lib.files(&romforge_core::LibraryFilter::default()).unwrap();
+    assert!(
+        files.iter().all(|f| !f.display_path().contains("romforge/")),
+        "an archive's own romforge/ folder is never scanned"
+    );
     let rows = lib.library_view().unwrap().rows;
     let gb = rows.iter().find(|r| r.title == "Test GB").unwrap();
     assert_eq!(gb.status, RowStatus::Verified, "found again in Games by refresh");
@@ -71,6 +76,29 @@ fn import_moves_games_into_romforge_and_undo_restores() {
     // Nothing left to import from there; the RomForge folder itself never is.
     assert!(lib.import_plan(Some(&incoming)).unwrap().items.is_empty());
     assert!(lib.import_plan(Some(&home.games())).is_err());
+
+    // Another copy of a game already in Games/ goes to the trash as a copy.
+    let again = tmp.path().join("again");
+    std::fs::create_dir_all(&again).unwrap();
+    std::fs::copy(
+        fixtures().join("roms/gb/Test GB.gb"),
+        again.join("Test GB (copy).gb"),
+    )
+    .unwrap();
+    lib.scan(&again, Scope::All).unwrap();
+    let plan = lib.import_plan(Some(&again)).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    assert!(plan.items[0].existing && plan.items[0].parts.is_empty());
+    assert_eq!(plan.items[0].target, home.games().join("Game Boy/Test GB.zip"));
+    let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert_eq!((r.done, r.trashed), (0, 1), "{r:?}");
+    assert!(files_under(&again).is_empty());
+    lib.cleanup_undo(None).unwrap();
+    assert_eq!(
+        files_under(&again),
+        ["Test GB (copy).gb"],
+        "undo brings the copy back"
+    );
 
     lib.cleanup_undo(None).unwrap();
     assert_eq!(files_under(&incoming), before);
@@ -85,6 +113,14 @@ fn art_and_databases_live_in_romforge() {
     let home = Home::create(tmp.path()).unwrap();
     let lib = Library::open(home.db()).unwrap();
     assert_eq!(lib.extdb_dir(), Some(home.databases()));
+    assert!(
+        lib.organize_plan(&romforge_core::organize::OrganizeOptions::new(
+            tmp.path(),
+            home.games()
+        ))
+        .is_err(),
+        "Import does Organize's job here"
+    );
     // Keep originals: imports go into RomForge, no Library folder needed.
     let mut lib = lib;
     let keep = romforge_core::settings::Settings {

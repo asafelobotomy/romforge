@@ -39,6 +39,12 @@ fn one_row_per_game_and_lone_files() {
     // One file, two revisions with identical data: both are listed.
     assert_eq!(row("Shared Hash (Rev A)").files, 1);
     assert_eq!(row("Shared Hash (Rev B)").files, 1);
+    // ...as two versions of one game, one of them its main row.
+    let (a, b) = (row("Shared Hash (Rev A)"), row("Shared Hash (Rev B)"));
+    assert!(a.group.is_some() && a.group == b.group);
+    assert!(a.main != b.main, "{a:?} {b:?}");
+    assert_eq!(if a.main { a.versions } else { b.versions }, 2);
+    assert!(gb.group.is_none() && gb.main && gb.versions == 1);
     let unknown = row("unknown.bin");
     assert_eq!(unknown.status, RowStatus::Unknown);
     assert_eq!(unknown.system, None);
@@ -57,8 +63,9 @@ fn one_row_per_game_and_lone_files() {
         gb_platform.games,
         v.rows
             .iter()
-            .filter(|r| r.system.as_deref() == Some("Game Boy"))
-            .count()
+            .filter(|r| r.system.as_deref() == Some("Game Boy") && r.main)
+            .count(),
+        "games, not versions"
     );
 }
 
@@ -155,4 +162,72 @@ fn refresh_scans_the_settings_folders() {
         titles.contains(&"Test GB".to_owned()) && titles.contains(&"Test NES 2.0".to_owned()),
         "{titles:?}"
     );
+}
+
+/// Regions and translations of one game are one group; the main row
+/// follows the region order in Settings.
+#[test]
+fn versions_group_under_the_preferred_region() {
+    use romforge_core::hash::hash_stream;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut roms = String::new();
+    for (i, region) in ["USA", "Europe", "Japan"].iter().enumerate() {
+        let data = vec![i as u8 + 10; 2048];
+        let h = hash_stream(&data[..], data.len() as u64).unwrap().raw;
+        roms += &format!(
+            r#"<game name="Quest ({region})"><rom name="Quest ({region}).gb" size="{}" crc="{}" md5="{}" sha1="{}"/></game>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        );
+        std::fs::write(dir.join(format!("Quest ({region}).gb")), &data).unwrap();
+    }
+    std::fs::write(dir.join("Quest (T-En).gb"), vec![99u8; 2048]).unwrap();
+    let dat = tmp.path().join("gb.dat");
+    std::fs::write(
+        &dat,
+        format!(r#"<datafile><header><name>Nintendo - Game Boy</name></header>{roms}</datafile>"#),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let unknown = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.title.contains("T-En"))
+        .unwrap()
+        .id;
+    lib.identify_derived(
+        &unknown,
+        "Game Boy",
+        &romforge_core::view::Derived {
+            relation: romforge_core::view::Relation::Translation,
+            base: "Quest (Japan)".into(),
+            tag: Some("English".into()),
+        },
+    )
+    .unwrap();
+
+    let main = |lib: &Library| {
+        let v = lib.library_view().unwrap();
+        let mains: Vec<_> = v.rows.iter().filter(|r| r.main).collect();
+        assert_eq!(mains.len(), 1, "one game: {:?}", v.rows);
+        assert!(v.rows.iter().all(|r| r.group == mains[0].group));
+        assert_eq!(v.platforms[0].games, 1);
+        (mains[0].title.clone(), mains[0].versions)
+    };
+    assert_eq!(
+        main(&lib),
+        ("Quest (USA)".to_owned(), 4),
+        "default order: USA first"
+    );
+    let japan_first = romforge_core::settings::Settings {
+        regions: vec!["Japan".into(), "USA".into()],
+        ..Default::default()
+    };
+    lib.save_settings(&japan_first).unwrap();
+    assert_eq!(main(&lib), ("Quest (Japan)".to_owned(), 4));
 }

@@ -234,13 +234,27 @@
       .join("-");
   }
 
-  let rows = $derived(
-    lib.rows.filter(
-      (r) =>
-        (platform === "*" || (platform === "" ? r.system === null : r.system === platform)) &&
-        (!filter || r.title.toLowerCase().includes(filter.toLowerCase())),
-    ),
-  );
+  // One row per game; a game with several versions (regions, revisions,
+  // translations, hacks) shows its main one, and expands to the rest. A
+  // group is listed when any of its versions matches the filter.
+  let expanded = $state({});
+  let games = $derived(lib.rows.filter((r) => r.main).length);
+  let rows = $derived.by(() => {
+    const match = (r) =>
+      (platform === "*" || (platform === "" ? r.system === null : r.system === platform)) &&
+      (!filter || r.title.toLowerCase().includes(filter.toLowerCase()));
+    const members = new Map();
+    for (const r of lib.rows) if (r.group) members.set(r.group, [...(members.get(r.group) ?? []), r]);
+    const out = [];
+    for (const r of lib.rows) {
+      if (!r.main) continue;
+      const group = r.group ? members.get(r.group) : [r];
+      if (!group.some(match)) continue;
+      out.push(r);
+      if (r.group && expanded[r.group]) out.push(...group.filter((m) => !m.main));
+    }
+    return out;
+  });
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
 
   // Virtual list: row height in px must match .tr in the styles.
@@ -317,7 +331,7 @@
     </button>
   </header>
 
-  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty {homeRoot} {call} />
+  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} />
 
   <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {homeRoot} {call} {load} />
 
@@ -356,7 +370,7 @@
   <div class="body">
     <nav class="platforms" aria-label="Platforms">
       <button class="plat" class:active={view === "library" && platform === "*"} onclick={() => { show("library"); platform = "*"; }}>
-        <span class="icon all">ALL</span><span class="pname">All games</span><span class="count">{lib.rows.length}</span>
+        <span class="icon all">ALL</span><span class="pname">All games</span><span class="count">{games}</span>
       </button>
       {#each lib.platforms as p}
         <button
@@ -398,8 +412,17 @@
                  tens of thousands stays quick. -->
             <div style="height: {first * ROW}px"></div>
             {#each rows.slice(first, last) as r (r.id)}
-              <button class="tr" class:sel={r.id === selected} onclick={() => open(r.id)}>
-                <span class="title">{r.title}</span>
+              <div class="trow">
+              {#if r.main && r.versions > 1}
+                <button
+                  class="twisty"
+                  onclick={() => (expanded[r.group] = !expanded[r.group])}
+                  aria-expanded={!!expanded[r.group]}
+                  title="{r.versions} versions: regions, revisions, translations and hacks"
+                >{expanded[r.group] ? "▾" : "▸"}</button>
+              {/if}
+              <button class="tr" class:sel={r.id === selected} class:version={!r.main} onclick={() => open(r.id)}>
+                <span class="title">{r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
                 <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "unknown" ? "?" : "~"}</span>
                 <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
@@ -407,10 +430,11 @@
                   <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>
                 {/each}
               </button>
+              </div>
             {/each}
             <div style="height: {(rows.length - last) * ROW}px"></div>
           </div>
-          <p class="foot">{rows.length} of {lib.rows.length}</p>
+          <p class="foot">{rows.filter((r) => r.main).length} of {games} games</p>
         {/if}
       </section>
 
@@ -584,7 +608,7 @@
       </section>
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
-    <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {run} {load} />
+    <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>
 </div>
 
@@ -659,6 +683,11 @@
   .table { flex: 1; overflow-y: auto; }
   .thead, .tr { display: grid; grid-template-columns: minmax(0, 1fr) auto repeat(5, 2.4rem); align-items: center; gap: 0.25rem; padding: 0.3rem 0.6rem; }
   .thead { position: sticky; top: 0; background: var(--panel); font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .trow { position: relative; }
+  .twisty { position: absolute; left: 0; top: 0; height: 32px; width: 1.2rem; padding: 0; border: none; border-radius: 0; color: var(--muted); z-index: 1; }
+  .tr .title { padding-left: 0.7rem; }
+  .tr.version .title { padding-left: 1.8rem; color: var(--muted); }
+  .nver { color: var(--muted); font-size: 0.8rem; }
   .tr { width: 100%; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; }
   .tr:hover { background: var(--accent-bg); }
   .tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 var(--accent); }

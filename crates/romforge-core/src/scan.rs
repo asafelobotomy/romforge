@@ -113,6 +113,13 @@ fn wanted(name: &str, opts: ScanOptions) -> bool {
     opts.all_files || systems::is_rom_extension(&ext_of(name))
 }
 
+/// An archive member worth hashing: not one of the files cleanup and
+/// import put in an archive's `romforge/` folder (art, and details as
+/// `.romforge.md`, which `.md` would otherwise take for a Mega Drive ROM).
+fn wanted_member(name: &str, opts: ScanOptions) -> bool {
+    !name.starts_with("romforge/") && wanted(name, opts)
+}
+
 /// Visit everything under `root`: skipped files and links in path order
 /// while walking, then hashed files as threads finish them. `root` itself may be a
 /// symlink; symlinked folders below it are reported and not followed, so a
@@ -297,7 +304,7 @@ fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Res
             continue;
         }
         let name = member.name()?.into_owned();
-        if !wanted(&name, opts) {
+        if !wanted_member(&name, opts) {
             each(Visit::Skipped {
                 path: path.to_path_buf(),
                 member: name,
@@ -321,7 +328,7 @@ fn walk_7z(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Resu
     archive.for_each_entries(|entry, reader| {
         if entry.is_directory() {
             // nothing to hash
-        } else if !wanted(entry.name(), opts) {
+        } else if !wanted_member(entry.name(), opts) {
             // A solid archive is one stream: a member not read to its end
             // would leave the next one starting at the wrong bytes.
             std::io::copy(reader, &mut std::io::sink())?;

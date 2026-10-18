@@ -84,6 +84,10 @@ pub struct Item {
     /// folder). Its pregaps go into the CHD, so it counts as taken; if it
     /// turns out not to name exactly the tracks, its file stays.
     pub sheet: Option<Part>,
+    /// The game is in the RomForge folder already (at `target`): nothing
+    /// is written, its `copies` outside only go to the trash.
+    #[serde(default)]
+    pub existing: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -160,6 +164,8 @@ pub fn plan(
         ..CleanupPlan::default()
     };
     let in_source = |p: &Path| source.contains(p);
+    let games = home.map(Home::games);
+    let mut path_of = conn.prepare("SELECT path FROM files WHERE file_id = ?1")?;
 
     let v = view::library(conn)?;
     // Which library rows each file belongs to: an original another game
@@ -202,6 +208,41 @@ pub fn plan(
                 .push((row.title.clone(), "no complete set of files to take".into()));
             continue;
         };
+        // Already in Games/: the copies outside are redundant.
+        if let Some(games) = &games {
+            let mut there = None;
+            for f in row.file_ids() {
+                let p: String = path_of.query_row([f], |r| r.get(0))?;
+                if Path::new(&p).starts_with(games) {
+                    there = Some(PathBuf::from(p));
+                    break;
+                }
+            }
+            if let Some(target) = there {
+                let outside: Vec<Part> = parts
+                    .into_iter()
+                    .chain(copies)
+                    .filter(|p| in_source(&p.path))
+                    .collect();
+                if !outside.is_empty() && !s.keep_originals {
+                    items.push(Item {
+                        row_id: row.id.clone(),
+                        title: row.title.clone(),
+                        system: system.key.to_owned(),
+                        format: Format::Zip,
+                        target,
+                        sidecar: None,
+                        parts: Vec::new(),
+                        trash: Vec::new(),
+                        kept: Vec::new(),
+                        copies: outside,
+                        sheet: None,
+                        existing: true,
+                    });
+                }
+                continue;
+            }
+        }
         if !parts.iter().any(|p| in_source(&p.path)) {
             continue; // already processed (in the Library) or outside Source
         }
@@ -275,6 +316,7 @@ pub fn plan(
             kept: Vec::new(),
             copies,
             sheet,
+            existing: false,
         });
     }
 
@@ -960,6 +1002,11 @@ pub fn apply(
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
     for (n, item) in plan.items.iter().enumerate() {
         progress(n, &item.title);
+        if item.existing {
+            // Nothing to write; its copies go with the originals below.
+            ok.push(item);
+            continue;
+        }
         let staging = staging_root.join(n.to_string());
         let result = (|| -> Result<bool, Error> {
             if item.target.exists() {
@@ -1047,7 +1094,7 @@ pub fn apply(
             }
         }
     }
-    if report.done == 0 {
+    if report.done == 0 && report.trashed == 0 {
         conn.execute("DELETE FROM cleanup_batches WHERE batch_id = ?1", [batch_id])?;
         report.batch_id = 0;
     }

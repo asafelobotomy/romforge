@@ -3,7 +3,24 @@
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
   // `call` is the app's invoke that reports errors on the status line.
-  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = null, call } = $props();
+  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call } = $props();
+  let moving = $state(false);
+  let regionsText = $state("");
+
+  // Pick a new parent folder; RomForge moves into it as a whole.
+  async function moveHome() {
+    const dir = await pickFolder({ directory: true, multiple: false, title: "Move RomForge into…" });
+    if (typeof dir !== "string") return;
+    settingsError = "";
+    moving = true;
+    try {
+      homeRoot = await invoke("home_move", { parent: dir });
+      note = `RomForge moved to ${homeRoot}`;
+    } catch (e) {
+      settingsError = String(e).replace(/^settings: /, "");
+    }
+    moving = false;
+  }
 
   // Settings panel: a working copy, saved on "Save".
   let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {}, show_empty_media: false });
@@ -15,6 +32,7 @@
     const s = await call("get_settings");
     if (!s) return;
     draft = s;
+    regionsText = (s.regions ?? []).join(", ");
     defaultStaging = (await call("settings_info"))?.default_staging ?? "";
     open = true;
   }
@@ -27,6 +45,7 @@
   async function saveSettings() {
     settingsError = "";
     try {
+      draft.regions = regionsText.split(",").map((r) => r.trim()).filter(Boolean);
       draft = await invoke("save_settings", { settings: draft });
       showEmpty = draft.show_empty_media;
       open = false;
@@ -46,7 +65,10 @@
         <section class="setting">
           <span class="flabel">RomForge folder</span>
           <p class="hint">Everything lives here: Games, Media (art), Databases and the library. Add folder scans a folder and offers to import its games.</p>
-          <p><bdi>{homeRoot}</bdi></p>
+          <div class="pick">
+            <input value={homeRoot} readonly aria-label="RomForge folder" />
+            <button onclick={moveHome} disabled={moving} title="Move the whole folder somewhere else; everything in it comes along">{moving ? "Moving…" : "Move…"}</button>
+          </div>
         </section>
       {:else}
       <section class="setting">
@@ -108,6 +130,12 @@
           Show empty media boxes
         </label>
         <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
+      </section>
+
+      <section class="setting">
+        <label for="regions">Preferred regions</label>
+        <p class="hint">Every version of a game is kept and listed under one row; that row shows the version from the first region here that you have.</p>
+        <input id="regions" bind:value={regionsText} placeholder="USA, World, Europe, Japan" />
       </section>
 
       <section class="setting">

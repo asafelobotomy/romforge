@@ -141,6 +141,96 @@ fn pointer_file() -> Option<PathBuf> {
     Some(base.join("romforge").join("location"))
 }
 
+/// Where the database last saw its folder (a `settings` row).
+const ROOT_KEY: &str = "home_root";
+
+/// Every stored path, by table and column: rewritten when the folder moves.
+const PATH_COLUMNS: &[(&str, &str)] = &[
+    ("files", "path"),
+    ("scan_roots", "path"),
+    ("art", "path"),
+    ("dats", "source_path"),
+    ("cleanup_outputs", "path"),
+    ("cleanup_trash", "original"),
+    ("cleanup_trash", "trashed"),
+    ("organize_batches", "dest"),
+    ("organize_moves", "src"),
+    ("organize_moves", "dst"),
+    ("settings", "value"),
+];
+
+/// After the folder moved (by hand, or by [`relocate`]): rewrite every
+/// stored path inside its old place to the new one. Returns whether
+/// anything had to change. Paths outside the folder stay as they are.
+pub(crate) fn heal(conn: &mut rusqlite::Connection, root: &Path) -> Result<bool, Error> {
+    use rusqlite::OptionalExtension;
+    let now = root.to_string_lossy().into_owned();
+    let was: Option<String> = conn
+        .query_row("SELECT value FROM settings WHERE key = ?1", [ROOT_KEY], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    let moved = was.as_ref().is_some_and(|w| *w != now);
+    let tx = conn.transaction()?;
+    if let Some(old) = was.as_ref().filter(|_| moved) {
+        for (table, col) in PATH_COLUMNS {
+            tx.execute(
+                &format!(
+                    "UPDATE {table} SET {col} = ?2 || substr({col}, length(?1) + 1)
+                     WHERE {col} = ?1 OR substr({col}, 1, length(?1) + 1) = ?1 || '/'"
+                ),
+                params![old, now],
+            )?;
+        }
+    }
+    if moved || was.is_none() {
+        tx.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![ROOT_KEY, now],
+        )?;
+    }
+    tx.commit()?;
+    Ok(moved)
+}
+
+/// Move the whole folder into `new_parent` (as `new_parent/RomForge`),
+/// with no connection open on its database: one rename on the same drive,
+/// else file by file, each copy checked before its original goes. Nothing
+/// is ever replaced. The pointer file follows; the database fixes its
+/// stored paths the next time it opens ([`heal`]).
+pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
+    let parent = std::path::absolute(new_parent)?;
+    let to = if parent.file_name().is_some_and(|n| n == DIR) {
+        parent
+    } else {
+        parent.join(DIR)
+    };
+    if to.starts_with(&home.root) {
+        return Err(Error::Settings(
+            "the new place is inside the RomForge folder".into(),
+        ));
+    }
+    if to.exists() {
+        return Err(Error::Settings(format!("{} already exists", to.display())));
+    }
+    if let Some(p) = to.parent() {
+        std::fs::create_dir_all(p)?;
+    }
+    match std::fs::rename(&home.root, &to) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            move_tree(&home.root, &to)?;
+            let _ = std::fs::remove_dir(&home.root);
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let new = Home::at(&to)
+        .ok_or_else(|| Error::Settings(format!("{} has no marker after the move", to.display())))?;
+    new.remember()?;
+    Ok(new)
+}
+
 /// What [`adopt`] moved into the folder.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Adopted {
@@ -238,6 +328,67 @@ mod tests {
         std::fs::create_dir_all(other.join("RomForge")).unwrap();
         std::fs::write(other.join("RomForge/notes.txt"), b"mine").unwrap();
         assert!(Home::create(&other).is_err(), "a stranger's RomForge folder");
+    }
+
+    #[test]
+    fn a_moved_folder_heals_its_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = Home::create(&tmp.path().join("a")).unwrap();
+        let game = home.games().join("Game Boy/Test GB.gb");
+        std::fs::create_dir_all(game.parent().unwrap()).unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/roms/gb/Test GB.gb"),
+            &game,
+        )
+        .unwrap();
+        let outside = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(&outside).unwrap();
+        {
+            let mut lib = crate::Library::open(home.db()).unwrap();
+            lib.scan(home.games(), crate::Scope::All).unwrap();
+            lib.scan(&outside, crate::Scope::All).unwrap();
+        }
+        // Moved by hand, to a place whose name starts like the old one.
+        let moved = tmp.path().join("ab");
+        std::fs::create_dir_all(&moved).unwrap();
+        std::fs::rename(home.root(), moved.join("RomForge")).unwrap();
+        let new = Home::at(&moved.join("RomForge")).unwrap();
+        let lib = crate::Library::open(new.db()).unwrap();
+        let paths: Vec<String> = lib
+            .conn
+            .prepare("SELECT path FROM scan_roots ORDER BY path")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            paths,
+            [
+                new.games().to_string_lossy().into_owned(),
+                outside.to_string_lossy().into_owned()
+            ]
+        );
+        let file: String = lib
+            .conn
+            .query_row("SELECT path FROM files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(Path::new(&file), new.games().join("Game Boy/Test GB.gb"));
+        drop(lib);
+
+        // And by romforge, to another parent.
+        let third = relocate(&new, &tmp.path().join("c")).unwrap();
+        assert!(!new.root().exists() && third.db().is_file());
+        let lib = crate::Library::open(third.db()).unwrap();
+        let file: String = lib
+            .conn
+            .query_row("SELECT path FROM files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(Path::new(&file), third.games().join("Game Boy/Test GB.gb"));
+        assert!(
+            relocate(&third, third.games().as_path()).is_err(),
+            "not into itself"
+        );
     }
 
     #[test]

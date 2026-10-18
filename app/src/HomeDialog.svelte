@@ -51,6 +51,7 @@
       <p class="hint">
         Everything goes in one folder named RomForge: your games (one file each, named by its DAT), their art, the
         databases you download and the library itself. Move or back up that folder and everything comes with it.
+        Moved one by hand? Pick it (or the folder it's in) and romforge picks up where it left off.
       </p>
       <section class="setting">
         <label for="home-parent">Create RomForge in</label>

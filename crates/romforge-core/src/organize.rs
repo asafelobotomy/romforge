@@ -522,9 +522,9 @@ pub fn base_title(name: &str) -> String {
 
 /// (system key, title without tags) -> (clone group, priority), from the
 /// clone lists `dat download` stored.
-type CloneGroups = HashMap<(String, String), (String, i64)>;
+pub(crate) type CloneGroups = HashMap<(String, String), (String, i64)>;
 
-fn clone_groups(conn: &Connection) -> Result<CloneGroups, Error> {
+pub(crate) fn clone_groups(conn: &Connection) -> Result<CloneGroups, Error> {
     Ok(conn
         .prepare(
             "SELECT s.key, c.title, c.grp, c.priority FROM clone_groups c
@@ -536,7 +536,7 @@ fn clone_groups(conn: &Connection) -> Result<CloneGroups, Error> {
 
 /// How good a release a DAT name is, for 1G1R: retail first, then the
 /// best region in `regions`, then the highest revision ([`names::parse`]).
-fn rank(name: &str, regions: &[String]) -> (bool, i64, Vec<u64>) {
+pub(crate) fn rank(name: &str, regions: &[String]) -> (bool, i64, Vec<u64>) {
     let n = crate::names::parse(name);
     let region = n
         .regions

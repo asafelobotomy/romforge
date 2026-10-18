@@ -603,7 +603,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       (or `ROMFORGE_HOME`); `--db` / `ROMFORGE_DB` still override.
     - Not yet run on the real collection.
 
-    Decided 2026-10-18 for what was left open (to build, in this order):
+    Decided 2026-10-18 for what was left open (*built* the same day; not
+    yet run on the real collection):
     1. *Copies.* A verified copy outside RomForge of a game already in
        `Games/` is trashed with the import as a copy (undo restores it),
        unless Keep originals is on or its file holds other games.
