@@ -719,7 +719,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     - *Versions.* TOSEC lists each disk as its own game, so the disks of a
       set may group as "versions" of disk 1 in the library; not checked.
 
-    Decided 2026-10-18 from that (not built):
+    Decided 2026-10-18 from that (*built* the same day; not yet run with
+    real games or emulators):
     1. *Floppy sets loose.* For PC-88, PC-98, X1 and FM-7, import puts a
        multi-disk set's images unzipped in `Games/<System>/<Set>/`, with
        the playlist its core reads (`.m3u` for quasi88, `.cmd` for
@@ -737,6 +738,19 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        and ScummVM games get description, genre, year, developer and
        publisher from those files. Never used to verify (ScummVM.dat's
        own hashes are of `.scummvm` text files).
+    As built: `loose_sets` in `systems.rs` (PC-88 `m3u`, PC-98 `cmd`, X1
+    and FM-7 none); a set's folder is journaled (`setdir`) and removed by
+    undo once empty. `scummvm read` also runs `--detect --recursive` once
+    per scanned folder (`scummvm_ids`, by path and file fingerprint);
+    `ScummVM.dat` is downloaded to `Databases/scummvm-titles.dat` (the
+    `titles` column: read for names and metadata, never imported); enrich
+    reads `dat/<name>.dat` for the `dats` and `titles` columns, filling
+    only empty fields. Details files (`*.romforge.md`) are no longer
+    scanned as Mega Drive ROMs.
+    **Open:** run with real cores (np2kai's `.cmd`, quasi88's `.m3u`) and a
+    real ScummVM (its `--detect` table; the Flatpak may not see every
+    folder); single zipped PC-88 and X1 games likely don't start (see
+    above) and stay zipped as decided.
 
 ## Code review follow-ups (2026-10-18)
 

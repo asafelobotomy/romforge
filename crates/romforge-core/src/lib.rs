@@ -119,6 +119,8 @@ pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
 pub struct ScummvmList {
     pub entries: usize,
     pub games: usize,
+    /// Folders ScummVM's --detect named (including ones its list does).
+    pub asked: usize,
 }
 
 /// Running totals passed to the progress callback after every file or member.
@@ -994,14 +996,50 @@ impl Library {
         std::fs::write(&tmp, list)?;
         std::fs::rename(&tmp, &path)?;
         let games = scummvm::refresh(&self.conn, Some(&path))?;
-        Ok(ScummvmList { entries, games })
+        Ok(ScummvmList {
+            entries,
+            games,
+            asked: 0,
+        })
+    }
+
+    /// Keep libretro's `ScummVM.dat` (its names for ScummVM game ids) in
+    /// the databases folder, to title ScummVM games by. Returns how many
+    /// game ids it names.
+    pub fn scummvm_titles(&mut self, dat: &[u8]) -> Result<usize, Error> {
+        let n = scummvm::titles(&String::from_utf8_lossy(dat))?.len();
+        let dir = self
+            .extdb_dir()
+            .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM titles".into()))?;
+        std::fs::create_dir_all(&dir)?;
+        let tmp = dir.join(format!(".{}.part", scummvm::TITLES_FILE));
+        std::fs::write(&tmp, dat)?;
+        std::fs::rename(&tmp, dir.join(scummvm::TITLES_FILE))?;
+        let list = dir.join(scummvm::LIST_FILE);
+        scummvm::refresh(&self.conn, Some(&list))?;
+        Ok(n)
+    }
+
+    /// Download libretro's `ScummVM.dat` ([`Library::scummvm_titles`]).
+    pub fn scummvm_titles_download(&mut self) -> Result<usize, Error> {
+        let dat = fetch::get(&format!("{}/ScummVM.dat", fetch::LIBRETRO_DAT_BASE))?;
+        self.scummvm_titles(&dat)
     }
 
     /// Ask the installed ScummVM for its detection list, then
-    /// [`Library::scummvm_import`] it.
+    /// [`Library::scummvm_import`] it; then ask it what it finds in the
+    /// scanned folders (`--detect`), for the engines its list leaves out.
     pub fn scummvm_read(&mut self, env: &launch::Env) -> Result<ScummvmList, Error> {
         let list = launch::scummvm_list(env)?;
-        self.scummvm_import(&list)
+        let mut r = self.scummvm_import(&list)?;
+        let mut found = Vec::new();
+        for root in scummvm::top_roots(&self.conn)? {
+            found.extend(scummvm::parse_detect(&launch::scummvm_detect(env, &root)?, &root));
+        }
+        r.asked = scummvm::remember(&self.conn, &found)?;
+        let list = self.extdb_dir().map(|d| d.join(scummvm::LIST_FILE));
+        r.games = scummvm::refresh(&self.conn, list.as_deref())?;
+        Ok(r)
     }
 
     /// Recompute all matches, e.g. after removing a DAT.

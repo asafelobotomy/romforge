@@ -308,6 +308,28 @@ const MIGRATIONS: &[&str] = &[
          files     INTEGER NOT NULL,
          size      INTEGER NOT NULL
      );",
+    // 26: import journals the folder it makes for a set of loose disks
+    // (`setdir`: undo removes it once empty). Rows keep their order.
+    "CREATE TABLE cleanup_outputs_new (
+         batch_id INTEGER NOT NULL REFERENCES cleanup_batches(batch_id),
+         path     TEXT NOT NULL,
+         kind     TEXT NOT NULL CHECK (kind IN ('file', 'dir', 'setdir')),
+         PRIMARY KEY (batch_id, path)
+     );
+     INSERT INTO cleanup_outputs_new (batch_id, path, kind)
+         SELECT batch_id, path, kind FROM cleanup_outputs ORDER BY rowid;
+     DROP TABLE cleanup_outputs;
+     ALTER TABLE cleanup_outputs_new RENAME TO cleanup_outputs;",
+    // 27: folders ScummVM's own --detect named (its list leaves out
+    // SCUMM, SCI, Sky and Glk), with a fingerprint of their files so the
+    // name follows a folder that import copies or undo brings back.
+    "CREATE TABLE scummvm_ids (
+         path        TEXT PRIMARY KEY,
+         fingerprint TEXT NOT NULL,
+         code        TEXT NOT NULL,
+         title       TEXT NOT NULL
+     );
+     CREATE INDEX scummvm_ids_fingerprint ON scummvm_ids(fingerprint);",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

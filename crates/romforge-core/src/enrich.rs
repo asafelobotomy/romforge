@@ -105,6 +105,9 @@ pub struct EnrichOptions {
     pub refresh: bool,
     /// libretro-database's `metadat` URL ([`fetch::LIBRETRO_BASE`]).
     pub metadata_base: String,
+    /// libretro-database's own DATs ([`fetch::LIBRETRO_DAT_BASE`]): DOS,
+    /// ScummVM and PC-98 metadata.
+    pub dats_base: String,
     /// The thumbnail server ([`THUMBNAILS_BASE`]).
     pub thumbnails_base: String,
     /// Wikidata's SPARQL endpoint ([`crate::wikidata::ENDPOINT`]); `None`
@@ -133,6 +136,7 @@ impl EnrichOptions {
             title: None,
             refresh: false,
             metadata_base: fetch::LIBRETRO_BASE.to_owned(),
+            dats_base: fetch::LIBRETRO_DAT_BASE.to_owned(),
             thumbnails_base: THUMBNAILS_BASE.to_owned(),
             wikidata: Some(crate::wikidata::ENDPOINT.to_owned()),
             sources: crate::artsources::Bases::default(),
@@ -287,14 +291,29 @@ fn games_you_have(
             crcs.push(crc);
         }
     }
-    // Games you named in Search have no DAT ROMs (so no CRCs), but get
-    // metadata and art by title like any other.
+    // Games you named in Search have no DAT ROMs, but get metadata and art
+    // by title like any other (and by their files' CRC32s where a file of
+    // metadata has them: DOS.dat).
     let mut named = conn.prepare(
-        "SELECT DISTINCT m.system_id, m.title FROM manual_ids m
+        "SELECT DISTINCT m.system_id, m.title, f.crc32 FROM manual_ids m
          JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size AND f.status = 'manual'
          WHERE ?1 IS NULL OR m.system_id = ?1",
     )?;
-    for row in named.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+    for row in named.query_map([only], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+        ))
+    })? {
+        let (system, title, crc) = row?;
+        let crcs = out.entry((system, title)).or_default();
+        crcs.extend(crc.map(|c| c.to_ascii_lowercase()));
+    }
+    // Folder games ScummVM named.
+    let mut folders = conn
+        .prepare("SELECT DISTINCT system_id, title FROM folder_games WHERE ?1 IS NULL OR system_id = ?1")?;
+    for row in folders.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
         out.entry(row?).or_default();
     }
     // The base games of translations and hacks, whose metadata and art
@@ -367,9 +386,10 @@ pub fn enrich(
         // thumbnails need it; the other sources run for every system.
         let lr_name = libretro_name(system);
 
+        let need_meta = opts.refresh || games_without_meta(conn, *system_id, games)?;
         // Metadata: one file per field; a missing file is fine.
         if let Some(lr_name) = lr_name
-            && (opts.refresh || games_without_meta(conn, *system_id, games)?)
+            && need_meta
         {
             let mut found: HashMap<&String, Vec<(String, String)>> = HashMap::new();
             let mut fetch_failed = false;
@@ -449,6 +469,28 @@ pub fn enrich(
                 }
             }
             tx.commit()?;
+        }
+        // libretro's own DATs of the system (DOS, PC-98) and its title
+        // lists (ScummVM): what the per-field files leave empty.
+        if need_meta && !(system.dats.is_empty() && system.titles.is_empty()) {
+            let found = dat_metadata(
+                conn,
+                opts,
+                system,
+                games,
+                &mut halted_hosts,
+                &mut report,
+                &mut progress,
+            )?;
+            let mut put = conn.prepare(
+                "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(system_id, title, field) DO NOTHING",
+            )?;
+            for (game, fields) in &found {
+                for (k, v) in fields {
+                    put.execute(params![system_id, game, k, v])?;
+                }
+            }
         }
         for (game, _) in games {
             let n: i64 = conn.query_row(
@@ -727,6 +769,92 @@ fn game_roms(conn: &Connection, system_id: i64, title: &str) -> Result<Vec<(Stri
 
 /// Whether some game's metadata was never looked up (it may be newly
 /// scanned).
+/// Fields found per game: (field, value).
+type FoundMeta<'g> = HashMap<&'g String, Vec<(String, String)>>;
+
+/// Metadata from libretro's own DATs and title lists of `system`
+/// (`dat/<name>.dat`): a game by its title, its CRC32s, or (a ScummVM
+/// folder) its game id. Their genre, developer, publisher, franchise,
+/// year and players; a title list's description too (a DAT's is a
+/// variant name). When libretro names the game otherwise, that name, for
+/// its thumbnails.
+fn dat_metadata<'g>(
+    conn: &Connection,
+    opts: &EnrichOptions,
+    system: &'static systems::System,
+    games: &[(&'g String, &Vec<String>)],
+    halted_hosts: &mut std::collections::HashSet<String>,
+    report: &mut EnrichReport,
+    progress: &mut impl FnMut(EnrichEvent),
+) -> Result<FoundMeta<'g>, Error> {
+    let mut found: FoundMeta<'g> = HashMap::new();
+    let mut code_of = conn.prepare_cached(
+        "SELECT code FROM folder_games WHERE system_id = ?1 AND title = ?2 ORDER BY folder_id",
+    )?;
+    let sources = system
+        .dats
+        .iter()
+        .map(|n| (*n, false))
+        .chain(system.titles.iter().map(|n| (*n, true)));
+    for (name, overview) in sources {
+        progress(EnrichEvent::Metadata {
+            system: system.key,
+            field: name,
+        });
+        let url = format!("{}/{}.dat", opts.dats_base, fetch::encode_segment(name));
+        let body = match get_halting(&url, halted_hosts) {
+            Ok(Some(b)) => b,
+            Ok(None) => continue,
+            Err(e) => {
+                report.errors.push(e.to_string());
+                continue;
+            }
+        };
+        let records = match dat::parse_cmp_records(&String::from_utf8_lossy(&body)) {
+            Ok(r) => r,
+            Err(e) => {
+                report.errors.push(format!("{url}: {e}"));
+                continue;
+            }
+        };
+        let mut by_title: HashMap<&str, &dat::Record> = HashMap::new();
+        let mut by_crc: HashMap<&str, &dat::Record> = HashMap::new();
+        let mut by_code: HashMap<&str, &dat::Record> = HashMap::new();
+        for r in &records {
+            if let Some(t) = r.title.as_deref() {
+                by_title.entry(t).or_insert(r);
+            }
+            for c in &r.crcs {
+                by_crc.entry(c.as_str()).or_insert(r);
+            }
+            if let Some((_, c)) = r.fields.iter().find(|(k, _)| k == "code") {
+                by_code.entry(c.as_str()).or_insert(r);
+            }
+        }
+        for (game, crcs) in games {
+            let code: Option<String> = code_of
+                .query_row(params![system.id, game], |r| r.get(0))
+                .optional()?;
+            let rec = by_title
+                .get(game.as_str())
+                .or_else(|| crcs.iter().find_map(|c| by_crc.get(c.as_str())))
+                .or_else(|| code.as_deref().and_then(|c| by_code.get(c)));
+            let Some(rec) = rec else { continue };
+            let f = found.entry(*game).or_default();
+            for (k, v) in &rec.fields {
+                let k = if k == "users" { "maxusers" } else { k.as_str() };
+                if FIELDS.contains(&k) || (overview && k == "description") {
+                    f.push((k.to_owned(), v.clone()));
+                }
+            }
+            if let Some(t) = rec.title.as_deref().filter(|t| *t != game.as_str()) {
+                f.push((LIBRETRO_NAME.to_owned(), t.to_owned()));
+            }
+        }
+    }
+    Ok(found)
+}
+
 fn games_without_meta(
     conn: &Connection,
     system_id: i64,

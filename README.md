@@ -242,21 +242,33 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   `Games/DOS/<Title>.zip`; the folder goes to the trash in one piece. Play
   uses the `dosbox_pure` core (zip or image as is), else DOSBox Staging or
   DOSBox-X with the game's program. TOSEC disk images still verify by
-  hash as before.
+  hash as before. Enrich takes genre, year and developer from `DOS.dat`
+  (by the program's CRC32, whatever you named it) and box art from
+  libretro.
 - **ScummVM.** romforge asks the installed ScummVM (on `PATH` or the
   Flatpak) for its detection list once (Settings → **Read ScummVM's
   list**) and keeps it in `Databases/`; it is ScummVM's data (GPL), made
   on your machine and never shipped. A folder is a game when every file
   an entry lists is in it with that size and the MD5 of its first (or
   last) bytes, as ScummVM decides; such a game is "identified by
-  ScummVM's list", never verified. Import copies the folder to
-  `Games/ScummVM/<Title>/` with a `<id>.scummvm` file for RetroArch's core;
-  Play uses the `scummvm` core or ScummVM itself (`--auto-detect`). Not
-  checked yet: whether the classic SCUMM games (Monkey Island, ...) are in
-  that list.
+  ScummVM's list", never verified. The list leaves out the engines with
+  their own detection (SCUMM: LucasArts and Humongous; SCI: Sierra; Beneath
+  a Steel Sky; interactive fiction), so the same button also asks
+  ScummVM itself (`--detect --recursive`) about every scanned folder;
+  what it names is remembered with a fingerprint of the folder's files.
+  Games are titled by libretro's `ScummVM.dat` name for their game id
+  (with the version), which brings its box art, description, developer
+  and publisher. Import copies the folder to `Games/ScummVM/<Title>/` with
+  a `<id>.scummvm` file for RetroArch's core; Play uses the `scummvm` core
+  or ScummVM itself (`--auto-detect`).
 - **Disk sets.** When every disk of a set ("Disk 1 of 4", "Disc 2") is
   imported, a `<Set>.m3u` lists them next to the files, and Play starts
-  the playlist so the emulator can swap disks. Undo removes it.
+  the playlist so the emulator can swap disks. Undo removes it. The floppy
+  computers' cores open a set's disks themselves and read no zips, so for
+  PC-88, PC-98, X1 and FM-7 a set is kept unzipped in
+  `Games/<System>/<Set>/` with the playlist its core reads: `.m3u` for
+  quasi88 (PC-88), `.cmd` for np2kai (PC-98), none for X1 and FM-7 (swap
+  disks from the emulator's menu). A single disk is still one zip.
 - **Japanese computers.** PC-88 gets the `quasi88` core, PC-98 more disk
   formats and libretro's own PC-98 DAT, Sharp X1 the `x1` core; FM-7
   (TOSEC) and FM Towns start in MAME (`mame-fm7`, `mame-fmtowns`; MAME

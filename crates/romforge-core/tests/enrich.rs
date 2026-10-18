@@ -288,3 +288,100 @@ fn a_rate_limiting_image_host_is_asked_once() {
     );
     assert!(report.errors.len() <= 3, "listed once: {:?}", report.errors);
 }
+
+/// DOS and ScummVM games get metadata and box art from libretro's own
+/// `DOS.dat` and `ScummVM.dat`: a DOS game by its program's CRC32 (named
+/// otherwise by you), a ScummVM folder by its game id. Always on temp
+/// folders.
+#[test]
+fn dos_and_scummvm_metadata_from_libretro_s_dats() {
+    let tmp = tempfile::tempdir().unwrap();
+    let incoming = tmp.path().join("incoming");
+    let keen = incoming.join("KEEN");
+    let sky = incoming.join("SKY");
+    std::fs::create_dir_all(&keen).unwrap();
+    std::fs::create_dir_all(&sky).unwrap();
+    let exe = vec![3u8; 1500];
+    std::fs::write(keen.join("KEEN1.EXE"), &exe).unwrap();
+    let dnr: Vec<u8> = (0..80u8).collect();
+    std::fs::write(sky.join("SKY.DNR"), &dnr).unwrap();
+    let h = |d: &[u8]| romforge_core::hash::hash_stream(d, d.len() as u64).unwrap().raw;
+
+    let mut lib = Library::open(tmp.path().join("lib.db")).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let row = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.title == "KEEN1.EXE")
+        .unwrap();
+    lib.identify_as(&row.id, "DOS", "My Keen").unwrap();
+    lib.scummvm_import(
+        format!(
+            "scummvm (\n)\ngame (\n\tname \"sky\"\n\ttitle \"Beneath a Steel Sky\"\n\textra \"CD\"\n\trom ( name \"sky.dnr\" size 80 md5-5000 {} )\n)\n",
+            h(&dnr).md5
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    lib.scummvm_titles(b"clrmamepro (\n\tname \"ScummVM\"\n)\ngame (\n\tname \"Steel Sky Libretro\"\n\tcode \"sky\"\n\trom ( name \"sky.scummvm\" size 3 crc 00000000 )\n)\n")
+        .unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let sky_row = rows
+        .iter()
+        .find(|r| r.system.as_deref() == Some("ScummVM"))
+        .unwrap();
+    assert_eq!(
+        sky_row.title, "Steel Sky Libretro (CD)",
+        "titled by libretro's name"
+    );
+    let keen_row = rows.iter().find(|r| r.title == "My Keen").unwrap();
+
+    let mut files = HashMap::new();
+    files.insert(
+        "/dat/DOS.dat".to_owned(),
+        format!(
+            "clrmamepro (\n\tname \"DOS\"\n)\ngame (\n\tname \"Commander Keen\"\n\tgenre \"Platform\"\n\treleaseyear \"1990\"\n\tdeveloper \"id Software\"\n\trom ( name \"KEEN1.EXE\" size 1500 crc {} )\n)\n",
+            h(&exe).crc32
+        )
+        .into_bytes(),
+    );
+    files.insert(
+        "/dat/ScummVM.dat".to_owned(),
+        b"clrmamepro (\n\tname \"ScummVM\"\n)\ngame (\n\tname \"Steel Sky Libretro\"\n\tdescription \"A robot and a city.\"\n\tdeveloper \"Revolution Software\"\n\tcode \"sky\"\n\trom ( name \"sky.scummvm\" size 3 crc 00000000 )\n)\n".to_vec(),
+    );
+    let png = b"\x89PNG\r\n\x1a\nfake".to_vec();
+    files.insert(
+        "/thumbs/DOS/Named_Boxarts/Commander%20Keen.png".to_owned(),
+        png.clone(),
+    );
+    files.insert(
+        "/thumbs/ScummVM/Named_Boxarts/Steel%20Sky%20Libretro.png".to_owned(),
+        png,
+    );
+    let (base, log) = serve(files);
+    let mut opts = EnrichOptions::new(tmp.path().join("cache"));
+    opts.metadata_base = format!("{base}/meta");
+    opts.dats_base = format!("{base}/dat");
+    opts.thumbnails_base = format!("{base}/thumbs");
+    opts.wikidata = None;
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.art_saved, 2, "{report:?} {:?}", log.lock().unwrap());
+
+    let d = lib.game_detail(&keen_row.id).unwrap();
+    assert_eq!(d.fields.get("genre").map(String::as_str), Some("Platform"));
+    assert_eq!(d.fields.get("developer").map(String::as_str), Some("id Software"));
+    assert!(d.art.contains_key("boxart"));
+    let d = lib.game_detail(&sky_row.id).unwrap();
+    assert_eq!(
+        d.fields.get("description").map(String::as_str),
+        Some("A robot and a city.")
+    );
+    assert_eq!(
+        d.fields.get("developer").map(String::as_str),
+        Some("Revolution Software")
+    );
+    assert!(d.art.contains_key("boxart"));
+}

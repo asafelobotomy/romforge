@@ -155,9 +155,9 @@ fn write_dat(path: &Path, name: &str, games: &[(&str, &str, &[u8])]) {
     std::fs::write(path, xml).unwrap();
 }
 
-/// Importing every disk of a set writes its playlist; undo removes it.
-#[test]
-fn import_writes_a_playlist_for_a_complete_disk_set() {
+/// Import two disks of a set on `system` (images named `.<ext>`); returns
+/// the RomForge folder's Games and the report.
+fn import_set(system: &str, ext: &str) -> (tempfile::TempDir, Home, romforge_core::cleanup::CleanupReport) {
     let tmp = tempfile::tempdir().unwrap();
     let home = Home::create(tmp.path()).unwrap();
     let incoming = tmp.path().join("incoming");
@@ -167,7 +167,7 @@ fn import_writes_a_playlist_for_a_complete_disk_set() {
         .map(|n| {
             (
                 format!("Ys (1987)(Nihon Falcom)(Disk {n} of 2)"),
-                format!("Ys (1987)(Nihon Falcom)(Disk {n} of 2).d88"),
+                format!("Ys (1987)(Nihon Falcom)(Disk {n} of 2).{ext}"),
             )
         })
         .collect();
@@ -176,26 +176,112 @@ fn import_writes_a_playlist_for_a_complete_disk_set() {
         .zip(&disks)
         .map(|((g, r), d)| (g.as_str(), r.as_str(), d.as_slice()))
         .collect();
-    let dat = tmp.path().join("pc98.dat");
-    write_dat(&dat, "NEC PC-9801 - Games - [D88]", &rows);
+    let dat = tmp.path().join("set.dat");
+    write_dat(&dat, "A TOSEC set", &rows);
     for ((_, rom), data) in games.iter().zip(&disks) {
         std::fs::write(incoming.join(rom), data).unwrap();
     }
-
+    let before = files_under(&incoming);
     let mut lib = Library::open(home.db()).unwrap();
-    lib.import_dat(&dat, Some("PC-98")).unwrap();
+    lib.import_dat(&dat, Some(system)).unwrap();
     lib.scan(&incoming, Scope::All).unwrap();
     let plan = lib.import_plan(Some(&incoming)).unwrap();
     assert_eq!(plan.items.len(), 2, "{plan:?}");
     let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
     assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert!(files_under(&incoming).is_empty());
+    // Undo is checked on a second library over the same folder below.
+    let report = r.clone();
+    let games_dir = home.games();
+    let listed = files_under(&games_dir);
+    lib.cleanup_undo(None).unwrap();
+    assert_eq!(files_under(&incoming), before, "undo puts the disks back");
+    assert!(
+        files_under(&games_dir).is_empty(),
+        "undo removes what import wrote"
+    );
+    assert!(
+        std::fs::read_dir(games_dir.join(system)).map_or(true, |d| d
+            .filter_map(Result::ok)
+            .all(|e| !e.file_name().to_string_lossy().starts_with("Ys"))),
+        "and the set's folder"
+    );
+    // Apply again, to look at what it writes.
+    lib.scan(&incoming, Scope::All).unwrap();
+    let plan = lib.import_plan(Some(&incoming)).unwrap();
+    let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert_eq!(files_under(&games_dir), listed);
+    assert_eq!(r.playlists, report.playlists);
+    (tmp, home, r)
+}
+
+/// A set of a system whose core opens disks itself (PC-98's np2kai) is
+/// kept unzipped in its own folder, with the `.cmd` np2kai reads.
+#[test]
+fn a_pc98_set_is_kept_loose_with_its_cmd() {
+    let (_tmp, home, r) = import_set("PC-98", "d88");
     assert_eq!(r.playlists, 1);
-    let list = home.games().join("PC-98/Ys (1987)(Nihon Falcom).m3u");
+    let set = home.games().join("PC-98/Ys (1987)(Nihon Falcom)");
+    assert!(set.join("Ys (1987)(Nihon Falcom)(Disk 1 of 2).d88").is_file());
+    assert!(set.join("Ys (1987)(Nihon Falcom)(Disk 2 of 2).d88").is_file());
     assert_eq!(
-        std::fs::read_to_string(&list).unwrap(),
+        std::fs::read_to_string(set.join("Ys (1987)(Nihon Falcom).cmd")).unwrap(),
+        "np2kai \"Ys (1987)(Nihon Falcom)(Disk 1 of 2).d88\" \"Ys (1987)(Nihon Falcom)(Disk 2 of 2).d88\"\n"
+    );
+    assert!(set.join("romforge/Ys (1987)(Nihon Falcom)(Disk 1 of 2)").is_dir());
+
+    // Play starts the set's .cmd, whichever disk's row it is.
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.refresh(romforge_core::scan::ScanOptions::default(), |_, _| {})
+        .unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let disk2 = rows
+        .iter()
+        .find(|r| r.title == "Ys (1987)(Nihon Falcom)(Disk 2 of 2)")
+        .unwrap();
+    assert_eq!(disk2.status, RowStatus::Verified);
+    let bin = _tmp.path().join("bin");
+    let cores = _tmp.path().join("cores");
+    for (dir, name) in [
+        (&bin, "retroarch".to_owned()),
+        (
+            &cores,
+            format!("np2kai_libretro.{}", std::env::consts::DLL_EXTENSION),
+        ),
+    ] {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(&name), "#!/bin/sh\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.join(&name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let env = romforge_core::launch::Env {
+        path: vec![bin],
+        core_dirs: vec![cores],
+        flatpak_dirs: vec![],
+    };
+    let spec = lib.launch_row(&env, &disk2.id, None).unwrap();
+    assert_eq!(spec.rom, set.join("Ys (1987)(Nihon Falcom).cmd"));
+}
+
+/// PC-88's quasi88 reads an `.m3u` of the loose images.
+#[test]
+fn a_pc88_set_is_kept_loose_with_its_m3u() {
+    let (_tmp, home, r) = import_set("PC-88", "d88");
+    assert_eq!(r.playlists, 1);
+    let set = home.games().join("PC-88/Ys (1987)(Nihon Falcom)");
+    assert_eq!(
+        std::fs::read_to_string(set.join("Ys (1987)(Nihon Falcom).m3u")).unwrap(),
+        "Ys (1987)(Nihon Falcom)(Disk 1 of 2).d88\nYs (1987)(Nihon Falcom)(Disk 2 of 2).d88\n"
+    );
+}
+
+/// Elsewhere every disk is a zip, and the playlist lists the zips.
+#[test]
+fn an_amiga_set_is_zipped_with_an_m3u() {
+    let (_tmp, home, r) = import_set("Amiga", "adf");
+    assert_eq!(r.playlists, 1);
+    assert_eq!(
+        std::fs::read_to_string(home.games().join("Amiga/Ys (1987)(Nihon Falcom).m3u")).unwrap(),
         "Ys (1987)(Nihon Falcom)(Disk 1 of 2).zip\nYs (1987)(Nihon Falcom)(Disk 2 of 2).zip\n"
     );
-    lib.cleanup_undo(None).unwrap();
-    assert!(!list.exists());
-    assert_eq!(files_under(&home.games()), Vec::<String>::new());
 }

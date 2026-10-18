@@ -148,6 +148,7 @@ const ROOT_KEY: &str = "home_root";
 const PATH_COLUMNS: &[(&str, &str)] = &[
     ("files", "path"),
     ("folder_games", "path"),
+    ("scummvm_ids", "path"),
     ("scan_roots", "path"),
     ("art", "path"),
     ("dats", "source_path"),

@@ -662,43 +662,41 @@ fn scummvm_file(dir: &Path) -> Option<PathBuf> {
     found.into_iter().next()
 }
 
-/// An `.m3u` beside `disk` that lists it (import writes one per complete
-/// multi-disk set).
+/// A playlist beside `disk` that lists it (import writes one per complete
+/// multi-disk set): an `.m3u`, or np2kai's `.cmd` (a command line of
+/// quoted disks).
 fn playlist_for(disk: &Path) -> Option<PathBuf> {
     let dir = disk.parent()?;
     let mut lists: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u")))
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("m3u") || e.eq_ignore_ascii_case("cmd"))
+        })
         .collect();
     lists.sort();
     lists.into_iter().find(|l| {
-        std::fs::read_to_string(l).is_ok_and(|text| {
+        let Ok(text) = std::fs::read_to_string(l) else {
+            return false;
+        };
+        let cmd = l.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd"));
+        let entries: Vec<&str> = if cmd {
+            text.split('"').skip(1).step_by(2).collect()
+        } else {
             text.lines()
                 .map(str::trim)
                 .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                .any(|line| dir.join(line) == disk)
-        })
+                .collect()
+        };
+        entries.iter().any(|e| dir.join(e) == disk)
     })
 }
 
 /// ScummVM's detection list, from the installed ScummVM (on `PATH` or
 /// Flatpak): `--dump-all-detection-entries`, which prints it and exits.
 pub fn scummvm_list(env: &Env) -> Result<Vec<u8>, Error> {
-    let e = KNOWN_EMULATORS
-        .iter()
-        .find(|e| e.name == "scummvm")
-        .ok_or_else(|| Error::Launch("scummvm is not a known emulator".into()))?;
-    let runner = env
-        .known(e)
-        .ok_or_else(|| Error::Launch("ScummVM isn't installed (on PATH or as a Flatpak)".into()))?;
-    let (program, args) = command(&runner, vec!["--dump-all-detection-entries".to_owned()]);
-    let out = std::process::Command::new(&program)
-        .args(&args)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    let (program, out) = run_scummvm(env, &["--dump-all-detection-entries".to_owned()])?;
     if !out.status.success() || out.stdout.is_empty() {
         return Err(Error::Launch(format!(
             "{} gave no detection list ({}); it needs a ScummVM with --dump-all-detection-entries",
@@ -707,6 +705,36 @@ pub fn scummvm_list(env: &Env) -> Result<Vec<u8>, Error> {
         )));
     }
     Ok(out.stdout)
+}
+
+/// What the installed ScummVM finds in `root` and every folder below it
+/// (`--detect --recursive`), as it prints it.
+pub fn scummvm_detect(env: &Env, root: &Path) -> Result<String, Error> {
+    let args = [
+        "--detect".to_owned(),
+        "--recursive".to_owned(),
+        format!("--path={}", root.display()),
+    ];
+    let (_, out) = run_scummvm(env, &args)?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn run_scummvm(env: &Env, args: &[String]) -> Result<(PathBuf, std::process::Output), Error> {
+    let e = KNOWN_EMULATORS
+        .iter()
+        .find(|e| e.name == "scummvm")
+        .ok_or_else(|| Error::Launch("scummvm is not a known emulator".into()))?;
+    let runner = env
+        .known(e)
+        .ok_or_else(|| Error::Launch("ScummVM isn't installed (on PATH or as a Flatpak)".into()))?;
+    let (program, args) = command(&runner, args.to_vec());
+    let out = std::process::Command::new(&program)
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    Ok((program, out))
 }
 
 /// Start the emulator and return its process id. romforge doesn't wait for

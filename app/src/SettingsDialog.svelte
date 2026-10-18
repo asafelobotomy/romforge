@@ -21,7 +21,7 @@
     readingList = true;
     try {
       const r = await invoke("scummvm_list", { file });
-      scummvmNote = `${r.entries} entries; ${r.games} ScummVM game${r.games === 1 ? "" : "s"} in your folders.`;
+      scummvmNote = `${r.entries} entries; ScummVM itself named ${r.asked} folder${r.asked === 1 ? "" : "s"}; ${r.games} ScummVM game${r.games === 1 ? "" : "s"} in your folders.`;
     } catch (e) {
       scummvmNote = String(e).replace(/^launch: /, "");
     }
@@ -161,7 +161,7 @@
 
       <section class="setting">
         <span class="flabel">ScummVM games</span>
-        <p class="hint">ScummVM games are named by ScummVM's own game list, read from the ScummVM installed here (kept on this computer, never shared). Read it again after updating ScummVM.</p>
+        <p class="hint">ScummVM games are named by ScummVM's own game list, read from the ScummVM installed here (kept on this computer, never shared); ScummVM itself is asked about folders the list can't name (LucasArts, Sierra). Read it again after updating ScummVM or adding games.</p>
         <div class="pick">
           <button onclick={() => readScummvm(false)} disabled={readingList}>{readingList ? "Reading…" : "Read ScummVM's list"}</button>
           <button onclick={() => readScummvm(true)} disabled={readingList} title="A list saved with: scummvm --dump-all-detection-entries">From a file…</button>

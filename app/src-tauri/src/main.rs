@@ -334,9 +334,14 @@ struct SettingsInfo {
 /// `file` (one saved with `scummvm --dump-all-detection-entries`).
 #[tauri::command]
 async fn scummvm_list(db: tauri::State<'_, Db>, file: Option<String>) -> Res<romforge_core::ScummvmList> {
-    with(&db, move |lib| match file {
-        Some(f) => lib.scummvm_import(&std::fs::read(f)?),
-        None => lib.scummvm_read(&romforge_core::launch::Env::detect()),
+    with(&db, move |lib| {
+        // libretro's names (its box art goes by them); without them,
+        // ScummVM's own names stay.
+        let _ = lib.scummvm_titles_download();
+        match file {
+            Some(f) => lib.scummvm_import(&std::fs::read(f)?),
+            None => lib.scummvm_read(&romforge_core::launch::Env::detect()),
+        }
     })
     .await
 }

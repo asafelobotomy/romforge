@@ -267,7 +267,9 @@ enum HomeCommand {
 enum ScummvmCommand {
     /// Ask the installed ScummVM for its detection list
     /// (`--dump-all-detection-entries`), keep it in the databases folder
-    /// and name the ScummVM games in every scanned folder by it
+    /// and name the ScummVM games in every scanned folder by it; then ask
+    /// ScummVM itself (`--detect`) about those folders, for the engines
+    /// its list leaves out (SCUMM, SCI, Sky, Glk)
     Read,
     /// The same from a list you saved yourself
     /// (`scummvm --dump-all-detection-entries > list.dat`)
@@ -769,6 +771,12 @@ fn main() -> Result<()> {
         }
         Command::Home(_) => unreachable!("handled before the library opens"),
         Command::Scummvm(cmd) => {
+            // libretro's names for ScummVM games (its box art goes by them);
+            // without them, ScummVM's own names stay.
+            match lib.scummvm_titles_download() {
+                Ok(n) => println!("libretro's ScummVM.dat: names for {n} game ids"),
+                Err(e) => eprintln!("warning: libretro's ScummVM.dat: {e} (ScummVM's own names are used)"),
+            }
             let r = match cmd {
                 ScummvmCommand::Read => lib.scummvm_read(&launch::Env::detect())?,
                 ScummvmCommand::Import { file } => {
@@ -778,8 +786,8 @@ fn main() -> Result<()> {
                 }
             };
             println!(
-                "ScummVM list: {} entries; {} ScummVM game(s) in your folders",
-                r.entries, r.games
+                "ScummVM list: {} entries; ScummVM itself named {} folder(s); {} ScummVM game(s) in your folders",
+                r.entries, r.asked, r.games
             );
         }
         Command::Import { dir, apply, verbose } => {

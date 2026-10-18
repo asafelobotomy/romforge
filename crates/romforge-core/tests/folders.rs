@@ -273,3 +273,80 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     assert_eq!(files_under(&incoming), before);
     assert!(!target.exists());
 }
+
+/// What ScummVM's list leaves out (a SCUMM game) is named by ScummVM's own
+/// --detect; the name follows the folder through import and undo.
+#[test]
+fn scummvm_names_what_its_list_leaves_out() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    let game = incoming.join("Monkey");
+    std::fs::create_dir_all(&game).unwrap();
+    std::fs::write(game.join("MONKEY.000"), vec![7u8; 900]).unwrap();
+    std::fs::write(game.join("MONKEY.001"), vec![8u8; 4000]).unwrap();
+    let before = files_under(&incoming);
+    // A stand-in ScummVM: a list with nothing of this game, and a --detect
+    // that names it (the way ScummVM prints it).
+    let list = tmp.path().join("list.dat");
+    std::fs::write(
+        &list,
+        "scummvm (\n\tversion \"2.9\"\n)\ngame (\n\tname \"queen\"\n\ttitle \"Flight of the Amazon Queen\"\n\trom ( name \"queen.1\" size 100 md5-5000 0123456789abcdef0123456789abcdef )\n)\n",
+    )
+    .unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = format!(
+        "#!/bin/sh\ncase \"$1\" in\n--dump-all-detection-entries) cat '{}' ;;\n--detect)\n  printf 'GameID                         Description                                                Full Path\\n'\n  printf '%-30s %-58s %s\\n' scumm:monkey 'The Secret of Monkey Island (VGA/DOS/English)' '{}'\n  ;;\nesac\n",
+        list.display(),
+        game.display()
+    );
+    let p = bin.join("scummvm");
+    std::fs::write(&p, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let env = Env {
+        path: vec![bin],
+        core_dirs: vec![],
+        flatpak_dirs: vec![],
+    };
+
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let r = lib.scummvm_read(&env).unwrap();
+    assert_eq!((r.entries, r.asked, r.games), (1, 1, 1), "{r:?}");
+    let find = |lib: &Library| {
+        lib.library_view()
+            .unwrap()
+            .rows
+            .into_iter()
+            .find(|r| r.status == RowStatus::Detected)
+    };
+    let monkey = find(&lib).expect("named by --detect");
+    assert_eq!(monkey.title, "The Secret of Monkey Island (VGA/DOS/English)");
+    assert_eq!(monkey.folder.as_deref(), Some(game.to_str().unwrap()));
+
+    let plan = lib.import_plan(Some(&incoming)).unwrap();
+    let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    let target = home
+        .games()
+        .join("ScummVM/The Secret of Monkey Island (VGA-DOS-English)");
+    assert_eq!(plan.items[0].target, target);
+    assert_eq!(
+        std::fs::read_to_string(target.join("monkey.scummvm")).unwrap(),
+        "monkey"
+    );
+    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    let monkey = find(&lib).expect("found again in Games");
+    assert_eq!(monkey.folder.as_deref(), Some(target.to_str().unwrap()));
+
+    lib.cleanup_undo(None).unwrap();
+    assert_eq!(files_under(&incoming), before);
+    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    let monkey = find(&lib).expect("and back where it was");
+    assert_eq!(monkey.folder.as_deref(), Some(game.to_str().unwrap()));
+}

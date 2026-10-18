@@ -52,6 +52,9 @@ pub enum Format {
     Folder,
     /// A game that is a folder, copied as a folder (ScummVM).
     Dir,
+    /// One disk of a set, unzipped into the set's folder (floppy
+    /// computers whose cores read a set's disks themselves).
+    Loose,
 }
 
 /// One ROM of a game and where its data is now.
@@ -324,8 +327,21 @@ pub fn plan(
         }
         let name = sanitize(&row.title);
         let dir = dest.join(sanitize(system.key));
-        let (target, sidecar) = match format {
-            Format::Zip => (dir.join(format!("{name}.zip")), None),
+        // A disk of a set, for a core that opens the set's disks itself.
+        let set = match (format, system.loose_sets, disk_of(&row.title)) {
+            (Format::Zip, Some(_), Some((_, _, base))) if parts.len() == 1 => Some(base),
+            _ => None,
+        };
+        let format = if set.is_some() { Format::Loose } else { format };
+        let (target, sidecar) = match (format, &set) {
+            (Format::Loose, Some(base)) => {
+                let ext = parts[0]
+                    .name
+                    .rsplit_once('.')
+                    .map_or(String::new(), |(_, e)| format!(".{}", e.to_ascii_lowercase()));
+                (dir.join(sanitize(base)).join(format!("{name}{ext}")), None)
+            }
+            (Format::Zip, _) => (dir.join(format!("{name}.zip")), None),
             _ => (dir.join(format!("{name}.chd")), Some(dir.join(&name))),
         };
         if target.exists() || sidecar.as_ref().is_some_and(|d| d.exists()) {
@@ -598,6 +614,65 @@ fn copy_hashed(r: impl Read, w: &mut impl Write) -> std::io::Result<String> {
     };
     std::io::copy(&mut h, w)?;
     Ok(hex(&h.sha1.finalize()))
+}
+
+/// One disk of a set as a plain file in the set's folder, checked against
+/// its hash; its art and details go in `romforge/<title>/` there.
+fn write_loose(
+    conn: &Connection,
+    batch: i64,
+    item: &Item,
+    extras: &[(String, Vec<u8>)],
+    staging: &Path,
+) -> Result<(), Error> {
+    let p = item
+        .parts
+        .first()
+        .ok_or_else(|| Error::Cleanup(format!("{}: no disk", item.title)))?;
+    let dir = item.target.parent().unwrap_or(Path::new("."));
+    let name = item.target.file_name().unwrap_or_default().to_string_lossy();
+    let part = dir.join(format!(".{name}.romforge-part"));
+    let _ = std::fs::remove_file(&part);
+    let result = (|| -> Result<(), Error> {
+        let mut w = File::create_new(&part)?;
+        copy_hashed(open_part(p, staging)?, &mut w)?;
+        w.sync_all()?;
+        if sha1_of(BufReader::new(File::open(&part)?))? != p.sha1 {
+            return Err(Error::Cleanup(format!(
+                "{}: {} doesn't hash as before",
+                dir.display(),
+                name
+            )));
+        }
+        if item.target.exists() {
+            return Err(Error::Cleanup(format!(
+                "{} already exists",
+                item.target.display()
+            )));
+        }
+        Ok(())
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
+    std::fs::rename(&part, &item.target)?;
+    journal_output(conn, batch, &item.target, "file")?;
+    let side = dir.join("romforge").join(sanitize(&item.title));
+    if !extras.is_empty() && !side.exists() {
+        for d in [dir.join("romforge"), side.clone()] {
+            if !d.exists() {
+                std::fs::create_dir(&d)?;
+                journal_output(conn, batch, &d, "setdir")?;
+            }
+        }
+        for (f, data) in extras {
+            let to = side.join(f);
+            std::fs::write(&to, data)?;
+            journal_output(conn, batch, &to, "file")?;
+        }
+    }
+    Ok(())
 }
 
 /// A folder game (or the archive holding it) into one zip, every file
@@ -1344,7 +1419,27 @@ pub fn apply(
                 )));
             }
             let dir = item.target.parent().unwrap_or(Path::new("."));
+            let new_dir = !dir.exists();
             std::fs::create_dir_all(dir)?;
+            if item.format == Format::Loose {
+                // The set's folder is journaled before what goes in it, so
+                // undo (last first) empties it before removing it.
+                if new_dir {
+                    journal_output(conn, batch_id, dir, "setdir")?;
+                }
+                let written = extras(conn, &item.row_id)
+                    .and_then(|extras| write_loose(conn, batch_id, item, &extras, &staging));
+                if let Err(e) = written {
+                    if new_dir && std::fs::remove_dir(dir).is_ok() {
+                        conn.execute(
+                            "DELETE FROM cleanup_outputs WHERE batch_id = ?1 AND path = ?2",
+                            params![batch_id, dir.to_string_lossy()],
+                        )?;
+                    }
+                    return Err(e);
+                }
+                return Ok(false);
+            }
             if item.format == Format::Dir {
                 let name = item.target.file_name().unwrap_or_default().to_string_lossy();
                 let part = dir.join(format!(".{name}.romforge-part"));
@@ -1448,9 +1543,18 @@ pub fn apply(
             }
         }
     }
+    // A batch that left nothing behind (no file, no journal row) is
+    // forgotten.
     if report.done == 0 && report.trashed == 0 {
-        conn.execute("DELETE FROM cleanup_batches WHERE batch_id = ?1", [batch_id])?;
-        report.batch_id = 0;
+        let gone = conn.execute(
+            "DELETE FROM cleanup_batches WHERE batch_id = ?1
+               AND NOT EXISTS (SELECT 1 FROM cleanup_outputs WHERE batch_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM cleanup_trash WHERE batch_id = ?1)",
+            [batch_id],
+        )?;
+        if gone > 0 {
+            report.batch_id = 0;
+        }
     }
     Ok(report)
 }
@@ -1474,31 +1578,50 @@ pub fn disk_of(title: &str) -> Option<(u32, Option<u32>, String)> {
     None
 }
 
-/// For each multi-disk set this batch wrote a disk of, a `<set>.m3u` in
-/// the same folder listing its disks in order, once every disk is there
-/// (all "of N", else disks 1, 2, ... with no gap). An existing playlist
-/// is left alone. Journaled, so undo removes it.
+/// For each multi-disk set this batch wrote a disk of, a playlist in the
+/// same folder listing its disks in order, once every disk is there (all
+/// "of N", else disks 1, 2, ... with no gap): `<set>.m3u` of the zips or
+/// CHDs; for a set kept loose, the playlist its core reads (`.m3u` of the
+/// images, or np2kai's `.cmd`, one command line), or none. An existing
+/// playlist is left alone. Journaled, so undo removes it.
 fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) -> Result<usize, Error> {
-    let mut sets: BTreeSet<(PathBuf, String)> = BTreeSet::new();
+    // (folder, set, playlist kind, loose)
+    let mut sets: BTreeSet<(PathBuf, String, &'static str, bool)> = BTreeSet::new();
     for it in written {
-        if let (Some((_, _, base)), Some(dir)) = (disk_of(&it.title), it.target.parent()) {
-            sets.insert((dir.to_owned(), base));
+        let Some((_, _, base)) = disk_of(&it.title) else {
+            continue;
+        };
+        let Some(dir) = it.target.parent() else { continue };
+        let kind = match it.format {
+            Format::Loose => systems::by_key(&it.system)
+                .and_then(|s| s.loose_sets)
+                .unwrap_or(""),
+            _ => "m3u",
+        };
+        if !kind.is_empty() {
+            sets.insert((dir.to_owned(), base, kind, it.format == Format::Loose));
         }
     }
     let mut n = 0;
-    for (dir, base) in sets {
-        let list = dir.join(format!("{}.m3u", sanitize(&base)));
+    for (dir, base, kind, loose) in sets {
+        let list = dir.join(format!("{}.{kind}", sanitize(&base)));
         if list.exists() {
             continue;
         }
-        // Every game file of the set in the folder, by disk number.
+        // Every disk of the set in the folder, by disk number.
         let mut disks: BTreeMap<u32, (Option<u32>, String)> = BTreeMap::new();
         for e in std::fs::read_dir(&dir)?.filter_map(Result::ok) {
             let name = e.file_name().to_string_lossy().into_owned();
             let Some((stem, ext)) = name.rsplit_once('.') else {
                 continue;
             };
-            if !["zip", "chd", "7z"].contains(&ext.to_ascii_lowercase().as_str()) || !e.path().is_file() {
+            let ext = ext.to_ascii_lowercase();
+            let wanted = if loose {
+                !name.starts_with('.') && !["m3u", "cmd"].contains(&ext.as_str())
+            } else {
+                ["zip", "chd", "7z"].contains(&ext.as_str())
+            };
+            if !wanted || !e.path().is_file() {
                 continue;
             }
             if let Some((d, of, b)) = disk_of(stem)
@@ -1514,7 +1637,20 @@ fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) -> Result<u
         if !complete {
             continue;
         }
-        let body: String = disks.values().map(|(_, f)| format!("{f}\n")).collect();
+        let body: String = if kind == "cmd" {
+            // np2kai reads one line of at most 1023 bytes: the program,
+            // then the disks (quoted, relative to the file).
+            let line: String = std::iter::once("np2kai".to_owned())
+                .chain(disks.values().map(|(_, f)| format!("\"{f}\"")))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if line.len() > 1023 || disks.values().any(|(_, f)| f.contains('"')) {
+                continue;
+            }
+            line + "\n"
+        } else {
+            disks.values().map(|(_, f)| format!("{f}\n")).collect()
+        };
         let tmp = dir.join(format!(".{}.romforge-part", sanitize(&base)));
         std::fs::write(&tmp, body)?;
         if list.exists() {
@@ -1639,13 +1775,20 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
         return Ok(u);
     }
     let outputs: Vec<(String, String)> = conn
-        .prepare("SELECT path, kind FROM cleanup_outputs WHERE batch_id = ?1")?
+        .prepare("SELECT path, kind FROM cleanup_outputs WHERE batch_id = ?1 ORDER BY rowid DESC")?
         .query_map([batch_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
     for (path, kind) in outputs {
         let p = Path::new(&path);
         let r = if kind == "dir" {
             std::fs::remove_dir_all(p)
+        } else if kind == "setdir" {
+            // A folder this batch made for a set: gone once it is empty;
+            // anything put in it since stays.
+            match std::fs::remove_dir(p) {
+                Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+                r => r,
+            }
         } else {
             std::fs::remove_file(p)
         };

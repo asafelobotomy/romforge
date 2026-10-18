@@ -110,7 +110,9 @@ fn is_archive(ext: &str) -> bool {
 /// Whether a file (or archive member) with this name should be hashed.
 /// Members are never archives themselves: nested archives are not opened.
 fn wanted(name: &str, opts: ScanOptions) -> bool {
-    opts.all_files || systems::is_rom_extension(&ext_of(name))
+    // A game's details as import writes them (`.md` is a Mega Drive
+    // extension too).
+    !name.ends_with(".romforge.md") && (opts.all_files || systems::is_rom_extension(&ext_of(name)))
 }
 
 /// An archive member worth hashing: not one of the files cleanup and
