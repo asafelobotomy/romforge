@@ -773,7 +773,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     start (see above) and stay zipped as decided. Parsing the 4 MB list
     takes about 2 s (debug build) on every scan.
 
-15. **Packages** (decided 2026-10-18; not built). romforge starts host
+15. **Packages** (decided 2026-10-18; *built* the same day:
+    `tauri.conf.json` bundles, `.github/workflows/release.yml`; no release
+    tagged yet). romforge starts host
     programs (RetroArch, ScummVM, MAME, `flatpak run`), reads and moves
     files on any drive, and needs WebKitGTK (134 MiB installed on Arch).
     So:
@@ -790,6 +792,18 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     - *Releases from CI.* Pushing a tag `vX.Y.Z` builds every package and
       attaches them, with SHA-256 checksums, to a GitHub release. CI today
       builds the app without bundling.
+    As built and tried locally: `.deb` and `.rpm` 14.9 MiB each (app,
+    `romforge-cli`, desktop entry, icons, licence; they depend on the
+    system's WebKitGTK and GTK, and recommend only RetroArch and ScummVM,
+    since apt and dnf install recommended packages by default and Tauri
+    has no "suggests"); AppImage 105 MiB (app only). The release job
+    writes the AUR's `romforge-bin` PKGBUILD (repackaging the `.deb`, all
+    emulators as optdepends); `makepkg` builds it and `namcap` is clean.
+    The packaged app and the AppImage started on a scratch library.
+    **Open:** the first tagged release (the workflow has not run on
+    GitHub yet); pushing `romforge-bin` to the AUR (the owner's account);
+    Debian's and Fedora's package names for the recommended emulators are
+    unchecked.
 
 ## Code review follow-ups (2026-10-18)
 

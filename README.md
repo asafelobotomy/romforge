@@ -8,6 +8,28 @@ and renames them, and only `cleanup apply` and `import --apply` repack them
 (into the RomForge folder), each after a dry run and journaled for undo. See [PLAN.md](PLAN.md) for the milestones and what is
 still open.
 
+## Install
+
+Each [release](https://github.com/asafelobotomy/romforge/releases) has:
+
+- `romforge_<version>_amd64.deb` (Debian, Ubuntu) and
+  `romforge-<version>-1.x86_64.rpm` (Fedora, openSUSE): the app and
+  `romforge-cli`, using the system's WebKitGTK; RetroArch and ScummVM are
+  recommended;
+- a `PKGBUILD` for the AUR's `romforge-bin` (Arch, Manjaro), with the
+  emulators as optional dependencies;
+- `romforge_<version>_amd64.AppImage`: one portable file for any distro
+  (bigger: it carries its own WebKitGTK; needs FUSE);
+- `romforge-cli-<version>-x86_64-linux.tar.gz`: the CLI alone;
+- `SHA256SUMS`.
+
+There is no Flatpak: romforge starts the emulators installed on your
+system and works with files on any drive, which a Flatpak's sandbox
+doesn't allow. A release is made by pushing a tag `vX.Y.Z` matching the
+version in `Cargo.toml` and `tauri.conf.json` (`.github/workflows/release.yml`).
+To build the packages yourself: `cd app && npm ci && npx tauri build`
+(they land in `target/release/bundle/`).
+
 ## Quick start
 
 This runs against the synthetic fixtures in the repo (no real ROMs) and
