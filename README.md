@@ -171,7 +171,10 @@ romforge-cli emulator add bsnes --system SNES --program bsnes --args "--fullscre
 
 RetroArch (on `PATH` or the Flatpak) with the system's first installed core,
 else a known standalone emulator (DuckStation, PCSX2, Dolphin, PPSSPP,
-Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu; `PATH` or Flatpak).
+Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu, DOSBox Staging,
+DOSBox-X, ScummVM, MAME; `PATH` or Flatpak). A Flatpak emulator is given
+the game's folder for that run (`--filesystem`), since it may see only
+your home folder.
 Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
@@ -376,7 +379,8 @@ cd app && npm install && npm run tauri dev
 - `crates/romforge-core` — all logic (library): `scan`, `hash`, `identify`,
   `dat`, `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`, `view`,
   `search`, `suggest`, `names`, `titles`, `ident`, `patch`, `wikidata`,
-  `extdb`, `artsources`; one table of systems (`systems.rs`), one of copier
+  `extdb`, `artsources`, `home` (the RomForge folder), `scummvm`,
+  `settings`, `report`, `db` (schema and migrations); one table of systems (`systems.rs`), one of copier
   headers and byte orders (`headers.rs`), one of game ID readers
   (`ident.rs`)
 - `crates/romforge-cli` — thin CLI

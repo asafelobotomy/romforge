@@ -73,9 +73,11 @@ is listed under each milestone as **Open**.
    Mednafen, Cemu; on `PATH` or Flatpak), with user-added emulators first.
    Archives go to RetroArch as is; standalone emulators get them only if
    they read archives, since romforge never extracts. Discs start from
-   their sheet. `--dry-run` prints the command.
-   **Open:** no emulator is installed on the dev machine; tested with
-   stand-in scripts only.
+   their sheet. `--dry-run` prints the command. Milestone 14 added DOSBox
+   Staging, DOSBox-X, ScummVM and MAME, and the first runs with real
+   programs.
+   **Open:** the console emulators above are still tried with stand-in
+   scripts only.
 
 ## UI and data milestones (decided 2026-10-17)
 
@@ -670,9 +672,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     (its own status), worked out again after every scan. A program loose
     in a scanned folder is not taken as a folder game. Playlists list the
     zips (or CHDs) as imported.
-    **Open:** check the new emulator rows against the real programs (none
-    of them is on the dev machine; tested with stand-in scripts); naming a
-    ScummVM folder by hand is not built.
+    **Open:** naming a ScummVM folder by hand is not built (real-program
+    runs: below).
 
     Checked 2026-10-18 (the cores' and ScummVM's source, the TOSEC pack,
     libretro's servers, Wikidata, the local LaunchBox and OpenVGDB copies):

@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use md5::{Digest as _, Md5};
 use rusqlite::{Connection, params};
@@ -219,7 +220,7 @@ fn partial_md5(path: &Path, bytes: u64, tail: bool) -> std::io::Result<String> {
         h.update(&buf[..n]);
         left -= n as u64;
     }
-    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(crate::hash::hex(&h.finalize()))
 }
 
 /// A folder ScummVM's list names.
@@ -315,17 +316,7 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
             }
         }
         if let Some(entry) = best {
-            let (mut n, mut size) = (0, 0);
-            for f in walkdir::WalkDir::new(dir)
-                .follow_links(false)
-                .into_iter()
-                .filter_map(Result::ok)
-            {
-                if f.file_type().is_file() {
-                    n += 1;
-                    size += f.metadata().map_or(0, |m| m.len());
-                }
-            }
+            let (n, size) = folder_stats(dir);
             out.push(Found {
                 dir: dir.clone(),
                 entry,
@@ -335,6 +326,22 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
         }
     }
     out
+}
+
+/// How many files a folder holds, and their size.
+fn folder_stats(dir: &Path) -> (usize, u64) {
+    let (mut n, mut size) = (0, 0);
+    for f in walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if f.file_type().is_file() {
+            n += 1;
+            size += f.metadata().map_or(0, |m| m.len());
+        }
+    }
+    (n, size)
 }
 
 /// A folder's files as one SHA1: every path (lower case) and size, leaving
@@ -366,7 +373,7 @@ pub fn fingerprint(dir: &Path) -> Option<String> {
         h.update(l.as_bytes());
         h.update(b"\n");
     }
-    Some(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Some(crate::hash::hex(&h.finalize()))
 }
 
 /// What `scummvm --detect` printed for `root`: (folder, game id,
@@ -502,21 +509,40 @@ fn asked_before(
     Ok(out)
 }
 
+/// A file parsed once and kept while its size and modification time stay
+/// the same: the list is parsed after every scan, and it is 4 MB.
+type Cached<T> = Mutex<Option<(PathBuf, crate::scan::Stamp, Arc<T>)>>;
+
+fn cached<T>(slot: &Cached<T>, path: &Path, parse: fn(&str) -> Result<T, Error>) -> Result<Arc<T>, Error> {
+    let stamp = crate::scan::Stamp::of(path);
+    let mut slot = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if let (Some((p, s, v)), Some(now)) = (slot.as_ref(), stamp)
+        && p == path
+        && *s == now
+    {
+        return Ok(v.clone());
+    }
+    let v = Arc::new(parse(&String::from_utf8_lossy(&std::fs::read(path)?))?);
+    *slot = stamp.map(|s| (path.to_owned(), s, v.clone()));
+    Ok(v)
+}
+
 /// Work out the ScummVM games again from the list in `list` (when there
 /// is one), what ScummVM's --detect named before, and every scanned
 /// folder. Returns how many there are.
 pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, Error> {
+    static LISTS: Cached<Vec<Entry>> = Mutex::new(None);
+    static NAMES: Cached<HashMap<String, String>> = Mutex::new(None);
     let entries = match list.filter(|p| p.is_file()) {
-        Some(p) => parse(&String::from_utf8_lossy(&std::fs::read(p)?))?,
-        None => Vec::new(),
+        Some(p) => cached(&LISTS, p, parse)?,
+        None => Arc::default(),
     };
     // libretro's names, when its ScummVM.dat is kept beside the list.
-    let names: HashMap<String, String> = list
+    let names = list
         .and_then(Path::parent)
         .map(|d| d.join(TITLES_FILE))
         .filter(|p| p.is_file())
-        .and_then(|p| std::fs::read(p).ok())
-        .and_then(|b| titles(&String::from_utf8_lossy(&b)).ok())
+        .and_then(|p| cached(&NAMES, &p, titles).ok())
         .unwrap_or_default();
     let top = top_roots(conn)?;
     let found = if entries.is_empty() {
@@ -552,20 +578,10 @@ pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, E
     let named: Vec<PathBuf> = found.iter().map(|f| f.dir.clone()).collect();
     let asked = asked_before(conn, &top, &named)?;
     for (dir, code, title) in &asked {
-        let (mut n, mut size) = (0, 0);
-        for f in walkdir::WalkDir::new(dir)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(Result::ok)
-        {
-            if f.file_type().is_file() {
-                n += 1;
-                size += f.metadata().map_or(0, |m| m.len());
-            }
-        }
+        let (n, size) = folder_stats(dir);
         let title = match (names.get(code), tag_of(title)) {
-            (Some(n), Some(tag)) => format!("{n} {tag}"),
-            (Some(n), None) => n.clone(),
+            (Some(name), Some(tag)) => format!("{name} {tag}"),
+            (Some(name), None) => name.clone(),
             (None, _) => title.clone(),
         };
         insert.execute(params![dir.to_string_lossy(), system, title, code, n, size])?;

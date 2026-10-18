@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
-use crate::hash::hash_stream;
+use crate::hash::{hash_stream, hex};
 use crate::home::Home;
 use crate::organize::{move_file, sanitize};
 use crate::view::{self, RowStatus};
@@ -588,10 +588,6 @@ impl<R: Read> Read for Sha1Read<R> {
         self.sha1.update(&buf[..n]);
         Ok(n)
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// The SHA1 of a whole stream.

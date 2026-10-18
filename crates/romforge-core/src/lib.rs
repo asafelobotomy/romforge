@@ -608,7 +608,7 @@ impl Library {
         source: &str,
         system_key: Option<&str>,
     ) -> Result<ImportedDat, Error> {
-        let sha256: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+        let sha256 = hash::hex(&Sha256::digest(bytes));
         let dat = dat::parse_any(bytes)?;
 
         let system = match system_key {
