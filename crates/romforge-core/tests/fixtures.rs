@@ -1058,3 +1058,65 @@ fn rescans_skip_unchanged_files() {
         .unwrap();
     assert_eq!((all.hashed, all.unchanged), (2, 0));
 }
+
+/// N64 dumps in `.v64` / `.n64` byte order and `.smd` Mega Drive dumps
+/// match the DAT's `.z64` / `.md` hashes (in temp files; the committed
+/// fixtures stay as they are).
+#[test]
+fn other_byte_orders_match_the_dat() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut z64 = body("z64", 32 * 1024);
+    z64[..4].copy_from_slice(&[0x80, 0x37, 0x12, 0x40]);
+    let md = body("md-smd", 32 * 1024);
+    let v64: Vec<u8> = z64.chunks(2).flat_map(|w| [w[1], w[0]]).collect();
+    let n64: Vec<u8> = z64.chunks(4).flat_map(|w| [w[3], w[2], w[1], w[0]]).collect();
+    let mut smd = header(8, &[0xAA, 0xBB], 512);
+    smd[1] = 3;
+    for block in md.chunks(16 * 1024) {
+        smd.extend(block.iter().skip(1).step_by(2));
+        smd.extend(block.iter().step_by(2));
+    }
+    let roms = dir.path().join("roms");
+    std::fs::create_dir_all(&roms).unwrap();
+    std::fs::write(roms.join("Game (v64).v64"), &v64).unwrap();
+    std::fs::write(roms.join("Game (n64).n64"), &n64).unwrap();
+    std::fs::write(roms.join("Game.smd"), &smd).unwrap();
+    let dat = |name: &str, game: &str, rom: &str, data: &[u8]| {
+        let h = hash_stream(data, data.len() as u64).unwrap().raw;
+        format!(
+            r#"<datafile><header><name>{name}</name></header><game name="{game}"><rom name="{rom}" size="{}" crc="{}" md5="{}" sha1="{}"/></game></datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        )
+    };
+    std::fs::write(
+        dir.path().join("n64.dat"),
+        dat("Nintendo - Nintendo 64", "Game (USA)", "Game (USA).z64", &z64),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("md.dat"),
+        dat(
+            "Sega - Mega Drive - Genesis",
+            "Game (Japan)",
+            "Game (Japan).md",
+            &md,
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(dir.path().join("n64.dat"), None).unwrap();
+    lib.import_dat(dir.path().join("md.dat"), None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let files = lib.files(&LibraryFilter::default()).unwrap();
+    assert_eq!(files.len(), 3);
+    let mut matched = 0;
+    for f in &files {
+        match f.status {
+            Status::Matched => matched += 1,
+            // Both N64 files are the same game: one counts, one is a copy.
+            Status::Duplicate => assert!(f.display_path().ends_with("64")),
+            s => panic!("{}: {s:?}", f.display_path()),
+        }
+    }
+    assert_eq!(matched, 2, "the N64 game and the Mega Drive one");
+}

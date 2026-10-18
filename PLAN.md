@@ -253,13 +253,24 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     either finds exact matches that are missed today, or gathers evidence
     for files that stay unknown, shown as a suggestion the user confirms
     (it then becomes "identified by you"). In this order:
-    1. *Close the normalized-hash gaps* (small). Add the PC Engine 512-byte
-       header (`size % 128 KiB == 512`), the SNES copier rule as
-       `size % 8 KiB == 512` (RetroAchievements' rule; today `% 1024`),
-       N64 `.v64`/`.n64` also hashed as `.z64` (byte order from the first
-       word), and Mega Drive `.smd` de-interleaved. Same raw + stripped
-       columns as now, one table in `headers.rs`. Use the DAT's stored
-       `header_hint` and the unused `is_nes2`.
+    1. *Close the normalized-hash gaps* (small) *(built 2026-10-18)*.
+       `headers.rs` rules can now reorder bytes as well as skip a header:
+       - N64 `.v64` (16-bit swapped) and `.n64` (32-bit reversed) are
+         recognized by their first word and also hashed as `.z64`;
+       - Super Magic Drive `.smd` (magic AA BB, 16 KiB blocks of odd then
+         even bytes) is de-interleaved after its 512-byte header.
+
+       Same raw + stripped columns, one pass, no rewriting. Migration 14
+       has `.v64`/`.n64`/`.smd` files hashed again on their next scan.
+       Not needed after all:
+       - the SNES `size % 1 KiB == 512` rule already strips PC Engine
+         copier headers (their data is a multiple of 128 KiB);
+       - RetroAchievements' `% 8 KiB` would only miss more;
+       - NES 2.0 headers are the same 16 bytes as iNES.
+
+       Cleanup still copies such files as they are (a `.v64` in a zip
+       named `.z64`). Writing the DAT's byte order instead is a cleanup
+       follow-up: the new file would then hash exactly as the DAT says.
     2. *Keep more of the DAT* (small): `cloneof`/`romof`, region and
        serial. libretro's `metadat/redump` mirror has a serial on each
        game and rom (checked: SLUS-00067 is Symphony of the Night, USA),

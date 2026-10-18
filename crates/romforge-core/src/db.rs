@@ -177,6 +177,13 @@ const MIGRATIONS: &[&str] = &[
     // 13: where a metadata field came from (NULL: libretro or Wikidata as
     // before; 'openvgdb', 'launchbox' for the databases the user downloads)
     "ALTER TABLE game_meta ADD COLUMN source TEXT;",
+    // 14: N64 byte orders and .smd interleave are normalized now: files
+    // that may be either are hashed again on their next scan (every row of
+    // an archive, since the stamp is the archive's).
+    "UPDATE files SET mtime = NULL WHERE path IN (
+       SELECT path FROM files
+       WHERE lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.[vn]64'
+          OR lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.smd');",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

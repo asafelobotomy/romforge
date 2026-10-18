@@ -1,5 +1,6 @@
-//! Streaming CRC32 / MD5 / SHA1 over the raw data and the header-stripped data
-//! in one pass. Nothing is buffered beyond a small chunk.
+//! Streaming CRC32 / MD5 / SHA1 over the raw data and the normalized data
+//! (header stripped, byte order fixed; see `headers.rs`) in one pass.
+//! Nothing is buffered beyond a chunk (16 KiB more for `.smd` blocks).
 
 use std::io::{self, Read};
 
@@ -19,7 +20,8 @@ pub struct Digest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hashes {
     pub raw: Digest,
-    /// Present when a copier header was detected.
+    /// Present when a copier header or another byte order was detected:
+    /// the hashes of the data in the DAT's form.
     pub stripped: Option<(&'static str, Digest)>,
 }
 
@@ -89,12 +91,25 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
 
     let mut raw = Hasher::default();
     let mut stripped = header.map(|h| (h, Hasher::default()));
+    // Bytes after the header not reordered yet (less than one unit), and
+    // the reordered output.
+    let (mut pending, mut out): (Vec<u8>, Vec<u8>) = (Vec::new(), Vec::new());
     let mut feed = |chunk: &[u8], raw: &mut Hasher| {
         let start = raw.size;
         raw.update(chunk);
         if let Some((h, s)) = stripped.as_mut() {
             let skip = (h.len as u64).saturating_sub(start).min(chunk.len() as u64) as usize;
-            s.update(&chunk[skip..]);
+            let body = &chunk[skip..];
+            let unit = h.reorder.unit();
+            if unit == 1 {
+                s.update(body);
+                return;
+            }
+            pending.extend_from_slice(body);
+            let whole = pending.len() / unit * unit;
+            h.reorder.apply(&pending[..whole], &mut out);
+            s.update(&out);
+            pending.drain(..whole);
         }
     };
 
@@ -107,6 +122,10 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
         feed(&buf[..n], &mut raw);
     }
 
+    // A trailing piece shorter than one unit is hashed as it is.
+    if let Some((_, s)) = stripped.as_mut() {
+        s.update(&pending);
+    }
     if raw.size != size {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -158,6 +177,36 @@ mod tests {
         assert_eq!(kind, "ines");
         assert_eq!(stripped, plain.raw);
         assert_ne!(headered.raw, plain.raw);
+    }
+
+    /// `.v64`, `.n64` and `.smd` dumps hash as the DAT's form, also when
+    /// read a byte at a time and in big chunks.
+    #[test]
+    fn other_byte_orders_hash_as_the_dats() {
+        let mut z64: Vec<u8> = (0..64 * 1024u32).map(|i| (i * 13 + i / 251) as u8).collect();
+        z64[..4].copy_from_slice(&[0x80, 0x37, 0x12, 0x40]);
+        let plain = hash_stream(&z64[..], z64.len() as u64).unwrap();
+        assert!(plain.stripped.is_none(), "z64 is the DAT's order");
+        let v64: Vec<u8> = z64.chunks(2).flat_map(|w| [w[1], w[0]]).collect();
+        let n64: Vec<u8> = z64.chunks(4).flat_map(|w| [w[3], w[2], w[1], w[0]]).collect();
+        // Super Magic Drive: header, then odd bytes and even bytes per 16 KiB.
+        let mut smd = vec![0u8; 512];
+        smd[1] = 3;
+        smd[8..10].copy_from_slice(&[0xAA, 0xBB]);
+        for block in z64.chunks(16 * 1024) {
+            smd.extend(block.iter().skip(1).step_by(2));
+            smd.extend(block.iter().step_by(2));
+        }
+        for (file, want) in [(&v64, "n64-v64"), (&n64, "n64-n64"), (&smd, "smd")] {
+            for h in [
+                hash_stream(Trickle(file), file.len() as u64).unwrap(),
+                hash_stream(&file[..], file.len() as u64).unwrap(),
+            ] {
+                let (kind, d) = h.stripped.unwrap();
+                assert_eq!(kind, want);
+                assert_eq!(d, plain.raw, "{want}");
+            }
+        }
     }
 
     #[test]
