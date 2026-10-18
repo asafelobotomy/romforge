@@ -564,7 +564,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       order, even when it belongs to another disc;
     - files with unknown extensions are skipped silently (only counted).
 
-13. **One RomForge folder** (decided 2026-10-18). Everything romforge keeps
+13. **One RomForge folder** (decided 2026-10-18; *built* the same day:
+    `home.rs`, `home create|show`, `import`, the app's first-run dialog and
+    Add folder → import plan). Everything romforge keeps
     lives in one portable folder, `RomForge/`, inside a parent folder the
     owner picks on first run (home suggested; Settings can move it, and
     the folder is always named RomForge). Moving or backing up that folder
@@ -578,7 +580,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       Media/<System>/<kind>/<Title>.*  the art (today ~/.cache/romforge/art)
       Databases/                       OpenVGDB, LaunchBox (downloaded by you)
       romforge.db                      today ~/.local/share/romforge
-      .staging/  .trash/               same drive: renames, not copies; undo
+      .romforge-staging/  .romforge-trash/   same drive; undo
     ```
 
     - *Import* replaces Organize's destination and Cleanup's Library
@@ -597,10 +599,13 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       dropped into them and offers them for import.
     - `RomForge/Games` itself is scanned like any folder; files put there
       by hand are identified, and renamed only by an import plan.
-    - Open questions for building: the CLI's `--db` default (look for
-      `RomForge/romforge.db` via a small pointer file in
-      `~/.config/romforge/`), and what Organize's 1G1R mode becomes (a
-      filter on the import plan).
+    - The CLI and app find the folder through `~/.config/romforge/location`
+      (or `ROMFORGE_HOME`); `--db` / `ROMFORGE_DB` still override.
+    - **Open:** moving an existing RomForge folder from Settings (today:
+      move it by hand and `home create` on the new place); what Organize's
+      1G1R mode becomes (a filter on the import plan); a copy outside that
+      matches a game already in Games/ is skipped ("already exists")
+      rather than trashed as a copy. Not yet run on the real collection.
 
 ## Code review follow-ups (2026-10-18)
 

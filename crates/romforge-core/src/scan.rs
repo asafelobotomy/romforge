@@ -133,7 +133,9 @@ pub fn walk(
         .follow_root_links(true)
         .sort_by_file_name()
         .into_iter()
-        .filter_entry(|e| e.file_name() != crate::cleanup::TRASH_DIR);
+        .filter_entry(|e| {
+            e.file_name() != crate::cleanup::TRASH_DIR && e.file_name() != crate::home::STAGING
+        });
     for item in walker {
         let item = match item {
             Ok(item) => item,

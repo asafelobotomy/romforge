@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 
 use crate::hash::hash_stream;
+use crate::home::Home;
 use crate::organize::{move_file, sanitize};
 use crate::view::{self, RowStatus};
 use crate::{Error, settings, systems};
@@ -102,21 +103,63 @@ pub struct CleanupReport {
     pub failed: Vec<(String, String)>,
 }
 
+/// Which files a cleanup or import takes games from.
+enum Source {
+    /// The Source folder (no RomForge folder), or one folder being
+    /// imported.
+    Folder(PathBuf),
+    /// Anywhere outside the RomForge folder.
+    Outside(PathBuf),
+}
+
+impl Source {
+    fn contains(&self, p: &Path) -> bool {
+        match self {
+            Source::Folder(dir) => p.starts_with(dir),
+            Source::Outside(home) => !p.starts_with(home),
+        }
+    }
+}
+
 /// Work out what cleanup would do (nothing is touched). `only`: limit to
-/// these library row ids.
-pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, Error> {
+/// these library row ids. With a RomForge folder this is the import plan:
+/// games outside it (or in `from` only) go to its `Games/`.
+pub fn plan(
+    conn: &Connection,
+    only: Option<&[String]>,
+    home: Option<&Home>,
+    from: Option<&Path>,
+) -> Result<CleanupPlan, Error> {
     let s = settings::load(conn)?;
-    let source = s
-        .source_dir
-        .clone()
-        .ok_or_else(|| Error::Settings("set a Source folder first (Settings)".into()))?;
-    let dest = s.library_dir.clone().unwrap_or_else(|| source.clone());
+    let (source, dest) = match home {
+        Some(h) => {
+            let source = match from {
+                Some(f) if h.contains(f) => {
+                    return Err(Error::Settings(format!(
+                        "{} is inside the RomForge folder; nothing to import from it",
+                        f.display()
+                    )));
+                }
+                Some(f) => Source::Folder(f.to_owned()),
+                None => Source::Outside(h.root().to_owned()),
+            };
+            (source, h.games())
+        }
+        None => {
+            let source = s
+                .source_dir
+                .clone()
+                .ok_or_else(|| Error::Settings("set a Source folder first (Settings)".into()))?;
+            let dest = s.library_dir.clone().unwrap_or_else(|| source.clone());
+            (Source::Folder(from.map_or(source, Path::to_owned)), dest)
+        }
+    };
     let mut plan = CleanupPlan {
         dest: dest.clone(),
         keep_originals: s.keep_originals,
         ..CleanupPlan::default()
     };
-    let in_source = |p: &Path| p.starts_with(&source);
+    let in_source = |p: &Path| source.contains(p);
 
     let v = view::library(conn)?;
     // Which library rows each file belongs to: an original another game
@@ -342,7 +385,7 @@ fn verified_parts(
     conn: &Connection,
     system_id: i64,
     title: &str,
-    source: &Path,
+    source: &Source,
 ) -> Result<Option<PartsAndCopies>, Error> {
     let mut stmt = conn.prepare(
         "SELECT g.game_id, r.rom_id, r.name, f.path, f.member, f.size, f.sha1, f.status
@@ -378,7 +421,7 @@ fn verified_parts(
             (path, member, size, sha1, status)
         {
             let path = PathBuf::from(path);
-            let rank = (!path.starts_with(source)) as u8 * 2 + (status != "matched") as u8;
+            let rank = (!source.contains(&path)) as u8 * 2 + (status != "matched") as u8;
             let part = Part {
                 name,
                 path,
@@ -410,7 +453,7 @@ fn verified_parts(
             for (i, (p, _)) in c.iter().enumerate() {
                 if i == best {
                     parts.push(p.clone());
-                } else if p.path.starts_with(source) {
+                } else if source.contains(&p.path) {
                     copies.push(p.clone());
                 }
             }
@@ -424,7 +467,7 @@ fn verified_parts(
 /// The files of a game you named: one per content (other copies of it in
 /// Source are `copies`, the one in Source first), tracks in natural order
 /// ("Track 2" before "Track 10") as there is no DAT to give it.
-fn named_parts(conn: &Connection, row_id: &str, source: &Path) -> Result<Option<PartsAndCopies>, Error> {
+fn named_parts(conn: &Connection, row_id: &str, source: &Source) -> Result<Option<PartsAndCopies>, Error> {
     let d = view::detail(conn, row_id)?;
     let mut all: Vec<Part> = d
         .files
@@ -448,13 +491,13 @@ fn named_parts(conn: &Connection, row_id: &str, source: &Path) -> Result<Option<
             }
         })
         .collect();
-    all.sort_by_key(|p| (!p.path.starts_with(source), natural_key(&p.name)));
+    all.sort_by_key(|p| (!source.contains(&p.path), natural_key(&p.name)));
     let (mut parts, mut copies) = (Vec::new(), Vec::new());
     let mut seen = BTreeSet::new();
     for p in all {
         if seen.insert((p.sha1.clone(), p.size)) {
             parts.push(p);
-        } else if p.path.starts_with(source) {
+        } else if source.contains(&p.path) {
             copies.push(p);
         }
     }
@@ -897,6 +940,7 @@ fn own_cue(item: &Item, staging: &Path) -> (Option<String>, bool) {
 pub fn apply(
     conn: &mut Connection,
     plan: &CleanupPlan,
+    home: Option<&Home>,
     mut progress: impl FnMut(usize, &str),
 ) -> Result<CleanupReport, Error> {
     let s = settings::load(conn)?;
@@ -909,7 +953,9 @@ pub fn apply(
         batch_id,
         ..CleanupReport::default()
     };
-    let staging_root = s.staging().join(format!("batch-{batch_id}"));
+    let staging_root = home
+        .map_or_else(|| s.staging(), Home::staging)
+        .join(format!("batch-{batch_id}"));
     let mut ok: Vec<&Item> = Vec::new();
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
     for (n, item) in plan.items.iter().enumerate() {
@@ -992,7 +1038,7 @@ pub fn apply(
     if !plan.keep_originals {
         for item in ok {
             for original in item.trash.iter().filter(|p| !failed_paths.contains(*p)) {
-                match trash(conn, batch_id, original) {
+                match trash(conn, batch_id, original, home) {
                     Ok(()) => report.trashed += 1,
                     Err(e) => report
                         .failed
@@ -1016,13 +1062,24 @@ fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &str) -> Res
     Ok(())
 }
 
-/// `<folder of original>/.romforge-trash/<batch>/<name>`.
-fn trash(conn: &Connection, batch: i64, original: &Path) -> Result<(), Error> {
-    let dir = original.parent().unwrap_or(Path::new("."));
-    let to = dir
-        .join(TRASH_DIR)
-        .join(batch.to_string())
-        .join(original.file_name().unwrap_or_default());
+/// `RomForge/.romforge-trash/<batch>/<the original's full path>`, or
+/// without a RomForge folder `<folder of original>/.romforge-trash/<batch>/<name>`.
+fn trash(conn: &Connection, batch: i64, original: &Path, home: Option<&Home>) -> Result<(), Error> {
+    let to = match home {
+        Some(h) => {
+            let rel: PathBuf = original
+                .components()
+                .filter(|c| matches!(c, std::path::Component::Normal(_)))
+                .collect();
+            h.trash().join(batch.to_string()).join(rel)
+        }
+        None => original
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(TRASH_DIR)
+            .join(batch.to_string())
+            .join(original.file_name().unwrap_or_default()),
+    };
     // Journaled before it moves: a crash in between leaves a row undo can
     // act on, never a trashed file nothing knows about.
     conn.execute(

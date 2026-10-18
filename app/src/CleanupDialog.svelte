@@ -3,7 +3,10 @@
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library.
-  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), selected, call, load } = $props();
+  // With `homeRoot` (the RomForge folder) this is Import: games move into
+  // its Games/, from `from` (a folder just added) or everywhere outside it.
+  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), selected, homeRoot = null, call, load } = $props();
+  let from = $state(null);
 
   // Cleanup and rename dialog: a plan first, applied on confirmation.
   let cleanOnly = $state(false); // just the selected game
@@ -12,7 +15,8 @@
   let cleanError = $state("");
   let confirmCleanUndo = $state(false);
 
-  export async function openCleanup() {
+  export async function openCleanup(folder = null) {
+    from = folder;
     cleanOnly = false;
     confirmCleanUndo = false;
     open = true;
@@ -22,7 +26,7 @@
   async function planCleanup() {
     cleanError = "";
     try {
-      cleanPlan = await invoke("cleanup_plan", { only: cleanOnly && selected ? [selected] : null });
+      cleanPlan = await invoke("cleanup_plan", { only: cleanOnly && selected ? [selected] : null, from });
     } catch (e) {
       cleanPlan = null;
       cleanError = String(e).replace(/^settings: /, "");
@@ -32,11 +36,12 @@
 
   async function applyCleanup() {
     cleanError = "";
-    busy = `Repacking ${cleanPlan.items.length} games…`;
+    busy = homeRoot ? `Importing ${cleanPlan.items.length} games…` : `Repacking ${cleanPlan.items.length} games…`;
     try {
-      const r = await invoke("cleanup_apply", { only: cleanOnly && selected ? [selected] : null });
+      const r = await invoke("cleanup_apply", { only: cleanOnly && selected ? [selected] : null, from });
+      const trashed = homeRoot ? "to the RomForge trash" : "to .romforge-trash";
       note = r.batch_id
-        ? `Batch #${r.batch_id}: wrote ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals to .romforge-trash`}` +
+        ? `Batch #${r.batch_id}: ${homeRoot ? "imported" : "wrote"} ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals ${trashed}`}` +
           (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "")
         : "Nothing was written" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
       open = false;
@@ -68,20 +73,36 @@
 {#if open}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (open = false)}>
     <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="clean-title">
-      <h2 id="clean-title">Cleanup and rename</h2>
-      <p class="hint">
-        Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
-        details in a folder beside it). Every new file is read back and checked against the original hashes before anything
-        else happens. Nothing is ever overwritten.
-      </p>
-      <label class="toggle">
-        <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
-        Only the selected game
-      </label>
+      {#if homeRoot}
+        <h2 id="clean-title">Import into RomForge</h2>
+        <p class="hint">
+          Each identified game {from ? "in this folder" : "outside RomForge"} moves into RomForge as one file named by its DAT: a
+          zip for cartridges, a CHD for discs (art and details in a folder beside it). Every new file is read back and checked
+          against the original hashes before anything else happens. Files that aren't identified stay where they are.
+        </p>
+        {#if from}<p class="meta">From <bdi>{from}</bdi></p>{/if}
+      {:else}
+        <h2 id="clean-title">Cleanup and rename</h2>
+        <p class="hint">
+          Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
+          details in a folder beside it). Every new file is read back and checked against the original hashes before anything
+          else happens. Nothing is ever overwritten.
+        </p>
+      {/if}
+      {#if !from}
+        <label class="toggle">
+          <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
+          Only the selected game
+        </label>
+      {/if}
       {#if cleanPlan}
         <p class="meta">
           Into <bdi>{cleanPlan.dest}</bdi> ·
-          {cleanPlan.keep_originals ? "originals stay untouched" : "originals go to .romforge-trash next to them, until you undo or empty it"}
+          {cleanPlan.keep_originals
+            ? "originals stay untouched"
+            : homeRoot
+              ? "originals go to the RomForge trash until you undo or empty it"
+              : "originals go to .romforge-trash next to them, until you undo or empty it"}
         </p>
         {#if cleanPlan.items.length}
           <ul class="choices">
@@ -93,7 +114,7 @@
             {/each}
           </ul>
         {:else}
-          <p class="hint">Nothing to do: no identified game in the Source that isn't processed yet.</p>
+          <p class="hint">Nothing to do: no identified game {homeRoot ? (from ? "in this folder" : "outside RomForge") : "in the Source"} that isn't processed yet.</p>
         {/if}
         {#if cleanPlan.skipped.length}
           <details>
@@ -116,7 +137,7 @@
         <span class="spacer"></span>
         <button onclick={() => (open = false)} disabled={!!busy}>Close</button>
         <button class="primary" onclick={applyCleanup} disabled={!cleanPlan?.items.length || !!busy}>
-          {busy || `Repack ${cleanPlan?.items.length ?? 0}`}
+          {busy || `${homeRoot ? "Import" : "Repack"} ${cleanPlan?.items.length ?? 0}`}
         </button>
       </div>
     </div>

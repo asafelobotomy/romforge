@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
+use romforge_core::home::Home;
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
 use romforge_core::search::{Chosen, Found, Preview, QueueItem, Scraper};
@@ -163,20 +164,110 @@ async fn organize_undo(db: tauri::State<'_, Db>) -> Res<Undone> {
     with(&db, move |lib| lib.organize_undo(None)).await
 }
 
-/// `only`: these library row ids, else every identified game in Source.
+/// `from`: the import plan for that folder (milestone 13); else `only`:
+/// these library row ids, else every identified game in Source (or, with
+/// a RomForge folder, everywhere outside it).
+fn plan_for(
+    lib: &Library,
+    only: Option<&[String]>,
+    from: Option<&str>,
+) -> Result<CleanupPlan, romforge_core::Error> {
+    match from {
+        Some(dir) => lib.import_plan(Some(Path::new(dir))),
+        None => lib.cleanup_plan(only),
+    }
+}
+
 #[tauri::command]
-async fn cleanup_plan(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupPlan> {
-    read(&db, move |lib| lib.cleanup_plan(only.as_deref())).await
+async fn cleanup_plan(
+    db: tauri::State<'_, Db>,
+    only: Option<Vec<String>>,
+    from: Option<String>,
+) -> Res<CleanupPlan> {
+    read(&db, move |lib| plan_for(lib, only.as_deref(), from.as_deref())).await
 }
 
 /// Plans again here rather than trusting a plan sent back from the window.
 #[tauri::command]
-async fn cleanup_apply(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupReport> {
+async fn cleanup_apply(
+    db: tauri::State<'_, Db>,
+    only: Option<Vec<String>>,
+    from: Option<String>,
+) -> Res<CleanupReport> {
     with(&db, move |lib| {
-        let plan = lib.cleanup_plan(only.as_deref())?;
+        let plan = plan_for(lib, only.as_deref(), from.as_deref())?;
         lib.cleanup_apply(&plan, |_, _| {})
     })
     .await
+}
+
+#[derive(serde::Serialize)]
+struct HomeInfo {
+    /// The RomForge folder, if there is one yet.
+    root: Option<PathBuf>,
+    /// A library from before the RomForge folder, which moves into it.
+    existing: bool,
+    /// Where to suggest creating it: the home folder.
+    suggested: Option<PathBuf>,
+}
+
+#[tauri::command]
+async fn home_info(db: tauri::State<'_, Db>) -> Res<HomeInfo> {
+    read(&db, |lib| {
+        Ok(HomeInfo {
+            root: lib.home().map(|h| h.root().to_owned()),
+            existing: lib.home().is_none() && lib.library_view()?.rows.len() + lib.summary()?.dats.len() > 0,
+            suggested: std::env::var_os("HOME").map(PathBuf::from),
+        })
+    })
+    .await
+}
+
+/// Create the RomForge folder in `parent`, move the current library into
+/// it (database, art, downloaded databases) and use it from now on.
+#[tauri::command]
+async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
+    let (write, read) = (db.write.clone(), db.read.clone());
+    tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
+        let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
+        let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(h) = w.home() {
+            return Ok(h.root().to_owned());
+        }
+        let old = db_path();
+        let home = Home::create(Path::new(&parent))?;
+        if !home.db().exists() {
+            // Both connections close before the database moves.
+            *w = Library::open_in_memory()?;
+            *r = Library::open_in_memory()?;
+            let moved = romforge_core::home::adopt(&home, &old, &default_cache_dir().join("art"));
+            let reopen = if home.db().exists() {
+                home.db()
+            } else {
+                old.clone()
+            };
+            *w = Library::open(&reopen)?;
+            *r = Library::open(&reopen)?;
+            moved?;
+        } else {
+            *w = Library::open(home.db())?;
+            *r = Library::open(home.db())?;
+        }
+        home.remember()?;
+        Ok(home.root().to_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// `$ROMFORGE_DB`, else the RomForge folder's database, else the old
+/// default.
+fn db_path() -> PathBuf {
+    std::env::var_os("ROMFORGE_DB")
+        .map(PathBuf::from)
+        .or_else(|| Home::locate().map(|h| h.db()))
+        .unwrap_or_else(romforge_core::default_db_path)
 }
 
 #[tauri::command]
@@ -407,9 +498,7 @@ fn base64(data: &[u8]) -> String {
 }
 
 fn main() {
-    let path = std::env::var_os("ROMFORGE_DB")
-        .map(PathBuf::from)
-        .unwrap_or_else(romforge_core::default_db_path);
+    let path = db_path();
     let open = || Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
     let db = Db {
         write: Arc::new(Mutex::new(open())),
@@ -434,6 +523,8 @@ fn main() {
             cleanup_apply,
             cleanup_undo,
             cleanup_batches,
+            home_info,
+            home_create,
             enrich,
             launch,
             library_view,

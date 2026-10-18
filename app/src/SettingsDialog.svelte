@@ -3,7 +3,7 @@
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
   // `call` is the app's invoke that reports errors on the status line.
-  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), call } = $props();
+  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = null, call } = $props();
 
   // Settings panel: a working copy, saved on "Save".
   let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {}, show_empty_media: false });
@@ -42,6 +42,13 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
 
+      {#if homeRoot}
+        <section class="setting">
+          <span class="flabel">RomForge folder</span>
+          <p class="hint">Everything lives here: Games, Media (art), Databases and the library. Add folder scans a folder and offers to import its games.</p>
+          <p><bdi>{homeRoot}</bdi></p>
+        </section>
+      {:else}
       <section class="setting">
         <label for="source">Source</label>
         <p class="hint">Where your unprocessed ROMs are. Refresh scans it.</p>
@@ -61,14 +68,19 @@
           {#if draft.library_dir}<button onclick={() => { draft.library_dir = null; draft.keep_originals = false; }}>Clear</button>{/if}
         </div>
       </section>
+      {/if}
 
       <section class="setting">
         <label class="toggle">
-          <input type="checkbox" bind:checked={draft.keep_originals} disabled={!draft.library_dir} />
+          <input type="checkbox" bind:checked={draft.keep_originals} disabled={!homeRoot && !draft.library_dir} />
           Keep originals
         </label>
         <p class="hint">
-          {#if draft.library_dir}
+          {#if homeRoot}
+            {draft.keep_originals
+              ? "Your files stay where they are. Import writes a copy of each game into RomForge."
+              : "Import moves each game into RomForge; the originals go to the RomForge trash once the new file is verified."}
+          {:else if draft.library_dir}
             {draft.keep_originals
               ? "Source files stay untouched. Cleanup writes each repacked game into the Library."
               : "Cleanup writes each repacked game into the Library; the originals go to .romforge-trash next to them once the new file is verified."}
@@ -78,6 +90,7 @@
         </p>
       </section>
 
+      {#if !homeRoot}
       <section class="setting">
         <label for="staging">Staging folder</label>
         <p class="hint">Scratch space for cleanup (tracks inside 7z archives are unpacked here). Must be outside the Source and Library.</p>
@@ -87,6 +100,7 @@
           {#if draft.staging_dir}<button onclick={() => (draft.staging_dir = null)}>Use default</button>{/if}
         </div>
       </section>
+      {/if}
 
       <section class="setting">
         <label class="toggle">

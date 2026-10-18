@@ -266,7 +266,26 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
 
 /// Validate and store. Returns what was stored (absolute paths).
 pub fn save(conn: &mut Connection, s: &Settings) -> Result<Settings, Error> {
-    let s = s.validated()?;
+    save_in(conn, s, false)
+}
+
+/// [`save`] for a library with a RomForge folder (`home`) or without:
+/// imported games go to that folder, so "keep originals" needs no Library
+/// folder there.
+pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settings, Error> {
+    let s = if home && s.keep_originals {
+        Settings {
+            keep_originals: false,
+            ..s.clone()
+        }
+        .validated()
+        .map(|v| Settings {
+            keep_originals: true,
+            ..v
+        })?
+    } else {
+        s.validated()?
+    };
     let tx = conn.transaction()?;
     {
         let mut put = tx.prepare(

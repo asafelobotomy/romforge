@@ -7,6 +7,7 @@
   import SearchDialog from "./SearchDialog.svelte";
   import DatsView from "./DatsView.svelte";
   import OrganizeView from "./OrganizeView.svelte";
+  import HomeDialog from "./HomeDialog.svelte";
 
   // Which screen: the library (default), DATs, or organize.
   let view = $state("library");
@@ -22,6 +23,13 @@
   let tab = $state("details");
   let adding = $state(false);
   let addDir = $state("");
+  // The RomForge folder (milestone 13); null until it exists. With it,
+  // Cleanup and rename is Import, and adding a folder offers its import.
+  let homeRoot = $state(null);
+  let home;
+  $effect(() => {
+    home?.check();
+  });
 
   // The dialogs and the DATs and organize screens keep their own state;
   // these are their instances (for openSettings() and the like) and what
@@ -94,6 +102,10 @@
       note = `Scanned ${r.hashed} entries in ${r.root}` + (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
       adding = false;
       addDir = "";
+      await load();
+      // What it holds that is identified, ready to move into RomForge.
+      if (homeRoot) await cleanup.openCleanup(r.root);
+      return;
     }
     await load();
   }
@@ -287,9 +299,15 @@
     <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
       <span class="glyph">✦</span>Enrich
     </button>
-    <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
-      <span class="glyph">✎</span>Cleanup and rename
-    </button>
+    {#if homeRoot}
+      <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Move identified games from your folders into RomForge, one file each, named by the DAT, with art and details inside">
+        <span class="glyph">✎</span>Import
+      </button>
+    {:else}
+      <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
+        <span class="glyph">✎</span>Cleanup and rename
+      </button>
+    {/if}
     <span class="spacer"></span>
     <button class="tool" onclick={() => settings.openSettings()} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
@@ -299,9 +317,11 @@
     </button>
   </header>
 
-  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty {call} />
+  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty {homeRoot} {call} />
 
-  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {call} {load} />
+  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {homeRoot} {call} {load} />
+
+  <HomeDialog bind:this={home} bind:root={homeRoot} bind:note {load} />
 
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 

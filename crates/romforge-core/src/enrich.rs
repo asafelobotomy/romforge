@@ -117,6 +117,10 @@ pub struct EnrichOptions {
     pub extdb: Option<PathBuf>,
     /// LaunchBox's image server ([`crate::extdb::Bases`]).
     pub launchbox_images: String,
+    /// Where art is saved (`<dir>/<system>/<kind>/<game>.png`); `None`:
+    /// the RomForge folder's `Media/` if the library has one, else
+    /// `<cache>/art`.
+    pub art_dir: Option<PathBuf>,
 }
 
 impl EnrichOptions {
@@ -133,6 +137,7 @@ impl EnrichOptions {
             wikidata: Some(crate::wikidata::ENDPOINT.to_owned()),
             sources: crate::artsources::Bases::default(),
             extdb: None,
+            art_dir: None,
             launchbox_images: crate::extdb::Bases::default().launchbox_images,
         }
     }
@@ -751,8 +756,9 @@ fn keep(
 ) -> Result<(), Error> {
     let ext = image_ext(data).unwrap_or("png");
     let path = opts
-        .cache_dir
-        .join("art")
+        .art_dir
+        .clone()
+        .unwrap_or_else(|| opts.cache_dir.join("art"))
         .join(system.key)
         .join(kind.as_str())
         .join(format!("{}.{ext}", cache_stem(game)));

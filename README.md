@@ -4,8 +4,8 @@ Catalog, identify, organize, enrich and launch retro ROM collections. Rust
 core, SQLite, a CLI, and a Tauri 2 + Svelte desktop app.
 
 Scanning and identifying only read your files. Only `organize apply` moves
-and renames them, and only `cleanup apply` repacks them, each after a dry
-run and journaled for undo. See [PLAN.md](PLAN.md) for the milestones and what is
+and renames them, and only `cleanup apply` and `import --apply` repack them
+(into the RomForge folder), each after a dry run and journaled for undo. See [PLAN.md](PLAN.md) for the milestones and what is
 still open.
 
 ## Quick start
@@ -175,6 +175,39 @@ Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu; `PATH` or Flatpak).
 Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
+
+## The RomForge folder (milestone 13)
+
+Everything romforge keeps can live in one portable folder, always named
+`RomForge`, inside a folder you pick:
+
+```
+RomForge/
+  romforge.db                the library
+  Games/<System>/<Title>.zip cartridges (art and details inside, in romforge/)
+  Games/<System>/<Title>.chd discs, with a folder of the same name beside it
+  Media/<System>/<kind>/     art
+  Databases/                 OpenVGDB, LaunchBox (downloaded by you)
+  .romforge-staging/  .romforge-trash/
+```
+
+```bash
+romforge-cli home create ~        # creates ~/RomForge; an existing library moves in
+romforge-cli home show
+romforge-cli import ~/roms/incoming          # scans it, shows the plan, changes nothing
+romforge-cli import ~/roms/incoming --apply  # moves its identified games into Games/
+romforge-cli cleanup undo                    # puts the last import back
+```
+
+The desktop app asks where to create it on first run. Moving or backing up
+the folder takes the whole library with it; `~/.config/romforge/location`
+says where it is (`ROMFORGE_HOME` overrides). Scanning still only reads:
+**Add folder** scans a folder and then shows its import plan, and only
+**Import** moves anything. Only verified games and games you named move;
+unidentified files stay where they are until Search identifies them.
+Originals go to `RomForge/.romforge-trash/<batch>/` (unless Keep originals)
+until you undo. Refresh also scans `Games/`. An import is a cleanup into
+`Games/`, so everything below applies to it too.
 
 ## Cleanup and rename (dry run, apply, undo)
 

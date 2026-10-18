@@ -14,6 +14,7 @@ pub mod extdb;
 pub mod fetch;
 pub mod hash;
 pub mod headers;
+pub mod home;
 pub mod ident;
 mod identify;
 pub mod launch;
@@ -172,6 +173,8 @@ pub fn default_db_path() -> PathBuf {
 pub struct Library {
     conn: Connection,
     path: Option<PathBuf>,
+    /// The RomForge folder the database is in (milestone 13), if it is.
+    home: Option<home::Home>,
     /// Inside [`Library::batch`]: DAT imports skip re-identifying.
     batch_depth: u32,
     /// A DAT was imported inside the batch; identify when it ends.
@@ -190,6 +193,7 @@ impl Library {
         let conn = db::open(path)?;
         Ok(Self {
             conn,
+            home: home::Home::of_db(path),
             path: Some(std::path::absolute(path)?),
             batch_depth: 0,
             batch_dirty: false,
@@ -201,6 +205,7 @@ impl Library {
         Ok(Self {
             conn: db::open_in_memory()?,
             path: None,
+            home: None,
             batch_depth: 0,
             batch_dirty: false,
             view_cache: Default::default(),
@@ -1003,7 +1008,15 @@ impl Library {
     /// What cleanup & rename would do (milestone 10); nothing is touched.
     /// `only`: limit to these library row ids.
     pub fn cleanup_plan(&self, only: Option<&[String]>) -> Result<cleanup::CleanupPlan, Error> {
-        cleanup::plan(&self.conn, only)
+        cleanup::plan(&self.conn, only, self.home.as_ref(), None)
+    }
+
+    /// The import plan for the games in `from` (every folder outside the
+    /// RomForge folder when `None`): where each goes in `Games/`, and what
+    /// stays. Nothing is touched (milestone 13).
+    pub fn import_plan(&self, from: Option<&Path>) -> Result<cleanup::CleanupPlan, Error> {
+        let from = from.map(std::fs::canonicalize).transpose()?;
+        cleanup::plan(&self.conn, None, self.home.as_ref(), from.as_deref())
     }
 
     /// Carry out a cleanup plan, then refresh so the library shows the new
@@ -1013,7 +1026,7 @@ impl Library {
         plan: &cleanup::CleanupPlan,
         progress: impl FnMut(usize, &str),
     ) -> Result<cleanup::CleanupReport, Error> {
-        let r = cleanup::apply(&mut self.conn, plan, progress)?;
+        let r = cleanup::apply(&mut self.conn, plan, self.home.as_ref(), progress)?;
         self.refresh(ScanOptions::default(), |_, _| {})?;
         Ok(r)
     }
@@ -1026,10 +1039,19 @@ impl Library {
         Ok(u)
     }
 
-    /// Where downloaded third-party databases live (`databases/` next to
-    /// the library database); `None` for an in-memory library.
+    /// Where downloaded third-party databases live: the RomForge folder's
+    /// `Databases/`, else `databases/` next to the library database; `None`
+    /// for an in-memory library.
     pub fn extdb_dir(&self) -> Option<PathBuf> {
-        self.path.as_deref().map(extdb::dir_for)
+        match &self.home {
+            Some(h) => Some(h.databases()),
+            None => self.path.as_deref().map(extdb::dir_for),
+        }
+    }
+
+    /// The RomForge folder this library lives in (milestone 13).
+    pub fn home(&self) -> Option<&home::Home> {
+        self.home.as_ref()
     }
 
     pub fn cleanup_batches(&self) -> Result<Vec<cleanup::Batch>, Error> {
@@ -1052,6 +1074,9 @@ impl Library {
         let mut o = opts.clone();
         if o.extdb.is_none() {
             o.extdb = self.extdb_dir();
+        }
+        if o.art_dir.is_none() {
+            o.art_dir = self.home.as_ref().map(home::Home::media);
         }
         o
     }
@@ -1136,11 +1161,12 @@ impl Library {
             .prepare("SELECT path, system_id, dat_id FROM scan_roots ORDER BY length(path), path")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .collect::<Result<_, _>>()?;
-        // The Source and Library folders are scanned even before their first
-        // scan, with no scope.
+        // The Source and Library folders (and the RomForge folder's Games)
+        // are scanned even before their first scan, with no scope.
         let mut roots = roots;
         let s = settings::load(&self.conn)?;
-        for dir in [s.source_dir, s.library_dir].into_iter().flatten() {
+        let games = self.home.as_ref().map(home::Home::games);
+        for dir in [s.source_dir, s.library_dir, games].into_iter().flatten() {
             let dir = dir.to_string_lossy().into_owned();
             if !roots.iter().any(|r| r.0 == dir) {
                 roots.push((dir, None, None));
@@ -1248,7 +1274,7 @@ impl Library {
 
     /// Validate and store the settings; returns what was stored.
     pub fn save_settings(&mut self, s: &settings::Settings) -> Result<settings::Settings, Error> {
-        settings::save(&mut self.conn, s)
+        settings::save_in(&mut self.conn, s, self.home.is_some())
     }
 
     /// The settings with their secrets masked, for a form (the app's).

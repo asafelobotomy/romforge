@@ -15,7 +15,8 @@ use romforge_core::{
 #[derive(Parser)]
 #[command(version, about = "Catalog, identify and organize retro ROM collections")]
 struct Cli {
-    /// SQLite database [default: $XDG_DATA_HOME/romforge/romforge.db]
+    /// SQLite database [default: the RomForge folder's (`home create`), else
+    /// $XDG_DATA_HOME/romforge/romforge.db]
     #[arg(long, global = true, env = "ROMFORGE_DB")]
     db: Option<PathBuf>,
     #[command(subcommand)]
@@ -48,6 +49,25 @@ enum Command {
         /// Hash every file again, even ones unchanged since the last scan
         #[arg(long)]
         rehash: bool,
+    },
+    /// The RomForge folder that holds everything: games, art, databases
+    /// and the library itself (milestone 13)
+    #[command(subcommand)]
+    Home(HomeCommand),
+    /// Move the identified games of a scanned folder into the RomForge
+    /// folder's Games/, repacked one file each (milestone 13)
+    ///
+    /// Shows the plan and changes nothing unless --apply. Unidentified
+    /// files stay where they are. Originals go to the RomForge trash
+    /// (unless "keep originals"); `cleanup undo` puts them back.
+    Import {
+        /// Only this folder [default: every scanned folder outside RomForge]
+        dir: Option<PathBuf>,
+        /// Move them now
+        #[arg(long)]
+        apply: bool,
+        #[arg(long, short)]
+        verbose: bool,
     },
     /// Rename and move identified files into a tidy folder (milestone 2)
     #[command(subcommand)]
@@ -224,6 +244,16 @@ enum DatabasesCommand {
 }
 
 #[derive(Subcommand)]
+enum HomeCommand {
+    /// Create the RomForge folder in PARENT (or use PARENT if it is one)
+    /// and make it the one used; an existing library (database, art,
+    /// downloaded databases) moves into it
+    Create { parent: PathBuf },
+    /// Where the RomForge folder is
+    Show,
+}
+
+#[derive(Subcommand)]
 enum CleanupCommand {
     /// Show what would be written; changes nothing
     Plan {
@@ -369,7 +399,52 @@ fn main() -> Result<()> {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
     let cli = Cli::parse();
-    let db = cli.db.unwrap_or_else(romforge_core::default_db_path);
+    let home = romforge_core::home::Home::locate();
+    let db = cli
+        .db
+        .clone()
+        .or_else(|| home.as_ref().map(|h| h.db()))
+        .unwrap_or_else(romforge_core::default_db_path);
+
+    match &cli.command {
+        Command::Home(HomeCommand::Create { parent }) => {
+            if let Some(old) = &home
+                && cli.db.is_none()
+                && !std::path::absolute(parent)?.starts_with(old.root())
+            {
+                bail!(
+                    "already using {}; to move it, move that folder and run `home create` on its new place",
+                    old.root().display()
+                );
+            }
+            let new = romforge_core::home::Home::create(parent)?;
+            if new.db().exists() {
+                println!("{} is already a RomForge folder", new.root().display());
+            } else if db.exists() && home.as_ref() != Some(&new) {
+                let art = enrich::default_cache_dir().join("art");
+                let a = romforge_core::home::adopt(&new, &db, &art)
+                    .with_context(|| format!("moving {} into {}", db.display(), new.root().display()))?;
+                println!(
+                    "moved the library into {}: database {}, {} downloaded databases, {} images",
+                    new.root().display(),
+                    if a.database { "yes" } else { "no" },
+                    a.databases,
+                    a.art
+                );
+            }
+            new.remember()?;
+            println!("using {}", new.root().display());
+            return Ok(());
+        }
+        Command::Home(HomeCommand::Show) => {
+            match &home {
+                Some(h) => println!("{}", h.root().display()),
+                None => println!("no RomForge folder yet (`romforge-cli home create <parent>`)"),
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
 
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
@@ -658,6 +733,46 @@ fn main() -> Result<()> {
                     extdb::remove(db, &dir)?;
                     println!("{} removed", db.name());
                 }
+            }
+        }
+        Command::Home(_) => unreachable!("handled before the library opens"),
+        Command::Import { dir, apply, verbose } => {
+            if lib.home().is_none() {
+                bail!("no RomForge folder yet: `romforge-cli home create <parent>` first");
+            }
+            if let Some(d) = &dir {
+                lib.scan(d, Scope::All)?;
+            }
+            let plan = lib.import_plan(dir.as_deref())?;
+            print_cleanup(&plan, verbose);
+            if !apply {
+                println!(
+                    "{} to import into {}, {} skipped; nothing changed (run with --apply to move them)",
+                    plan.items.len(),
+                    plan.dest.display(),
+                    plan.skipped.len()
+                );
+                return Ok(());
+            }
+            if plan.items.is_empty() {
+                println!("nothing to import ({} skipped)", plan.skipped.len());
+                return Ok(());
+            }
+            let total = plan.items.len();
+            let r = lib.cleanup_apply(&plan, |n, title| eprintln!("[{}/{total}] {title}", n + 1))?;
+            for (t, e) in &r.failed {
+                eprintln!("error: {t}: {e}");
+            }
+            println!(
+                "batch #{}: imported {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
+                r.batch_id,
+                r.done,
+                r.trashed,
+                r.failed.len(),
+                r.batch_id
+            );
+            if !r.failed.is_empty() {
+                bail!("{} games failed", r.failed.len());
             }
         }
         Command::Cleanup(CleanupCommand::Plan { verbose }) => {
