@@ -266,11 +266,18 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
-fn command(runner: &Runner, args: Vec<String>) -> (PathBuf, Vec<String>) {
+/// The command line for `runner`. A Flatpak sees only what it was given
+/// (often just home), so it gets `grant` (the game's folder) for this run:
+/// a game on another drive opens too, and nothing is changed for good.
+fn command(runner: &Runner, args: Vec<String>, grant: Option<&Path>) -> (PathBuf, Vec<String>) {
     match runner {
         Runner::Program(p) => (p.clone(), args),
         Runner::Flatpak(id) => {
-            let mut a = vec!["run".to_owned(), id.clone()];
+            let mut a = vec!["run".to_owned()];
+            if let Some(g) = grant {
+                a.push(format!("--filesystem={}", g.display()));
+            }
+            a.push(id.clone());
             a.extend(args);
             (PathBuf::from("flatpak"), a)
         }
@@ -420,7 +427,29 @@ fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, Pat
 pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -> Result<LaunchSpec, Error> {
     let found = candidates(conn, query)?;
     let Some((game, system_key, _, _)) = found.first().cloned() else {
-        return Err(Error::Launch(format!("no matched file for {query:?}")));
+        // A game that is a folder (ScummVM, DOS) by its title.
+        let rows = crate::view::library(conn)?.rows;
+        let q = query.to_lowercase();
+        let folders: Vec<&crate::view::GameRow> = rows
+            .iter()
+            .filter(|r| r.folder.is_some() && r.playable)
+            .filter(|r| r.title == query || r.title.to_lowercase().contains(&q))
+            .collect();
+        return match folders.as_slice() {
+            [] => Err(Error::Launch(format!("no matched file for {query:?}"))),
+            [one] => plan_row(conn, env, &one.id, emulator),
+            many => match many.iter().find(|r| r.title == query) {
+                Some(r) => plan_row(conn, env, &r.id, emulator),
+                None => Err(Error::Launch(format!(
+                    "{query:?} matches several games: {}",
+                    many.iter()
+                        .take(5)
+                        .map(|r| r.title.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ))),
+            },
+        };
     };
     let titles: std::collections::BTreeSet<&str> = found.iter().map(|f| f.0.as_str()).collect();
     if titles.len() > 1 && !titles.contains(query) {
@@ -474,10 +503,11 @@ pub fn plan_row(
         // A DOS game in a folder starts from its program (DOSBox mounts the
         // folder around it); in an archive, from the archive. A folder of
         // its own (ScummVM) is handed over as the folder.
+        let dos = systems::by_key(&system).is_some_and(|s| s.folders == systems::Folders::Zip);
         if folder.is_dir() {
             let program = files
                 .iter()
-                .find(|f| f.1.is_empty() && crate::view::is_program(&f.0.to_string_lossy()))
+                .find(|f| dos && f.1.is_empty() && crate::view::is_program(&f.0.to_string_lossy()))
                 .cloned();
             files = vec![program.unwrap_or((folder, String::new()))];
         } else {
@@ -526,8 +556,15 @@ fn start(
     // One disk of a set: start the set's playlist, so disks can be swapped.
     let rom = playlist_for(&rom).unwrap_or(rom);
 
+    // The folder the game is in (a folder game's own folder): its other
+    // disks, tracks and saves are there.
+    let grant = if rom.is_dir() {
+        Some(rom.clone())
+    } else {
+        rom.parent().map(Path::to_path_buf)
+    };
     let spec = |emulator: String, runner: &Runner, args: Vec<String>| {
-        let (program, args) = command(runner, args);
+        let (program, args) = command(runner, args, grant.as_deref());
         LaunchSpec {
             game: game.clone(),
             system: system.key.to_owned(),
@@ -696,7 +733,7 @@ fn playlist_for(disk: &Path) -> Option<PathBuf> {
 /// ScummVM's detection list, from the installed ScummVM (on `PATH` or
 /// Flatpak): `--dump-all-detection-entries`, which prints it and exits.
 pub fn scummvm_list(env: &Env) -> Result<Vec<u8>, Error> {
-    let (program, out) = run_scummvm(env, &["--dump-all-detection-entries".to_owned()])?;
+    let (program, out) = run_scummvm(env, &["--dump-all-detection-entries".to_owned()], None)?;
     if !out.status.success() || out.stdout.is_empty() {
         return Err(Error::Launch(format!(
             "{} gave no detection list ({}); it needs a ScummVM with --dump-all-detection-entries",
@@ -715,11 +752,15 @@ pub fn scummvm_detect(env: &Env, root: &Path) -> Result<String, Error> {
         "--recursive".to_owned(),
         format!("--path={}", root.display()),
     ];
-    let (_, out) = run_scummvm(env, &args)?;
+    let (_, out) = run_scummvm(env, &args, Some(root))?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-fn run_scummvm(env: &Env, args: &[String]) -> Result<(PathBuf, std::process::Output), Error> {
+fn run_scummvm(
+    env: &Env,
+    args: &[String],
+    grant: Option<&Path>,
+) -> Result<(PathBuf, std::process::Output), Error> {
     let e = KNOWN_EMULATORS
         .iter()
         .find(|e| e.name == "scummvm")
@@ -727,7 +768,7 @@ fn run_scummvm(env: &Env, args: &[String]) -> Result<(PathBuf, std::process::Out
     let runner = env
         .known(e)
         .ok_or_else(|| Error::Launch("ScummVM isn't installed (on PATH or as a Flatpak)".into()))?;
-    let (program, args) = command(&runner, args.to_vec());
+    let (program, args) = command(&runner, args.to_vec(), grant);
     let out = std::process::Command::new(&program)
         .args(&args)
         .stdin(std::process::Stdio::null())
@@ -772,9 +813,25 @@ mod tests {
 
     #[test]
     fn flatpak_commands() {
-        let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()]);
+        let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], None);
         assert_eq!(p, PathBuf::from("flatpak"));
         assert_eq!(a, ["run", "org.x.Y", "{rom}"]);
+        let (_, a) = command(
+            &Runner::Flatpak("org.x.Y".into()),
+            vec!["/m/g/a.zip".into()],
+            Some(Path::new("/m/g")),
+        );
+        assert_eq!(a, ["run", "--filesystem=/m/g", "org.x.Y", "/m/g/a.zip"]);
+        let (p, a) = command(
+            &Runner::Program("/bin/x".into()),
+            vec!["r".into()],
+            Some(Path::new("/m")),
+        );
+        assert_eq!(
+            (p, a),
+            (PathBuf::from("/bin/x"), vec!["r".to_owned()]),
+            "a plain program needs none"
+        );
         assert_eq!(
             fill(&["-e", "{rom}"], Path::new("/r/a b.iso")),
             ["-e", "/r/a b.iso"]

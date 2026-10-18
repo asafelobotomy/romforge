@@ -747,10 +747,30 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     reads `dat/<name>.dat` for the `dats` and `titles` columns, filling
     only empty fields. Details files (`*.romforge.md`) are no longer
     scanned as Mega Drive ROMs.
-    **Open:** run with real cores (np2kai's `.cmd`, quasi88's `.m3u`) and a
-    real ScummVM (its `--detect` table; the Flatpak may not see every
-    folder); single zipped PC-88 and X1 games likely don't start (see
-    above) and stay zipped as decided.
+    Run with the real programs 2026-10-18 (installed: RetroArch, its
+    scummvm core, ScummVM 2026.3.0 and MAME from Manjaro; np2kai, quasi88,
+    x1 and dosbox_pure from libretro's buildbot into
+    `~/.config/retroarch/cores`; DOSBox Staging and DOSBox-X from
+    Flathub), on ScummVM's freeware Flight of the Amazon Queen, Lure of
+    the Temptress and Beneath a Steel Sky, in scratch folders:
+    - The real dump has 15,598 entries; 12,746 are usable (the rest need
+      Mac forks or name wildcards). It escapes quotes (`5.25\" Booter`)
+      and has files with no MD5 (`md5-0  )`): both broke the parser, now
+      handled. Queen and Lure were named by the list, Steel Sky by
+      `--detect` (which lists a folder once per variant; the first is
+      kept). Import, refresh and both ScummVM and RetroArch's core
+      started Lure.
+    - Fixed: a ScummVM folder holding a DOS program (Lure.exe) was started
+      from the program; the CLI's `launch <title>` found no folder games.
+    - The DOSBox Flatpaks see only home ("Image file not found" for a
+      folder elsewhere): every Flatpak emulator now gets the game's folder
+      for that run (`flatpak run --filesystem=<folder>`). DOSBox Pure ran
+      a zipped DOS folder as is.
+    **Open:** np2kai, quasi88, x1 and MAME's FM-7 / FM Towns need the
+    machines' own BIOS files (not shipped; the user supplies them), so no
+    floppy game was started; single zipped PC-88 and X1 games likely don't
+    start (see above) and stay zipped as decided. Parsing the 4 MB list
+    takes about 2 s (debug build) on every scan.
 
 ## Code review follow-ups (2026-10-18)
 

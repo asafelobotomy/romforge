@@ -204,6 +204,9 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     std::fs::write(game.join("SKY.DNR"), &dnr).unwrap();
     std::fs::write(game.join("SKY.DSK"), &dsk).unwrap();
     std::fs::write(game.join("readme.txt"), b"hi").unwrap();
+    // A DOS program in a ScummVM game's folder (Lure has one) is just
+    // one of its files.
+    std::fs::write(game.join("SKY.EXE"), vec![4u8; 700]).unwrap();
     // Another folder with the right names but other data.
     let other = incoming.join("Not Sky");
     std::fs::create_dir_all(&other).unwrap();
@@ -228,7 +231,7 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     assert_eq!(sky.title, "Beneath a Steel Sky (CD) (pc) (en)");
     assert_eq!(sky.system.as_deref(), Some("ScummVM"));
     assert_eq!(sky.folder.as_deref(), Some(game.to_str().unwrap()));
-    assert_eq!(sky.files, 3);
+    assert_eq!(sky.files, 4);
     assert!(sky.playable);
 
     let plan = lib.import_plan(Some(&incoming)).unwrap();
@@ -241,7 +244,7 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     let r = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
     assert!(r.failed.is_empty(), "{:?}", r.failed);
     let copied = files_under(&target);
-    for n in ["SKY.DNR", "SKY.DSK", "readme.txt", "sky.scummvm"] {
+    for n in ["SKY.DNR", "SKY.DSK", "SKY.EXE", "readme.txt", "sky.scummvm"] {
         assert!(copied.contains(&n.to_owned()), "{copied:?}");
     }
     assert_eq!(
@@ -268,6 +271,9 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
         spec.args,
         [format!("--path={}", target.display()), "--auto-detect".to_owned()]
     );
+    // By title too (the CLI's `launch`), with the folder, not its program.
+    let by_name = lib.launch_plan(&env, "Steel Sky", None).unwrap();
+    assert_eq!(by_name.args, spec.args);
 
     lib.cleanup_undo(None).unwrap();
     assert_eq!(files_under(&incoming), before);

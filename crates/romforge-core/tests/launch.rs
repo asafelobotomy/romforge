@@ -100,7 +100,16 @@ fn standalone_emulators_never_get_a_rom_inside_an_archive() {
     std::fs::create_dir(f.root.join("flatpak/io.mgba.mGBA")).unwrap();
     let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
     assert_eq!(spec.program, PathBuf::from("flatpak"));
-    assert_eq!(spec.args[..2], ["run".to_owned(), "io.mgba.mGBA".to_owned()]);
+    // The game's folder is granted for this run (a Flatpak sees only home).
+    let folder = spec.rom.parent().unwrap().display().to_string();
+    assert_eq!(
+        spec.args[..3],
+        [
+            "run".to_owned(),
+            format!("--filesystem={folder}"),
+            "io.mgba.mGBA".to_owned()
+        ]
+    );
 
     // A user emulator that can't is skipped for the zipped ROM.
     let mut lib = lib;

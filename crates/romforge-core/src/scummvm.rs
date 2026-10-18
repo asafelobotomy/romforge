@@ -105,12 +105,33 @@ impl Entry {
 
 /// Parse the detection list ScummVM writes.
 pub fn parse(text: &str) -> Result<Vec<Entry>, Error> {
+    // ScummVM escapes quotes and backslashes in its strings
+    // (`extra "5.25\" Booter"`), which plain clrmamepro DATs never do.
+    let text = text
+        .replace("\\\\", "\u{0}")
+        .replace("\\\"", "\u{201d}")
+        .replace('\u{0}', "\\");
+    // A file that only has to be there has no MD5 (`md5-0  )`).
+    let text: String = text
+        .lines()
+        .map(|l| match l.rfind(" md5-") {
+            Some(i)
+                if l[i + 5..].split_whitespace().nth(1).is_none_or(|t| t == ")")
+                    && l[i + 5..].contains(')') =>
+            {
+                let key_end = i + 5 + l[i + 5..].find(char::is_whitespace).unwrap_or(0);
+                format!("{} \"\" {}\n", &l[..key_end], l[key_end..].trim_start())
+            }
+            _ => format!("{l}\n"),
+        })
+        .collect();
     let mut out = Vec::new();
-    for g in crate::dat::cmp_games(text)? {
+    for g in crate::dat::cmp_games(&text)? {
         let mut files = Vec::new();
         let mut usable = true;
         for r in &g.roms {
-            let Some(name) = r.get("name").filter(|n| !n.is_empty()) else {
+            // `*`: any file (AGI booter disks); not something to look for.
+            let Some(name) = r.get("name").filter(|n| !n.is_empty() && !n.contains('*')) else {
                 usable = false;
                 break;
             };
@@ -384,7 +405,10 @@ pub fn parse_detect(out: &str, root: &Path) -> Vec<(PathBuf, String, String)> {
 /// Keep what ScummVM's --detect named. Returns how many folders.
 pub(crate) fn remember(conn: &Connection, found: &[(PathBuf, String, String)]) -> Result<usize, Error> {
     let mut n = 0;
-    for (dir, code, title) in found {
+    // ScummVM lists a folder once per variant that fits (VGA and EGA):
+    // its first is the one it would start.
+    let mut seen = std::collections::BTreeSet::new();
+    for (dir, code, title) in found.iter().filter(|(d, _, _)| seen.insert(d.clone())) {
         let Some(fp) = fingerprint(dir) else { continue };
         conn.execute(
             "INSERT INTO scummvm_ids (path, fingerprint, code, title) VALUES (?1, ?2, ?3, ?4)
@@ -593,6 +617,23 @@ game (
         assert_eq!(e[0].files[1].size, None);
         assert!(e[0].files[1].tail && e[0].files[1].bytes == 5000);
         assert!(parse("clrmamepro ( name \"x\" )").is_err());
+    }
+
+    /// As the real dump has them: escaped quotes, wildcard names.
+    #[test]
+    fn escapes_and_wildcards() {
+        let e = parse(concat!(
+            "scummvm (\n)\n",
+            "game (\n\tname \"bc\"\n\ttitle \"The Black Cauldron\"\n\textra \"1.1J 5.25\\\" Booter\"\n",
+            "\trom ( name \"*\" size -1 md5-5000 0f69951170868481acebf831dd743b21 )\n)\n",
+            "game (\n\tname \"bc\"\n\ttitle \"The Black Cauldron\"\n\textra \"2.00 \\\"Disk\\\"\"\n",
+            "\trom ( name \"logdir\" size 381 md5-5000 0f69951170868481acebf831dd743b21 )\n",
+            "\trom ( name \"MOV000.SMK\" size -1 md5-0  )\n)\n",
+        ))
+        .unwrap();
+        assert_eq!(e.len(), 1, "the wildcard entry is skipped");
+        assert_eq!(e[0].files[1].md5, "", "only has to be there");
+        assert_eq!(e[0].extra, "2.00 \u{201d}Disk\u{201d}");
     }
 
     #[test]
