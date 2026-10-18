@@ -159,6 +159,26 @@ impl SkippedKind {
     }
 }
 
+/// Every arcade set name (lower case) of the imported DATs: an archive
+/// named after one has all its members hashed.
+fn arcade_sets(conn: &Connection) -> Result<std::collections::HashSet<String>, Error> {
+    let ids: Vec<i64> = systems::SYSTEMS
+        .iter()
+        .filter(|s| s.arcade)
+        .map(|s| s.id)
+        .collect();
+    let mut out = std::collections::HashSet::new();
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT lower(g.name) FROM games g JOIN dats d ON d.dat_id = g.dat_id WHERE d.system_id = ?1",
+    )?;
+    for id in ids {
+        for n in stmt.query_map([id], |r| r.get::<_, String>(0))? {
+            out.insert(n?);
+        }
+    }
+    Ok(out)
+}
+
 /// One source folder's rescan: its report, or the folder and why it failed.
 pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
 
@@ -655,12 +675,19 @@ impl Library {
         system_key: Option<&str>,
     ) -> Result<ImportedDat, Error> {
         let sha256 = hash::hex(&Sha256::digest(bytes));
-        let dat = dat::parse_any(bytes)?;
+        let mut dat = dat::parse_any(bytes)?;
 
         let system = match system_key {
             Some(key) => Some(systems::by_key(key).ok_or_else(|| Error::UnknownSystem(key.to_owned()))?),
             None => systems::from_dat_name(&dat.name),
         };
+        // A DAT without a name (libretro's MAME XMLs) is named after its
+        // system, so a newer copy replaces it.
+        if dat.name.is_empty()
+            && let Some(s) = system
+        {
+            dat.name = s.key.to_owned();
+        }
 
         let defer = self.batch_depth > 0;
         let tx = self.conn.transaction()?;
@@ -744,7 +771,8 @@ impl Library {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             let mut add_rom = tx.prepare(
-                "INSERT INTO roms (game_id, name, size, crc32, md5, sha1, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO roms (game_id, name, size, crc32, md5, sha1, status, disk)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
             let mut add_serial = tx.prepare(
                 "INSERT OR IGNORE INTO serials (system_id, title, serial, key, source)
@@ -773,7 +801,7 @@ impl Library {
                 }
                 for rom in &game.roms {
                     add_rom.execute(params![
-                        game_id, rom.name, rom.size, rom.crc32, rom.md5, rom.sha1, rom.status
+                        game_id, rom.name, rom.size, rom.crc32, rom.md5, rom.sha1, rom.status, rom.disk
                     ])?;
                     roms += 1;
                 }
@@ -781,6 +809,25 @@ impl Library {
         }
         if replaced.is_some() {
             forget_stale_serials(&tx)?;
+        }
+        // Archives named after one of an arcade DAT's sets were hashed
+        // before by extension only: read them again, every member.
+        if system.is_some_and(|s| s.arcade) {
+            let names: std::collections::HashSet<String> =
+                dat.games.iter().map(|g| g.name.to_lowercase()).collect();
+            let archives: Vec<String> = tx
+                .prepare("SELECT DISTINCT path FROM files WHERE member <> ''")?
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            let mut again = tx.prepare("UPDATE files SET mtime = NULL WHERE path = ?1")?;
+            for p in archives {
+                if Path::new(&p)
+                    .file_stem()
+                    .is_some_and(|s| names.contains(&s.to_string_lossy().to_lowercase()))
+                {
+                    again.execute([&p])?;
+                }
+            }
         }
         if defer {
             self.batch_dirty = true;
@@ -835,6 +882,7 @@ impl Library {
             .collect();
 
         let scummvm_list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
+        let arcade_sets = arcade_sets(&self.conn)?;
         let tx = self.conn.transaction()?;
         let root_str = root.to_string_lossy().into_owned();
         // What is already known under the folder (from any scan made with the
@@ -909,11 +957,13 @@ impl Library {
                  RETURNING file_id"),
             )?;
             let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
+            let mut set_chd = tx.prepare("UPDATE files SET chd_sha1 = ?2 WHERE file_id = ?1")?;
+            let mut chd_sha1s: std::collections::HashMap<String, Option<String>> = Default::default();
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| known.get(path.to_string_lossy().as_ref()) == Some(&stamp);
-            scan::walk(&root, &skip, opts, unchanged, |visit| {
+            scan::walk(&root, &skip, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
                     return;
                 }
@@ -1020,8 +1070,24 @@ impl Library {
                                 ],
                                 |r| r.get::<_, i64>(0),
                             )
-                            .map(|id| {
+                            .inspect(|&id| {
                                 hashed_ids.insert(id);
+                            })
+                            .and_then(|id| {
+                                // A CHD's own SHA1, which arcade DATs give
+                                // for a disk.
+                                let is_chd = entry
+                                    .path
+                                    .extension()
+                                    .is_some_and(|e| e.eq_ignore_ascii_case("chd"));
+                                if !is_chd {
+                                    return Ok(());
+                                }
+                                let sha1 = chd_sha1s
+                                    .entry(path_str.clone())
+                                    .or_insert_with(|| disc::chd_sha1(&entry.path))
+                                    .clone();
+                                set_chd.execute(params![id, sha1]).map(|_| ())
                             });
                         report.hashed += 1;
                         report.bytes_hashed += h.raw.size;
@@ -1083,6 +1149,14 @@ impl Library {
             games,
             asked: 0,
         })
+    }
+
+    /// Import the installed MAME's own DAT (`mame -listxml`, made on this
+    /// machine, never shipped) for the Arcade system; a newer MAME's
+    /// replaces it.
+    pub fn mame_dat(&mut self, env: &launch::Env) -> Result<ImportedDat, Error> {
+        let (xml, version) = launch::mame_listxml(env)?;
+        self.import_dat_bytes(&xml, &format!("mame -listxml ({version})"), Some("Arcade"))
     }
 
     /// Keep libretro's `ScummVM.dat` (its names for ScummVM game ids) in

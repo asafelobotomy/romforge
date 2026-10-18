@@ -62,13 +62,24 @@
     await load();
   }
 
+  // Arcade: the installed MAME's own list (SHA1 of every ROM and disk).
+  async function mameDat() {
+    const r = await run("Asking MAME for its list… (a minute or two)", "mame_dat", {});
+    if (r) note = r.unchanged ? "MAME's list is already imported" : `Imported MAME's list: ${r.games} games, ${r.roms} ROMs and disks`;
+    await loadDats();
+    await load();
+  }
+
   let visibleGames = $derived(datGames.filter((g) => gameFilter === "all" || (gameFilter === "have") === g.have));
   let currentDat = $derived(summary.dats.find((d) => d.dat_id === datId));
 </script>
 
 {#if active}
   <section class="wide">
-    <div class="bar"><button onclick={downloadDats} disabled={!!busy}>Download DATs for all systems</button></div>
+    <div class="bar">
+      <button onclick={downloadDats} disabled={!!busy}>Download DATs for all systems</button>
+      <button onclick={mameDat} disabled={!!busy} title="Arcade: import your installed MAME's own list (mame -listxml), the DAT that matches it">Read MAME's list</button>
+    </div>
     <section class="extdbs" aria-labelledby="extdb-title">
       <h3 id="extdb-title">Game databases <span class="hint">(optional, downloaded by you)</span></h3>
       <p class="hint">

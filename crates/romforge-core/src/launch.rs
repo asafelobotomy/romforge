@@ -119,6 +119,15 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--path={rom}", "--auto-detect"],
         false,
     ),
+    // Arcade sets by name, from the folder holding them (and their parents
+    // and BIOS sets).
+    emu(
+        "mame",
+        &["mame"],
+        "org.mamedev.MAME",
+        &["-rompath", "{dir}", "{set}"],
+        true,
+    ),
     // MAME needs the machine's own ROMs in its rompath.
     emu(
         "mame-fm7",
@@ -284,9 +293,18 @@ fn command(runner: &Runner, args: Vec<String>, grant: Option<&Path>) -> (PathBuf
     }
 }
 
-fn fill(args: &[impl AsRef<str>], rom: &Path) -> Vec<String> {
+/// An emulator's arguments for a game: `{rom}` the file, `{dir}` its
+/// folder, `{set}` the set's name (an arcade game's DAT name, else the
+/// file's stem).
+fn fill(args: &[impl AsRef<str>], rom: &Path, set: &str) -> Vec<String> {
+    let dir = rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
     args.iter()
-        .map(|a| a.as_ref().replace("{rom}", &rom.to_string_lossy()))
+        .map(|a| {
+            a.as_ref()
+                .replace("{rom}", &rom.to_string_lossy())
+                .replace("{dir}", &dir)
+                .replace("{set}", set)
+        })
         .collect()
 }
 
@@ -498,6 +516,15 @@ pub fn plan_row(
         files.push((PathBuf::from(path), member));
     }
     files.sort();
+    // An arcade game's files are in its own set's zip and its parent's and
+    // BIOS's: start the one named after the game (a clone in a merged set
+    // has none: then its parent's).
+    if systems::by_key(&system).is_some_and(|s| s.arcade) {
+        let named = |f: &(PathBuf, String)| f.0.file_stem().is_some_and(|s| s.to_string_lossy() == row.title);
+        if let Some(own) = files.iter().find(|f| named(f)).cloned() {
+            files.retain(|f| f.0 == own.0);
+        }
+    }
     if let Some(folder) = &row.folder {
         let folder = PathBuf::from(folder);
         // A DOS game in a folder starts from its program (DOSBox mounts the
@@ -574,6 +601,13 @@ fn start(
             args,
         }
     };
+    // An arcade game is started by its set's name; anything else, by its file.
+    let set = if system.arcade {
+        game.clone()
+    } else {
+        rom.file_stem()
+            .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
+    };
     let wanted = |name: &str| emulator.is_none_or(|w| w.eq_ignore_ascii_case(name));
     let mut why_not = Vec::new();
 
@@ -589,7 +623,13 @@ fn start(
             continue;
         }
         match env.which(&u.program) {
-            Some(p) => return Ok(spec(u.name.clone(), &Runner::Program(p), fill(&u.args, &rom))),
+            Some(p) => {
+                return Ok(spec(
+                    u.name.clone(),
+                    &Runner::Program(p),
+                    fill(&u.args, &rom, &set),
+                ));
+            }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
         }
     }
@@ -640,7 +680,7 @@ fn start(
             continue;
         }
         match env.known(e) {
-            Some(r) => return Ok(spec(e.name.to_owned(), &r, fill(e.args, &rom))),
+            Some(r) => return Ok(spec(e.name.to_owned(), &r, fill(e.args, &rom, &set))),
             None => why_not.push(format!("{} not installed", e.name)),
         }
     }
@@ -761,13 +801,24 @@ fn run_scummvm(
     args: &[String],
     grant: Option<&Path>,
 ) -> Result<(PathBuf, std::process::Output), Error> {
+    run_known(env, "scummvm", "ScummVM", args, grant)
+}
+
+/// Run a known emulator to completion (not a game: a list it prints).
+fn run_known(
+    env: &Env,
+    name: &str,
+    shown: &str,
+    args: &[String],
+    grant: Option<&Path>,
+) -> Result<(PathBuf, std::process::Output), Error> {
     let e = KNOWN_EMULATORS
         .iter()
-        .find(|e| e.name == "scummvm")
-        .ok_or_else(|| Error::Launch("scummvm is not a known emulator".into()))?;
+        .find(|e| e.name == name)
+        .ok_or_else(|| Error::Launch(format!("{name} is not a known emulator")))?;
     let runner = env
         .known(e)
-        .ok_or_else(|| Error::Launch("ScummVM isn't installed (on PATH or as a Flatpak)".into()))?;
+        .ok_or_else(|| Error::Launch(format!("{shown} isn't installed (on PATH or as a Flatpak)")))?;
     let (program, args) = command(&runner, args.to_vec(), grant);
     let out = std::process::Command::new(&program)
         .args(&args)
@@ -776,6 +827,26 @@ fn run_scummvm(
         .output()
         .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
     Ok((program, out))
+}
+
+/// The installed MAME's own DAT (`-listxml`: every machine with its ROMs'
+/// and disks' SHA1) and its version (`-version`).
+pub fn mame_listxml(env: &Env) -> Result<(Vec<u8>, String), Error> {
+    let (_, v) = run_known(env, "mame", "MAME", &["-version".to_owned()], None)?;
+    let version = String::from_utf8_lossy(&v.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap_or("?")
+        .to_owned();
+    let (program, out) = run_known(env, "mame", "MAME", &["-listxml".to_owned()], None)?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return Err(Error::Launch(format!(
+            "{} -listxml gave nothing ({})",
+            program.display(),
+            out.status
+        )));
+    }
+    Ok((out.stdout, version))
 }
 
 /// Start the emulator and return its process id. romforge doesn't wait for
@@ -807,7 +878,11 @@ mod tests {
             }
         }
         for e in KNOWN_EMULATORS {
-            assert!(e.args.iter().any(|a| a.contains("{rom}")), "{}", e.name);
+            assert!(
+                e.args.iter().any(|a| a.contains("{rom}") || a.contains("{set}")),
+                "{}",
+                e.name
+            );
         }
     }
 
@@ -833,7 +908,7 @@ mod tests {
             "a plain program needs none"
         );
         assert_eq!(
-            fill(&["-e", "{rom}"], Path::new("/r/a b.iso")),
+            fill(&["-e", "{rom}"], Path::new("/r/a b.iso"), "a b"),
             ["-e", "/r/a b.iso"]
         );
     }

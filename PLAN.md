@@ -838,15 +838,44 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     unpacked to staging first, and one that changed since the plan is
     refused (it goes to the trash whole).
 
-17. **Arcade: MAME and FBNeo** (decided 2026-10-18; not designed yet).
-    The Arcade system has no DATs and no extensions today. Needs: their
-    DATs (libretro mirrors FBNeo's and MAME's), zips as sets rather than
-    single ROMs, and matching that knows merged, split and non-merged
-    sets, parents, clones and BIOS / device sets. To decide before
-    building: which DATs (a set only runs in the core version its DAT
-    belongs to: `fbneo`, `mame2003_plus`, current MAME), whether import
-    rebuilds sets (e.g. to non-merged) or only moves verified ones, and
-    how CHDs of arcade games are handled.
+17. **Arcade: MAME and FBNeo** (decided 2026-10-18; *built* the same day,
+    tested on scratch sets; not yet run on real arcade sets). Checked:
+    libretro mirrors per-ROM MAME XMLs with SHA1 (2003, 2003-Plus, 2010,
+    2015, 2016) and DATs of whole TorrentZipped sets (one hash per zip,
+    matching only byte-identical zips); FBNeo's own DATs list CRC32 only;
+    an installed MAME writes its own (`-listxml`, SHA1 per ROM and disk).
+    1. *Three arcade systems, one per emulator family*, since a set only
+       runs in the version its DAT belongs to: Arcade (current MAME: the
+       installed MAME's `-listxml`, made on the owner's machine like
+       ScummVM's list, never shipped), MAME 2003-Plus (libretro's per-ROM
+       XML, the `mame2003_plus` core) and FBNeo (FBNeo's DAT, the `fbneo`
+       core). Each has its own `Games/<System>/` folder.
+    2. *FBNeo verified through MAME.* FBNeo's DAT has only CRC32 (never a
+       match, rule 8). An FBNeo ROM counts when the file's size and CRC32
+       fit it and the file's SHA1 fits the same ROM (size and CRC32) in a
+       MAME DAT you have; else it stays a suggestion.
+    3. *Sets move as they are.* Zips keep their set names (emulators find
+       them by name) and their merged / split / non-merged form; a clone
+       goes with its parent, BIOS sets go along; nothing is repacked.
+    4. *Disks by the CHD's own SHA1.* MAME's DAT gives each disk's SHA1,
+       which a CHD keeps in its header: read without decompressing; the
+       set's CHD folder moves with it.
+    The scan hashes every member of a zip or 7z named after an arcade set
+    (arcade ROMs have no telling extensions).
+    As built: `arcade` and `urls` columns in `systems.rs` (Arcade, MAME
+    2003-Plus, FBNeo); the DAT parser reads MAME's `<mame>` / `<machine>`
+    (devices skipped), `<disk>` (a ROM with `disk`, migration 30) and
+    `optional`; `files.chd_sha1` from each CHD's header; via `confirmed`
+    for FBNeo (in `strong!()`); `Format::Set` copies whole files; rows
+    carry `label` (the description); `{dir}` and `{set}` in emulator
+    arguments; `romforge-cli dat mame` and "Read MAME's list". The real
+    MAME 0.289 list imports in 10 s (43,050 games, 370,102 ROMs, 1,402
+    disks; 70 MB of database); MAME 2003-Plus 4,874 games, FBNeo 8,451.
+    **Open:** a set valid in two systems' DATs goes to the first one
+    Import plans (the other then finds it there); RetroArch can't start a
+    clone of a merged set (it has no zip of its own; MAME can); arcade
+    metadata (genre, year) isn't fetched; real CHDs are hashed in full
+    as well as read for their SHA1 (slow for big hard disks).
 
 ## Launcher (milestone 18; researched 2026-10-18, not built)
 

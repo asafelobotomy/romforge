@@ -510,6 +510,21 @@ pub fn enrich(
                     |r| r.get(0),
                 )
                 .optional()?;
+            // libretro names arcade thumbnails by the DAT's description,
+            // not the set ("Street Fighter II - The World Warrior ...").
+            let lr_game = match lr_game {
+                Some(n) => Some(n),
+                None if system.arcade => conn
+                    .query_row(
+                        "SELECT g.description FROM games g JOIN dats d ON d.dat_id = g.dat_id
+                         WHERE d.system_id = ?1 AND g.name = ?2 AND g.description IS NOT NULL
+                         ORDER BY g.game_id LIMIT 1",
+                        params![system_id, game],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()?,
+                None => None,
+            };
             let lr_game = lr_game.as_deref().unwrap_or(game);
             let mut missing: Vec<ArtKind> = Vec::new();
             for &kind in &opts.art {

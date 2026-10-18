@@ -81,6 +81,12 @@ pub struct System {
     /// plain files: import keeps a multi-disk set unzipped in a folder of
     /// its own, with this playlist (`m3u`, `cmd`; empty: none).
     pub loose_sets: Option<&'static str>,
+    /// Arcade: games are sets of ROMs in a zip named after the set (every
+    /// member hashed), kept as they are; one system per emulator family,
+    /// since a set runs only in the version its DAT belongs to.
+    pub arcade: bool,
+    /// DATs fetched from a fixed URL (`dat download`).
+    pub urls: &'static [&'static str],
 }
 
 /// How a system's games are stored ([`System::folders`]).
@@ -137,6 +143,8 @@ const fn s(
         titles: &[],
         folders: Folders::No,
         loose_sets: None,
+        arcade: false,
+        urls: &[],
     }
 }
 
@@ -216,6 +224,16 @@ impl System {
         self
     }
 
+    const fn arcade(mut self) -> Self {
+        self.arcade = true;
+        self
+    }
+
+    const fn urls(mut self, urls: &'static [&'static str]) -> Self {
+        self.urls = urls;
+        self
+    }
+
     const fn loose_sets(mut self, playlist: &'static str) -> Self {
         self.loose_sets = Some(playlist);
         self
@@ -267,7 +285,7 @@ pub const SYSTEMS: &[System] = &[
     s(36, "SuperGrafx", "NEC PC Engine SuperGrafx", "NEC", 4, 1989, "CRC32", 0, 0, &["NEC - PC Engine SuperGrafx"], &["sgx", "pce"]).nointro(&["NEC - PC Engine SuperGrafx"]).cores(&["mednafen_supergrafx"]).launchbox(&["PC Engine SuperGrafx"]),
     s(37, "Xbox", "Microsoft Xbox", "Microsoft", 6, 2001, "MD5", 1, 0, &[], &["iso", "xiso"]).redump(&["xbox", "xbox-bios"]).emulators(&["xemu"]).wikidata(&["Q132020"]).igdb(&[11]).launchbox(&["Microsoft Xbox"]).libretro("Microsoft - Xbox"),
     s(38, "Xbox 360", "Microsoft Xbox 360", "Microsoft", 7, 2005, "MD5", 1, 0, &[], &["iso", "xex"]).redump(&["xbox360"]).wikidata(&["Q48263"]).igdb(&[12]).launchbox(&["Microsoft Xbox 360"]).libretro("Microsoft - Xbox 360"),
-    s(39, "Arcade", "Arcade / MAME", "Various", 0, 1970, "CRC32", 0, 0, &[], &[]).cores(&["fbneo", "mame"]).launchbox(&["Arcade"]).libretro("MAME"),
+    s(39, "Arcade", "Arcade (MAME)", "Various", 0, 1970, "SHA1", 0, 0, &[], &[]).cores(&["mame"]).emulators(&["mame"]).launchbox(&["Arcade"]).libretro("MAME").arcade(),
     s(40, "3DO", "3DO Interactive Multiplayer", "Panasonic", 5, 1993, "MD5", 1, 0, &[], &["iso", "cue", "bin", "chd"]).redump(&["3do"]).cores(&["opera"]).ss(29).igdb(&[50]).launchbox(&["3DO Interactive Multiplayer"]).libretro("The 3DO Company - 3DO"),
     s(41, "Neo Geo CD", "SNK Neo Geo CD", "SNK", 5, 1994, "MD5", 1, 0, &[], &["cue", "bin", "chd"]).redump(&["ngcd"]).cores(&["neocd"]).launchbox(&["SNK Neo Geo CD"]).libretro("SNK - Neo Geo CD"),
     s(42, "FDS", "Nintendo Famicom Disk System", "Nintendo", 3, 1986, "CRC32", 0, 0, &["Nintendo - Family Computer Disk System"], &["fds", "qd"]).nointro(&["Nintendo - Family Computer Disk System"]).cores(&["mesen", "fceumm"]).wikidata(&["Q135321"]).ss(106).igdb(&[51]).launchbox(&["Nintendo Famicom Disk System"]),
@@ -344,6 +362,8 @@ pub const SYSTEMS: &[System] = &[
     s(113, "DOS", "MS-DOS", "Microsoft", 4, 1981, "MD5", 0, 0, &[], &["exe", "com", "bat", "ima", "imd", "td0", "vfd"]).tosec(&["IBM PC Compatibles", "IBM PCjr"]).dats(&["DOS"]).cores(&["dosbox_pure", "dosbox_core", "dosbox_svn"]).emulators(&["dosbox-staging", "dosbox-x"]).wikidata(&["Q170434", "Q47604"]).ss(135).igdb(&[13]).launchbox(&["MS-DOS"]).libretro("DOS").folders(Folders::Zip),
     s(114, "ScummVM", "ScummVM", "ScummVM", 0, 2001, "MD5", 0, 0, &[], &[]).cores(&["scummvm"]).emulators(&["scummvm"]).ss(123).libretro("ScummVM").titles(&["ScummVM"]).folders(Folders::Kept),
     s(115, "FM-7", "Fujitsu FM-7 / FM-77", "Fujitsu", 3, 1982, "CRC32", 0, 0, &[], &["d77", "t77"]).tosec(&["Fujitsu FM-7", "Fujitsu FM77-AV"]).emulators(&["mame-fm7"]).wikidata(&["Q2379925"]).ss(97).igdb(&[152]).loose_sets(""),
+    s(116, "MAME 2003-Plus", "Arcade (MAME 2003-Plus)", "Various", 0, 1970, "SHA1", 0, 0, &[], &[]).urls(&["https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/mame/MAME%202003-Plus%20XML.xml"]).cores(&["mame2003_plus"]).launchbox(&["Arcade"]).libretro("MAME").arcade(),
+    s(117, "FBNeo", "Arcade (FinalBurn Neo)", "Various", 0, 1970, "CRC32", 0, 0, &[], &[]).urls(&["https://raw.githubusercontent.com/libretro/FBNeo/master/dats/FinalBurn%20Neo%20(ClrMame%20Pro%20XML%2C%20Arcade%20only).dat"]).cores(&["fbneo"]).launchbox(&["Arcade"]).libretro("FBNeo - Arcade Games").arcade(),
 ];
 
 /// Find a system by its key (case-insensitive), e.g. `NES` or `game boy`.

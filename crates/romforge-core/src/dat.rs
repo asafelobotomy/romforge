@@ -63,8 +63,12 @@ pub struct Rom {
     pub crc32: Option<String>,
     pub md5: Option<String>,
     pub sha1: Option<String>,
-    /// e.g. `baddump`, `nodump`, `verified`.
+    /// e.g. `baddump`, `nodump`, `verified`; `optional` for a ROM a game
+    /// runs without (MAME's `optional="yes"`).
     pub status: Option<String>,
+    /// A disk (MAME's `<disk>`): a CHD, matched by the SHA1 its header
+    /// keeps; `name` ends in `.chd` and `size` is unknown.
+    pub disk: bool,
 }
 
 /// Parse either format, telling them apart by the first non-blank byte.
@@ -123,6 +127,7 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
     let mut stack: Vec<String> = Vec::new();
     let mut text = String::new();
     let mut saw_root = false;
+    let mut skip_machine = false;
     let mut buf = Vec::new();
 
     loop {
@@ -133,20 +138,50 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
                 text.clear();
                 match (stack.last().map(String::as_str), tag.as_str()) {
                     (None, "datafile") => saw_root = true,
+                    // MAME's own `-listxml`: no header, its build on the root.
+                    (None, "mame") => {
+                        saw_root = true;
+                        dat.version = attr(e, "build")?;
+                        if dat.version.is_some() {
+                            dat.name = "MAME".to_owned();
+                            dat.description = Some("MAME's own list (-listxml)".to_owned());
+                        }
+                    }
                     (Some("header"), "clrmamepro") => dat.header_hint = attr(e, "header")?,
-                    (Some("datafile"), "game" | "machine") => dat.games.push(Game {
-                        name: attr(e, "name")?.unwrap_or_default(),
-                        cloneof: attr(e, "cloneof")?,
-                        ..Game::default()
-                    }),
-                    (Some("game" | "machine"), "rom") => {
-                        let rom = Rom {
+                    // MAME's devices are parts of machines, not games.
+                    (Some("datafile" | "mame"), "game" | "machine")
+                        if attr(e, "isdevice")?.as_deref() == Some("yes") =>
+                    {
+                        skip_machine = true;
+                    }
+                    (Some("datafile" | "mame"), "game" | "machine") => {
+                        skip_machine = false;
+                        dat.games.push(Game {
                             name: attr(e, "name")?.unwrap_or_default(),
-                            size: attr(e, "size")?.and_then(|s| parse_size(&s)),
+                            cloneof: attr(e, "cloneof")?,
+                            ..Game::default()
+                        })
+                    }
+                    (Some("game" | "machine"), "rom" | "disk") if !skip_machine => {
+                        let disk = tag == "disk";
+                        let name = attr(e, "name")?.unwrap_or_default();
+                        let optional = attr(e, "optional")?.as_deref() == Some("yes");
+                        let rom = Rom {
+                            name: if disk { format!("{name}.chd") } else { name },
+                            size: if disk {
+                                None
+                            } else {
+                                attr(e, "size")?.and_then(|s| parse_size(&s))
+                            },
                             crc32: hash_attr(e, "crc")?,
                             md5: hash_attr(e, "md5")?,
                             sha1: hash_attr(e, "sha1")?,
-                            status: attr(e, "status")?,
+                            status: match attr(e, "status")? {
+                                Some(s) if s == "nodump" => Some(s),
+                                _ if optional => Some("optional".to_owned()),
+                                s => s,
+                            },
+                            disk,
                         };
                         if let Some(g) = dat.games.last_mut() {
                             g.roms.push(rom);
@@ -178,7 +213,7 @@ pub fn parse(input: impl BufRead) -> Result<Dat, Error> {
                     (Some("header"), "author") => dat.author = value,
                     (Some("header"), "homepage") => dat.homepage = value,
                     (Some("header"), "url") => dat.url = value,
-                    (Some("game" | "machine"), field) => {
+                    (Some("game" | "machine"), field) if !skip_machine => {
                         if let Some(g) = dat.games.last_mut() {
                             match field {
                                 "description" => g.description = value,
@@ -363,7 +398,16 @@ pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
                     md5: cmp_hash(r.get("md5")),
                     sha1: cmp_hash(r.get("sha1")),
                     status: r.get_owned("status").or_else(|| r.get_owned("flags")),
+                    disk: false,
                 })
+                .chain(g.blocks("disk").map(|d| Rom {
+                    name: format!("{}.chd", d.get_owned("name").unwrap_or_default()),
+                    sha1: cmp_hash(d.get("sha1")),
+                    md5: cmp_hash(d.get("md5")),
+                    status: d.get_owned("status").or_else(|| d.get_owned("flags")),
+                    disk: true,
+                    ..Rom::default()
+                }))
                 .collect(),
         });
     }

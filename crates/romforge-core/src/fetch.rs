@@ -101,6 +101,8 @@ pub enum Source {
     Homebrew(&'static str),
     /// One of libretro-database's own DATs (`dat/<name>.dat`), e.g. DOS.
     Libretro(&'static str),
+    /// A DAT at a fixed URL (the arcade DATs).
+    Url(&'static str),
     /// A file in libretro-database's `serial` folder: product codes, not a
     /// DAT ([`crate::Library::download_dat`] stores them in `serials`).
     Serials(&'static str),
@@ -124,6 +126,7 @@ impl Source {
             Source::Hacks(name) => Some(libretro("hacks", name)),
             Source::Homebrew(name) => Some(libretro("homebrew", name)),
             Source::Libretro(name) => Some(format!("{LIBRETRO_DAT_BASE}/{}.dat", percent_encode(name))),
+            Source::Url(url) => Some(url.to_owned()),
             Source::Serials(name) => Some(libretro("serial", name)),
             Source::CloneList(name, group) => Some(format!(
                 "{CLONELISTS_BASE}/{}",
@@ -148,6 +151,15 @@ impl std::fmt::Display for Source {
             Source::Hacks(n) => write!(f, "hacks (libretro) {n}"),
             Source::Homebrew(n) => write!(f, "homebrew (libretro) {n}"),
             Source::Libretro(n) => write!(f, "libretro {n}"),
+            Source::Url(u) => write!(
+                f,
+                "{}",
+                u.rsplit('/')
+                    .next()
+                    .unwrap_or(u)
+                    .replace("%20", " ")
+                    .replace("%2C", ",")
+            ),
             Source::Serials(n) => write!(f, "serials (libretro) {n}"),
             Source::CloneList(n, g) => write!(f, "clone list (Retool) {n} ({g})"),
         }
@@ -169,6 +181,7 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
         .chain(system.dats.iter().copied().map(Source::Libretro))
+        .chain(system.urls.iter().copied().map(Source::Url))
         .collect();
     // Clone lists for the system's No-Intro and Redump DATs, by DAT name
     // (PSP has both; a list that doesn't exist is skipped).

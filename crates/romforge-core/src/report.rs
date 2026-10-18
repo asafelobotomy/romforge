@@ -8,12 +8,13 @@ use serde::Serialize;
 use crate::Error;
 use crate::identify::Status;
 
-/// The match kinds that verify (house rule 8: size + SHA1, or size + MD5),
-/// as an SQL set: `m.via IN strong!()`. A CRC32 hit (`crc32`) or a fitting
-/// sheet (`sheet`) never does.
+/// The match kinds that verify (house rule 8: size + SHA1, or size + MD5;
+/// `confirmed`: an arcade ROM known only by CRC32 whose file's SHA1 fits
+/// the same ROM in another DAT), as an SQL set: `m.via IN strong!()`. A
+/// CRC32 hit (`crc32`) or a fitting sheet (`sheet`) never does.
 macro_rules! strong {
     () => {
-        "('sha1', 'md5')"
+        "('sha1', 'md5', 'confirmed')"
     };
 }
 
@@ -55,7 +56,7 @@ pub(crate) const GAME_HAVE: &str = "
                sum(r.sheet AND h.rom_id IS NOT NULL) AS sheet_have
         FROM (SELECT rom_id, game_id, lower(name) LIKE '%.cue' AS sheet FROM roms
               WHERE game_id IN (SELECT game_id FROM games_in)
-                AND coalesce(status, '') <> 'nodump') r
+                AND coalesce(status, '') NOT IN ('nodump', 'optional')) r
         LEFT JOIN had h ON h.rom_id = r.rom_id
         GROUP BY r.game_id
     )";

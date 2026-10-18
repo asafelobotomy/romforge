@@ -110,6 +110,15 @@ async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
     romforge_core::extdb::remove(extdb_named(&name)?, &dir).map_err(|e| e.to_string())
 }
 
+/// The installed MAME's own list as the Arcade DAT (`mame -listxml`).
+#[tauri::command]
+async fn mame_dat(db: tauri::State<'_, Db>) -> Res<romforge_core::ImportedDat> {
+    with(&db, move |lib| {
+        lib.mame_dat(&romforge_core::launch::Env::detect())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn download_dats(db: tauri::State<'_, Db>, extras: bool) -> Res<Downloaded> {
     with(&db, move |lib| {
@@ -577,6 +586,7 @@ fn main() {
             dat_games,
             scan,
             download_dats,
+            mame_dat,
             extdb_list,
             extdb_download,
             extdb_remove,

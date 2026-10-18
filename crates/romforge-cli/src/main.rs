@@ -211,6 +211,10 @@ enum DatCommand {
         #[arg(long)]
         extras: bool,
     },
+    /// Import the installed MAME's own list (`mame -listxml`: SHA1 of every
+    /// ROM and disk) as the Arcade system's DAT; run again after updating
+    /// MAME
+    Mame,
     /// Compare imported DATs with No-Intro's latest versions on DAT-o-MATIC
     Check {
         /// Also list No-Intro DATs you haven't imported
@@ -511,6 +515,10 @@ fn main() -> Result<()> {
 
     let mut lib = Library::open(&db).with_context(|| format!("opening {}", db.display()))?;
     match cli.command {
+        Command::Dat(DatCommand::Mame) => {
+            eprintln!("asking MAME for its list (-listxml); this takes a minute…");
+            print_imported(lib.mame_dat(&launch::Env::detect())?);
+        }
         Command::Dat(DatCommand::Import { files, system }) => {
             lib.batch(|lib| -> Result<()> {
                 for file in files {

@@ -52,6 +52,9 @@ pub enum Format {
     /// One disk of a set, unzipped into the set's folder (floppy
     /// computers whose cores read a set's disks themselves).
     Loose,
+    /// An arcade set: its zips (its own, its parent's, its BIOS's) and CHD
+    /// folders, copied whole under their own names (milestone 17).
+    Set,
 }
 
 /// One ROM of a game and where its data is now.
@@ -212,6 +215,19 @@ pub fn plan(
         let Some(system) = row.system.as_deref().and_then(systems::by_key) else {
             continue;
         };
+        if system.arcade {
+            match set_item(conn, &row, system, &dest, &source, games.as_deref(), &mut taken)? {
+                Ok(Some(mut it)) => {
+                    if !s.keep_originals {
+                        it.trash = it.parts.iter().map(|p| p.path.clone()).collect();
+                    }
+                    items.push(it);
+                }
+                Ok(None) => {}
+                Err(why) => plan.skipped.push((row.title.clone(), why)),
+            }
+            continue;
+        }
         if let Some(place) = &row.folder {
             match folder_item(
                 conn,
@@ -384,14 +400,20 @@ pub fn plan(
     // Originals: trashed only when everything in them is taken by the batch
     // (an archive's own member list decides, not just what was scanned).
     let mut used: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
-    for it in items.iter().filter(|it| it.folder.is_none()) {
+    for it in items
+        .iter()
+        .filter(|it| it.folder.is_none() && it.format != Format::Set)
+    {
         for p in it.parts.iter().chain(&it.copies).chain(&it.sheet) {
             used.entry(p.path.clone()).or_default().insert(p.member.clone());
         }
     }
     let batch: BTreeSet<String> = items.iter().map(|it| it.row_id.clone()).collect();
     let mut files_at = conn.prepare("SELECT file_id FROM files WHERE path = ?1")?;
-    for it in items.iter_mut().filter(|it| it.folder.is_none()) {
+    for it in items
+        .iter_mut()
+        .filter(|it| it.folder.is_none() && it.format != Format::Set)
+    {
         let paths: BTreeSet<&PathBuf> = it
             .parts
             .iter()
@@ -570,6 +592,129 @@ fn folder_item(
         folder: Some(place.to_owned()),
         code,
     })))
+}
+
+/// The import of an arcade set: the files its ROMs and disks are in (its
+/// own zip, its parent's and BIOS's, CHDs in a folder named after a set),
+/// copied whole under their own names into `Games/<System>/`. A file an
+/// earlier game of the batch takes, or one already there, isn't copied
+/// again. `Ok(Ok(None))`: nothing outside RomForge to take.
+fn set_item(
+    conn: &Connection,
+    row: &view::GameRow,
+    system: &systems::System,
+    dest: &Path,
+    source: &Source,
+    games: Option<&Path>,
+    taken: &mut BTreeSet<PathBuf>,
+) -> Result<Result<Option<Item>, String>, Error> {
+    let dir = dest.join(sanitize(system.key));
+    let mut stmt = conn.prepare_cached("SELECT path, member FROM files WHERE file_id = ?1")?;
+    let mut parts: Vec<Part> = Vec::new();
+    for id in row.file_ids() {
+        let (path, member): (String, String) = stmt.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let path = PathBuf::from(path);
+        if games.is_some_and(|g| path.starts_with(g)) || !source.contains(&path) {
+            continue;
+        }
+        let chd = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("chd"));
+        if member.is_empty() && !chd {
+            return Ok(Err(format!(
+                "{} is a loose file; arcade ROMs are imported in their set's zip",
+                path.display()
+            )));
+        }
+        let file = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        // A CHD lives in a folder named after its set.
+        let name = match (chd, path.parent().and_then(Path::file_name)) {
+            (true, Some(set)) => format!("{}/{file}", set.to_string_lossy()),
+            _ => file,
+        };
+        if parts.iter().any(|p| p.path == path) || taken.contains(&path) || dir.join(&name).exists() {
+            continue;
+        }
+        let size = std::fs::metadata(&path)?.len();
+        parts.push(Part {
+            name,
+            path,
+            member: String::new(),
+            size,
+            sha1: String::new(),
+        });
+    }
+    if parts.is_empty() {
+        return Ok(Ok(None));
+    }
+    taken.extend(parts.iter().map(|p| p.path.clone()));
+    parts.sort_by(|a, b| zip_order(&a.name, &b.name));
+    let own = parts
+        .iter()
+        .find(|p| {
+            Path::new(&p.name)
+                .file_stem()
+                .is_some_and(|s| s.to_string_lossy() == row.title)
+        })
+        .unwrap_or(&parts[0]);
+    Ok(Ok(Some(Item {
+        row_id: row.id.clone(),
+        title: row.label.clone().unwrap_or_else(|| row.title.clone()),
+        system: system.key.to_owned(),
+        format: Format::Set,
+        target: dir.join(&own.name),
+        sidecar: None,
+        parts,
+        trash: Vec::new(),
+        kept: Vec::new(),
+        copies: Vec::new(),
+        sheet: None,
+        existing: false,
+        folder: None,
+        code: None,
+    })))
+}
+
+/// Copy an arcade set's files whole, each read back and checked.
+fn write_set(conn: &Connection, batch: i64, item: &Item) -> Result<(), Error> {
+    let dir = item.target.parent().unwrap_or(Path::new("."));
+    for p in &item.parts {
+        let to = dir.join(&p.name);
+        if to.exists() {
+            continue; // another game of the batch brought it
+        }
+        let folder = to.parent().unwrap_or(dir);
+        if !folder.exists() {
+            std::fs::create_dir_all(folder)?;
+            if folder != dir {
+                journal_output(conn, batch, folder, "setdir")?;
+            }
+        }
+        let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let part = folder.join(layout::part(&name));
+        let _ = std::fs::remove_file(&part);
+        let r = (|| -> Result<(), Error> {
+            let mut w = File::create_new(&part)?;
+            let sum = copy_hashed(BufReader::new(File::open(&p.path)?), &mut w)?;
+            w.sync_all()?;
+            if sha1_of(BufReader::new(File::open(&part)?))? != sum {
+                return Err(Error::Cleanup(format!(
+                    "{}: doesn't read back as written",
+                    to.display()
+                )));
+            }
+            Ok(())
+        })();
+        if let Err(e) = r {
+            let _ = std::fs::remove_file(&part);
+            return Err(e);
+        }
+        std::fs::rename(&part, &to)?;
+        journal_output(conn, batch, &to, "file")?;
+    }
+    Ok(())
 }
 
 /// A reader that hashes what passes through it.
@@ -908,7 +1053,7 @@ fn verified_parts(
          LEFT JOIN files f ON f.file_id = m.file_id AND f.status IN ",
         crate::report::holding!(),
         "
-         WHERE d.system_id = ?1 AND g.name = ?2 AND coalesce(r.status, '') <> 'nodump'
+         WHERE d.system_id = ?1 AND g.name = ?2 AND coalesce(r.status, '') NOT IN ('nodump', 'optional')
          ORDER BY g.game_id, r.rom_id, f.path, f.member"
     ))?;
     // game -> rom -> (DAT name, every copy with its rank: lower is better)
@@ -1498,6 +1643,13 @@ pub fn apply(
             let dir = item.target.parent().unwrap_or(Path::new("."));
             let new_dir = !dir.exists();
             std::fs::create_dir_all(dir)?;
+            if item.format == Format::Set {
+                if new_dir {
+                    journal_output(conn, batch_id, dir, "setdir")?;
+                }
+                write_set(conn, batch_id, item)?;
+                return Ok(false);
+            }
             if item.format == Format::Loose {
                 // The set's folder is journaled before what goes in it, so
                 // undo (last first) empties it before removing it.

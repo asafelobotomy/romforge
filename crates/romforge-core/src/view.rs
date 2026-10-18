@@ -91,6 +91,10 @@ pub struct GameRow {
     /// For a game that is a whole folder (DOS, ScummVM): that folder, or
     /// the archive holding it. Import and Play take all of it.
     pub folder: Option<String>,
+    /// What to show instead of the title: an arcade set's DAT description
+    /// ("Street Fighter II: The World Warrior (World 910522)"); the title
+    /// stays its set name.
+    pub label: Option<String>,
     #[serde(skip)]
     system_id: Option<i64>,
     #[serde(skip)]
@@ -413,6 +417,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             main: true,
             versions: 1,
             folder: None,
+            label: None,
             system_id,
             file_ids: Vec::new(),
         }
@@ -501,6 +506,7 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 main: true,
                 versions: 1,
                 folder: None,
+                label: None,
                 system_id,
                 file_ids: Vec::new(),
             })
@@ -536,14 +542,21 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
     folder_games(conn, &files, &mut rows)?;
 
     let mut rows: Vec<GameRow> = rows.into_values().collect();
+    let mut described = conn.prepare(
+        "SELECT g.description FROM games g JOIN dats d ON d.dat_id = g.dat_id
+         WHERE d.system_id = ?1 AND g.name = ?2 AND g.description IS NOT NULL ORDER BY g.game_id LIMIT 1",
+    )?;
     for r in &mut rows {
         r.playable = r.status.identified();
+        // An arcade set is named by its DAT's description.
+        if r.system_id.and_then(systems::by_id).is_some_and(|s| s.arcade) {
+            r.label = described
+                .query_row(params![r.system_id, r.title], |x| x.get(0))
+                .optional()?;
+        }
     }
-    rows.sort_by(|a, b| {
-        sort_key(&a.title)
-            .cmp(&sort_key(&b.title))
-            .then_with(|| a.system.cmp(&b.system))
-    });
+    let shown = |r: &GameRow| sort_key(r.label.as_deref().unwrap_or(&r.title));
+    rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
     group_versions(conn, &mut rows)?;
     // Games, not versions.
     let mut counts: BTreeMap<Option<i64>, usize> = BTreeMap::new();

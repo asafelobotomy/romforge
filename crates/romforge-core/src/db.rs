@@ -350,6 +350,13 @@ const MIGRATIONS: &[&str] = &[
      UPDATE matches SET owns = 1
        WHERE out_of_scope = 0 AND via IN ('sha1', 'md5')
          AND file_id IN (SELECT file_id FROM files WHERE status = 'matched');",
+    // 30: arcade (milestone 17). A DAT's disks (MAME's `<disk>`) are ROMs
+    // matched by the SHA1 a CHD keeps in its header, read for every CHD;
+    // CHDs scanned before are read again for it.
+    "ALTER TABLE roms ADD COLUMN disk INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE files ADD COLUMN chd_sha1 TEXT;
+     CREATE INDEX files_chd_sha1 ON files(chd_sha1);
+     UPDATE files SET mtime = NULL WHERE lower(path) GLOB '*.chd';",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

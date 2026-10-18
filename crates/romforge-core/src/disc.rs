@@ -153,6 +153,13 @@ pub fn parse_track(meta: &str) -> Option<Track> {
     })
 }
 
+/// The SHA1 a CHD keeps in its header (of its data and metadata): what
+/// MAME's DATs give for a disk. Read without decompressing anything.
+pub fn chd_sha1(path: &Path) -> Option<String> {
+    let chd = chd::Chd::open(BufReader::new(File::open(path).ok()?), None).ok()?;
+    chd.header().sha1().map(|h| crate::hash::hex(&h))
+}
+
 /// The tracks of a CHD as `.bin`/`.iso` members: (member name, hashes).
 pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
     let chd_err = |e: chd::Error| Error::Chd(format!("{}: {e}", path.display()));

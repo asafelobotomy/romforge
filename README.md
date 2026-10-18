@@ -299,6 +299,37 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   (TOSEC) and FM Towns start in MAME (`mame-fm7`, `mame-fmtowns`; MAME
   needs those machines' own ROMs).
 
+## Arcade: MAME and FBNeo (milestone 17)
+
+```bash
+romforge-cli dat mame                          # your MAME's own list (mame -listxml)
+romforge-cli dat download "MAME 2003-Plus" FBNeo
+romforge-cli launch "Metal Slug" -e mame       # mame -rompath <folder> mslug
+```
+
+A set only runs in the emulator version its DAT belongs to, so there are
+three arcade systems: **Arcade** (current MAME: the DAT is your installed
+MAME's own `-listxml`, read on your machine, SHA1 for every ROM and disk;
+**Read MAME's list** in the DATs view), **MAME 2003-Plus** (libretro's
+per-ROM XML, for the `mame2003_plus` core) and **FBNeo** (FBNeo's DAT, for
+the `fbneo` core). Arcade ROMs have no telling extensions: every member of
+a zip or 7z named after a set is hashed (importing an arcade DAT marks
+those zips to be read again). Merged, split and non-merged sets all work: a
+game counts when all its ROMs are found, in its own zip, its parent's or
+its BIOS's; MAME's devices aren't games, and `nodump` and optional ROMs
+don't count. A disk (CHD in a folder named after the set) is matched by the
+SHA1 the CHD keeps in its header, without decompressing.
+
+FBNeo's DAT has only CRC32 per ROM, which never counts as a match (rule 8):
+an FBNeo ROM is verified when the file's size and CRC32 fit it and its
+SHA1 fits the same ROM in a MAME DAT you have; otherwise it stays a
+suggestion. The list shows each set by its DAT's description ("Metal Slug -
+Super Vehicle-001"; the set name in Details), clones grouped under their
+parent. Import copies the zips whole under their own names (sets are found
+by name) into `Games/<System>/`, the parent's and BIOS's zips once, CHD
+folders along; nothing is repacked. Box art comes from libretro's MAME and
+FBNeo thumbnails, by description.
+
 ## Cleanup and rename (dry run, apply, undo)
 
 ```bash

@@ -40,8 +40,10 @@ impl ScanOptions {
 /// A file to hash, or an archive whose members to hash.
 enum Unit {
     File(PathBuf),
-    Zip(PathBuf),
-    SevenZ(PathBuf),
+    /// An archive; `true`: every member is hashed (an arcade set's zip,
+    /// whose ROMs have no telling extensions).
+    Zip(PathBuf, bool),
+    SevenZ(PathBuf, bool),
     /// A CHD disc image; its tracks are the members.
     Chd(PathBuf),
 }
@@ -132,6 +134,9 @@ pub fn walk(
     root: &Path,
     skip: &[PathBuf],
     opts: ScanOptions,
+    // Arcade set names (lower case): an archive named after one has every
+    // member hashed.
+    sets: &std::collections::HashSet<String>,
     unchanged: impl Fn(&Path, Stamp) -> bool,
     mut each: impl FnMut(Visit),
 ) -> Result<(), Error> {
@@ -193,8 +198,16 @@ pub fn walk(
             stamp.map_or(0, |s| s.size),
             stamp,
             match ext.as_str() {
-                "zip" => Unit::Zip(path),
-                "7z" => Unit::SevenZ(path),
+                "zip" | "7z" => {
+                    let whole = path
+                        .file_stem()
+                        .is_some_and(|s| sets.contains(&s.to_string_lossy().to_lowercase()));
+                    if ext == "zip" {
+                        Unit::Zip(path, whole)
+                    } else {
+                        Unit::SevenZ(path, whole)
+                    }
+                }
                 "chd" => Unit::Chd(path),
                 _ => Unit::File(path),
             },
@@ -244,12 +257,12 @@ fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut imp
         v => each(v),
     };
     let (path, result) = match unit {
-        Unit::Zip(path) => {
-            let r = walk_zip(&path, opts, each);
+        Unit::Zip(path, whole) => {
+            let r = walk_zip(&path, member_opts(opts, whole), each);
             (path, r)
         }
-        Unit::SevenZ(path) => {
-            let r = walk_7z(&path, opts, each);
+        Unit::SevenZ(path, whole) => {
+            let r = walk_7z(&path, member_opts(opts, whole), each);
             (path, r)
         }
         Unit::Chd(path) => {
@@ -283,6 +296,14 @@ fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut imp
             member: String::new(),
             hashes: Err(e.to_string()),
         }));
+    }
+}
+
+/// The options for an archive's members: all of them for an arcade set.
+fn member_opts(opts: ScanOptions, whole: bool) -> ScanOptions {
+    ScanOptions {
+        all_files: opts.all_files || whole,
+        ..opts
     }
 }
 

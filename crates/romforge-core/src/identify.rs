@@ -91,6 +91,10 @@ enum Via {
     Sha1,
     Md5,
     Crc32,
+    /// An arcade DAT's ROM that has only a CRC32 (FBNeo's), its size and
+    /// CRC32 fitting the file, whose SHA1 fits a ROM of the same size and
+    /// CRC32 in another DAT (MAME's): size + SHA1 after all (milestone 17).
+    Confirmed,
 }
 
 impl Via {
@@ -99,6 +103,7 @@ impl Via {
             "sha1" => Some(Via::Sha1),
             "md5" => Some(Via::Md5),
             "crc32" => Some(Via::Crc32),
+            "confirmed" => Some(Via::Confirmed),
             _ => None,
         }
     }
@@ -108,6 +113,7 @@ impl Via {
             Via::Sha1 => "sha1",
             Via::Md5 => "md5",
             Via::Crc32 => "crc32",
+            Via::Confirmed => "confirmed",
         }
     }
 
@@ -169,8 +175,32 @@ fn lookup(conn: &Connection, d: &Digest) -> Result<Vec<RomRow>, Error> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// The disks (MAME's `<disk>`) with this CHD SHA1.
+fn disks(conn: &Connection, sha1: &str) -> Result<Vec<RomRow>, Error> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT r.rom_id, g.dat_id, d.system_id, r.game_id
+         FROM roms r JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id
+         WHERE r.disk = 1 AND r.sha1 = ?1",
+    )?;
+    let rows = stmt.query_map([sha1], |r| {
+        Ok(RomRow {
+            rom_id: r.get(0)?,
+            dat_id: r.get(1)?,
+            system_id: r.get(2)?,
+            game_id: r.get(3)?,
+            size: None,
+            crc32: None,
+            md5: None,
+            sha1: Some(sha1.to_owned()),
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 struct FileRow {
     file_id: i64,
+    /// A CHD's own SHA1 (from its header): an arcade DAT's disk.
+    chd_sha1: Option<String>,
     /// The archive it is in, or its folder: where its game's other files are.
     place: String,
     scope: Scope,
@@ -204,7 +234,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
         let mut stmt = tx.prepare(
             "SELECT f.file_id, s.system_id, s.dat_id, f.size, f.crc32, f.md5, f.sha1,
                     f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1, f.status,
-                    f.path, f.member
+                    f.path, f.member, f.chd_sha1
              FROM files f JOIN scan_roots s ON s.root_id = f.root_id
              ORDER BY f.path, f.member",
         )?;
@@ -227,6 +257,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             };
             Ok(FileRow {
                 file_id: r.get(0)?,
+                chd_sha1: r.get(14)?,
                 place,
                 scope: Scope::from_columns(r.get(1)?, r.get(2)?),
                 raw: Digest {
@@ -314,8 +345,26 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             let digests = std::iter::once((&file.raw, false)).chain(file.stripped.iter().map(|d| (d, true)));
             // An empty file says nothing: TOSEC lists many empty ROMs.
             for (digest, stripped) in digests.filter(|(d, _)| d.size > 0) {
-                for rom in lookup(tx, digest)? {
-                    if let Some(via) = compare(digest, &rom)
+                let roms = lookup(tx, digest)?;
+                let vias: Vec<Option<Via>> = roms.iter().map(|r| compare(digest, r)).collect();
+                // Its SHA1 fits a ROM of some DAT (size and CRC32 with it).
+                let sha1_fits = vias.contains(&Some(Via::Sha1));
+                for (rom, via) in roms.iter().zip(vias) {
+                    let via = match via {
+                        Some(Via::Crc32)
+                            if sha1_fits
+                                && rom.sha1.is_none()
+                                && rom.md5.is_none()
+                                && rom
+                                    .system_id
+                                    .and_then(crate::systems::by_id)
+                                    .is_some_and(|s| s.arcade) =>
+                        {
+                            Some(Via::Confirmed)
+                        }
+                        v => v,
+                    };
+                    if let Some(via) = via
                         && seen.insert(rom.rom_id)
                     {
                         hits.push(Hit {
@@ -323,6 +372,20 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                             game_id: rom.game_id,
                             via,
                             stripped,
+                            in_scope: file.scope.contains(rom),
+                        });
+                    }
+                }
+            }
+            // A CHD: an arcade DAT's disk, by the SHA1 its header keeps.
+            if let Some(sha1) = &file.chd_sha1 {
+                for rom in disks(tx, sha1)? {
+                    if seen.insert(rom.rom_id) {
+                        hits.push(Hit {
+                            rom_id: rom.rom_id,
+                            game_id: rom.game_id,
+                            via: Via::Sha1,
+                            stripped: false,
                             in_scope: file.scope.contains(&rom),
                         });
                     }
@@ -469,7 +532,7 @@ fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
     ))?;
     let mut roms_of = tx.prepare(
         "SELECT rom_id, name, lower(name) LIKE '%.cue' FROM roms
-         WHERE game_id = ?1 AND coalesce(status, '') <> 'nodump' ORDER BY rom_id",
+         WHERE game_id = ?1 AND coalesce(status, '') NOT IN ('nodump', 'optional') ORDER BY rom_id",
     )?;
     let mut matched_by = tx.prepare(concat!(
         "SELECT 1 FROM matches WHERE rom_id = ?1 AND file_id = ?2 AND via IN ",

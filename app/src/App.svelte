@@ -132,7 +132,7 @@
   async function play() {
     const row = lib.rows.find((r) => r.id === selected);
     if (!row) return;
-    const r = await run(`Starting ${row.title}…`, "launch", { rowId: row.id });
+    const r = await run(`Starting ${row.label ?? row.title}…`, "launch", { rowId: row.id });
     if (r) note = r;
   }
 
@@ -424,7 +424,7 @@
                 >{expanded[r.group] ? "▾" : "▸"}</button>
               {/if}
               <button class="tr" class:sel={r.id === selected} class:version={!r.main} onclick={() => open(r.id)}>
-                <span class="title">{r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
+                <span class="title" title={r.label ? r.title : undefined}>{r.label ?? r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
                 {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
                 <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "detected" ? "◆" : r.status === "unknown" ? "?" : "~"}</span>
                 <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
@@ -445,7 +445,8 @@
           <div class="empty"><p>Pick a game to see its details.</p></div>
         {:else}
           <div class="dhead">
-            <h1>{row.title}</h1>
+            <h1>{row.label ?? row.title}</h1>
+            {#if row.label}<p class="meta">Set <code>{row.title}</code></p>{/if}
             <p class="meta">
               {row.system_name ?? "Unidentified"} · <span class="badge {row.status}">{statusLabel[row.status]}</span>
               {#if row.status === "by_you" || row.status === "derivative"}
