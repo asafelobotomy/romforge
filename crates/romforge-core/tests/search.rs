@@ -183,7 +183,95 @@ fn find_preview_and_choose_a_dat_title() {
         year: None,
         score: 1.0,
         description: None,
+        band: None,
+        evidence: Vec::new(),
     };
     let err = lib.search_choose(&row, &wd, None, &opts).unwrap_err().to_string();
     assert!(err.contains("platform"), "{err}");
+}
+
+/// A LoROM SNES image of `len` bytes with a valid header.
+fn snes_rom(title: &[u8; 21], code: &[u8; 4], region: u8, len: usize, fill: u8) -> Vec<u8> {
+    let mut rom = vec![fill; len];
+    let h = 0x7FC0;
+    rom[h..h + 21].copy_from_slice(title);
+    rom[h - 0x0E..h - 0x0A].copy_from_slice(code);
+    rom[h + 0x19] = region;
+    rom[h + 0x1A] = 0x33;
+    rom[h + 0x1C..h + 0x20].copy_from_slice(&[0x1A, 0x93, 0xE5, 0x6C]);
+    rom
+}
+
+/// Suggestions in bands, each with its evidence; none is a match.
+#[test]
+fn suggestions_with_evidence() {
+    use romforge_core::suggest::Band;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    // The DAT's game: 64 KiB, serial SHVC-AQ3J-JPN.
+    let original = snes_rom(b"DRAGONQUEST3         ", b"AQ3J", 0, 0x10000, 0x11);
+    let h = romforge_core::hash::hash_stream(&original[..], original.len() as u64)
+        .unwrap()
+        .raw;
+    let dat = tmp.path().join("snes.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
+  <game name="Dragon Quest III - Soshite Densetsu e... (Japan)"><serial>SHVC-AQ3J-JPN</serial><rom name="dq3.sfc" size="{}" crc="{}" md5="{}" sha1="{}"/></game>
+  <game name="Dragon Quest I &amp; II (Japan)"><rom name="dq12.sfc" size="1" crc="00000001"/></game>
+</datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        ),
+    )
+    .unwrap();
+    // A translation, expanded to 96 KiB; a same-size hack; an unrelated file.
+    std::fs::write(
+        dir.join("Dragon Quest III (English v2.0)[Addendum].sfc"),
+        snes_rom(b"DRAGONQUEST3         ", b"AQ3J", 0, 0x18000, 0x22),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("Dragon Quest III (Hack).sfc"),
+        snes_rom(b"DRAGONQUEST3         ", b"AQ3J", 0, 0x10000, 0x33),
+    )
+    .unwrap();
+    std::fs::write(dir.join("Totally Different.sfc"), vec![7u8; 4096]).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+
+    let q = lib.search_queue(None).unwrap();
+    let top = |needle: &str| {
+        q.iter()
+            .find(|i| i.title.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} not queued: {q:?}"))
+            .suggestion
+            .clone()
+    };
+    let tr = top("English").expect("a suggestion");
+    assert_eq!(tr.band, Band::Suggested);
+    assert_eq!(tr.title, "Dragon Quest III - Soshite Densetsu e... (Japan)");
+    let says = |s: &romforge_core::suggest::Suggestion, kind: &str| {
+        s.evidence.iter().find(|e| e.kind == kind).map(|e| e.agrees)
+    };
+    assert_eq!(says(&tr, "serial"), Some(true), "{:?}", tr.evidence);
+    assert_eq!(says(&tr, "header_title"), Some(true));
+    assert_eq!(says(&tr, "region"), Some(true));
+    assert_eq!(says(&tr, "size"), Some(false));
+    assert_eq!(says(&tr, "hash"), Some(false));
+
+    let hack = top("(Hack)").expect("a suggestion");
+    assert_eq!(hack.band, Band::LikelyModified);
+    assert_eq!(says(&hack, "size"), Some(true));
+
+    let crc = top("CRC Only").expect("a suggestion");
+    assert_eq!((crc.band, crc.title.as_str()), (Band::LikelyCrc, "CRC Only"));
+
+    assert_eq!(top("Totally Different"), None);
+    // Nothing became verified or identified.
+    assert!(q.iter().all(|i| i.need == Need::Identify));
 }

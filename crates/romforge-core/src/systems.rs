@@ -9,7 +9,8 @@
 //! `emulators` what `launch` runs; `wikidata` the platform's Wikidata items;
 //! `screenscraper` and `igdb` the ids those art sources use (from memory, to
 //! be checked once keys are entered); `launchbox` its platform names in the
-//! LaunchBox Games Database (a download the user makes, see `extdb`).
+//! LaunchBox Games Database (a download the user makes, see `extdb`);
+//! `ident` the kinds of game ID (`ident.rs`) its games carry.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct System {
@@ -56,6 +57,9 @@ pub struct System {
     /// Platform names in the LaunchBox Games Database (checked against its
     /// Platforms.xml), for matching games by title there.
     pub launchbox: &'static [&'static str],
+    /// Kinds of game ID its games' headers or boot files give
+    /// ([`crate::ident::GameId::kind`]).
+    pub ident: &'static [&'static str],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -95,6 +99,7 @@ const fn s(
         screenscraper: None,
         igdb: &[],
         launchbox: &[],
+        ident: &[],
     }
 }
 
@@ -153,35 +158,40 @@ impl System {
         self.launchbox = names;
         self
     }
+
+    const fn ident(mut self, kinds: &'static [&'static str]) -> Self {
+        self.ident = kinds;
+        self
+    }
 }
 
 #[rustfmt::skip]
 pub const SYSTEMS: &[System] = &[
     s(1, "NES", "Nintendo Entertainment System", "Nintendo", 3, 1983, "CRC32", 0, 0, &["Nintendo - Nintendo Entertainment System"], &["nes", "unf", "unif"]).nointro(&["Nintendo - Nintendo Entertainment System"]).hacks(&["Nintendo - Nintendo Entertainment System"]).homebrew(&["Nintendo - Nintendo Entertainment System"]).cores(&["mesen", "fceumm", "nestopia"]).wikidata(&["Q172742"]).ss(3).igdb(&[18]).launchbox(&["Nintendo Entertainment System"]),
-    s(2, "SNES", "Super Nintendo Entertainment System", "Nintendo", 4, 1990, "CRC32", 0, 0, &["Nintendo - Super Nintendo Entertainment System"], &["sfc", "smc", "swc", "fig", "bs", "st"]).nointro(&["Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview", "Nintendo - Sufami Turbo"]).hacks(&["Nintendo - Super Nintendo Entertainment System"]).homebrew(&["Nintendo - Super Nintendo Entertainment System"]).cores(&["snes9x", "bsnes"]).wikidata(&["Q183259"]).ss(4).igdb(&[19]).launchbox(&["Super Nintendo Entertainment System"]),
-    s(3, "N64", "Nintendo 64", "Nintendo", 5, 1996, "CRC32", 0, 0, &["Nintendo - Nintendo 64"], &["n64", "z64", "v64"]).nointro(&["Nintendo - Nintendo 64", "Nintendo - Nintendo 64DD"]).hacks(&["Nintendo - Nintendo 64"]).cores(&["mupen64plus_next", "parallel_n64"]).wikidata(&["Q184839"]).ss(14).igdb(&[4]).launchbox(&["Nintendo 64"]),
-    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]).redump(&["gc", "gc-bios"]).homebrew(&["Nintendo - GameCube"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q182172"]).ss(13).igdb(&[21]).launchbox(&["Nintendo GameCube"]),
-    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]).redump(&["wii"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q8079"]).ss(16).igdb(&[5]).launchbox(&["Nintendo Wii"]),
-    s(6, "Game Boy", "Nintendo Game Boy", "Nintendo", 4, 1989, "CRC32", 0, 1, &["Nintendo - Game Boy"], &["gb", "sgb"]).nointro(&["Nintendo - Game Boy"]).hacks(&["Nintendo - Game Boy"]).homebrew(&["Nintendo - Game Boy"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q186437"]).ss(9).igdb(&[33]).launchbox(&["Nintendo Game Boy"]),
-    s(7, "Game Boy Color", "Nintendo Game Boy Color", "Nintendo", 5, 1998, "CRC32", 0, 1, &["Nintendo - Game Boy Color"], &["gbc"]).nointro(&["Nintendo - Game Boy Color"]).hacks(&["Nintendo - Game Boy Color"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q203992"]).ss(10).igdb(&[22]).launchbox(&["Nintendo Game Boy Color"]),
-    s(8, "Game Boy Advance", "Nintendo Game Boy Advance", "Nintendo", 6, 2001, "CRC32", 0, 1, &["Nintendo - Game Boy Advance"], &["gba", "agb"]).nointro(&["Nintendo - Game Boy Advance", "Nintendo - e-Reader"]).hacks(&["Nintendo - Game Boy Advance"]).homebrew(&["Nintendo - Game Boy Advance"]).cores(&["mgba", "vbam"]).emulators(&["mgba"]).wikidata(&["Q188642"]).ss(12).igdb(&[24]).launchbox(&["Nintendo Game Boy Advance"]),
-    s(9, "Nintendo DS", "Nintendo DS", "Nintendo", 7, 2004, "CRC32", 0, 1, &["Nintendo - Nintendo DS"], &["nds", "dsi"]).nointro(&["Nintendo - Nintendo DS", "Nintendo - Nintendo DSi", "Nintendo - Nintendo DS (Download Play)"]).hacks(&["Nintendo - Nintendo DS"]).cores(&["melonds", "desmume"]).emulators(&["melonds"]).wikidata(&["Q170323"]).ss(15).igdb(&[20]).launchbox(&["Nintendo DS"]),
-    s(10, "Genesis", "Sega Genesis / Mega Drive", "Sega", 4, 1988, "CRC32", 0, 0, &["Sega - Mega Drive - Genesis"], &["md", "gen", "smd", "bin"]).nointro(&["Sega - Mega Drive - Genesis"]).hacks(&["Sega - Mega Drive - Genesis"]).homebrew(&["Sega - Mega Drive - Genesis"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q10676"]).ss(1).igdb(&[29]).launchbox(&["Sega Genesis"]),
+    s(2, "SNES", "Super Nintendo Entertainment System", "Nintendo", 4, 1990, "CRC32", 0, 0, &["Nintendo - Super Nintendo Entertainment System"], &["sfc", "smc", "swc", "fig", "bs", "st"]).nointro(&["Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview", "Nintendo - Sufami Turbo"]).hacks(&["Nintendo - Super Nintendo Entertainment System"]).homebrew(&["Nintendo - Super Nintendo Entertainment System"]).cores(&["snes9x", "bsnes"]).wikidata(&["Q183259"]).ss(4).igdb(&[19]).launchbox(&["Super Nintendo Entertainment System"]).ident(&["snes"]),
+    s(3, "N64", "Nintendo 64", "Nintendo", 5, 1996, "CRC32", 0, 0, &["Nintendo - Nintendo 64"], &["n64", "z64", "v64"]).nointro(&["Nintendo - Nintendo 64", "Nintendo - Nintendo 64DD"]).hacks(&["Nintendo - Nintendo 64"]).cores(&["mupen64plus_next", "parallel_n64"]).wikidata(&["Q184839"]).ss(14).igdb(&[4]).launchbox(&["Nintendo 64"]).ident(&["n64"]),
+    s(4, "GameCube", "Nintendo GameCube", "Nintendo", 6, 2001, "MD5", 1, 0, &[], &["iso", "gcm", "gcz", "rvz", "ciso"]).redump(&["gc", "gc-bios"]).homebrew(&["Nintendo - GameCube"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q182172"]).ss(13).igdb(&[21]).launchbox(&["Nintendo GameCube"]).ident(&["gc"]),
+    s(5, "Wii", "Nintendo Wii", "Nintendo", 7, 2006, "MD5", 1, 0, &[], &["iso", "wbfs", "rvz", "wia"]).redump(&["wii"]).cores(&["dolphin"]).emulators(&["dolphin"]).wikidata(&["Q8079"]).ss(16).igdb(&[5]).launchbox(&["Nintendo Wii"]).ident(&["wii"]),
+    s(6, "Game Boy", "Nintendo Game Boy", "Nintendo", 4, 1989, "CRC32", 0, 1, &["Nintendo - Game Boy"], &["gb", "sgb"]).nointro(&["Nintendo - Game Boy"]).hacks(&["Nintendo - Game Boy"]).homebrew(&["Nintendo - Game Boy"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q186437"]).ss(9).igdb(&[33]).launchbox(&["Nintendo Game Boy"]).ident(&["gb"]),
+    s(7, "Game Boy Color", "Nintendo Game Boy Color", "Nintendo", 5, 1998, "CRC32", 0, 1, &["Nintendo - Game Boy Color"], &["gbc"]).nointro(&["Nintendo - Game Boy Color"]).hacks(&["Nintendo - Game Boy Color"]).cores(&["gambatte", "sameboy", "mgba"]).emulators(&["mgba"]).wikidata(&["Q203992"]).ss(10).igdb(&[22]).launchbox(&["Nintendo Game Boy Color"]).ident(&["gb"]),
+    s(8, "Game Boy Advance", "Nintendo Game Boy Advance", "Nintendo", 6, 2001, "CRC32", 0, 1, &["Nintendo - Game Boy Advance"], &["gba", "agb"]).nointro(&["Nintendo - Game Boy Advance", "Nintendo - e-Reader"]).hacks(&["Nintendo - Game Boy Advance"]).homebrew(&["Nintendo - Game Boy Advance"]).cores(&["mgba", "vbam"]).emulators(&["mgba"]).wikidata(&["Q188642"]).ss(12).igdb(&[24]).launchbox(&["Nintendo Game Boy Advance"]).ident(&["gba"]),
+    s(9, "Nintendo DS", "Nintendo DS", "Nintendo", 7, 2004, "CRC32", 0, 1, &["Nintendo - Nintendo DS"], &["nds", "dsi"]).nointro(&["Nintendo - Nintendo DS", "Nintendo - Nintendo DSi", "Nintendo - Nintendo DS (Download Play)"]).hacks(&["Nintendo - Nintendo DS"]).cores(&["melonds", "desmume"]).emulators(&["melonds"]).wikidata(&["Q170323"]).ss(15).igdb(&[20]).launchbox(&["Nintendo DS"]).ident(&["nds"]),
+    s(10, "Genesis", "Sega Genesis / Mega Drive", "Sega", 4, 1988, "CRC32", 0, 0, &["Sega - Mega Drive - Genesis"], &["md", "gen", "smd", "bin"]).nointro(&["Sega - Mega Drive - Genesis"]).hacks(&["Sega - Mega Drive - Genesis"]).homebrew(&["Sega - Mega Drive - Genesis"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q10676"]).ss(1).igdb(&[29]).launchbox(&["Sega Genesis"]).ident(&["md"]),
     s(11, "Master System", "Sega Master System", "Sega", 3, 1985, "CRC32", 0, 0, &["Sega - Master System - Mark III"], &["sms"]).nointro(&["Sega - Master System - Mark III"]).hacks(&["Sega - Master System - Mark III"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q209868"]).ss(2).igdb(&[64]).launchbox(&["Sega Master System"]),
-    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]).redump(&["ss"]).hacks(&["Sega - Saturn"]).cores(&["mednafen_saturn", "yabause"]).emulators(&["mednafen"]).wikidata(&["Q200912"]).ss(22).igdb(&[32]).launchbox(&["Sega Saturn"]),
-    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]).redump(&["dc"]).homebrew(&["Sega - Dreamcast"]).cores(&["flycast"]).emulators(&["flycast"]).wikidata(&["Q184198"]).ss(23).igdb(&[23]).launchbox(&["Sega Dreamcast"]),
-    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]).redump(&["psx", "psx-bios"]).hacks(&["Sony - PlayStation"]).cores(&["mednafen_psx_hw", "swanstation", "pcsx_rearmed"]).emulators(&["duckstation"]).wikidata(&["Q10677"]).ss(57).igdb(&[7]).launchbox(&["Sony Playstation"]),
-    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]).redump(&["ps2", "ps2-bios"]).hacks(&["Sony - PlayStation 2"]).cores(&["pcsx2"]).emulators(&["pcsx2"]).wikidata(&["Q10680"]).ss(58).igdb(&[8]).launchbox(&["Sony Playstation 2"]),
-    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]).redump(&["psp"]).nointro(&["Sony - PlayStation Portable", "Sony - PlayStation Portable (PSN)"]).hacks(&["Sony - PlayStation Portable"]).cores(&["ppsspp"]).emulators(&["ppsspp"]).wikidata(&["Q170325"]).ss(61).igdb(&[38]).launchbox(&["Sony PSP"]),
+    s(12, "Saturn", "Sega Saturn", "Sega", 5, 1994, "MD5", 1, 0, &["Sega - Saturn"], &["cue", "bin", "iso", "chd", "ccd", "img", "mds"]).redump(&["ss"]).hacks(&["Sega - Saturn"]).cores(&["mednafen_saturn", "yabause"]).emulators(&["mednafen"]).wikidata(&["Q200912"]).ss(22).igdb(&[32]).launchbox(&["Sega Saturn"]).ident(&["saturn"]),
+    s(13, "Dreamcast", "Sega Dreamcast", "Sega", 6, 1998, "MD5", 1, 0, &["Sega - Dreamcast"], &["gdi", "cdi", "chd"]).redump(&["dc"]).homebrew(&["Sega - Dreamcast"]).cores(&["flycast"]).emulators(&["flycast"]).wikidata(&["Q184198"]).ss(23).igdb(&[23]).launchbox(&["Sega Dreamcast"]).ident(&["dc"]),
+    s(14, "PlayStation", "Sony PlayStation", "Sony", 5, 1994, "MD5", 1, 0, &["Sony - PlayStation"], &["cue", "bin", "iso", "chd", "img", "pbp"]).redump(&["psx", "psx-bios"]).hacks(&["Sony - PlayStation"]).cores(&["mednafen_psx_hw", "swanstation", "pcsx_rearmed"]).emulators(&["duckstation"]).wikidata(&["Q10677"]).ss(57).igdb(&[7]).launchbox(&["Sony Playstation"]).ident(&["ps1"]),
+    s(15, "PlayStation 2", "Sony PlayStation 2", "Sony", 6, 2000, "MD5", 1, 0, &["Sony - PlayStation 2"], &["iso", "chd", "bin", "cue"]).redump(&["ps2", "ps2-bios"]).hacks(&["Sony - PlayStation 2"]).cores(&["pcsx2"]).emulators(&["pcsx2"]).wikidata(&["Q10680"]).ss(58).igdb(&[8]).launchbox(&["Sony Playstation 2"]).ident(&["ps2"]),
+    s(16, "PSP", "PlayStation Portable", "Sony", 7, 2004, "MD5", 1, 1, &["Sony - PlayStation Portable"], &["iso", "cso", "pbp"]).redump(&["psp"]).nointro(&["Sony - PlayStation Portable", "Sony - PlayStation Portable (PSN)"]).hacks(&["Sony - PlayStation Portable"]).cores(&["ppsspp"]).emulators(&["ppsspp"]).wikidata(&["Q170325"]).ss(61).igdb(&[38]).launchbox(&["Sony PSP"]).ident(&["psp"]),
     s(17, "Atari 2600", "Atari 2600", "Atari", 2, 1977, "CRC32", 0, 0, &["Atari - Atari 2600", "Atari - 2600"], &["a26", "bin"]).nointro(&["Atari - 2600"]).cores(&["stella"]).wikidata(&["Q206261"]).ss(26).igdb(&[59]).launchbox(&["Atari 2600"]),
     s(18, "Atari 7800", "Atari 7800 ProSystem", "Atari", 3, 1986, "CRC32", 0, 0, &["Atari - Atari 7800", "Atari - 7800"], &["a78", "bin"]).nointro(&["Atari - 7800"]).cores(&["prosystem"]).wikidata(&["Q753600"]).ss(41).igdb(&[60]).launchbox(&["Atari 7800"]),
     s(19, "Lynx", "Atari Lynx", "Atari", 4, 1989, "CRC32", 0, 1, &["Atari - Atari Lynx", "Atari - Lynx"], &["lnx", "lyx", "o"]).nointro(&["Atari - Lynx"]).cores(&["handy", "mednafen_lynx"]).ss(28).igdb(&[61]).launchbox(&["Atari Lynx"]),
     s(20, "TurboGrafx-16", "TurboGrafx-16 / PC Engine", "NEC", 4, 1987, "CRC32", 0, 0, &["NEC - PC Engine - TurboGrafx-16"], &["pce"]).nointro(&["NEC - PC Engine - TurboGrafx 16"]).hacks(&["NEC - PC Engine - TurboGrafx 16"]).cores(&["mednafen_pce_fast", "mednafen_pce"]).wikidata(&["Q1057377"]).ss(31).igdb(&[86]).launchbox(&["NEC TurboGrafx-16"]),
     s(21, "TurboGrafx-CD", "TurboGrafx-CD / PC Engine CD", "NEC", 4, 1988, "MD5", 1, 0, &["NEC - PC Engine CD & TurboGrafx CD"], &["cue", "bin", "chd"]).redump(&["pce"]).cores(&["mednafen_pce", "mednafen_pce_fast"]).launchbox(&["NEC TurboGrafx-CD"]),
     s(22, "Neo Geo", "SNK Neo Geo", "SNK", 4, 1990, "CRC32", 0, 0, &[], &["neo"]).tosec(&["SNK Neo-Geo"]).cores(&["fbneo"]).wikidata(&["Q1054350"]).launchbox(&["SNK Neo Geo AES", "SNK Neo Geo MVS"]),
-    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]).redump(&["mcd"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q1047516"]).ss(20).igdb(&[78]).launchbox(&["Sega CD"]),
+    s(23, "Sega CD", "Sega CD / Mega CD", "Sega", 4, 1991, "MD5", 1, 0, &["Sega - Mega-CD - Sega CD"], &["cue", "bin", "chd", "iso"]).redump(&["mcd"]).cores(&["genesis_plus_gx", "picodrive"]).wikidata(&["Q1047516"]).ss(20).igdb(&[78]).launchbox(&["Sega CD"]).ident(&["segacd"]),
     s(24, "Game Gear", "Sega Game Gear", "Sega", 4, 1990, "CRC32", 0, 1, &["Sega - Game Gear"], &["gg"]).nointro(&["Sega - Game Gear"]).hacks(&["Sega - Game Gear"]).cores(&["genesis_plus_gx"]).wikidata(&["Q751719"]).ss(21).igdb(&[35]).launchbox(&["Sega Game Gear"]),
-    s(25, "Sega 32X", "Sega 32X", "Sega", 5, 1994, "CRC32", 0, 0, &["Sega - 32X"], &["32x"]).nointro(&["Sega - 32X"]).hacks(&["Sega - 32x"]).cores(&["picodrive"]).wikidata(&["Q1063978"]).ss(19).igdb(&[30]).launchbox(&["Sega 32X"]),
+    s(25, "Sega 32X", "Sega 32X", "Sega", 5, 1994, "CRC32", 0, 0, &["Sega - 32X"], &["32x"]).nointro(&["Sega - 32X"]).hacks(&["Sega - 32x"]).cores(&["picodrive"]).wikidata(&["Q1063978"]).ss(19).igdb(&[30]).launchbox(&["Sega 32X"]).ident(&["md"]),
     s(26, "Atari Jaguar", "Atari Jaguar", "Atari", 5, 1993, "CRC32", 0, 0, &["Atari - Atari Jaguar", "Atari - Jaguar"], &["j64", "jag", "rom", "abs", "cof"]).nointro(&["Atari - Jaguar"]).cores(&["virtualjaguar"]).wikidata(&["Q650601"]).ss(27).igdb(&[62]).launchbox(&["Atari Jaguar"]),
     s(27, "Neo Geo Pocket", "Neo Geo Pocket / Color", "SNK", 5, 1998, "CRC32", 0, 1, &["SNK - NeoGeo Pocket", "SNK - NeoGeo Pocket Color"], &["ngp", "ngc"]).nointro(&["SNK - Neo Geo Pocket", "SNK - Neo Geo Pocket Color"]).hacks(&["SNK - Neo Geo Pocket Color"]).cores(&["mednafen_ngp"]).ss(25).igdb(&[119]).launchbox(&["SNK Neo Geo Pocket", "SNK Neo Geo Pocket Color"]),
     s(28, "WonderSwan", "Bandai WonderSwan / Color", "Bandai", 5, 1999, "CRC32", 0, 1, &["Bandai - WonderSwan", "Bandai - WonderSwan Color"], &["ws", "wsc"]).nointro(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).hacks(&["Bandai - WonderSwan", "Bandai - WonderSwan Color"]).cores(&["mednafen_wswan"]).wikidata(&["Q1065792"]).ss(45).igdb(&[57]).launchbox(&["WonderSwan", "WonderSwan Color"]),
@@ -285,6 +295,11 @@ pub fn is_rom_extension(ext: &str) -> bool {
 
 pub fn by_id(id: i64) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.id == id)
+}
+
+/// Systems whose games carry a game ID of `kind` ("snes", "ps1", ...).
+pub fn by_ident(kind: &str) -> impl Iterator<Item = &'static System> {
+    SYSTEMS.iter().filter(move |s| s.ident.contains(&kind))
 }
 
 /// Guess a system from a DAT header name such as

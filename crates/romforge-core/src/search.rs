@@ -24,7 +24,7 @@ pub enum Need {
     Wikidata,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct QueueItem {
     pub row_id: String,
     pub title: String,
@@ -33,6 +33,9 @@ pub struct QueueItem {
     pub need: Need,
     /// For [`Need::Wikidata`]: "ambiguous" or "none".
     pub wikidata: Option<String>,
+    /// For [`Need::Identify`]: the strongest suggestion, with its evidence
+    /// (never a match).
+    pub suggestion: Option<crate::suggest::Suggestion>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -64,12 +67,15 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
         wd.insert((s, t), st);
     }
     let mut out = Vec::new();
+    let mut suggester = crate::suggest::Suggester::default();
     for r in v.rows {
         if only.is_some_and(|ids| !ids.contains(&r.id)) {
             continue;
         }
         let identified = matches!(r.status, RowStatus::Verified | RowStatus::ByYou);
         if !identified && r.status != RowStatus::Duplicate {
+            let d = view::detail(conn, &r.id)?;
+            let suggestion = suggester.suggest(conn, &d, None, None, 1)?.into_iter().next();
             out.push(QueueItem {
                 row_id: r.id.clone(),
                 title: r.title.clone(),
@@ -77,6 +83,7 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
                 status: r.status,
                 need: Need::Identify,
                 wikidata: None,
+                suggestion,
             });
         } else if let Some(system) = &r.system
             && let Some(st) = wd.get(&(system.clone(), r.title.clone()))
@@ -88,6 +95,7 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
                 status: r.status,
                 need: Need::Wikidata,
                 wikidata: Some(st.clone()),
+                suggestion: None,
             });
         }
     }
@@ -306,6 +314,12 @@ pub struct Found {
     pub score: f32,
     /// Wikidata's one-line description ("1991 video game").
     pub description: Option<String>,
+    /// DAT results: how strong a suggestion this is (never a match).
+    #[serde(default)]
+    pub band: Option<crate::suggest::Band>,
+    /// DAT results: what agrees and what doesn't.
+    #[serde(default)]
+    pub evidence: Vec<crate::suggest::Evidence>,
 }
 
 /// Search one scraper for a row. `text`: what the owner typed (the row's
@@ -325,7 +339,7 @@ pub fn find(
                 "SELECT value FROM game_meta m JOIN systems s ON s.system_id = m.system_id
                  WHERE s.key = ?1 AND m.title = ?2 AND m.field = 'releaseyear'",
             )?;
-            dat_titles(conn, &d, text, system, 30)?
+            crate::suggest::for_detail(conn, &d, text, system, 30)?
                 .into_iter()
                 .map(|t| {
                     let y: Option<String> = year
@@ -338,7 +352,9 @@ pub fn find(
                         system: Some(t.system),
                         year: y.and_then(|y| y.parse().ok()),
                         score: t.score,
-                        description: None,
+                        description: Some(t.band.label().to_owned()),
+                        band: Some(t.band),
+                        evidence: t.evidence,
                     })
                 })
                 .collect()
@@ -366,6 +382,8 @@ pub fn find(
                         title: c.label,
                         system: system.clone(),
                         description: Some("candidate found by Enrich".into()),
+                        band: None,
+                        evidence: Vec::new(),
                     });
                 }
             }
@@ -418,6 +436,8 @@ pub fn parse_entity_search(body: &[u8], text: &str, system: Option<&str>) -> Res
                 system: system.map(str::to_owned),
                 year,
                 description,
+                band: None,
+                evidence: Vec::new(),
             })
         })
         .collect())

@@ -54,6 +54,13 @@ pub struct GameRow {
     file_ids: Vec<i64>,
 }
 
+impl GameRow {
+    /// The row's files in `files`.
+    pub(crate) fn file_ids(&self) -> &[i64] {
+        &self.file_ids
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Platform {
     /// `None` for files no system could be found for.

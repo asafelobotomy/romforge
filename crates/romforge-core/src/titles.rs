@@ -175,6 +175,22 @@ pub fn score(a: &str, b: &str) -> f32 {
     score_keys(&key(a), &key(b))
 }
 
+/// Whether a cartridge header's title fits a DAT title. Headers squash
+/// spaces and cut titles short ("DRAGONQUEST3", "SUPER MARIOWORLD", 21
+/// characters at most), so the words are compared run together, the
+/// header's as a start of the DAT title's (six letters at least).
+pub fn header_fits(header: &str, title: &str) -> bool {
+    let run = |k: &TitleKey| {
+        k.main
+            .iter()
+            .chain(&k.sub)
+            .map(String::as_str)
+            .collect::<String>()
+    };
+    let (h, t) = (run(&key(header)), run(&key(title)));
+    score(header, title) >= 0.85 || (h.len() >= 6 && t.starts_with(&h))
+}
+
 /// DAT titles, keyed once, found by any shared word.
 #[derive(Debug, Default)]
 pub struct TitleIndex {
@@ -294,6 +310,31 @@ mod tests {
         );
         assert!(other_sub > 0.0 && other_sub < 0.9, "{other_sub}");
         assert_eq!(score("Super Mario World", "Donkey Kong Country"), 0.0);
+    }
+
+    #[test]
+    fn header_titles() {
+        assert!(header_fits(
+            "DRAGONQUEST3",
+            "Dragon Quest III - Soshite Densetsu e... (Japan)"
+        ));
+        assert!(header_fits("SUPER MARIOWORLD", "Super Mario World (USA)"));
+        assert!(header_fits(
+            "THE LEGEND OF ZELDA",
+            "Legend of Zelda, The - A Link to the Past (USA)"
+        ));
+        assert!(header_fits(
+            "SUPER EMPIRE STRIKES",
+            "Super Empire Strikes Back (Japan)"
+        ));
+        // The real header of Return of the Jedi: both its words are there.
+        assert!(header_fits(
+            "SUPER JEDI",
+            "Super Star Wars - Return of the Jedi (USA)"
+        ));
+        assert!(!header_fits("SUPER JEDI", "Super Mario World (USA)"));
+        assert!(!header_fits("DRAGONQUEST3", "Dragon Quest I & II (Japan)"));
+        assert!(!header_fits("MARIO", "Mario Paint (USA)"), "too short to tell");
     }
 
     #[test]

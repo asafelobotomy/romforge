@@ -400,6 +400,35 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        - *Unknown*.
 
        Confirming a suggestion makes it "identified by you".
+
+       *(Built 2026-10-18.)* `suggest.rs` gathers candidates for a row
+       from three places:
+       - CRC32-only hits;
+       - DAT games whose serial carries the file's header ID (exact, or a
+         4-letter code inside the serial);
+       - titles alike to the file name or the header title, on the row's
+         systems (its own; else the ID's kind via the new `ident` column
+         in `systems.rs`, then the extension).
+
+       Each candidate is weighed on name, header title (compared run
+       together and as a prefix, since headers squash and cut titles),
+       size, CRC, serial, region (header or name) and hash. The bands:
+       - *Likely: CRC match*: CRC and size agree;
+       - *Likely: modified copy*: same size, and the name or serial agrees;
+       - *Suggested: name match*: the name scores 0.9 or more, or the
+         serial agrees with a fitting name or header title;
+       - *Possible: similar name*: anything weaker that still shares a
+         name or serial.
+
+       Search's DAT results now come from it, with a band and a list of
+       evidence (+/−) in the dialog; the queue (CLI and app) shows each
+       unknown file's top suggestion. A `Suggester` keeps each set of
+       systems' title index across rows (the queue takes about 0.6 s on
+       the real library). On the real library the fan translation shows:
+       *Suggested: Dragon Quest III - Soshite Densetsu e... (Japan)*, with
+       + the same title (subtitle missing), + header title DRAGONQUEST3,
+       + header code AQ3J in its serial SHVC-AQ3J-JPN, + region Japan,
+       − 6 MiB vs 4 MiB, − no SHA1/MD5 match.
     7. *Hacks and translations* (medium). Strip patch tags ("(English
        v2.0)[Addendum]", `[T+Eng]`, `[tr en]`, `(Hack)`), match the base
        title, and label the file "translation of X" or "hack of X": a

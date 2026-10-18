@@ -528,6 +528,13 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_has_a_system() {
+        for k in KINDS {
+            assert!(crate::systems::by_ident(k).next().is_some(), "{k} has no system");
+        }
+    }
+
+    #[test]
     fn plain_data_has_no_id() {
         assert_eq!(read(&[0x5Au8; 4096]), None);
         assert_eq!(read(&[]), None);

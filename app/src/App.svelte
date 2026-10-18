@@ -777,11 +777,11 @@
                 <span class="ctitle" title={r.title}>{r.title}</span>
                 <span>{r.year ?? ""}</span>
                 <span class="sys">{r.system ?? ""}</span>
-                <span class="sys">{r.scraper === "wikidata" ? r.id : ""}</span>
+                <span class="sys" title={r.band ? `${r.description}: never counted as verified` : ""}>{r.scraper === "wikidata" ? r.id : (r.description?.split(":")[0] ?? "")}</span>
                 <span class="score">{Math.round(r.score * 100)}%</span>
               </div>
             {:else}
-              <p class="hint empty">{searching ? "Searching…" : scraper === "dat" ? "No DAT title shares a word with it." : "Wikidata knows nothing by that name."}</p>
+              <p class="hint empty">{searching ? "Searching…" : scraper === "dat" ? "No DAT game fits it: not by name, header, serial or CRC." : "Wikidata knows nothing by that name."}</p>
             {/each}
           </div>
           <div class="sposter">
@@ -791,6 +791,12 @@
             {#if chosen}
               <h3 class="sub">{chosen.title}{chosen.year ? ` (${chosen.year})` : ""}</h3>
               {#if preview?.system_name}<p class="meta">{preview.system_name}</p>{/if}
+              {#if chosen.evidence?.length}
+                <p class="meta">{chosen.description} (a suggestion, never verified)</p>
+                <ul class="evidence">
+                  {#each chosen.evidence as e}<li class:agrees={e.agrees}><span aria-hidden="true">{e.agrees ? "+" : "−"}</span> {e.text}</li>{/each}
+                </ul>
+              {/if}
               {#if preview?.description}<p class="desc">{preview.description}</p>{/if}
               {#if preview?.facts?.length}
                 <dl class="facts">
@@ -1418,6 +1424,9 @@
   .choices li { display: flex; gap: 0.6rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid var(--line); }
   .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .score { width: 2.6rem; color: var(--muted); font-size: 0.8rem; text-align: right; }
+  .evidence { list-style: none; padding: 0; margin: 0.2rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); }
+  .evidence li.agrees { color: inherit; }
+  .evidence span { display: inline-block; width: 1em; }
   .pick select { max-width: 14rem; }
   .badge.by_you, .ind.by_you { color: var(--accent); }
 </style>

@@ -974,6 +974,9 @@ fn main() -> Result<()> {
                     item.system.as_deref().unwrap_or("-"),
                     item.title
                 );
+                if let Some(s) = &item.suggestion {
+                    println!("{:<20} {}: {} [{}]", "", s.band.label(), s.title, s.system);
+                }
             }
             println!("{} need you", q.len());
         }
@@ -1010,6 +1013,9 @@ fn main() -> Result<()> {
                     f.title,
                     f.description.map(|d| format!("  ({d})")).unwrap_or_default()
                 );
+                for e in &f.evidence {
+                    println!("{:>33} {}", if e.agrees { "+" } else { "-" }, e.text);
+                }
             }
         }
         Command::Search(SearchCommand::Name { row, system, title }) => {
