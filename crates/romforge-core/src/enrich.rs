@@ -22,6 +22,10 @@ use crate::{Error, dat, fetch, systems};
 
 pub const THUMBNAILS_BASE: &str = "https://thumbnails.libretro.com";
 
+/// The game's name in libretro's database, kept when it differs from the
+/// DAT's (matched by CRC): libretro's thumbnails are named by it.
+pub const LIBRETRO_NAME: &str = "libretro_name";
+
 /// The metadata files fetched per system.
 pub const FIELDS: &[&str] = &[
     "genre",
@@ -363,7 +367,13 @@ pub fn enrich(
                         .get(game.as_str())
                         .or_else(|| crcs.iter().find_map(|c| by_crc.get(c.as_str())));
                     if let Some(rec) = rec {
-                        found.entry(game).or_default().extend(rec.fields.iter().cloned());
+                        let f = found.entry(game).or_default();
+                        f.extend(rec.fields.iter().cloned());
+                        // Found by CRC under another name (No-Intro renamed
+                        // it since): libretro's thumbnails go by that name.
+                        if let Some(t) = rec.title.as_deref().filter(|t| *t != game.as_str()) {
+                            f.push((LIBRETRO_NAME.to_owned(), t.to_owned()));
+                        }
                     }
                 }
             }
@@ -406,6 +416,14 @@ pub fn enrich(
         // Art: libretro first (house rule 10, tier 1); the keyed sources
         // fill what it doesn't have.
         for (game, _) in games {
+            let lr_game: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
+                    params![system_id, game, LIBRETRO_NAME],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let lr_game = lr_game.as_deref().unwrap_or(game);
             let mut missing: Vec<ArtKind> = Vec::new();
             for &kind in &opts.art {
                 let known: Option<Option<String>> = conn
@@ -421,7 +439,7 @@ pub fn enrich(
                     continue;
                 }
                 // libretro has no such kind, or didn't have this one before.
-                let Some(url) = thumbnail_url(&opts.thumbnails_base, lr_name, kind, game)
+                let Some(url) = thumbnail_url(&opts.thumbnails_base, lr_name, kind, lr_game)
                     .filter(|_| opts.refresh || !matches!(known, Some(None)))
                 else {
                     missing.push(kind);

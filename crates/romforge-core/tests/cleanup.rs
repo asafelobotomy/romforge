@@ -292,3 +292,100 @@ fn cleanup_needs_a_source_folder() {
     let lib = Library::open_in_memory().unwrap();
     assert!(lib.cleanup_plan(None).is_err());
 }
+
+/// Pregaps stored in a CHD, by track.
+fn chd_pregaps(path: &Path) -> Vec<u64> {
+    let mut chd = chd::Chd::open(std::io::BufReader::new(std::fs::File::open(path).unwrap()), None).unwrap();
+    let refs: Vec<_> = chd.metadata_refs().collect::<Result<_, _>>().unwrap();
+    let mut out = Vec::new();
+    for r in refs {
+        let m = r.read(chd.inner()).unwrap();
+        if let Some(t) = romforge_core::disc::parse_track(&String::from_utf8_lossy(&m.value)) {
+            out.push(t.pregap);
+        }
+    }
+    out
+}
+
+/// A zip of two tracks and a cue sheet that isn't Redump's (rewritten with
+/// CRLF, as some packs do). The cue that names exactly the tracks gives its
+/// pregaps to the CHD and the zip goes; one that doesn't keeps the zip.
+#[test]
+fn a_cue_that_isnt_the_dats_counts_when_it_names_the_tracks() {
+    let mut data = pattern(1, 6 * 2352);
+    data[..12].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0]);
+    data[15] = 2;
+    let audio = pattern(2, 155 * 2352);
+    let redump = "FILE \"Game (USA) (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"Game (USA) (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n";
+    let fits = redump.replace('\n', "\r\n");
+    let other = fits.replace("Game (USA) (Track 2)", "Something Else");
+    for (cue, taken) in [(fits.as_str(), true), (other.as_str(), false)] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let library = dir.path().join("library");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        let zip_path = source.join("Game (USA).zip");
+        {
+            use std::io::Write as _;
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+            for (name, d) in [
+                ("Game (USA) (Track 1).bin", &data[..]),
+                ("Game (USA) (Track 2).bin", &audio[..]),
+                ("Game (USA).cue", cue.as_bytes()),
+            ] {
+                z.start_file(name, zip::write::SimpleFileOptions::default())
+                    .unwrap();
+                z.write_all(d).unwrap();
+            }
+            z.finish().unwrap();
+        }
+        let h = |d: &[u8]| hash_stream(d, d.len() as u64).unwrap().raw;
+        let rom = |name: &str, d: &[u8]| {
+            let x = h(d);
+            format!(
+                r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
+                x.size, x.crc32, x.md5, x.sha1
+            )
+        };
+        let dat = dir.path().join("psx.dat");
+        std::fs::write(
+            &dat,
+            format!(
+                r#"<datafile><header><name>Sony - PlayStation</name></header><game name="Game (USA)">{}{}{}</game></datafile>"#,
+                rom("Game (USA) (Track 1).bin", &data),
+                rom("Game (USA) (Track 2).bin", &audio),
+                rom("Game (USA).cue", redump.as_bytes()),
+            ),
+        )
+        .unwrap();
+        let mut lib = Library::open_in_memory().unwrap();
+        lib.import_dat(&dat, None).unwrap();
+        lib.save_settings(&Settings {
+            source_dir: Some(source.clone()),
+            library_dir: Some(library.clone()),
+            staging_dir: Some(dir.path().join("staging")),
+            ..Settings::default()
+        })
+        .unwrap();
+        lib.scan(&source, Scope::All).unwrap();
+        let (source, library) = (source.canonicalize().unwrap(), library.canonicalize().unwrap());
+
+        let plan = lib.cleanup_plan(None).unwrap();
+        assert_eq!(plan.items.len(), 1, "{plan:?}");
+        let item = &plan.items[0];
+        assert_eq!(item.parts.len(), 2, "the cue isn't the DAT's");
+        assert_eq!(
+            item.sheet.as_ref().map(|s| s.member.as_str()),
+            Some("Game (USA).cue")
+        );
+        assert_eq!(item.trash, [source.join("Game (USA).zip")], "{item:?}");
+        let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+        assert!(report.failed.is_empty(), "{:?}", report.failed);
+
+        let chd = library.join("PlayStation/Game (USA).chd");
+        assert_eq!(chd_pregaps(&chd), if taken { [0, 150] } else { [0, 0] });
+        assert_eq!(report.trashed, taken as usize);
+        assert_eq!(source.join("Game (USA).zip").exists(), !taken, "cue {taken}");
+    }
+}

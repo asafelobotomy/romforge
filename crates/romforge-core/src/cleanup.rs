@@ -79,6 +79,10 @@ pub struct Item {
     /// Other copies of the same ROMs in the Source: redundant once the game
     /// is written, so trashed along with the originals.
     pub copies: Vec<Part>,
+    /// A cue sheet that isn't the DAT's, beside the tracks (same archive or
+    /// folder). Its pregaps go into the CHD, so it counts as taken; if it
+    /// turns out not to name exactly the tracks, its file stays.
+    pub sheet: Option<Part>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -177,6 +181,11 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
                 .push((row.title.clone(), "another game has the same name".into()));
             continue;
         }
+        let sheet = if format == Format::ChdCd && tracks.len() == parts.len() {
+            loose_cue(conn, &parts)?
+        } else {
+            None
+        };
         items.push(Item {
             row_id: row.id.clone(),
             title: row.title.clone(),
@@ -188,6 +197,7 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
             trash: Vec::new(),
             kept: Vec::new(),
             copies,
+            sheet,
         });
     }
 
@@ -195,12 +205,18 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
     // (an archive's own member list decides, not just what was scanned).
     let mut used: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
     for it in &items {
-        for p in it.parts.iter().chain(&it.copies) {
+        for p in it.parts.iter().chain(&it.copies).chain(&it.sheet) {
             used.entry(p.path.clone()).or_default().insert(p.member.clone());
         }
     }
     for it in &mut items {
-        let paths: BTreeSet<&PathBuf> = it.parts.iter().chain(&it.copies).map(|p| &p.path).collect();
+        let paths: BTreeSet<&PathBuf> = it
+            .parts
+            .iter()
+            .chain(&it.copies)
+            .chain(&it.sheet)
+            .map(|p| &p.path)
+            .collect();
         for p in paths {
             if !in_source(p) {
                 continue;
@@ -583,7 +599,8 @@ fn cue_pregaps(cue: &str) -> Vec<u64> {
     out
 }
 
-fn write_chd(item: &Item, conn: &Connection, staging: &Path, out: &Path) -> Result<(), Error> {
+/// Whether [`Item::sheet`] was taken into the CHD.
+fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool, Error> {
     use chd::metadata::KnownMetadata;
     use chd::write::{ChdWriteOptions, ChdWriter};
     let cerr = |e: chd::Error| Error::Chd(format!("{}: {e}", out.display()));
@@ -593,6 +610,7 @@ fn write_chd(item: &Item, conn: &Connection, staging: &Path, out: &Path) -> Resu
         .filter(|p| !p.name.to_lowercase().ends_with(".cue"))
         .collect();
     let file = File::create_new(out)?;
+    let mut took_sheet = false;
     if item.format == Format::ChdDvd {
         let p = tracks[0];
         let opts = ChdWriteOptions::dvd().logical_bytes(p.size);
@@ -601,9 +619,9 @@ fn write_chd(item: &Item, conn: &Connection, staging: &Path, out: &Path) -> Resu
         w.finish().map_err(cerr)?.sync_all()?;
     } else {
         // Pregaps from the game's own cue sheet when there is one.
-        let pregaps = own_cue(conn, item, staging)
-            .map(|c| cue_pregaps(&c))
-            .unwrap_or_default();
+        let (cue, took) = own_cue(item, staging);
+        took_sheet = took;
+        let pregaps = cue.map(|c| cue_pregaps(&c)).unwrap_or_default();
         let mut w = ChdWriter::new(file, ChdWriteOptions::cd()).map_err(cerr)?;
         let mut meta = Vec::new();
         for (i, p) in tracks.iter().enumerate() {
@@ -669,12 +687,48 @@ fn write_chd(item: &Item, conn: &Connection, staging: &Path, out: &Path) -> Resu
             )));
         }
     }
-    Ok(())
+    Ok(took_sheet)
 }
 
-/// The game's own cue sheet: one among its parts, else a `.cue` in the
-/// same archive or folder whose FILE lines name exactly its tracks.
-fn own_cue(conn: &Connection, item: &Item, staging: &Path) -> Option<String> {
+/// The one `.cue` in the same archive or folder as a disc's tracks, when
+/// the DAT's cue wasn't found ([`Item::sheet`]).
+fn loose_cue(conn: &Connection, parts: &[Part]) -> Result<Option<Part>, Error> {
+    let Some(first) = parts.first() else {
+        return Ok(None);
+    };
+    let dir = first
+        .path
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_string_lossy()
+        .into_owned();
+    let found: Vec<Part> = conn
+        .prepare(
+            "SELECT path, member, size, sha1 FROM files WHERE path = ?1 AND lower(member) LIKE '%.cue'
+             UNION SELECT path, member, size, sha1 FROM files WHERE member = '' AND lower(path) LIKE '%.cue'
+               AND path LIKE ?2 || '/%' AND instr(substr(path, length(?2) + 2), '/') = 0",
+        )?
+        .query_map(params![first.path.to_string_lossy(), dir], |r| {
+            let (path, member): (String, String) = (r.get(0)?, r.get(1)?);
+            let n = if member.is_empty() { &path } else { &member };
+            Ok(Part {
+                name: n.rsplit('/').next().unwrap_or(n).to_owned(),
+                path: PathBuf::from(&path),
+                member,
+                size: r.get(2)?,
+                sha1: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(match <[Part; 1]>::try_from(found) {
+        Ok([one]) => Some(one),
+        Err(_) => None,
+    })
+}
+
+/// The game's own cue sheet: one among its parts, else [`Item::sheet`] when
+/// its FILE lines name exactly the tracks. `(text, the sheet was taken)`.
+fn own_cue(item: &Item, staging: &Path) -> (Option<String>, bool) {
     let read = |p: &Part| -> Option<String> {
         let mut s = String::new();
         open_part(p, staging)
@@ -689,50 +743,35 @@ fn own_cue(conn: &Connection, item: &Item, staging: &Path) -> Option<String> {
         .iter()
         .find(|p| p.name.to_lowercase().ends_with(".cue"))
     {
-        return read(p);
+        return (read(p), false);
     }
-    let first = item.parts.first()?;
-    let dir = first.path.parent()?.to_string_lossy().into_owned();
-    let tracks: Vec<String> = item
+    let Some(sheet) = &item.sheet else {
+        return (None, false);
+    };
+    let tracks: Vec<&str> = item
         .parts
         .iter()
         .map(|p| {
             let n = if p.member.is_empty() {
-                p.path.to_string_lossy().into_owned()
+                p.path.to_str().unwrap_or_default()
             } else {
-                p.member.clone()
+                &p.member
             };
-            n.rsplit('/').next().unwrap_or(&n).to_owned()
+            n.rsplit('/').next().unwrap_or(n)
         })
         .collect();
-    let mut stmt = conn
-        .prepare(
-            "SELECT path, member FROM files WHERE path = ?1 AND lower(member) LIKE '%.cue'
-             UNION SELECT path, member FROM files WHERE member = '' AND lower(path) LIKE '%.cue'
-               AND path LIKE ?2 || '/%' AND instr(substr(path, length(?2) + 2), '/') = 0",
-        )
-        .ok()?;
-    let found: Vec<(String, String)> = stmt
-        .query_map(params![first.path.to_string_lossy(), dir], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .ok()?
-        .filter_map(Result::ok)
+    let Some(text) = read(sheet) else {
+        return (None, false);
+    };
+    let names: Vec<String> = crate::disc::parse_cue(&text)
+        .into_iter()
+        .map(|f| f.name.rsplit(['/', '\\']).next().unwrap_or(&f.name).to_owned())
         .collect();
-    found.into_iter().find_map(|(path, member)| {
-        let text = read(&Part {
-            name: String::new(),
-            path: PathBuf::from(path),
-            member,
-            size: 0,
-            sha1: String::new(),
-        })?;
-        let names: Vec<String> = crate::disc::parse_cue(&text)
-            .into_iter()
-            .map(|f| f.name.rsplit(['/', '\\']).next().unwrap_or(&f.name).to_owned())
-            .collect();
-        (names == tracks).then_some(text)
-    })
+    if names == tracks {
+        (Some(text), true)
+    } else {
+        (None, false)
+    }
 }
 
 /// Carry out a plan. Each game is written next to its target, read back
@@ -759,7 +798,7 @@ pub fn apply(
     for (n, item) in plan.items.iter().enumerate() {
         progress(n, &item.title);
         let staging = staging_root.join(n.to_string());
-        let result = (|| -> Result<(), Error> {
+        let result = (|| -> Result<bool, Error> {
             if item.target.exists() {
                 return Err(Error::Cleanup(format!(
                     "{} already exists",
@@ -778,13 +817,16 @@ pub fn apply(
             let _ = std::fs::remove_file(&part);
             let extras = extras(conn, &item.row_id)?;
             let written = match item.format {
-                Format::Zip => write_zip(item, &extras, &staging, &part),
-                _ => write_chd(item, conn, &staging, &part),
+                Format::Zip => write_zip(item, &extras, &staging, &part).map(|()| false),
+                _ => write_chd(item, &staging, &part),
             };
-            if let Err(e) = written {
-                let _ = std::fs::remove_file(&part);
-                return Err(e);
-            }
+            let took_sheet = match written {
+                Ok(t) => t,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&part);
+                    return Err(e);
+                }
+            };
             // The sidecar is written to a temporary folder and renamed too.
             if let Some(side) = &item.sidecar {
                 let tmp = dir.join(format!(".{name}.romforge-side"));
@@ -810,13 +852,17 @@ pub fn apply(
             }
             std::fs::rename(&part, &item.target)?;
             journal_output(conn, batch_id, &item.target, "file")?;
-            Ok(())
+            Ok(took_sheet)
         })();
         let _ = std::fs::remove_dir_all(&staging);
         match result {
-            Ok(()) => {
+            Ok(took_sheet) => {
                 report.done += 1;
                 ok.push(item);
+                // A cue sheet that didn't fit the tracks keeps its file.
+                if let (false, Some(sheet)) = (took_sheet, &item.sheet) {
+                    failed_paths.insert(sheet.path.clone());
+                }
             }
             Err(e) => {
                 report.failed.push((item.title.clone(), e.to_string()));

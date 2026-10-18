@@ -31,11 +31,13 @@ use ureq::tls::{RootCerts, TlsConfig};
 use crate::Error;
 use crate::systems::System;
 
-/// Wikimedia's policy wants a name and a way to tell what is asking.
+/// Wikimedia's User-Agent policy: a name, a version and a contact. Without
+/// the contact, Wikimedia's edge may treat romforge as an anonymous client
+/// (in October 2026 it held those to one request a minute).
 pub const USER_AGENT: &str = concat!(
     "romforge/",
     env!("CARGO_PKG_VERSION"),
-    " (desktop ROM collection manager; ureq)"
+    " (https://github.com/asafelobotomy/romforge)"
 );
 pub const REDUMP_BASE: &str = "http://redump.org";
 pub const LIBRETRO_BASE: &str = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat";

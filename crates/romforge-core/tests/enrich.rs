@@ -113,3 +113,36 @@ fn metadata_and_art_for_games_you_have() {
     lib.enrich(&opts, |_| {}).unwrap();
     assert!(log.lock().unwrap().len() > before);
 }
+
+/// libretro found the game by CRC under another name (No-Intro renamed it
+/// since): its thumbnails go by libretro's name.
+#[test]
+fn thumbnails_by_libretros_own_name() {
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+
+    let system = "Nintendo%20-%20Game%20Boy";
+    let mut files = HashMap::new();
+    files.insert(
+        format!("/meta/genre/{system}.dat"),
+        b"game (\n\tcomment \"MD5 Only (World)\"\n\tgenre \"Racing\"\n\trom ( crc 849D60AE )\n)\n".to_vec(),
+    );
+    files.insert(
+        format!("/thumbs/{system}/Named_Boxarts/MD5%20Only%20(World).png"),
+        b"\x89PNG\r\n\x1a\nfake".to_vec(),
+    );
+    let (base, _log) = serve(files);
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    opts.metadata_base = format!("{base}/meta");
+    opts.thumbnails_base = format!("{base}/thumbs");
+    opts.art = vec![ArtKind::Boxart];
+    opts.wikidata = None;
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+    let g = &lib.game_info("MD5 Only").unwrap()[0];
+    assert_eq!(g.fields.get("genre").map(String::as_str), Some("Racing"));
+    assert!(g.art.contains_key(&ArtKind::Boxart), "{g:?}");
+}

@@ -1087,13 +1087,18 @@ fn print_cleanup(plan: &romforge_core::cleanup::CleanupPlan, verbose: bool) {
     for it in &plan.items {
         println!("  {}  <-  {} file(s)", it.target.display(), it.parts.len());
         if verbose {
-            for p in &it.parts {
-                let from = if p.member.is_empty() {
+            let from = |p: &romforge_core::cleanup::Part| {
+                if p.member.is_empty() {
                     p.path.display().to_string()
                 } else {
                     format!("{}#{}", p.path.display(), p.member)
-                };
-                println!("      {}  <-  {from}", p.name);
+                }
+            };
+            for p in &it.parts {
+                println!("      {}  <-  {}", p.name, from(p));
+            }
+            if let Some(c) = &it.sheet {
+                println!("      cue sheet (pregaps, if it names these tracks): {}", from(c));
             }
             for t in &it.trash {
                 println!("      trash: {}", t.display());

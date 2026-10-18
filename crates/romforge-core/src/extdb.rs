@@ -539,14 +539,22 @@ pub fn launchbox_lookup(
         return Ok(None);
     }
     let platforms = serde_json::to_string(system.launchbox).unwrap_or_default();
-    let ids: Vec<i64> = conn
+    let key = match_key(title);
+    let mut ids: Vec<(i64, String)> = conn
         .prepare_cached(
-            "SELECT DISTINCT g.id FROM names n JOIN games g ON g.id = n.id
+            "SELECT DISTINCT g.id, g.name FROM names n JOIN games g ON g.id = n.id
              WHERE n.key = ?1 AND g.platform IN (SELECT value FROM json_each(?2))",
         )?
-        .query_map(params![match_key(title), platforms], |r| r.get(0))?
+        .query_map(params![key, platforms], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
-    let [id] = ids.as_slice() else { return Ok(None) };
+    // A game's own name wins over another game's alternate name ("Streets
+    // of Rage" over a hack that lists it as one); still exactly one or none.
+    if ids.len() > 1 && ids.iter().any(|(_, name)| match_key(name) == key) {
+        ids.retain(|(_, name)| match_key(name) == key);
+    }
+    let [(id, _)] = ids.as_slice() else {
+        return Ok(None);
+    };
     let g: [Option<String>; 13] = conn.query_row(
         "SELECT overview, developer, publisher, genres, release_date, release_year, max_players,
                 esrb, rating, rating_count, wikipedia_url, video_url, cooperative

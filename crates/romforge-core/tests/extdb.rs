@@ -33,7 +33,8 @@ fn openvgdb_zip(dir: &Path) -> Vec<u8> {
 }
 
 /// A LaunchBox Metadata.zip: "Test GB" on Game Boy (and the same name on
-/// another platform, which must not count), with images.
+/// another platform, which must not count; and a hack that has it as an
+/// alternate name), with images.
 fn launchbox_zip() -> Vec<u8> {
     let xml = r#"<?xml version="1.0" standalone="yes"?>
 <LaunchBox>
@@ -45,8 +46,10 @@ fn launchbox_zip() -> Vec<u8> {
     <WikipediaURL>https://en.wikipedia.org/wiki/Test_GB</WikipediaURL>
     <VideoURL>https://www.youtube.com/watch?v=x</VideoURL></Game>
   <Game><Name>Test GB</Name><DatabaseID>8</DatabaseID><Platform>Arcade</Platform></Game>
+  <Game><Name>Test GB Plus</Name><DatabaseID>10</DatabaseID><Platform>Nintendo Game Boy</Platform><Overview>A hack.</Overview></Game>
   <Game><Name>Another One</Name><DatabaseID>9</DatabaseID><Platform>Microsoft Xbox Series X/S</Platform></Game>
   <GameAlternateName><AlternateName>Tesuto GB</AlternateName><DatabaseID>7</DatabaseID><Region>Japan</Region></GameAlternateName>
+  <GameAlternateName><AlternateName>Test GB</AlternateName><DatabaseID>10</DatabaseID></GameAlternateName>
   <GameImage><DatabaseID>7</DatabaseID><FileName>jp-box.png</FileName><Type>Box - Front</Type><Region>Japan</Region><CRC32>1</CRC32></GameImage>
   <GameImage><DatabaseID>7</DatabaseID><FileName>logo.png</FileName><Type>Clear Logo</Type><CRC32>2</CRC32></GameImage>
   <GameImage><DatabaseID>7</DatabaseID><FileName>fanart.png</FileName><Type>Fanart - Background</Type><CRC32>3</CRC32></GameImage>
@@ -126,7 +129,7 @@ fn download_then_fill_only_what_is_missing() {
     let o = extdb::download(ExtDb::OpenVgdb, &dir, &bases, |_| {}).unwrap();
     assert_eq!(o.entries, Some(1));
     let l = extdb::download(ExtDb::LaunchBox, &dir, &bases, |_| {}).unwrap();
-    assert_eq!(l.entries, Some(2), "only platforms romforge knows are kept");
+    assert_eq!(l.entries, Some(3), "only platforms romforge knows are kept");
     assert!(l.downloaded_at.is_some() && !dir.join("launchbox.zip").exists());
 
     let mut lib = Library::open_in_memory().unwrap();
@@ -194,6 +197,16 @@ fn launchbox_needs_exactly_one_game() {
             .iter()
             .any(|(k, u)| *k == ArtKind::Boxart && u.ends_with("jp-box.png")),
         "alternate names match too"
+    );
+    let own = extdb::launchbox_lookup(&db, gb, "Test GB (USA)", "http://img")
+        .unwrap()
+        .unwrap();
+    assert!(
+        own.fields
+            .iter()
+            .any(|(k, v)| *k == "description" && v.starts_with("From LaunchBox")),
+        "its own name wins over the hack's alternate name: {:?}",
+        own.fields
     );
     assert!(
         extdb::launchbox_lookup(&db, gb, "Nothing Like It", "http://img")
