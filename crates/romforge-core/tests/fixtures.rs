@@ -1269,6 +1269,14 @@ fn rewritten_cue_sheets_fit_their_tracks() {
     )
     .unwrap();
     let roms = dir.path().join("roms");
+    // A GDI sheet someone made for the same tracks fits as well.
+    let gdi = "2\n1 0 4 2352 \"Game (USA) (Track 1).bin\" 0\n2 600 0 2352 \"Game (USA) (Track 2).bin\" 0\n"
+        .to_owned();
+    let gdi_dir = roms.join("gdi");
+    std::fs::create_dir_all(&gdi_dir).unwrap();
+    std::fs::write(gdi_dir.join("Game (USA) (Track 1).bin"), &t1).unwrap();
+    std::fs::write(gdi_dir.join("Game (USA) (Track 2).bin"), &t2).unwrap();
+    std::fs::write(gdi_dir.join("Game (USA).gdi"), &gdi).unwrap();
     for (sub, cue) in [("folder", &rewritten), ("other", &wrong)] {
         let d = roms.join(sub);
         std::fs::create_dir_all(&d).unwrap();
@@ -1306,6 +1314,12 @@ fn rewritten_cue_sheets_fit_their_tracks() {
         [Status::Unknown],
         "it names a track the game lacks"
     );
+    let gdi_status: Vec<_> = files
+        .iter()
+        .filter(|f| f.display_path().ends_with("/gdi/Game (USA).gdi"))
+        .map(|f| f.status)
+        .collect();
+    assert_eq!(gdi_status, [Status::Sheet]);
 
     let v = lib.library_view().unwrap();
     let rows: Vec<_> = v.rows.iter().filter(|r| r.title == "Game (USA)").collect();

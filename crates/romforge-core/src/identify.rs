@@ -269,7 +269,7 @@ pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
     Ok(())
 }
 
-/// Unknown cue sheets whose FILE lines name exactly a game's tracks (in
+/// Unknown cue (or GDI) sheets whose files are exactly a game's tracks (in
 /// order), every one hash-matched in the same archive or folder: status
 /// `sheet`, with a match to the game's cue ROM (`via` = 'sheet', which
 /// never counts as had).

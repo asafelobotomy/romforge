@@ -450,3 +450,99 @@ fn compressed_images_by_id_and_size() {
     );
     assert_eq!(q[0].need, Need::Identify, "not verified");
 }
+
+/// An IPS patch (which names no source) inside a zip beside a hack: tried
+/// on your verified copy of a candidate, it gives exactly the hack, so the
+/// hack is a proven patch of that game, never verified.
+#[test]
+fn ips_applied_to_your_verified_copy() {
+    use romforge_core::suggest::Band;
+    use romforge_core::view::Relation;
+    use std::io::Write as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let base = snes_rom(b"SUPER TEST QUEST     ", b"ATQE", 1, 0x10000, 0x11);
+    let h = romforge_core::hash::hash_stream(&base[..], base.len() as u64)
+        .unwrap()
+        .raw;
+    let dat = tmp.path().join("snes.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
+  <game name="Super Test Quest (USA)"><rom name="Super Test Quest (USA).sfc" size="{}" crc="{}" md5="{}" sha1="{}"/></game>
+</datafile>"#,
+            h.size, h.crc32, h.md5, h.sha1
+        ),
+    )
+    .unwrap();
+    std::fs::write(dir.join("Super Test Quest (USA).sfc"), &base).unwrap();
+    // The hack: new bytes at 0x100, and the IPS that makes it.
+    let mut hack = base.clone();
+    hack[0x100..0x105].copy_from_slice(b"HACKD");
+    let mut ips = b"PATCH".to_vec();
+    ips.extend_from_slice(&[0x00, 0x01, 0x00, 0x00, 0x05]);
+    ips.extend_from_slice(b"HACKD");
+    ips.extend_from_slice(b"EOF");
+    {
+        let mut z = zip::ZipWriter::new(std::fs::File::create(dir.join("mystery.zip")).unwrap());
+        for (n, d) in [("mystery.sfc", &hack[..]), ("mystery.ips", &ips[..])] {
+            z.start_file(n, zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(d).unwrap();
+        }
+        z.finish().unwrap();
+    }
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+
+    let q = lib.search_queue(None).unwrap();
+    let item = q.iter().find(|i| i.title.contains("mystery")).expect("queued");
+    let s = item.suggestion.clone().expect("a suggestion");
+    assert_eq!(s.band, Band::PatchOf, "{s:?}");
+    assert_eq!(s.title, "Super Test Quest (USA)");
+    assert!(
+        s.evidence
+            .iter()
+            .any(|e| e.kind == "patch" && e.text.contains("gives exactly this file"))
+    );
+    assert_eq!(s.derived.map(|d| d.relation), Some(Relation::Hack));
+    assert_eq!(item.need, Need::Identify, "a patch of a game, not that game");
+}
+
+/// An NKit image keeps the disc header (its ID) and the original image's
+/// CRC32: with the serial agreeing, "Likely: compressed image".
+#[test]
+fn nkit_images_by_id_and_original_crc() {
+    use romforge_core::suggest::Band;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let dat = tmp.path().join("gc.dat");
+    std::fs::write(
+        &dat,
+        r#"<datafile><header><name>Nintendo - GameCube</name></header>
+  <game name="Super Smash Bros. Melee (USA) (En,Ja)"><serial>DL-DOL-GALE-USA</serial><rom name="Melee.iso" size="1459978240" crc="0a1b2c3d" md5="0123456789abcdef0123456789abcdef" sha1="0123456789abcdef0123456789abcdef01234567"/></game>
+  <game name="Other Game (USA)"><rom name="Other.iso" size="1459978240" crc="99999999" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000"/></game>
+</datafile>"#,
+    )
+    .unwrap();
+    let mut img = vec![0u8; 0x8000];
+    img[..6].copy_from_slice(b"GALE01");
+    img[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
+    img[0x20..0x37].copy_from_slice(b"Super Smash Bros. Melee");
+    img[0x200..0x208].copy_from_slice(b"NKIT v01");
+    img[0x208..0x20C].copy_from_slice(&0x0a1b_2c3du32.to_be_bytes());
+    std::fs::write(dir.join("melee.nkit.iso"), &img).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, Some("GameCube")).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let s = lib.search_queue(None).unwrap()[0]
+        .suggestion
+        .clone()
+        .expect("a suggestion");
+    assert_eq!(s.band, Band::LikelyCompressed, "{s:?}");
+    assert_eq!(s.title, "Super Smash Bros. Melee (USA) (En,Ja)");
+    assert!(s.evidence.iter().any(|e| e.kind == "nkit" && e.agrees));
+}

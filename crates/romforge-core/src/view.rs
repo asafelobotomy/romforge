@@ -707,7 +707,8 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
             .collect::<Result<_, _>>()?;
     }
     let mut stmt = conn.prepare(
-        "SELECT path, member, status, size, sha1, header_kind, id_kind, id_serial, id_title, id_region, id_size
+        "SELECT path, member, status, size, sha1, header_kind, id_kind, id_serial, id_title, id_region, id_size,
+                id_crc
              FROM files WHERE file_id = ?1",
     )?;
     let mut files = Vec::new();
@@ -731,6 +732,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
                     r.get(8)?,
                     r.get(9)?,
                     r.get(10)?,
+                    r.get(11)?,
                 ),
             })
         })?;

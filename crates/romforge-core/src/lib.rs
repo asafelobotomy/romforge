@@ -19,6 +19,7 @@ mod identify;
 pub mod launch;
 pub mod names;
 pub mod organize;
+pub mod patch;
 mod report;
 pub mod scan;
 pub mod search;
@@ -288,6 +289,56 @@ impl Library {
             .collect::<Result<_, _>>()?)
     }
 
+    /// Store a Retool clone list (JSON) for `system_key`, replacing what an
+    /// earlier list stored for those titles. Returns how many titles.
+    pub fn store_clone_list(&mut self, system_key: &str, json: &[u8]) -> Result<usize, Error> {
+        #[derive(serde::Deserialize)]
+        struct List {
+            variants: Vec<Variant>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Variant {
+            group: String,
+            /// None in a compilation-only entry (a multi-game cartridge),
+            /// which isn't one game under other names.
+            #[serde(default)]
+            titles: Vec<Title>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Title {
+            #[serde(rename = "searchTerm")]
+            search_term: String,
+            #[serde(default)]
+            priority: Option<i64>,
+            /// Regex and other special matching: skipped.
+            #[serde(default, rename = "nameType")]
+            name_type: Option<String>,
+        }
+        let system =
+            systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
+        let list: List = serde_json::from_slice(json).map_err(|e| Error::Dat(format!("clone list: {e}")))?;
+        let tx = self.conn.transaction()?;
+        let mut n = 0;
+        {
+            let mut put = tx.prepare(
+                "INSERT OR REPLACE INTO clone_groups (system_id, title, grp, priority) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for v in &list.variants {
+                for t in v.titles.iter().filter(|t| t.name_type.is_none()) {
+                    put.execute(params![
+                        system.id,
+                        organize::base_title(&t.search_term),
+                        v.group,
+                        t.priority.unwrap_or(1)
+                    ])?;
+                    n += 1;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
     /// [`Library::download_serials`] with the list already in hand.
     pub fn store_serials(&mut self, system_key: &str, list: &[u8]) -> Result<usize, Error> {
         let system =
@@ -347,6 +398,14 @@ impl Library {
     ) -> Result<Vec<ImportedDat>, Error> {
         if let fetch::Source::Serials(_) = source {
             self.download_serials(system_key, source)?;
+            return Ok(Vec::new());
+        }
+        if let fetch::Source::CloneList(..) = source {
+            if let Some(url) = source.url()
+                && let Some(body) = fetch::get_optional(&url)?
+            {
+                self.store_clone_list(system_key, &body)?;
+            }
             return Ok(Vec::new());
         }
         if let fetch::Source::Tosec(name) = source {
@@ -724,9 +783,9 @@ impl Library {
             let mut upsert = tx.prepare(
                 "INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
                                     stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at,
-                                    disk_size, mtime, id_kind, id_serial, id_title, id_region, sheet_files, id_size)
+                                    disk_size, mtime, id_kind, id_serial, id_title, id_region, sheet_files, id_size, id_crc)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
                  ON CONFLICT(path, member) DO UPDATE SET root_id = excluded.root_id, size = excluded.size,
                    crc32 = excluded.crc32, md5 = excluded.md5, sha1 = excluded.sha1,
                    header_kind = excluded.header_kind, stripped_size = excluded.stripped_size,
@@ -735,7 +794,7 @@ impl Library {
                    disk_size = excluded.disk_size, mtime = excluded.mtime,
                    id_kind = excluded.id_kind, id_serial = excluded.id_serial,
                    id_title = excluded.id_title, id_region = excluded.id_region,
-                   sheet_files = excluded.sheet_files, id_size = excluded.id_size",
+                   sheet_files = excluded.sheet_files, id_size = excluded.id_size, id_crc = excluded.id_crc",
             )?;
             let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
@@ -815,6 +874,7 @@ impl Library {
                                 h.id.as_ref().and_then(|i| i.region.as_deref()),
                                 h.sheet.as_ref().and_then(|s| serde_json::to_string(s).ok()),
                                 h.id.as_ref().and_then(|i| i.image_size),
+                                h.id.as_ref().and_then(|i| i.source_crc),
                             ])
                             .map(drop);
                         report.hashed += 1;

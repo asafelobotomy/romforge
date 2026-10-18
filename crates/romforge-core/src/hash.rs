@@ -32,19 +32,31 @@ pub struct Hashes {
     pub sheet: Option<Vec<String>>,
 }
 
-/// The FILE names of a small text file that reads as a cue sheet.
+/// The track file names of a small text file that reads as a cue sheet
+/// (FILE lines) or a GDI sheet (a track count, then one line per track).
 fn sheet_of(data: &[u8], size: u64) -> Option<Vec<String>> {
     if size > 64 * 1024 || data.contains(&0) {
         return None;
     }
     let text = String::from_utf8_lossy(data);
-    if !text
+    let cue = text
         .lines()
-        .any(|l| l.trim_start().to_ascii_uppercase().starts_with("TRACK "))
-    {
+        .any(|l| l.trim_start().to_ascii_uppercase().starts_with("TRACK "));
+    let gdi = !cue && {
+        let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+        let count: Option<usize> = lines.first().and_then(|l| l.parse().ok());
+        count.is_some_and(|n| {
+            n > 0 && lines.len() == n + 1 && lines[1..].iter().all(|l| l.split_whitespace().count() >= 6)
+        })
+    };
+    let files = if cue {
+        crate::disc::parse_cue(&text)
+    } else if gdi {
+        crate::disc::parse_gdi(&text)
+    } else {
         return None;
-    }
-    let names: Vec<String> = crate::disc::parse_cue(&text)
+    };
+    let names: Vec<String> = files
         .into_iter()
         .map(|f| f.name.rsplit(['/', '\\']).next().unwrap_or(&f.name).to_owned())
         .collect();

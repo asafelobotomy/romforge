@@ -18,6 +18,8 @@
 //! - serials: libretro-database's `metadat/serial` lists (title, serial,
 //!   CRC32) for cartridge systems, beside their No-Intro DATs. Discs get
 //!   theirs from Redump.
+//! - clone lists: Retool's (BSD-3-Clause, on GitHub), which group titles
+//!   that are one game under different names, for 1G1R.
 //!
 //! Requests to one host are spaced out ([`delay_for`]; DAT-o-MATIC's
 //! robots.txt asks for 5 s). Downloads stay in memory and are never written
@@ -82,7 +84,13 @@ pub enum Source {
     /// A file in libretro-database's `serial` folder: product codes, not a
     /// DAT ([`crate::Library::download_dat`] stores them in `serials`).
     Serials(&'static str),
+    /// Retool's clone list for a DAT name and its group ("No-Intro" or
+    /// "Redump"); stored in `clone_groups`.
+    CloneList(&'static str, &'static str),
 }
+
+pub const CLONELISTS_BASE: &str =
+    "https://raw.githubusercontent.com/unexpectedpanda/retool-clonelists-metadata/main/clonelists";
 
 impl Source {
     /// The DAT's URL; `None` for TOSEC, whose pack URL changes per release
@@ -96,6 +104,10 @@ impl Source {
             Source::Hacks(name) => Some(libretro("hacks", name)),
             Source::Homebrew(name) => Some(libretro("homebrew", name)),
             Source::Serials(name) => Some(libretro("serial", name)),
+            Source::CloneList(name, group) => Some(format!(
+                "{CLONELISTS_BASE}/{}",
+                percent_encode(&format!("{name} ({group}).json"))
+            )),
         }
     }
 
@@ -115,6 +127,7 @@ impl std::fmt::Display for Source {
             Source::Hacks(n) => write!(f, "hacks (libretro) {n}"),
             Source::Homebrew(n) => write!(f, "homebrew (libretro) {n}"),
             Source::Serials(n) => write!(f, "serials (libretro) {n}"),
+            Source::CloneList(n, g) => write!(f, "clone list (Retool) {n} ({g})"),
         }
     }
 }
@@ -133,6 +146,17 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
         .collect();
+    // Clone lists for the system's No-Intro or Redump DATs, by DAT name.
+    let group = if !system.nointro.is_empty() {
+        Some("No-Intro")
+    } else if !system.redump.is_empty() {
+        Some("Redump")
+    } else {
+        None
+    };
+    if let Some(g) = group {
+        out.extend(system.dat_names.iter().map(|n| Source::CloneList(n, g)));
+    }
     if extras {
         out.extend(system.hacks.iter().copied().map(Source::Hacks));
         out.extend(system.homebrew.iter().copied().map(Source::Homebrew));
@@ -587,10 +611,11 @@ mod tests {
             urls,
             [
                 "http://redump.org/datfile/psx/serial,version",
-                "http://redump.org/datfile/psx-bios/serial,version"
+                "http://redump.org/datfile/psx-bios/serial,version",
+                "https://raw.githubusercontent.com/unexpectedpanda/retool-clonelists-metadata/main/clonelists/Sony%20-%20PlayStation%20(Redump).json"
             ]
         );
-        assert_eq!(sources(psx, true).len(), 3, "plus the PlayStation hacks DAT");
+        assert_eq!(sources(psx, true).len(), 4, "plus the PlayStation hacks DAT");
         let gba = sources(systems::by_key("Game Boy Advance").unwrap(), false);
         assert_eq!(
             gba[0].url().unwrap(),
@@ -602,8 +627,9 @@ mod tests {
             "after both No-Intro DATs"
         );
         let c64 = sources(systems::by_key("Commodore 64").unwrap(), false);
-        assert_eq!(c64.last(), Some(&Source::Tosec("Commodore C64")));
-        assert_eq!(c64.last().unwrap().url(), None);
+        let tosec = c64.iter().find(|s| matches!(s, Source::Tosec(_))).unwrap();
+        assert_eq!(tosec, &Source::Tosec("Commodore C64"));
+        assert_eq!(tosec.url(), None);
         assert!(sources(systems::by_key("Arcade").unwrap(), true).is_empty());
     }
 

@@ -412,3 +412,61 @@ fn only_files_under_the_source_folder_move() {
             .is_err()
     );
 }
+
+/// A clone list makes titles that are one game under other names one title
+/// for 1G1R ("Aero Fighters" in the USA is "Sonic Wings" in Japan), and its
+/// priority decides between equals.
+#[test]
+fn clone_lists_join_retitled_games_for_1g1r() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("roms");
+    std::fs::create_dir(&src).unwrap();
+    let versions = [
+        "Aero Fighters (USA)",
+        "Sonic Wings (Japan)",
+        "Angelique (Japan)",
+        "Angelique - Premium Box (Japan)",
+    ];
+    let mut games = String::new();
+    for (i, name) in versions.iter().enumerate() {
+        let data = vec![i as u8 + 1; 2048];
+        games += &format!(
+            r#"<game name="{name}">{}</game>"#,
+            rom(&format!("{name}.sfc"), &data)
+        );
+        std::fs::write(src.join(format!("{i}.sfc")), &data).unwrap();
+    }
+    let dat = tmp.path().join("snes.dat");
+    std::fs::write(
+        &dat,
+        format!(r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>{games}</datafile>"#),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&src, Scope::All).unwrap();
+    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
+    opts.one_g1r = true;
+    let names = |lib: &Library| {
+        let mut v: Vec<String> = lib
+            .organize_plan(&opts)
+            .unwrap()
+            .moves
+            .into_iter()
+            .map(|m| m.game)
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(names(&lib).len(), 4, "different names: four titles");
+    let list = br#"{"description": {"name": "x"}, "variants": [
+        {"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]},
+        {"group": "Angelique - Premium Box", "titles": [{"searchTerm": "Angelique - Premium Box"}, {"searchTerm": "Angelique", "priority": 3}]}
+    ]}"#;
+    assert_eq!(lib.store_clone_list("SNES", list).unwrap(), 4);
+    assert_eq!(
+        names(&lib),
+        ["Aero Fighters (USA)", "Angelique - Premium Box (Japan)"],
+        "one per group: the best region, then the lower priority"
+    );
+}

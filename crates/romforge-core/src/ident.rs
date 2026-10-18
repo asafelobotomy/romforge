@@ -29,6 +29,10 @@ pub struct GameId {
     /// the plain image it holds, to compare with the DAT's.
     #[serde(default)]
     pub image_size: Option<u64>,
+    /// For an NKit image: the CRC32 its header gives for the original
+    /// image (the 4 bytes as stored; their byte order isn't documented).
+    #[serde(default)]
+    pub source_crc: Option<u32>,
 }
 
 impl GameId {
@@ -39,6 +43,7 @@ impl GameId {
         title: Option<String>,
         region: Option<String>,
         image_size: Option<u64>,
+        source_crc: Option<u32>,
     ) -> Option<GameId> {
         let kind = KINDS.iter().find(|k| Some(**k) == kind.as_deref())?;
         Some(GameId {
@@ -47,6 +52,7 @@ impl GameId {
             title,
             region,
             image_size,
+            source_crc,
         })
     }
 }
@@ -94,6 +100,7 @@ fn id(kind: &'static str, serial: Option<String>, title: Option<String>, region:
         title,
         region: region.map(str::to_owned),
         image_size: None,
+        source_crc: None,
     }
 }
 
@@ -193,6 +200,7 @@ fn md(p: &[u8]) -> Option<GameId> {
         title,
         region,
         image_size: None,
+        source_crc: None,
     })
 }
 
@@ -385,7 +393,15 @@ fn gamecube_wii(p: &[u8]) -> Option<GameId> {
     };
     let c = code(&h[..6]);
     let region = c.as_ref().and_then(|c| code_region(c.as_bytes()[3]));
-    Some(id(kind, c, text(&h[0x20..0x60]), region))
+    let mut out = id(kind, c, text(&h[0x20..0x60]), region);
+    // NKit (junk data removed): "NKIT" at 0x200, the original image's
+    // CRC32 at 0x208.
+    if p.get(0x200..0x204) == Some(b"NKIT") {
+        out.source_crc = p
+            .get(0x208..0x20C)
+            .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+    }
+    Some(out)
 }
 
 // ------------------------------------------------------------ containers

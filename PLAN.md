@@ -289,11 +289,18 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        `Library::titles_by_serial` narrows by serial: several discs or
        versions share one (Final Fantasy VII's three discs). Migration 15
        clears the DATs' stored hashes, so the next download reads them
-       all again. Parent/clone has no free source after all: libretro's
-       mirror and Redump carry none, and No-Intro's own parent/clone DATs
-       need DAT-o-MATIC's form. So 1G1R stays by name for now (MAME
-       software lists, 11.5, and Retool's clone lists are the
-       candidates).
+       all again. Parent/clone: libretro's mirror and Redump carry none,
+       and No-Intro's own parent/clone DATs need DAT-o-MATIC's form.
+       *(Built 2026-10-18.)* Retool's clone lists (BSD-3-Clause, on
+       GitHub, still updated though Retool itself isn't) fill the gap.
+       - **Fetching:** `dat download` stores each system's list (`<DAT
+         name> (No-Intro|Redump).json`) in `clone_groups` (migration 21).
+         Compilation-only and regex entries are skipped.
+       - **1G1R:** titles a list groups are one title ("Aero Fighters" =
+         "Sonic Wings"). It ranks retail, then region, then the list's
+         priority, then revision.
+       - **On the real library:** lists for SNES, Genesis, PS1 and GBA
+         (3,477 titles), and the 1G1R plan is unchanged.
     3. *Read the game's own ID* (medium), with one table of readers per
        system, like `headers.rs`:
        - SNES internal title, region and checksum (LoROM or HiROM by the
@@ -464,9 +471,16 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          = the file's) makes it *Likely: modified copy*, proposed as a
          hack. This is CRC-level evidence, so never verified. IPS has no
          checksums and is not read.
-       - **Not yet:** patches inside archives; libretro's `metadat/hacks`
-         as a source of base names (its entries are hash-matched DAT
-         games already).
+       - *(Built 2026-10-18, follow-up.)* `patch.rs` reads and applies
+         IPS (with RLE and truncation), BPS and UPS. It finds patches
+         beside a file on disk or in the same zip / 7z.
+         - **Proof:** a patch applied to your hash-verified copy of the
+           base, giving exactly the file's SHA1, gives the band *Patch of
+           it (proven)*, still never verified.
+         - **IPS:** it names no source, so it is tried on your verified
+           copies of the best candidates.
+       - **Not yet:** libretro's `metadat/hacks` as a source of base
+         names (its entries are hash-matched DAT games already).
 
        On the real library, the fan translation's top suggestion now
        reads *Suggested: name match · translation of Dragon Quest III -
@@ -494,7 +508,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          can't change a CHECK) and re-reads cue sheets not matched.
        - **On the real library:** the Symphony of the Night cue is now a
          `sheet` of its game, and only the fan translation stays unknown.
-       - **Not yet:** GDI sheets (Dreamcast).
+       - *(Follow-up.)* GDI sheets are read too. Redump's Dreamcast DATs
+         use cue sheets, so a user's GDI fits like a rewritten cue
+         (migration 20).
     9. *Containers* (large, last). RVZ/WIA/WBFS/CISO/GCZ store the disc's
        6-byte ID and size (RVZ: `iso_file_size`) but no hash of the
        original ISO. ID + size gives a suggestion at once; a strict match
@@ -525,7 +541,12 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        - a new band, *Likely: compressed image*, means the image size
          and serial agree. A strict match still needs the whole image
          decompressed, which romforge doesn't do;
-       - NKit isn't read.
+       - *(Follow-up.)* NKit keeps the disc header, so its ID is read as
+         usual. Its header also gives the original image's CRC32 at 0x208
+         ([docs.fileformat.com](https://docs.fileformat.com/id/disc-and-media/nkit);
+         byte order undocumented, so both are tried). A DAT ROM with that
+         CRC32 and an agreeing serial is *Likely: compressed image*.
+         Stored as `files.id_crc`.
 
     Milestone 12 is done (2026-10-18). On the real library 28 of 30
     files match by hash, the Symphony of the Night cue is a `sheet` of its
@@ -554,6 +575,5 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
 - Play history and favourites.
 
 - Redump update check without re-downloading (Redump has no version index).
-- The regions seed from remustwo for 1G1R; parent/clone data (no free
-  source yet, see 12.2).
+- The regions seed from remustwo for 1G1R (clone lists: 12.2).
 - RAR support needs a free pure-Rust decoder; none known yet.

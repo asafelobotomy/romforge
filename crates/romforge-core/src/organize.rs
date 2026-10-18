@@ -366,12 +366,26 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
 
     // 1G1R: one version per (system, title), counting versions already
     // organized in the destination: a worse version never joins a better one.
+    // Titles a clone list groups (one game under other names) are one title.
     if opts.one_g1r {
+        let clones = clone_groups(conn)?;
+        let title_of = |system: &str, game: &str| -> String {
+            let base = base_title(game);
+            match clones.get(&(system.to_owned(), base.clone())) {
+                Some((grp, _)) => format!("group:{}", grp.to_lowercase()),
+                None => base,
+            }
+        };
+        let priority = |system: &str, game: &str| -> i64 {
+            clones
+                .get(&(system.to_owned(), base_title(game)))
+                .map_or(1, |(_, p)| *p)
+        };
         let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
         for (i, (_, game, _)) in proposed.iter().enumerate() {
             if !dropped.contains(&i) {
                 groups
-                    .entry((game.system.clone(), base_title(&game.game)))
+                    .entry((game.system.clone(), title_of(&game.system, &game.game)))
                     .or_default()
                     .push(i);
             }
@@ -379,7 +393,7 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
         let mut already: BTreeMap<(String, String), Vec<&str>> = BTreeMap::new();
         for g in organized.keys() {
             already
-                .entry((g.system.clone(), base_title(&g.game)))
+                .entry((g.system.clone(), title_of(&g.system, &g.game)))
                 .or_default()
                 .push(g.game.as_str());
         }
@@ -392,7 +406,10 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
             let best = names
                 .iter()
                 .copied()
-                .max_by_key(|n| rank(n, &opts.regions))
+                .max_by_key(|n| {
+                    let (retail, region, revision) = rank(n, &opts.regions);
+                    (retail, region, -priority(&key.0, n), revision)
+                })
                 .unwrap()
                 .to_owned();
             for &i in idx {
@@ -497,6 +514,20 @@ pub fn base_title(name: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+/// (system key, title without tags) -> (clone group, priority), from the
+/// clone lists `dat download` stored.
+type CloneGroups = HashMap<(String, String), (String, i64)>;
+
+fn clone_groups(conn: &Connection) -> Result<CloneGroups, Error> {
+    Ok(conn
+        .prepare(
+            "SELECT s.key, c.title, c.grp, c.priority FROM clone_groups c
+             JOIN systems s ON s.system_id = c.system_id",
+        )?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), (r.get(2)?, r.get(3)?))))?
+        .collect::<Result<_, _>>()?)
 }
 
 /// How good a release a DAT name is, for 1G1R: retail first, then the

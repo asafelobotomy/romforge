@@ -268,6 +268,26 @@ const MIGRATIONS: &[&str] = &[
        lower(path) GLOB '*.rvz' OR lower(path) GLOB '*.wia' OR lower(path) GLOB '*.wbfs'
        OR lower(path) GLOB '*.ciso' OR lower(path) GLOB '*.gcz' OR lower(path) GLOB '*.cso'
        OR lower(path) GLOB '*.zso' OR lower(path) GLOB '*.pbp');",
+    // 20: GDI sheets are read for their track names too (a user's GDI fits
+    // a Dreamcast game like a rewritten cue); those not matched are read
+    // again.
+    // An NKit image's original-image CRC32 (id_crc); GameCube / Wii files
+    // not matched are read again too.
+    "ALTER TABLE files ADD COLUMN id_crc INTEGER;
+     UPDATE files SET mtime = NULL WHERE path IN (
+       SELECT path FROM files WHERE status <> 'matched'
+         AND (lower(CASE WHEN member = '' THEN path ELSE member END) GLOB '*.gdi'
+              OR id_kind IN ('gc', 'wii')));",
+    // 21: Retool's clone lists (BSD-3-Clause): titles that are one game
+    // under different names (regions, retitles), for 1G1R. `title` is the
+    // title without tags, lower case; a lower `priority` is preferred.
+    "CREATE TABLE clone_groups (
+         system_id INTEGER NOT NULL REFERENCES systems(system_id),
+         title     TEXT NOT NULL,
+         grp       TEXT NOT NULL,
+         priority  INTEGER NOT NULL DEFAULT 1,
+         PRIMARY KEY (system_id, title)
+     );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
