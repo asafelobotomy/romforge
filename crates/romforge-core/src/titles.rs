@@ -191,8 +191,14 @@ pub fn header_fits(header: &str, title: &str) -> bool {
             .map(String::as_str)
             .collect::<String>()
     };
-    let (h, t) = (run(&key(header)), run(&key(title)));
-    score(header, title) >= 0.85 || (h.len() >= 6 && t.starts_with(&h))
+    let (hk, tk) = (key(header), key(title));
+    let (h, t) = (run(&hk), run(&tk));
+    // A cut-off header is the start of the title, but its numbers still
+    // count: "MEGAMAN2" is not Mega Man 20, nor "ZELDA 2" plain Zelda.
+    let cut_number = h.ends_with(|c: char| c.is_ascii_digit())
+        && t[h.len().min(t.len())..].starts_with(|c: char| c.is_ascii_digit());
+    score(header, title) >= 0.85
+        || (h.len() >= 6 && t.starts_with(&h) && !cut_number && hk.hard.is_subset(&tk.hard))
 }
 
 /// DAT titles, keyed once, found by any shared word. Grouped by their hard
@@ -358,6 +364,12 @@ mod tests {
         assert!(!header_fits("SUPER JEDI", "Super Mario World (USA)"));
         assert!(!header_fits("DRAGONQUEST3", "Dragon Quest I & II (Japan)"));
         assert!(!header_fits("MARIO", "Mario Paint (USA)"), "too short to tell");
+        assert!(!header_fits("MEGAMAN 2", "Mega Man 20 (USA)"), "2 is not 20");
+        assert!(!header_fits("FINAL FANTASY 3", "Final Fantasy 30th (Japan)"));
+        assert!(
+            header_fits("STREET FIGHTER", "Street Fighter II (USA)"),
+            "cut before the number"
+        );
     }
 
     /// The grouped index finds exactly what scoring every title would.

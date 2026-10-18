@@ -332,7 +332,11 @@ fn build_launchbox(zip: &Path, out: &Path, progress: &mut impl FnMut(&str)) -> R
                         get("WikipediaURL"),
                         get("VideoURL"),
                     ])?;
-                    put_name.execute(params![id, match_key(name), Option::<&str>::None])?;
+                    put_name.execute(params![
+                        id,
+                        crate::wikidata::normalize(name),
+                        Option::<&str>::None
+                    ])?;
                     games += 1;
                     if games % 20_000 == 0 {
                         progress(&format!("reading: {games} games"));
@@ -340,7 +344,7 @@ fn build_launchbox(zip: &Path, out: &Path, progress: &mut impl FnMut(&str)) -> R
                 }
                 "GameAlternateName" => {
                     if let Some(n) = get("AlternateName") {
-                        put_name.execute(params![id, match_key(n), get("Region")])?;
+                        put_name.execute(params![id, crate::wikidata::normalize(n), get("Region")])?;
                     }
                 }
                 "GameImage" => {
@@ -424,13 +428,6 @@ fn each_record(
         buf.clear();
     }
     Ok(())
-}
-
-/// How titles are compared: Wikidata's normalization (no tags, no
-/// punctuation, articles in place), with accents folded ("Pokémon" =
-/// "Pokemon").
-pub fn match_key(title: &str) -> String {
-    crate::wikidata::normalize(&fold_accents(title))
 }
 
 pub fn fold_accents(s: &str) -> String {
@@ -548,7 +545,7 @@ pub fn launchbox_lookup(
         return Ok(None);
     }
     let platforms = serde_json::to_string(system.launchbox).unwrap_or_default();
-    let key = match_key(title);
+    let key = crate::wikidata::normalize(title);
     let mut ids: Vec<(i64, String)> = conn
         .prepare_cached(
             "SELECT DISTINCT g.id, g.name FROM names n JOIN games g ON g.id = n.id
@@ -558,8 +555,12 @@ pub fn launchbox_lookup(
         .collect::<Result<_, _>>()?;
     // A game's own name wins over another game's alternate name ("Streets
     // of Rage" over a hack that lists it as one); still exactly one or none.
-    if ids.len() > 1 && ids.iter().any(|(_, name)| match_key(name) == key) {
-        ids.retain(|(_, name)| match_key(name) == key);
+    if ids.len() > 1
+        && ids
+            .iter()
+            .any(|(_, name)| crate::wikidata::normalize(name) == key)
+    {
+        ids.retain(|(_, name)| crate::wikidata::normalize(name) == key);
     }
     let [(id, _)] = ids.as_slice() else {
         return Ok(None);
@@ -707,12 +708,12 @@ mod tests {
     #[test]
     fn keys_fold_accents_and_tags() {
         assert_eq!(
-            match_key("Pokémon: Emerald Version"),
-            match_key("Pokemon - Emerald Version (USA, Europe)")
+            crate::wikidata::normalize("Pokémon: Emerald Version"),
+            crate::wikidata::normalize("Pokemon - Emerald Version (USA, Europe)")
         );
         assert_eq!(
-            match_key("The Legend of Zelda: A Link to the Past"),
-            match_key("Legend of Zelda, The - A Link to the Past (USA)")
+            crate::wikidata::normalize("The Legend of Zelda: A Link to the Past"),
+            crate::wikidata::normalize("Legend of Zelda, The - A Link to the Past (USA)")
         );
     }
 

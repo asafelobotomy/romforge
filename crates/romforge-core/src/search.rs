@@ -38,14 +38,6 @@ pub struct QueueItem {
     pub suggestion: Option<crate::suggest::Suggestion>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct TitleSuggestion {
-    pub system: String,
-    pub title: String,
-    /// 0..1: how much of the two titles' words overlap.
-    pub score: f32,
-}
-
 /// Rows that need the owner, in list order. `only`: limit to these row ids.
 pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem>, Error> {
     let v = view::library(conn)?;
@@ -113,19 +105,6 @@ pub fn similarity(a: &str, b: &str) -> f32 {
     crate::titles::score(a, b)
 }
 
-/// DAT titles that look like `text` (a row's title, or what the owner
-/// typed), best first. Only systems the row could belong to: its own, or
-/// those using its file extension; all systems when there is no hint.
-pub fn title_suggestions(
-    conn: &Connection,
-    row_id: &str,
-    text: Option<&str>,
-    limit: usize,
-) -> Result<Vec<TitleSuggestion>, Error> {
-    let d = view::detail(conn, row_id)?;
-    dat_titles(conn, &d, text, None, limit)
-}
-
 /// What to search for when the owner typed nothing: the row's title, or
 /// its file name without the extension and the archive part.
 pub fn default_text(d: &view::GameDetail) -> String {
@@ -136,64 +115,6 @@ pub fn default_text(d: &view::GameDetail) -> String {
     Path::new(t)
         .file_stem()
         .map_or(t.to_owned(), |s| s.to_string_lossy().into_owned())
-}
-
-/// [`title_suggestions`] for a row, on `system` (a key) when given.
-fn dat_titles(
-    conn: &Connection,
-    d: &view::GameDetail,
-    text: Option<&str>,
-    system: Option<&str>,
-    limit: usize,
-) -> Result<Vec<TitleSuggestion>, Error> {
-    let text = text
-        .filter(|t| !t.trim().is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| default_text(d));
-    let mut system_ids: Vec<i64> = match system.or(d.row.system.as_deref()) {
-        Some(key) => systems::by_key(key).map(|s| vec![s.id]).unwrap_or_default(),
-        None => Vec::new(),
-    };
-    if system_ids.is_empty() {
-        let ext = d.files.first().and_then(|f| {
-            Path::new(f.path.rsplit('#').next().unwrap_or(&f.path))
-                .extension()
-                .map(|e| e.to_string_lossy().to_ascii_lowercase())
-        });
-        if let Some(ext) = ext {
-            system_ids = systems::SYSTEMS
-                .iter()
-                .filter(|s| s.extensions.contains(&ext.as_str()))
-                .map(|s| s.id)
-                .collect();
-        }
-    }
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT d.system_id, g.name FROM games g JOIN dats d ON d.dat_id = g.dat_id
-         WHERE d.system_id IS NOT NULL AND (?1 = 0 OR d.system_id IN (SELECT value FROM json_each(?2)))",
-    )?;
-    let ids_json = serde_json::to_string(&system_ids).unwrap_or_else(|_| "[]".into());
-    // name -> systems with it; the index scores each name once.
-    let mut systems_of: std::collections::HashMap<String, Vec<i64>> = Default::default();
-    for r in stmt.query_map(params![system_ids.len() as i64, ids_json], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-    })? {
-        let (sid, name) = r?;
-        systems_of.entry(name).or_default().push(sid);
-    }
-    let index = crate::titles::TitleIndex::new(systems_of.keys().cloned());
-    let mut scored: Vec<TitleSuggestion> = Vec::new();
-    for (title, score) in index.find(&text, limit) {
-        for sid in &systems_of[&title] {
-            scored.push(TitleSuggestion {
-                system: systems::by_id(*sid).map_or(String::new(), |s| s.key.to_owned()),
-                title: title.clone(),
-                score,
-            });
-        }
-    }
-    scored.truncate(limit);
-    Ok(scored)
 }
 
 /// Name every file of a row: `title` on `system` (a key), as a translation
@@ -509,6 +430,9 @@ pub struct Preview {
     pub image: Option<std::path::PathBuf>,
 }
 
+/// (DAT, ROM name, size, CRC32, whether the CRC32 is all it has)
+type DatRom = (String, String, Option<u64>, Option<String>, bool);
+
 /// The preview of a result for a row. Never fails over a missing picture.
 pub fn preview(
     conn: &Connection,
@@ -530,13 +454,14 @@ pub fn preview(
         Scraper::Dat => {
             let Some(sys) = system else { return Ok(p) };
             let mut stmt = conn.prepare(
-                "SELECT d.name, r.name, r.size FROM games g JOIN dats d ON d.dat_id = g.dat_id
+                "SELECT d.name, r.name, r.size, r.crc32, r.md5 IS NULL AND r.sha1 IS NULL
+                 FROM games g JOIN dats d ON d.dat_id = g.dat_id
                  JOIN roms r ON r.game_id = g.game_id
                  WHERE d.system_id = ?1 AND g.name = ?2 ORDER BY d.dat_id, r.rom_id",
             )?;
-            let rows: Vec<(String, String, Option<u64>)> = stmt
+            let rows: Vec<DatRom> = stmt
                 .query_map(params![sys.id, found.title], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
                 })?
                 .collect::<Result<_, _>>()?;
             let dats: BTreeSet<&str> = rows.iter().map(|r| r.0.as_str()).collect();
@@ -545,18 +470,34 @@ pub fn preview(
                     .push(("DAT".into(), dats.into_iter().collect::<Vec<_>>().join(", ")));
             }
             let mut seen = BTreeSet::new();
-            for (_, name, size) in &rows {
+            for (_, name, size, _, _) in &rows {
                 if seen.insert(name) {
                     let size = size.map_or("?".into(), |s| format!("{s} bytes"));
                     p.facts.push(("ROM".into(), format!("{name} · {size}")));
                 }
             }
+            let mut crc_of = conn.prepare("SELECT crc32 FROM files WHERE sha1 = ?1 AND size = ?2 LIMIT 1")?;
             for f in &d.files {
                 let file = f.path.rsplit(['/', '#']).next().unwrap_or(&f.path);
-                let same = rows.iter().find(|r| r.2 == Some(f.size));
-                let verdict = match same {
-                    Some(r) => format!("same size as {}, different contents", r.1),
-                    None => "size differs from every ROM".into(),
+                // A compressed disc image counts by the plain image it holds,
+                // whose contents romforge can't compare.
+                let image = f.game_id.as_ref().and_then(|i| i.image_size);
+                let same = rows.iter().find(|r| r.2 == Some(image.unwrap_or(f.size)));
+                let verdict = match (same, image) {
+                    (Some(r), Some(_)) => format!("holds an image the size of {}", r.1),
+                    (None, Some(n)) => format!("holds a {n}-byte image, a size no ROM has"),
+                    (Some(r), None) if r.4 => {
+                        let crc: Option<String> = crc_of
+                            .query_row(params![f.sha1, f.size], |r| r.get(0))
+                            .optional()?;
+                        if crc.is_some() && crc == r.3 {
+                            format!("same size and CRC32 as {} (no SHA1 or MD5 to confirm)", r.1)
+                        } else {
+                            format!("same size as {}, different contents", r.1)
+                        }
+                    }
+                    (Some(r), None) => format!("same size as {}, different contents", r.1),
+                    (None, None) => "size differs from every ROM".into(),
                 };
                 p.facts.push((
                     "Your file".into(),

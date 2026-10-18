@@ -570,14 +570,6 @@ A full review found about 90 items. The serious ones are fixed: batch 1
 (data safety and crashes), batch 2 (wrong results), batch 3 (speed) and
 batch 4 (medium items). Still open, all low or medium:
 
-- **Suggestions.**
-  - *Likely: modified copy* is loose: same size plus a two-word name
-    subset is enough.
-  - Typed text replaces the file name for derived and region evidence.
-  - `header_fits` skips the numeral veto.
-  - The preview's size line ignores CRC-only DATs and compressed images.
-- **Names.** Five overlapping title normalizers (`wikidata::normalize` folds
-  no accents). `title_suggestions` and `for_row` are only used by tests.
 - **DAT import.** DAT serials and TOSEC partial imports outlive a
   replaced DAT. OpenVGDB is looked up by SHA1 with `LIMIT 1` and no size
   check. SteamGridDB matches by title with no platform.

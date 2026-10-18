@@ -29,10 +29,11 @@ fn queue_suggest_identify_forget() {
     assert_eq!(q[0].need, Need::Identify);
     let row = q[0].row_id.clone();
 
-    let s = lib.title_suggestions(&row, None, 5).unwrap();
+    let dat = romforge_core::search::Scraper::Dat;
+    let s = lib.search_find(&row, dat, None, None, "").unwrap();
     assert_eq!(s[0].title, "Test GB", "{s:?}");
-    assert_eq!(s[0].system, "Game Boy", "only systems using .gb");
-    let typed = lib.title_suggestions(&row, Some("md5 only"), 5).unwrap();
+    assert_eq!(s[0].system.as_deref(), Some("Game Boy"), "only systems using .gb");
+    let typed = lib.search_find(&row, dat, Some("md5 only"), None, "").unwrap();
     assert_eq!(typed[0].title, "MD5 Only");
 
     lib.identify_as(&row, "Game Boy", "Test GB Deluxe (Hack)")
@@ -242,8 +243,9 @@ fn suggestions_with_evidence() {
             r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
   <game name="Dragon Quest III - Soshite Densetsu e... (Japan)"><serial>SHVC-AQ3J-JPN</serial><rom name="dq3.sfc" size="{}" crc="{}" md5="{}" sha1="{}"/></game>
   <game name="Dragon Quest I &amp; II (Japan)"><rom name="dq12.sfc" size="1" crc="00000001"/></game>
+  <game name="Super Puzzle Quest (Japan)"><rom name="spq.sfc" size="{}" crc="00000002" sha1="0000000000000000000000000000000000000002"/></game>
 </datafile>"#,
-            h.size, h.crc32, h.md5, h.sha1
+            h.size, h.crc32, h.md5, h.sha1, h.size
         ),
     )
     .unwrap();
@@ -259,6 +261,8 @@ fn suggestions_with_evidence() {
     )
     .unwrap();
     std::fs::write(dir.join("Totally Different.sfc"), vec![7u8; 4096]).unwrap();
+    // Same size, and its two words are in the DAT title: no more than that.
+    std::fs::write(dir.join("Puzzle Quest.sfc"), vec![9u8; 0x10000]).unwrap();
     let mut lib = Library::open_in_memory().unwrap();
     lib.import_dat(&dat, None).unwrap();
     lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
@@ -291,8 +295,55 @@ fn suggestions_with_evidence() {
 
     let crc = top("CRC Only").expect("a suggestion");
     assert_eq!((crc.band, crc.title.as_str()), (Band::LikelyCrc, "CRC Only"));
+    // The preview says what a CRC32-only DAT can and can't tell.
+    let row = q
+        .iter()
+        .find(|i| i.title.contains("CRC Only"))
+        .unwrap()
+        .row_id
+        .clone();
+    let found = lib
+        .search_find(&row, romforge_core::search::Scraper::Dat, None, None, "")
+        .unwrap()
+        .into_iter()
+        .find(|f| f.title == "CRC Only")
+        .unwrap();
+    let p = lib
+        .search_preview(&row, &found, tmp.path(), "http://127.0.0.1:1")
+        .unwrap();
+    let mine = p.facts.iter().find(|(k, _)| k == "Your file").unwrap();
+    assert!(mine.1.contains("same size and CRC32 as"), "{mine:?}");
 
     assert_eq!(top("Totally Different"), None);
+    let loose = top("Puzzle Quest").expect("a suggestion");
+    assert_eq!(loose.title, "Super Puzzle Quest (Japan)");
+    assert!(loose.band > Band::LikelyModified, "{:?}", loose.band);
+
+    // What you type searches; the file's own name still says translation.
+    let row = q
+        .iter()
+        .find(|i| i.title.contains("English"))
+        .unwrap()
+        .row_id
+        .clone();
+    let typed = lib
+        .search_find(
+            &row,
+            romforge_core::search::Scraper::Dat,
+            Some("dragon quest 3"),
+            None,
+            "",
+        )
+        .unwrap();
+    let dq3 = typed
+        .iter()
+        .find(|f| f.title.starts_with("Dragon Quest III"))
+        .expect("found by what you typed");
+    assert!(
+        dq3.evidence.iter().any(|e| e.kind == "derived"),
+        "{:?}",
+        dq3.evidence
+    );
     // Nothing became verified or identified.
     assert!(q.iter().all(|i| i.need == Need::Identify));
 }

@@ -90,7 +90,11 @@ enum Proof {
 
 /// What is known about a row's files.
 struct Facts {
+    /// What the titles are scored against: what the owner typed, or `own`.
     text: String,
+    /// The row's own title or file name, which alone says what the file is
+    /// (a translation, a region): typed text only searches.
+    own: String,
     sizes: Vec<u64>,
     ids: Vec<GameId>,
     systems: Vec<i64>,
@@ -144,10 +148,11 @@ fn facts(
     system: Option<&str>,
     patches: &mut crate::patch::PatchFinder,
 ) -> Result<Facts, Error> {
+    let own = crate::search::default_text(d);
     let text = text
         .filter(|t| !t.trim().is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| crate::search::default_text(d));
+        .unwrap_or_else(|| own.clone());
     // A compressed disc image counts by the plain image it holds.
     let sizes: Vec<u64> = d
         .files
@@ -248,6 +253,7 @@ fn facts(
     }
     Ok(Facts {
         text,
+        own,
         sizes,
         ids,
         systems,
@@ -457,7 +463,7 @@ fn assess(
     }
     let theirs = names::parse(title);
     let header_regions: Vec<&str> = f.ids.iter().flat_map(header_regions).collect();
-    let mine = names::parse(&f.text);
+    let mine = names::parse(&f.own);
     let (mine_regions, from): (Vec<String>, &str) = if !header_regions.is_empty() {
         (header_regions.iter().map(|r| (*r).to_owned()).collect(), "header")
     } else {
@@ -519,7 +525,9 @@ fn assess(
         Band::LikelyCrc
     } else if (compressed && same_size || nkit) && serial.is_some() {
         Band::LikelyCompressed
-    } else if patched == Some(Proof::Turns) || (same_size && (score >= 0.85 || serial.is_some())) {
+    } else if patched == Some(Proof::Turns)
+        || (same_size && (score >= 0.9 || serial.is_some() || (score >= 0.85 && header_fits)))
+    {
         Band::LikelyModified
     } else if score >= 0.9 || (serial.is_some() && (score >= 0.5 || header_fits)) {
         Band::Suggested
@@ -541,17 +549,6 @@ fn assess(
 /// Suggestions for a row, strongest first: by band, then how much of the
 /// evidence agrees, then the name. `text`: what the owner typed (the
 /// row's title or file name when empty); `system`: limit to this key.
-pub fn for_row(
-    conn: &Connection,
-    row_id: &str,
-    text: Option<&str>,
-    system: Option<&str>,
-    limit: usize,
-) -> Result<Vec<Suggestion>, Error> {
-    let d = view::detail(conn, row_id)?;
-    for_detail(conn, &d, text, system, limit)
-}
-
 pub(crate) fn for_detail(
     conn: &Connection,
     d: &view::GameDetail,

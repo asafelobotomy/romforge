@@ -74,10 +74,12 @@ pub struct Candidate {
 const GAME: &str = "Q7889";
 const EDITION: &str = "Q60997816";
 
-/// Lowercase letters and digits only, "&" as "and", words single-spaced;
-/// region tags and a trailing article ("Zelda, The") handled first.
+/// romforge's one match key for titles from other sources (Wikidata,
+/// OpenVGDB, LaunchBox): lowercase letters and digits only, accents folded
+/// ("Pokémon" = "Pokemon"), "&" as "and", words single-spaced; region tags
+/// and a trailing article ("Zelda, The") handled first.
 pub fn normalize(title: &str) -> String {
-    let t = crate::view::search_title(title).replace('&', " and ");
+    let t = crate::extdb::fold_accents(&crate::view::search_title(title)).replace('&', " and ");
     let mut out = String::new();
     for w in t.split(|c: char| !c.is_alphanumeric()) {
         if !w.is_empty() {
@@ -359,8 +361,13 @@ fn kept(conn: &Connection, platforms: &[&str]) -> Result<Vec<Candidate>, Error> 
                 label,
                 ..Candidate::default()
             });
-            c.names
-                .extend(serde_json::from_str::<BTreeSet<String>>(&names).unwrap_or_default());
+            // Kept before accents were folded: normalized again.
+            c.names.extend(
+                serde_json::from_str::<BTreeSet<String>>(&names)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|n| normalize(n)),
+            );
             c.years
                 .extend(serde_json::from_str::<BTreeSet<i32>>(&years).unwrap_or_default());
             c.work = c.work.take().or(work);
@@ -860,6 +867,17 @@ mod tests {
         assert!(
             !own_series.contains_key("series_ordinal"),
             "a series comes whole or not at all"
+        );
+    }
+
+    #[test]
+    fn accents_fold() {
+        let c = [cand("Q1", &["Pokémon Emerald Version"], &[2004])];
+        assert_eq!(
+            pick("Pokemon - Emerald Version (USA, Europe)", None, &c)
+                .unwrap()
+                .qid,
+            "Q1"
         );
     }
 

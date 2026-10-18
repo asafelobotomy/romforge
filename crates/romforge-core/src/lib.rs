@@ -1160,15 +1160,6 @@ impl Library {
         search::queue(&self.conn, only)
     }
 
-    pub fn title_suggestions(
-        &self,
-        row_id: &str,
-        text: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<search::TitleSuggestion>, Error> {
-        search::title_suggestions(&self.conn, row_id, text, limit)
-    }
-
     /// Search one scraper for a row (the Search dialog's results table).
     /// `api`: Wikidata's entity search ([`search::WIKIDATA_API`]).
     pub fn search_find(
