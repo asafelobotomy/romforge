@@ -671,10 +671,72 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     in a scanned folder is not taken as a folder game. Playlists list the
     zips (or CHDs) as imported.
     **Open:** check the new emulator rows against the real programs (none
-    of them is on the dev machine; tested with stand-in scripts); whether
-    each floppy core reads zips listed in an `.m3u`; whether the SCUMM
-    engine's games are in ScummVM's dump; the TOSEC name "Fujitsu FM-7" is
-    unchecked; naming a ScummVM folder by hand is not built.
+    of them is on the dev machine; tested with stand-in scripts); naming a
+    ScummVM folder by hand is not built.
+
+    Checked 2026-10-18 (the cores' and ScummVM's source, the TOSEC pack,
+    libretro's servers, Wikidata, the local LaunchBox and OpenVGDB copies):
+    - *Floppy cores and playlists.* None reads a zip listed in a playlist:
+      each opens playlist entries itself as plain files. `quasi88` (PC-88)
+      reads `.m3u`, but takes content without a full path, so a zipped
+      game likely fails too. `np2kai` (PC-98) dropped `.m3u` under
+      libretro; it reads a `.cmd` file (a command line of disk images,
+      which it puts in its disk-swap list) and gets single zips unpacked
+      by RetroArch. `x1` lists `zip` as its own format but has no zip
+      code, so RetroArch hands it the zip unopened: zipped X1 games fail;
+      no playlist, disks swap from RetroArch's menu only. So the playlists
+      import writes today (zips) don't work for these cores.
+    - *ScummVM's dump leaves out SCUMM, SCI, Sky and Glk.* Their
+      `dumpDetectionEntries` is empty or `#if 0`: no LucasArts or
+      Humongous game, no Sierra SCI game (King's Quest IV on, Space Quest,
+      ...), not Beneath a Steel Sky, no interactive fiction. The rest
+      (AGI, AGOS, Kyra, Lure, Queen, ...) are in it.
+    - *TOSEC.* "Fujitsu FM-7" is right (10 DATs: 111 D77 and 169 T77
+      games). Also in the pack and now added: "Fujitsu FM77-AV" (to FM-7)
+      and "IBM PCjr" (to DOS). Not added: NEC PC-8001, PC-6001, PC-88VA,
+      Sharp MZ (no system or core here yet).
+    - *Thumbnails (libretro).* DOS 4,470 box arts, named by `DOS.dat`
+      names (what a confirmed DOS game is called); PC-98 726 and PC-88 322,
+      named by TOSEC names; X68000 2,140; X1 only 13; FM-7 and FM Towns
+      none. PC-88's folder is "NEC - PC-8001 - PC-8801" (fixed in the
+      table). ScummVM 728, named by `ScummVM.dat` names, which romforge's
+      ScummVM titles ("Beneath a Steel Sky (CD) (pc) (en)") don't match.
+    - *Metadata.* libretro has no `metadat/<field>/` files for DOS,
+      ScummVM or these computers. But `dat/DOS.dat` carries genre, year
+      and developer per game, and `dat/ScummVM.dat` description, year,
+      developer and publisher per ScummVM game id; romforge reads neither
+      as metadata yet.
+    - *Wikidata* (video games per platform item, now in the table): DOS
+      2,414 (Q170434) + 302 (MS-DOS, Q47604); PC-98 223; PC-88 131
+      (Q1338888); FM Towns 93; X68000 84; X1 67; FM-7 57. ScummVM isn't a
+      platform there.
+    - *LaunchBox* (the downloaded copy): MS-DOS 7,199; PC-9801 2,388;
+      X68000 1,114; PC-8801 1,080; FM Towns Marty 626; X1 334. It has no
+      FM-7 and no ScummVM platform (ScummVM games are under MS-DOS);
+      FM-7's made-up LaunchBox name is gone from the table.
+    - *OpenVGDB* has none of these systems. ScreenScraper and IGDB ids for
+      them are in the table from memory, unverified like the others.
+    - *Versions.* TOSEC lists each disk as its own game, so the disks of a
+      set may group as "versions" of disk 1 in the library; not checked.
+
+    Decided 2026-10-18 from that (not built):
+    1. *Floppy sets loose.* For PC-88, PC-98, X1 and FM-7, import puts a
+       multi-disk set's images unzipped in `Games/<System>/<Set>/`, with
+       the playlist its core reads (`.m3u` for quasi88, `.cmd` for
+       np2kai); X1 has none (RetroArch's disk menu). Single disks stay one
+       zip each. An exception to milestone 10's one archive per game, for
+       these systems only. Still journaled and verified; undo as before.
+    2. *ScummVM's own --detect for what its list misses.* A folder the list
+       didn't name (SCUMM, SCI, Sky, Glk) is shown to the installed
+       ScummVM with `--detect --path=<folder>`; the game id it prints
+       names the folder ("identified by ScummVM", never verified). An
+       exception to rule 7, for folders the list missed only.
+    3. *libretro's DOS.dat and ScummVM.dat as names and metadata.* A
+       ScummVM folder is titled by `ScummVM.dat`'s name for its game id
+       (so libretro's box arts match), versions told apart as now; DOS
+       and ScummVM games get description, genre, year, developer and
+       publisher from those files. Never used to verify (ScummVM.dat's
+       own hashes are of `.scummvm` text files).
 
 ## Code review follow-ups (2026-10-18)
 
