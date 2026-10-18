@@ -572,10 +572,6 @@ batch 4 (medium items). Still open, all low or medium:
 
 - **Network.** Redump serves no HTTPS (its server resets TLS), so its DATs
   stay on HTTP until it does.
-- **Organize.** Symlinked files, rename races (no `RENAME_NOREPLACE`), GDI
-  in the disc-set check, no fsync before a cross-drive delete.
-- **Cleanup.** `named_parts` takes duplicates of one sha1 as two parts and
-  orders tracks by path.
 - **App.**
   - `App.svelte` is about 1,450 lines and could be split by dialog.
   - Details sends every image as base64 with no size cap.

@@ -152,7 +152,7 @@ pub fn plan(conn: &Connection, only: Option<&[String]>) -> Result<CleanupPlan, E
         };
         let parts = match row.status {
             RowStatus::Verified => verified_parts(conn, system.id, &row.title, &source)?,
-            _ => named_parts(conn, &row.id)?.map(|p| (p, Vec::new())),
+            _ => named_parts(conn, &row.id, &source)?,
         };
         let Some((parts, copies)) = parts else {
             plan.skipped
@@ -421,9 +421,12 @@ fn verified_parts(
 }
 
 /// The files of a game you named, under their own names.
-fn named_parts(conn: &Connection, row_id: &str) -> Result<Option<Vec<Part>>, Error> {
+/// The files of a game you named: one per content (other copies of it in
+/// Source are `copies`, the one in Source first), tracks in natural order
+/// ("Track 2" before "Track 10") as there is no DAT to give it.
+fn named_parts(conn: &Connection, row_id: &str, source: &Path) -> Result<Option<PartsAndCopies>, Error> {
     let d = view::detail(conn, row_id)?;
-    let parts: Vec<Part> = d
+    let mut all: Vec<Part> = d
         .files
         .iter()
         .map(|f| {
@@ -445,7 +448,40 @@ fn named_parts(conn: &Connection, row_id: &str) -> Result<Option<Vec<Part>>, Err
             }
         })
         .collect();
-    Ok((!parts.is_empty()).then_some(parts))
+    all.sort_by_key(|p| (!p.path.starts_with(source), natural_key(&p.name)));
+    let (mut parts, mut copies) = (Vec::new(), Vec::new());
+    let mut seen = BTreeSet::new();
+    for p in all {
+        if seen.insert((p.sha1.clone(), p.size)) {
+            parts.push(p);
+        } else if p.path.starts_with(source) {
+            copies.push(p);
+        }
+    }
+    parts.sort_by_key(|p| natural_key(&p.name));
+    Ok((!parts.is_empty()).then_some((parts, copies)))
+}
+
+/// A name for sorting with its numbers as numbers.
+fn natural_key(name: &str) -> Vec<(String, u64)> {
+    let lower = name.to_lowercase();
+    let mut out = Vec::new();
+    let mut text = String::new();
+    let mut chars = lower.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            let mut n = c.to_digit(10).unwrap_or(0) as u64;
+            while let Some(d) = chars.peek().and_then(|d| d.to_digit(10)) {
+                n = n.saturating_mul(10).saturating_add(d as u64);
+                chars.next();
+            }
+            out.push((std::mem::take(&mut text), n));
+        } else {
+            text.push(c);
+        }
+    }
+    out.push((text, 0));
+    out
 }
 
 /// Open a part's data as a stream: a plain file or a zip member directly;
@@ -1160,6 +1196,26 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn natural_order() {
+        let mut v = vec![
+            "Disc (Track 10).bin",
+            "Disc (Track 2).bin",
+            "Disc (Track 1).bin",
+            "Disc.cue",
+        ];
+        v.sort_by_key(|n| natural_key(n));
+        assert_eq!(
+            v,
+            [
+                "Disc (Track 1).bin",
+                "Disc (Track 2).bin",
+                "Disc (Track 10).bin",
+                "Disc.cue"
+            ]
+        );
+    }
 
     #[test]
     fn cue_pregaps_by_track() {

@@ -25,6 +25,9 @@ strsim = "0.11"
 flate2 = "1"
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }

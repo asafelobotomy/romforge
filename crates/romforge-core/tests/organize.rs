@@ -554,3 +554,65 @@ fn clone_lists_replace_their_rows_and_keep_first_groups() {
     names.sort();
     assert_eq!(names, ["Aero Fighters (USA)", "Gone Game (USA)"]);
 }
+
+/// A symlinked ROM is scanned and matched, but never moved: moving the
+/// link would leave the file it points to behind.
+#[cfg(unix)]
+#[test]
+fn symlinked_files_stay() {
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("elsewhere");
+    let src = tmp.path().join("roms");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), real.join("Test GB.gb")).unwrap();
+    std::os::unix::fs::symlink(real.join("Test GB.gb"), src.join("Test GB.gb")).unwrap();
+    let mut lib = library_with_fixture_dats();
+    lib.scan(&src, Scope::All).unwrap();
+    let plan = lib
+        .organize_plan(&OrganizeOptions::new(&src, tmp.path().join("sorted")))
+        .unwrap();
+    assert!(plan.moves.is_empty(), "{:?}", plan.moves);
+    assert!(
+        plan.skipped.iter().any(|s| s.reason == "a symbolic link"),
+        "{:?}",
+        plan.skipped
+    );
+}
+
+/// A GDI disc set is held back like a cue one: its tracks never move
+/// without their sheet.
+#[test]
+fn loose_gdi_tracks_wait_for_their_sheet() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("roms");
+    std::fs::create_dir(&src).unwrap();
+    let track = vec![7u8; 4096];
+    let gdi = b"1\n1 0 4 2352 \"Disc (Track 1).bin\" 0\n".to_vec();
+    let dat = tmp.path().join("dc.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Sega - Dreamcast</name></header><game name="Disc (USA)">{}{}</game></datafile>"#,
+            rom("Disc (USA) (Track 1).bin", &track),
+            rom("Disc (USA).gdi", &gdi)
+        ),
+    )
+    .unwrap();
+    std::fs::write(src.join("track01.bin"), &track).unwrap();
+    std::fs::write(
+        src.join("disc.gdi"),
+        b"2\n1 0 4 2352 track01.bin 0\n2 600 0 2352 track02.raw 0\n",
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&src, Scope::All).unwrap();
+    let plan = lib
+        .organize_plan(&OrganizeOptions::new(&src, tmp.path().join("sorted")))
+        .unwrap();
+    assert!(
+        plan.moves.is_empty(),
+        "renaming the track breaks the sheet: {plan:?}"
+    );
+}

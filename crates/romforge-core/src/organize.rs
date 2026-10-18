@@ -133,7 +133,7 @@ fn load(
         "SELECT f.path, f.member, f.status, coalesce(s.key, d.name), g.name, r.name,
                 (SELECT count(*) FROM roms r2 WHERE r2.game_id = g.game_id),
                 (SELECT count(*) FROM roms r3 WHERE r3.game_id = g.game_id
-                   AND lower(r3.name) LIKE '%.cue')
+                   AND (lower(r3.name) LIKE '%.cue' OR lower(r3.name) LIKE '%.gdi'))
          FROM files f
          LEFT JOIN matches m ON m.file_id = f.file_id AND m.out_of_scope = 0
               AND m.via IN ('sha1', 'md5')
@@ -435,6 +435,10 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
         };
         if from == to {
             plan.skipped.push(skip("already in place".into()));
+        } else if from.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+            // Moving the link would leave its target behind; the target
+            // is organized where it is scanned.
+            plan.skipped.push(skip("a symbolic link".into()));
         } else if !taken.insert(to.clone()) {
             plan.skipped
                 .push(skip(format!("another file is going to {}", to.display())));
@@ -752,7 +756,11 @@ fn remove_empty_dirs(moved_out_of: &Path, dest: &Path) {
 /// size moved.
 pub(crate) fn move_file(from: &Path, to: &Path) -> std::io::Result<u64> {
     use std::io::{Error as IoError, ErrorKind};
-    let size = std::fs::symlink_metadata(from)?.len();
+    let meta = std::fs::symlink_metadata(from)?;
+    if meta.file_type().is_symlink() {
+        return Err(IoError::other(format!("{} is a symbolic link", from.display())));
+    }
+    let size = meta.len();
     if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -768,21 +776,61 @@ pub(crate) fn move_file(from: &Path, to: &Path) -> std::io::Result<u64> {
         Err(_) => {}
     }
     // Filesystems without hard links (FAT, exFAT, some network shares).
-    if to.symlink_metadata().is_ok() {
-        return Err(IoError::new(
-            ErrorKind::AlreadyExists,
-            format!("{} exists", to.display()),
-        ));
-    }
-    match std::fs::rename(from, to) {
+    match rename_noreplace(from, to) {
         Ok(()) => Ok(size),
         Err(e) if e.kind() == ErrorKind::CrossesDevices => copy_verify_delete(from, to, size),
         Err(e) => Err(e),
     }
 }
 
-fn copy_verify_delete(from: &Path, to: &Path, size: u64) -> std::io::Result<u64> {
+/// Rename that fails if `to` exists. Linux checks atomically
+/// (`RENAME_NOREPLACE`); where the filesystem or system can't, a file that
+/// appears between the check and the rename could still be replaced.
+fn rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
     use std::io::{Error as IoError, ErrorKind};
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(IoError::other);
+        let (f, t) = (c(from)?, c(to)?);
+        // SAFETY: both are valid NUL-terminated paths for the call's duration.
+        let r = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                f.as_ptr(),
+                libc::AT_FDCWD,
+                t.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if r == 0 {
+            return Ok(());
+        }
+        let e = IoError::last_os_error();
+        // Not supported here (an old kernel, some filesystems): check, then rename.
+        if !matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) {
+            return Err(e);
+        }
+    }
+    if to.symlink_metadata().is_ok() {
+        return Err(IoError::new(
+            ErrorKind::AlreadyExists,
+            format!("{} exists", to.display()),
+        ));
+    }
+    std::fs::rename(from, to)
+}
+
+/// Make a new directory entry in `dir` durable (no-op where folders can't
+/// be opened, as on Windows).
+fn sync_dir(dir: &Path) {
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
+    }
+}
+
+fn copy_verify_delete(from: &Path, to: &Path, size: u64) -> std::io::Result<u64> {
+    use std::io::Error as IoError;
     let name = to
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -806,17 +854,15 @@ fn copy_verify_delete(from: &Path, to: &Path, size: u64) -> std::io::Result<u64>
         if sha1_file(from)? != sha1_file(&tmp)? || std::fs::metadata(&tmp)?.len() != size {
             return Err(IoError::other("copy does not match the original"));
         }
-        if to.symlink_metadata().is_ok() {
-            return Err(IoError::new(
-                ErrorKind::AlreadyExists,
-                format!("{} exists", to.display()),
-            ));
-        }
-        std::fs::rename(&tmp, to)
+        rename_noreplace(&tmp, to)
     })();
     if let Err(e) = result {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
+    }
+    // The copy is on disk under its name before the original goes.
+    if let Some(dir) = to.parent() {
+        sync_dir(dir);
     }
     std::fs::remove_file(from)?;
     Ok(size)
@@ -868,6 +914,28 @@ mod tests {
         assert_eq!(best(&["X (USA) (Beta)", "X (Japan)"]), "X (Japan)");
         assert_eq!(best(&["X (USA, Europe)", "X (Europe)"]), "X (USA, Europe)");
         assert_eq!(best(&["X (Brazil)", "X (Japan)"]), "X (Japan)");
+    }
+
+    #[test]
+    fn renames_never_replace_and_links_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let e = rename_noreplace(&a, &b).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&b).unwrap(), b"b");
+        let c = dir.path().join("c");
+        rename_noreplace(&a, &c).unwrap();
+        assert!(!a.exists() && c.exists());
+
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link");
+            std::os::unix::fs::symlink(&c, &link).unwrap();
+            assert!(move_file(&link, &dir.path().join("moved")).is_err());
+            assert!(link.symlink_metadata().is_ok() && c.exists());
+        }
     }
 
     #[test]

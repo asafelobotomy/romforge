@@ -603,3 +603,32 @@ fn undo_keeps_new_files_until_every_original_is_back() {
     assert!(!item.target.exists());
     assert!(s.source.join("Test GB.gb").exists());
 }
+
+/// A game you named that sits in Source twice: one copy goes in the
+/// archive, the other is a copy, not a second ROM.
+#[test]
+fn a_named_game_twice_is_one_part() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let library = dir.path().join("library");
+    std::fs::create_dir_all(source.join("b")).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    let data = vec![3u8; 2048];
+    std::fs::write(source.join("mine.gb"), &data).unwrap();
+    std::fs::write(source.join("b/mine copy.gb"), &data).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.save_settings(&Settings {
+        source_dir: Some(source.clone()),
+        library_dir: Some(library.clone()),
+        staging_dir: Some(dir.path().join("staging")),
+        ..Settings::default()
+    })
+    .unwrap();
+    lib.scan(&source, Scope::All).unwrap();
+    let row = lib.search_queue(None).unwrap()[0].row_id.clone();
+    lib.identify_as(&row, "Game Boy", "My Game").unwrap();
+    let plan = lib.cleanup_plan(None).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    assert_eq!(plan.items[0].parts.len(), 1, "{:?}", plan.items[0].parts);
+    assert_eq!(plan.items[0].copies.len(), 1);
+}
