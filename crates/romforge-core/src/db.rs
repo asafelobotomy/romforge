@@ -174,6 +174,9 @@ const MIGRATIONS: &[&str] = &[
         searched_at TEXT NOT NULL,
         PRIMARY KEY (platform, name)
     );",
+    // 13: where a metadata field came from (NULL: libretro or Wikidata as
+    // before; 'openvgdb', 'launchbox' for the databases the user downloads)
+    "ALTER TABLE game_meta ADD COLUMN source TEXT;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

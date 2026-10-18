@@ -331,7 +331,35 @@
     if (r) note = r;
   }
 
+  // Third-party databases the user downloads (milestone 11).
+  let extdbs = $state([]);
+  let extBusy = $state("");
+
+  async function loadExtdbs() {
+    extdbs = (await call("extdb_list")) ?? [];
+  }
+
+  async function getExtdb(d) {
+    extBusy = d.db;
+    note = `Downloading ${d.name}… (runs in the background; the rest of romforge stays usable)`;
+    try {
+      const r = await invoke("extdb_download", { name: d.db });
+      note = `${r.name}: ${r.entries?.toLocaleString()} entries. Enrich now uses it to fill what libretro and Wikidata leave empty.`;
+    } catch (e) {
+      error = `${d.name}: ${e}`;
+    }
+    extBusy = "";
+    await loadExtdbs();
+  }
+
+  async function dropExtdb(d) {
+    await call("extdb_remove", { name: d.db });
+    note = `${d.name} removed. What Enrich already filled from it stays until you enrich with refresh.`;
+    await loadExtdbs();
+  }
+
   async function loadDats() {
+    loadExtdbs();
     summary = (await call("summary")) ?? { files_by_status: [], dats: [] };
     if (datId !== null) await openDat(datId);
   }
@@ -387,7 +415,8 @@
   };
   // Box art, fanart and logo have their own places; the rest sit under Media.
   const mediaKinds = ["box3d", "title", "snap", "icon"];
-  const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB" };
+  const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB", launchbox: "LaunchBox" };
+  const extdbLabel = { openvgdb: "OpenVGDB", launchbox: "LaunchBox" };
 
   // Details: empty media boxes only when Settings says so.
   let showEmpty = $state(false);
@@ -932,13 +961,14 @@
                   {#if f.developer}<dt>Developer</dt><dd>{f.developer}</dd>{/if}
                   {#if f.publisher}<dt>Publisher</dt><dd>{f.publisher}</dd>{/if}
                   {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
+                  {#if f.community_rating}<dt>Community</dt><dd>{f.community_rating}</dd>{/if}
                   <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
                 </dl>
               </div>
             </div>
 
             {#if f.description}
-              <h3>Overview</h3>
+              <h3>Overview{#if detail.field_sources?.description}<span class="hint src"> · from {extdbLabel[detail.field_sources.description] ?? detail.field_sources.description}</span>{/if}</h3>
               <p class="desc">{f.description}</p>
             {/if}
 
@@ -1035,6 +1065,33 @@
     {:else if view === "dats"}
       <section class="wide">
         <div class="bar"><button onclick={downloadDats} disabled={!!busy}>Download DATs for all systems</button></div>
+        <section class="extdbs" aria-labelledby="extdb-title">
+          <h3 id="extdb-title">Game databases <span class="hint">(optional, downloaded by you)</span></h3>
+          <p class="hint">
+            Free to download, but published without a licence, so romforge doesn't include them: you fetch them from their
+            makers onto this computer. Enrich then uses them only to fill what libretro and Wikidata leave empty.
+          </p>
+          <ul>
+            {#each extdbs as d}
+              <li>
+                <div class="ehead">
+                  <a href={d.homepage} onclick={(e) => { e.preventDefault(); openUrl(d.homepage).catch((err) => (error = String(err))); }}>{d.name}</a>
+                  <span class="hint">
+                    {d.downloaded_at
+                      ? `downloaded ${d.downloaded_at.slice(0, 10)} · ${d.entries?.toLocaleString()} entries · ${size(d.bytes)}`
+                      : "not downloaded"}
+                  </span>
+                  <span class="spacer"></span>
+                  {#if d.downloaded_at}<button onclick={() => dropExtdb(d)} disabled={!!extBusy}>Remove</button>{/if}
+                  <button onclick={() => getExtdb(d)} disabled={!!extBusy}>
+                    {extBusy === d.db ? "Downloading…" : d.downloaded_at ? "Update" : "Download"}
+                  </button>
+                </div>
+                <p class="hint">{d.about}</p>
+              </li>
+            {/each}
+          </ul>
+        </section>
         <div class="dats">
           <div class="datpane">
             <table>
@@ -1223,6 +1280,7 @@
   dt { color: var(--muted); }
   dd { margin: 0; }
   .detail h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+  .detail h3 .src { font-weight: 400; font-size: 0.8rem; }
   .desc { line-height: 1.55; margin: 0; }
   .gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; }
   .media .shot img { max-height: 10rem; max-width: min(100%, 18rem); background: #0002; }
@@ -1262,6 +1320,13 @@
 
   .wide { grid-column: 2 / 4; overflow: auto; padding: 0 0.75rem 1rem; }
   .bar { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; flex-wrap: wrap; }
+  .extdbs { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+  .extdbs h3 { font-size: 0.95rem; margin: 0 0 0.2rem; }
+  .extdbs ul { list-style: none; padding: 0; margin: 0.4rem 0 0; }
+  .extdbs li { padding: 0.4rem 0; border-top: 1px solid var(--line); }
+  .extdbs .ehead { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
+  .extdbs .ehead a { color: var(--accent); font-weight: 600; }
+  .extdbs li .hint { margin: 0.15rem 0 0; }
   .bar input { flex: 1; min-width: 12rem; }
   .dats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; align-items: start; }
   .datpane { overflow-x: auto; min-width: 0; }

@@ -97,6 +97,9 @@ pub struct GameDetail {
     pub art: BTreeMap<String, String>,
     /// kind -> where it came from ("libretro", "screenscraper", …)
     pub art_sources: BTreeMap<String, String>,
+    /// field -> the downloaded database it came from ("openvgdb",
+    /// "launchbox"); fields from libretro or Wikidata aren't listed.
+    pub field_sources: BTreeMap<String, String>,
     pub files: Vec<RowFile>,
     /// DATs listing the game.
     pub dats: Vec<String>,
@@ -494,6 +497,14 @@ pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, S
             direct: true,
         });
     }
+    // A video of the game (LaunchBox gives one), https only.
+    if let Some(v) = fields.get("video").filter(|v| v.starts_with("https://")) {
+        out.push(Link {
+            label: "Video".into(),
+            url: v.clone(),
+            direct: true,
+        });
+    }
     out
 }
 
@@ -508,16 +519,24 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
     let mut fields = BTreeMap::new();
     let mut art = BTreeMap::new();
     let mut art_sources = BTreeMap::new();
+    let mut field_sources = BTreeMap::new();
     let mut dats = Vec::new();
     if let Some(system_id) = row.system_id {
         for r in conn
-            .prepare("SELECT field, value FROM game_meta WHERE system_id = ?1 AND title = ?2")?
+            .prepare("SELECT field, value, source FROM game_meta WHERE system_id = ?1 AND title = ?2")?
             .query_map(params![system_id, row.title], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
             })?
         {
-            let (k, v) = r?;
+            let (k, v, src) = r?;
             if let Some(v) = shown_value(&v) {
+                if let Some(src) = src {
+                    field_sources.insert(k.clone(), src);
+                }
                 fields.insert(k, v);
             }
         }
@@ -642,6 +661,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<GameDetail, Error> {
         fields,
         art,
         art_sources,
+        field_sources,
         files,
         dats,
         links,

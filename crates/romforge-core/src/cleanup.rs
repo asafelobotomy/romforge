@@ -487,6 +487,13 @@ pub fn details_md(d: &view::GameDetail) -> String {
     }
     if let Some(desc) = d.fields.get("description") {
         s += &format!("\n{desc}\n");
+        if let Some(db) = d
+            .field_sources
+            .get("description")
+            .and_then(|k| crate::extdb::ExtDb::parse(k))
+        {
+            s += &format!("\n_Overview from {}._\n", db.name());
+        }
     }
     s += "\n## Files\n\n| File | Size | SHA1 |\n|---|---:|---|\n";
     for f in &d.files {

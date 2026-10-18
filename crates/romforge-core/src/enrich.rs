@@ -108,6 +108,11 @@ pub struct EnrichOptions {
     pub wikidata: Option<String>,
     /// Where the keyed art sources live.
     pub sources: crate::artsources::Bases,
+    /// The folder of databases the user downloaded (OpenVGDB, LaunchBox);
+    /// `None`: the library's own (`databases/` next to it), if any.
+    pub extdb: Option<PathBuf>,
+    /// LaunchBox's image server ([`crate::extdb::Bases`]).
+    pub launchbox_images: String,
 }
 
 impl EnrichOptions {
@@ -123,6 +128,8 @@ impl EnrichOptions {
             thumbnails_base: THUMBNAILS_BASE.to_owned(),
             wikidata: Some(crate::wikidata::ENDPOINT.to_owned()),
             sources: crate::artsources::Bases::default(),
+            extdb: None,
+            launchbox_images: crate::extdb::Bases::default().launchbox_images,
         }
     }
 }
@@ -137,6 +144,8 @@ pub struct EnrichReport {
     pub art_cached: usize,
     /// Wikidata matching (when it ran).
     pub wikidata: Option<crate::wikidata::WikidataReport>,
+    /// Games given fields by the downloaded databases (OpenVGDB, LaunchBox).
+    pub extdb_games: usize,
     pub errors: Vec<String>,
 }
 
@@ -288,6 +297,15 @@ pub fn enrich(
     };
 
     let keys = crate::settings::load(conn)?.keys;
+    // Databases the user downloaded (milestone 11), if any.
+    let ovgdb = opts
+        .extdb
+        .as_deref()
+        .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::OpenVgdb, d));
+    let lbdb = opts
+        .extdb
+        .as_deref()
+        .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d));
     let mut session = crate::artsources::Session::default();
     // Sources that said "slow down" aren't asked again this run.
     let mut halted: Vec<crate::artsources::Provider> = Vec::new();
@@ -353,7 +371,7 @@ pub fn enrich(
             {
                 let mut put = tx.prepare(
                     "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value",
+                     ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
                 )?;
                 for (game, fields) in &found {
                     for (k, v) in fields {
@@ -426,6 +444,42 @@ pub fn enrich(
                         missing.push(kind);
                     }
                     Err(e) => report.errors.push(e.to_string()),
+                }
+            }
+            // LaunchBox next (free, no key; downloaded by the user): only
+            // what is still missing.
+            if !missing.is_empty()
+                && let Some(lb) = &lbdb
+            {
+                match crate::extdb::launchbox_lookup(lb, system, game, &opts.launchbox_images) {
+                    Ok(Some(found)) => {
+                        for (kind, url) in found.images {
+                            if !missing.contains(&kind) {
+                                continue;
+                            }
+                            progress(EnrichEvent::Art {
+                                system: system.key,
+                                game: (*game).clone(),
+                                kind,
+                            });
+                            match fetch::get_optional(&url) {
+                                Ok(Some(data)) if image_ext(&data).is_some() => {
+                                    match keep(conn, opts, system, *system_id, game, kind, &data, "launchbox")
+                                    {
+                                        Ok(()) => {
+                                            report.art_saved += 1;
+                                            missing.retain(|k| *k != kind);
+                                        }
+                                        Err(e) => report.errors.push(e.to_string()),
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(e) => report.errors.push(format!("LaunchBox: {e}")),
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => report.errors.push(format!("LaunchBox: {e}")),
                 }
             }
             // Keyed sources, each asked once per game unless refreshing.
@@ -513,7 +567,59 @@ pub fn enrich(
             Err(e) => report.errors.push(format!("Wikidata: {e}")),
         }
     }
+    // Last, the downloaded databases fill fields nothing else had:
+    // OpenVGDB by hash first, then LaunchBox by title.
+    if ovgdb.is_some() || lbdb.is_some() {
+        for (system_id, game) in have.keys() {
+            let Some(system) = systems::by_id(*system_id) else {
+                continue;
+            };
+            let mut found: Vec<(&'static str, &'static str, String)> = Vec::new();
+            if let Some(db) = &ovgdb {
+                match crate::extdb::openvgdb_lookup(db, &game_sha1s(conn, *system_id, game)?) {
+                    Ok(Some(f)) => found.extend(f.fields.into_iter().map(|(k, v)| ("openvgdb", k, v))),
+                    Ok(None) => {}
+                    Err(e) => report.errors.push(format!("OpenVGDB: {e}")),
+                }
+            }
+            if let Some(db) = &lbdb {
+                match crate::extdb::launchbox_lookup(db, system, game, &opts.launchbox_images) {
+                    Ok(Some(f)) => found.extend(f.fields.into_iter().map(|(k, v)| ("launchbox", k, v))),
+                    Ok(None) => {}
+                    Err(e) => report.errors.push(format!("LaunchBox: {e}")),
+                }
+            }
+            let mut filled = false;
+            for (source, field, value) in found {
+                // Only empty fields, or libretro's "???" placeholders.
+                let n = conn.execute(
+                    "INSERT INTO game_meta (system_id, title, field, value, source) VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = excluded.source
+                     WHERE game_meta.value LIKE '%???%' OR game_meta.source = excluded.source",
+                    params![system_id, game, field, value, source],
+                )?;
+                filled |= n > 0;
+            }
+            if filled {
+                report.extdb_games += 1;
+            }
+        }
+    }
     Ok(report)
+}
+
+/// The SHA1s of a game's ROMs (from its DATs) or of the files you named it.
+fn game_sha1s(conn: &Connection, system_id: i64, title: &str) -> Result<Vec<String>, Error> {
+    Ok(conn
+        .prepare_cached(
+            // From the system's DATs down (games have no index by name).
+            "SELECT r.sha1 FROM dats d CROSS JOIN games g ON g.dat_id = d.dat_id
+               CROSS JOIN roms r ON r.game_id = g.game_id
+             WHERE d.system_id = ?1 AND g.name = ?2 AND +r.sha1 IS NOT NULL
+             UNION SELECT sha1 FROM manual_ids WHERE system_id = ?1 AND title = ?2",
+        )?
+        .query_map(params![system_id, title], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
 }
 
 /// Whether some game's metadata was never looked up (it may be newly

@@ -8,8 +8,8 @@ use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
 
 use romforge_core::{
-    DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, enrich, fetch,
-    launch, organize, search, settings, systems,
+    DatState, ImportedDat, Library, LibraryFilter, ScanOptions, ScanProgress, Scope, Status, enrich, extdb,
+    fetch, launch, organize, search, settings, systems,
 };
 
 #[derive(Parser)]
@@ -60,6 +60,12 @@ enum Command {
     /// go to .romforge-trash next to them, for `cleanup undo`.
     #[command(subcommand)]
     Cleanup(CleanupCommand),
+    /// Third-party game databases you download yourself (milestone 11):
+    /// OpenVGDB and the LaunchBox Games Database. Free, but published
+    /// without a licence, so romforge doesn't ship them; Enrich uses them to
+    /// fill what the open sources leave empty.
+    #[command(subcommand, alias = "db")]
+    Databases(DatabasesCommand),
     /// Fetch metadata and art for the games you have (milestone 3)
     ///
     /// From libretro's database and thumbnail server; art is saved under
@@ -203,6 +209,18 @@ enum OrganizeCommand {
     },
     /// List applied batches
     History,
+}
+
+#[derive(Subcommand)]
+enum DatabasesCommand {
+    /// What is downloaded, and when
+    List,
+    /// Download (or update) one: openvgdb or launchbox
+    Download { name: String },
+    /// Build one from a zip you downloaded yourself
+    Import { name: String, zip: PathBuf },
+    /// Delete the local copy
+    Remove { name: String },
 }
 
 #[derive(Subcommand)]
@@ -584,6 +602,47 @@ fn main() -> Result<()> {
             );
             if !undone.failed.is_empty() {
                 bail!("{} files could not be moved back", undone.failed.len());
+            }
+        }
+        Command::Databases(cmd) => {
+            let dir = lib.extdb_dir().context("no folder for databases")?;
+            let pick = |n: &str| {
+                extdb::ExtDb::parse(n)
+                    .with_context(|| format!("unknown database {n:?} (openvgdb or launchbox)"))
+            };
+            match cmd {
+                DatabasesCommand::List => {
+                    for i in extdb::list(&dir) {
+                        let state = match (&i.downloaded_at, i.bytes) {
+                            (Some(at), Some(b)) => {
+                                format!(
+                                    "downloaded {at}, {} MB, {} entries",
+                                    b >> 20,
+                                    i.entries.unwrap_or(0)
+                                )
+                            }
+                            _ => "not downloaded".into(),
+                        };
+                        println!("{:<10} {:<26} {state}", i.db.key(), i.name);
+                        println!("           {}", i.about);
+                    }
+                    println!("(in {})", dir.display());
+                }
+                DatabasesCommand::Download { name } => {
+                    let db = pick(&name)?;
+                    let i = extdb::download(db, &dir, &extdb::Bases::default(), |m| eprintln!("{m}"))?;
+                    println!("{}: {} entries", i.name, i.entries.unwrap_or(0));
+                }
+                DatabasesCommand::Import { name, zip } => {
+                    let db = pick(&name)?;
+                    let i = extdb::import(db, &zip, &dir, &zip.to_string_lossy(), |m| eprintln!("{m}"))?;
+                    println!("{}: {} entries", i.name, i.entries.unwrap_or(0));
+                }
+                DatabasesCommand::Remove { name } => {
+                    let db = pick(&name)?;
+                    extdb::remove(db, &dir)?;
+                    println!("{} removed", db.name());
+                }
             }
         }
         Command::Cleanup(CleanupCommand::Plan { verbose }) => {

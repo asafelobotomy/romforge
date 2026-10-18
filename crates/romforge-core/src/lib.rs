@@ -10,6 +10,7 @@ pub mod dat;
 mod db;
 pub mod disc;
 pub mod enrich;
+pub mod extdb;
 pub mod fetch;
 pub mod hash;
 pub mod headers;
@@ -800,6 +801,12 @@ impl Library {
         Ok(u)
     }
 
+    /// Where downloaded third-party databases live (`databases/` next to
+    /// the library database); `None` for an in-memory library.
+    pub fn extdb_dir(&self) -> Option<PathBuf> {
+        self.path.as_deref().map(extdb::dir_for)
+    }
+
     pub fn cleanup_batches(&self) -> Result<Vec<cleanup::Batch>, Error> {
         cleanup::batches(&self.conn)
     }
@@ -810,7 +817,18 @@ impl Library {
         opts: &enrich::EnrichOptions,
         progress: impl FnMut(enrich::EnrichEvent),
     ) -> Result<enrich::EnrichReport, Error> {
-        enrich::enrich(&mut self.conn, opts, progress)
+        let opts = self.with_extdb(opts);
+        enrich::enrich(&mut self.conn, &opts, progress)
+    }
+
+    /// Enrich options using this library's downloaded databases unless the
+    /// caller named a folder.
+    fn with_extdb(&self, opts: &enrich::EnrichOptions) -> enrich::EnrichOptions {
+        let mut o = opts.clone();
+        if o.extdb.is_none() {
+            o.extdb = self.extdb_dir();
+        }
+        o
     }
 
     /// Metadata and cached art for games whose name contains `query`.
@@ -949,7 +967,8 @@ impl Library {
         system: Option<&str>,
         opts: &enrich::EnrichOptions,
     ) -> Result<search::Chosen, Error> {
-        search::choose(&mut self.conn, row_id, found, system, opts)
+        let opts = self.with_extdb(opts);
+        search::choose(&mut self.conn, row_id, found, system, &opts)
     }
 
     /// Name a row's files yourself ("identified by you").

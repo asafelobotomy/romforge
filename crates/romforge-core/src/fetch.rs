@@ -282,19 +282,96 @@ fn short(url: &str) -> &str {
 /// again after the wait it gives in Retry-After, twice at most; one that
 /// asks for more than 30 s is not, and the error says how long it wants.
 pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
+    let Some(mut response) = respond(req)? else {
+        return Ok(None);
+    };
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY)
+        .read_to_vec()
+        .map(Some)
+        .map_err(|e| Error::Http(format!("{}: {e}", short(req.url))))
+}
+
+/// GET `url` straight into the file `to` (written as `<to>.part`, renamed
+/// when complete), for downloads too big to hold in memory. `progress`
+/// gets (bytes so far, total if the server said). Returns the size.
+pub fn download_to(
+    url: &str,
+    to: &std::path::Path,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<u64, Error> {
+    let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
+    let mut response = respond(&Request::get(url))?.ok_or_else(|| err("HTTP 404".into()))?;
+    let total = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok()?.parse().ok());
+    let part = to.with_extension(format!(
+        "{}.part",
+        to.extension()
+            .map(|e| e.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    ));
+    if let Some(dir) = to.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&part)?);
+    let mut body = response.body_mut().as_reader();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut done = 0u64;
+    loop {
+        let n = match body.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => {
+                drop(out);
+                let _ = std::fs::remove_file(&part);
+                return Err(err(e.to_string()));
+            }
+        };
+        std::io::Write::write_all(&mut out, &buf[..n])?;
+        done += n as u64;
+        progress(done, total);
+    }
+    std::io::Write::flush(&mut out)?;
+    drop(out);
+    if total.is_some_and(|t| t != done) {
+        let _ = std::fs::remove_file(&part);
+        return Err(err(format!(
+            "download cut short ({done} of {} bytes)",
+            total.unwrap_or(0)
+        )));
+    }
+    std::fs::rename(&part, to)?;
+    Ok(done)
+}
+
+/// One HTTP agent for the whole process: building one loads the system's
+/// certificates, which costs far more than a request.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .user_agent(USER_AGENT)
+            .timeout_global(Some(Duration::from_secs(900)))
+            .http_status_as_error(false)
+            .tls_config(
+                TlsConfig::builder()
+                    .root_certs(RootCerts::PlatformVerifier)
+                    .build(),
+            )
+            .build()
+            .new_agent()
+    })
+}
+
+/// Send a request, waiting out short rate limits; `Ok(None)` for 404.
+fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Error> {
     let url = req.url;
     let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
-    let agent = ureq::Agent::config_builder()
-        .user_agent(USER_AGENT)
-        .timeout_global(Some(Duration::from_secs(900)))
-        .http_status_as_error(false)
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
-        .build()
-        .new_agent();
+    let agent = agent();
     for attempt in 0.. {
         wait_for_host(url);
         let result = match &req.body {
@@ -313,7 +390,7 @@ pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
                 r.call()
             }
         };
-        let mut response = result.map_err(|e| err(e.to_string()))?;
+        let response = result.map_err(|e| err(e.to_string()))?;
         let status = response.status().as_u16();
         if status == 429 || status == 503 {
             let wait = response
@@ -342,13 +419,7 @@ pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
         if status >= 400 {
             return Err(err(format!("HTTP {status}")));
         }
-        return response
-            .body_mut()
-            .with_config()
-            .limit(MAX_BODY)
-            .read_to_vec()
-            .map(Some)
-            .map_err(|e| err(e.to_string()));
+        return Ok(Some(response));
     }
     unreachable!("the loop returns")
 }

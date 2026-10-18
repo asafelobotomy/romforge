@@ -33,4 +33,8 @@
     key: libretro, Wikidata, plain search links. (2) Free key, no account:
     ScreenScraper with app credentials. (3) Free account and free key:
     SteamGridDB, IGDB. A later tier only fills what earlier tiers left
-    empty, and keys are optional settings, never required.
+    empty, and keys are optional settings, never required. Free data
+    published without a licence (OpenVGDB, LaunchBox's Metadata.zip) may be
+    used, but never shipped: no copies in git, fixtures or releases; the user
+    downloads it from inside romforge, and it fills only what the open
+    sources leave empty.

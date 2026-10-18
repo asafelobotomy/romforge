@@ -215,6 +215,15 @@ pixels and its source, and a click opens it full size (small screenshots
 scaled by whole steps, pixels kept sharp). Kinds with no art are hidden;
 Settings → "Show empty media boxes" shows a box for each.
 
+**Game databases** (DATs view, or `romforge-cli databases`): OpenVGDB and
+the LaunchBox Games Database are free to download but published without a
+licence, so romforge doesn't include them. One click fetches them from their
+makers onto your computer (LaunchBox is about 110 MB, updated daily), and
+Enrich then uses them only to fill what libretro and Wikidata leave empty:
+overviews, studios, genres, release dates, players, community ratings,
+Wikipedia and video links, and LaunchBox's 3D boxes, logos and fanart.
+Details shows where an overview came from.
+
 **Development** groups what is known into Studios, Credits, Release and
 Identification (status, DATs, Wikidata item), leaving out anything empty.
 **Series** is a table (#, year, title, platform) in Wikidata's series order

@@ -196,9 +196,58 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     (AGPL, free public hash lookup that maps to IGDB and VIMM's Lair
     manuals; no account per its README), GameTDB (GameCube/Wii/DS/3DS XML,
     open wiki, no stated licence, covers unclear), Recalbox Game DB (no
-    stated licence or API). Not used: LaunchBox `Metadata.zip` and OpenVGDB
-    (no licence stated), RetroAchievements' hash library (needs a login
-    token), Giant Bomb IDs on Wikidata (former scheme).
+    stated licence or API). Not used: RetroAchievements' hash library
+    (needs a login token), Giant Bomb IDs on Wikidata (former scheme).
+
+    *Downloaded by the user* *(built 2026-10-17)*: OpenVGDB and the
+    LaunchBox Games Database are free downloads with no account but no
+    licence or terms published (all rights reserved by default, and much of
+    the text comes from box backs and GameFAQs). So romforge never ships
+    them (AGENTS.md rule 10): DATs view → Game databases (or `romforge-cli
+    databases download|import|list|remove`) fetches them from their makers
+    into `databases/` next to the library. Enrich then fills only empty
+    fields (and libretro's `???`): OpenVGDB by SHA1, then LaunchBox by exact
+    title on the system's LaunchBox platforms (new `launchbox` column in
+    `systems.rs`, accents folded, alternate names, exactly one game or
+    nothing); LaunchBox images come after libretro and before the keyed
+    sources, the game's region first. Each field and image keeps its source
+    (`game_meta.source`, migration 13), shown in Details and noted in
+    `.romforge.md`. Import takes about 8 s; the LaunchBox index is about
+    280 MB. On a copy of the real library: descriptions for 22 of 22 games
+    (from 3), and 21 each of 3D boxes, fanart and logos. Findings:
+    - **OpenVGDB** v29 (Nov 2021, 9 MB zip, 42 MB SQLite). Tables ROMs
+      (system, region, CRC/MD5/SHA1, size, DAT file name, parent, serial,
+      language, dump source: No-Intro 30k, MAME 11k, Redump 11k) and
+      RELEASES (title, region, front/back/cart/disc cover URLs,
+      description, developer, publisher, genre, date, GameFAQs page).
+      Apparently built by matching DAT entries to GameFAQs (each release
+      links its GameFAQs page); covers hot-linked from
+      GameFAQs or the maintainer's GitHub. Keyed by hash, so it fits
+      house rule 8: 21 of the library's 28 hashed files found by SHA1, 18
+      with a description. Not updated since 2021; no build scripts
+      published.
+    - **LaunchBox Games Database** (`Metadata.zip`, 108 MB, re-exported
+      daily): Metadata.xml has Game (190k: name, platform, overview,
+      developer, publisher, genres, release date/year, max players,
+      cooperative, ESRB, community rating and count, release type, video
+      and Wikipedia URLs, Steam id), GameAlternateName (71k, by region),
+      GameImage (1.3M: GUID file name on images.launchbox-app.com, type,
+      region, CRC32) and Platform (hardware specs). Files.xml maps 86k
+      known file names (mostly DAT names) to game names; Mame.xml has
+      MAME sets with flags (bootleg, prototype, mature, mahjong…), genre,
+      play mode and clone-of. **No ROM hashes**: LaunchBox identifies by
+      file name, then title + platform. Community-edited with moderator
+      approval, exported nightly. Exact title + platform matched 21 of the
+      22 games here (the miss: "Pokémon" with its accent), all with an
+      overview and many art kinds.
+    - **Lessons for romforge** (usable without their data): a finer art
+      taxonomy (box back, spine, cart, disc, banner, title vs gameplay
+      screenshot, clear logo, background), each image tagged with region
+      and CRC32 to drop duplicates; alternate names per region; a known
+      file name → title table like Files.xml to tidy names before title
+      matching; folding accents ("Pokémon" = "Pokemon") in title matching;
+      a nightly single-file export as a model if romforge ever shares its
+      own data.
 
 ## Later ideas (parked, do not build yet)
 

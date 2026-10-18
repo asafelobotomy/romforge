@@ -533,7 +533,7 @@ pub fn enrich(
                 tx.prepare("SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3")?;
             let mut put = tx.prepare(
                 "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value",
+                 ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
             )?;
             for (system_id, title, qid) in chunk {
                 put.execute(params![system_id, title, "wikidata", qid])?;

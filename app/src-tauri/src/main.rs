@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
+use romforge_core::extdb::{ExtDb, ExtDbInfo};
 use romforge_core::launch::Env;
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
 use romforge_core::search::{Chosen, Found, Preview, QueueItem, Scraper};
@@ -66,6 +67,33 @@ struct Downloaded {
     imported: usize,
     unchanged: usize,
     errors: Vec<String>,
+}
+
+fn extdb_dir(db: &tauri::State<Db>) -> Res<PathBuf> {
+    with(db, |lib| Ok(lib.extdb_dir()))?.ok_or_else(|| "no folder for databases".into())
+}
+
+fn extdb_named(name: &str) -> Res<ExtDb> {
+    ExtDb::parse(name).ok_or_else(|| format!("unknown database {name:?}"))
+}
+
+#[tauri::command]
+async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
+    Ok(romforge_core::extdb::list(&extdb_dir(&db)?))
+}
+
+/// Downloads without holding the library, so the window stays usable.
+#[tauri::command]
+async fn extdb_download(db: tauri::State<'_, Db>, name: String) -> Res<ExtDbInfo> {
+    let dir = extdb_dir(&db)?;
+    romforge_core::extdb::download(extdb_named(&name)?, &dir, &Default::default(), |_| {})
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
+    let dir = extdb_dir(&db)?;
+    romforge_core::extdb::remove(extdb_named(&name)?, &dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -397,6 +425,9 @@ fn main() {
             dat_games,
             scan,
             download_dats,
+            extdb_list,
+            extdb_download,
+            extdb_remove,
             organize_plan,
             organize_apply,
             organize_undo,
