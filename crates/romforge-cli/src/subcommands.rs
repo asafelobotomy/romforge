@@ -203,6 +203,8 @@ pub enum FirmwareCommand {
     },
     /// Take away what the last import wrote
     Undo,
+    /// Install the PS3 firmware from Bios/rpcs3/PS3UPDAT.PUP into RPCS3
+    InstallPs3,
 }
 
 #[derive(Subcommand)]

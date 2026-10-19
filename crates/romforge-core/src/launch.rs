@@ -97,6 +97,9 @@ pub struct Env {
     /// The RomForge folder: emulators romforge writes a config for run
     /// from their copy in it. `None`: as they are set up.
     pub home: Option<crate::home::Home>,
+    /// The user's home and XDG folders, where RPCS3, Cemu and xemu keep the
+    /// game data romforge's config points at.
+    pub user: Option<existing::UserDirs>,
 }
 
 /// How an emulator is started, as set in Emulator Settings.
@@ -140,6 +143,7 @@ impl Env {
             core_dirs,
             flatpak_dirs,
             emulator_dirs: home.iter().map(|h| h.join("Applications")).collect(),
+            user: existing::UserDirs::detect(),
             ..Env::default()
         }
     }

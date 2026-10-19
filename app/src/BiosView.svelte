@@ -23,6 +23,13 @@
     }
   }
 
+  // RPCS3 installs PS3 firmware rather than loading a file.
+  async function installPs3() {
+    const where = await run("Installing the PS3 firmware into RPCS3…", "install_ps3_firmware", {});
+    if (where) note = `PS3 firmware installed into ${where}.`;
+    await loadBios();
+  }
+
   async function download() {
     const n = await run("Fetching RetroBIOS's list…", "firmware_download", {});
     if (n) note = `RetroBIOS's list: ${n} emulators and cores. Only the list is fetched, never BIOS files.`;
@@ -82,6 +89,9 @@
                   <span class:good={e.ready && e.profiled} class:bad={!e.ready}>{readiness(e)}</span>
                   · {e.installed ? "installed" : "not installed"} · {e.files.length} file{e.files.length === 1 ? "" : "s"} in its list
                 </p>
+                {#if e.name === "rpcs3" && e.files.some((f) => f.name === "PS3UPDAT.PUP" && f.state !== "missing")}
+                  <button onclick={installPs3} disabled={!!busy || !e.installed} title="Runs RPCS3's own firmware installer (it goes into the dev_flash romforge's RPCS3 setup uses: your own RPCS3's when it has one)">Install into RPCS3</button>
+                {/if}
                 {#if files.length}
                   <table>
                     <thead><tr><th>File</th><th>State</th><th>Needed</th><th>Goes in</th></tr></thead>

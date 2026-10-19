@@ -36,3 +36,12 @@ pub async fn firmware_import(
 pub async fn firmware_undo(db: tauri::State<'_, Db>) -> Res<usize> {
     with(&db, move |lib| lib.firmware_undo()).await
 }
+
+/// Install the PS3 firmware from Bios/rpcs3/ into RPCS3.
+#[tauri::command]
+pub async fn install_ps3_firmware(db: tauri::State<'_, Db>) -> Res<String> {
+    read(&db, move |lib| {
+        lib.install_ps3_firmware().map(|p| p.display().to_string())
+    })
+    .await
+}

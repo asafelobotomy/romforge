@@ -20,6 +20,7 @@ use crate::{Error, systems::System};
 pub mod existing;
 mod formats;
 pub use formats::Format;
+mod gamedata;
 mod standalone;
 
 /// A config file, the keys romforge sets in it and the ones it takes out.
@@ -53,6 +54,7 @@ pub(super) fn owned(
     home: &Home,
     system: &System,
     options: &LaunchOptions,
+    user: Option<&existing::UserDirs>,
 ) -> Option<(PathBuf, Prepare)> {
     let dir = home.emulator_config(e.settings_name());
     let s = |p: PathBuf| p.to_string_lossy().into_owned();
@@ -110,7 +112,9 @@ pub(super) fn owned(
         }
         name => {
             let bios = home.bios().join(name);
-            standalone::standalone(name, &dir, &bios).map(|p| (dir, p))
+            standalone::standalone(name, &dir, &bios)
+                .or_else(|| gamedata::gamedata(name, &dir, &bios, user))
+                .map(|p| (dir, p))
         }
     }
 }

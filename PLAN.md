@@ -1051,8 +1051,8 @@ Not yet:
 - a new copy starts from RetroArch's built-in defaults: whether
   controller autoconfig and assets still resolve is to check on a real
   start (else seed those paths, or import the user's config once);
-- the other emulators' configs: seven are done (milestone 20, step 4);
-  RPCS3, Cemu and xemu wait on a decision (their data folders hold games).
+- the other emulators' configs: all ten are done (milestone 20, step 4;
+  RPCS3, Cemu and xemu with their game data pointed at where it is).
 
 *(Built 2026-10-19, RetroArch's settings.)* Emulator Settings rows with
 config keys (`emusettings/table.rs`, `keys`) are written into romforge's
@@ -1584,11 +1584,25 @@ In this order:
    (Dolphin's `GC/<region>/IPL.bin`). Writers for INI and Mednafen's
    `key value` files are in `owned/formats.rs`; environment variables
    reach a Flatpak as `--env=`.
-   **Open (owner's call):** RPCS3, Cemu and xemu keep firmware, installed
-   games or a hard disk image in their data folder, so they still start
-   as set up: a folder of romforge's would hide those. Options: keep their
-   own data folder and set only BIOS paths in it, or move/link their game
-   data into RomForge.
+   *(Decided and built 2026-10-19: RPCS3, Cemu and xemu.)* They get
+   romforge's own config like the others, but their game data stays where
+   it is and romforge's config points at it (`launch/owned/gamedata.rs`,
+   read from their source): RPCS3's `vfs.yml` devices at the user's own
+   `dev_hdd0`, `dev_flash`… (their usual folder, or where their own
+   `vfs.yml` moved them), its welcome dialog off; Cemu's `settings.xml`
+   `<mlc_path>` at the user's MLC (installed titles, updates, DLC,
+   saves), the file always written so "Getting started" doesn't open,
+   `keys.txt` / `otp.bin` / `seeprom.bin` linked from `Bios/cemu/`;
+   xemu's `xemu.toml` with `show_welcome = false`, the user's own
+   `hdd_path` and `eeprom_path` (from their `xemu.toml`), else
+   `Bios/xemu/`'s, and `bootrom_path` / `flashrom_path` from
+   `Bios/xemu/`. PS3 firmware isn't a file to place: "Install into
+   RPCS3" on the BIOS page (`firmware install-ps3`) runs RPCS3's own
+   `--installfw … --headless` with romforge's config and checks the
+   firmware landed (RPCS3 exits 0 even when it fails). Writers for TOML,
+   flat YAML and Cemu's XML joined `owned/formats.rs`. Not yet: RPCS3's
+   Flatpak still asks about being an unofficial build (no setting); their
+   game data isn't moved into RomForge (a later "move it in" step).
    *(Built 2026-10-19: "Import my existing setup".)* An emulator started
    from romforge's folder no longer sees its usual one, so Emulator
    Settings (each emulator's tab) and `emulator import-setup NAME
@@ -1599,7 +1613,8 @@ In this order:
    file, which becomes the base (romforge's keys go back in at the next
    start; the one replaced is kept beside it as `.romforge-before-import`).
    Journaled (migration 37); undo removes the copies and restores that
-   file. RetroArch: its `retroarch.cfg` only, so its controller setup
+   file. RPCS3's devices and Cemu's MLC aren't copied (romforge points at
+   them). RetroArch: its `retroarch.cfg` only, so its controller setup
    comes along and its autoconfig, assets and remaps are read where they
    are; its core-sorted saves aren't mapped to romforge's per-system
    folders yet.

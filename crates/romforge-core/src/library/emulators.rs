@@ -61,6 +61,11 @@ impl Library {
         firmware::apply(&self.conn, &dir, home, &self.env()?, paths, also)
     }
 
+    /// Install the PS3 firmware in `Bios/rpcs3/` into RPCS3.
+    pub fn install_ps3_firmware(&self) -> Result<std::path::PathBuf, Error> {
+        launch::install_ps3_firmware(&self.env()?)
+    }
+
     /// Take away what the last BIOS import wrote.
     pub fn firmware_undo(&mut self) -> Result<usize, Error> {
         firmware::undo(&self.conn)

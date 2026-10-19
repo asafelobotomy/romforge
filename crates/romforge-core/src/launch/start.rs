@@ -67,7 +67,7 @@ pub(super) fn start(
         let options = env.options(e);
         env.home
             .as_ref()
-            .and_then(|h| owned::owned(e, h, system, &options))
+            .and_then(|h| owned::owned(e, h, system, &options, env.user.as_ref()))
     };
     // An arcade game is started by its set's name; anything else, by its file.
     let set = if system.arcade {

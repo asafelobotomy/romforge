@@ -46,6 +46,25 @@ pub struct SetupImported {
 /// Folder names never copied (any case): caches and logs.
 const SKIP: &[&str] = &["cache", "shadercache", "shaders", "logs", "dump", "graphicsmods"];
 
+/// Folder names left where they are for one emulator: game data its
+/// config points at instead of copies (RPCS3's devices, Cemu's MLC).
+fn skip_for(name: &str) -> &'static [&'static str] {
+    match name {
+        "rpcs3" => &[
+            "dev_hdd0",
+            "dev_hdd1",
+            "dev_flash",
+            "dev_flash2",
+            "dev_flash3",
+            "dev_bdvd",
+            "dev_usb000",
+            "games",
+        ],
+        "cemu" => &["mlc01"],
+        _ => &[],
+    }
+}
+
 /// The settings files romforge writes keys into, relative to its folder:
 /// imported files replace these, then romforge's keys go back in.
 fn settings_files(name: &str) -> &'static [&'static str] {
@@ -55,6 +74,9 @@ fn settings_files(name: &str) -> &'static [&'static str] {
         "pcsx2" => &["PCSX2/inis/PCSX2.ini"],
         "mgba" => &["mgba/config.ini"],
         "mednafen" => &["mednafen.cfg"],
+        "rpcs3" => &["rpcs3/vfs.yml", "rpcs3/GuiConfigs/CurrentSettings.ini"],
+        "cemu" => &["Cemu/settings.xml"],
+        "xemu" => &["xemu.toml"],
         _ => &[],
     }
 }
@@ -96,6 +118,13 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
         ]
         .concat(),
         "mednafen" => at(home_dir.join(".mednafen"), dir.to_path_buf()),
+        "rpcs3" => both("rpcs3", dir.join("rpcs3"), false),
+        "cemu" => [
+            both("Cemu", dir.join("Cemu"), false),
+            both("Cemu", dir.join("data/Cemu"), true),
+        ]
+        .concat(),
+        "xemu" => both("xemu/xemu/xemu.toml", dir.join("xemu.toml"), true),
         "dolphin" => [
             at(home_dir.join(".dolphin-emu"), dir.to_path_buf()),
             both("dolphin-emu", dir.join("Config"), false),
@@ -106,7 +135,27 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
     }
 }
 
+/// The user's home and XDG folders: where emulators keep their usual
+/// setup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserDirs {
+    pub home: PathBuf,
+    pub xdg: Xdg,
+}
+
+impl UserDirs {
+    /// From `$HOME` and the `$XDG_*` romforge runs with.
+    pub fn detect() -> Option<UserDirs> {
+        let home = PathBuf::from(std::env::var_os("HOME")?);
+        Some(UserDirs {
+            xdg: Xdg::detect(&home),
+            home,
+        })
+    }
+}
+
 /// The XDG base folders romforge itself runs with.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Xdg {
     pub config: PathBuf,
     pub data: PathBuf,
@@ -132,7 +181,17 @@ impl Xdg {
 pub fn importable(name: &str) -> bool {
     matches!(
         name,
-        "retroarch" | "duckstation" | "pcsx2" | "mgba" | "ppsspp" | "flycast" | "mednafen" | "dolphin"
+        "retroarch"
+            | "duckstation"
+            | "pcsx2"
+            | "mgba"
+            | "ppsspp"
+            | "flycast"
+            | "mednafen"
+            | "dolphin"
+            | "rpcs3"
+            | "cemu"
+            | "xemu"
     )
 }
 
@@ -145,7 +204,7 @@ pub fn existing(e: &KnownEmulator, home: &Home, home_dir: &Path, xdg: &Xdg) -> E
         .collect();
     let (mut files, mut bytes) = (0, 0);
     for s in &sources {
-        each_file(&s.from, &s.to, &mut |from, _| {
+        each_file(&s.from, &s.to, skip_for(e.settings_name()), &mut |from, _| {
             files += 1;
             bytes += from.metadata().map(|m| m.len()).unwrap_or(0);
             Ok(())
@@ -165,6 +224,7 @@ pub fn existing(e: &KnownEmulator, home: &Home, home_dir: &Path, xdg: &Xdg) -> E
 fn each_file(
     from: &Path,
     to: &Path,
+    skip: &[&str],
     f: &mut dyn FnMut(&Path, &Path) -> Result<(), Error>,
 ) -> Result<(), Error> {
     if from.is_file() {
@@ -180,8 +240,8 @@ fn each_file(
             .map(|n| n.to_string_lossy().to_ascii_lowercase())
             .unwrap_or_default();
         if p.is_dir() {
-            if !SKIP.contains(&name.as_str()) {
-                each_file(&p, &to.join(p.file_name().unwrap_or_default()), f)?;
+            if !SKIP.contains(&name.as_str()) && !skip.iter().any(|s| s.eq_ignore_ascii_case(&name)) {
+                each_file(&p, &to.join(p.file_name().unwrap_or_default()), skip, f)?;
             }
         } else if p.is_file() {
             f(&p, &to.join(p.file_name().unwrap_or_default()))?;
@@ -232,7 +292,7 @@ pub fn import(
     };
     let mut done = SetupImported::default();
     for s in &setup.sources {
-        each_file(&s.from, &s.to, &mut |from, to| {
+        each_file(&s.from, &s.to, skip_for(e.settings_name()), &mut |from, to| {
             let mut backup = None;
             if to.exists() {
                 if !settings.iter().any(|p| p == to) {
@@ -298,82 +358,4 @@ pub fn undo(conn: &Connection, emulator: &str) -> Result<usize, Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::{prepare, standalone::standalone};
-    use super::*;
-
-    #[test]
-    fn an_existing_setup_comes_across_and_goes_back() {
-        let t = tempfile::tempdir().unwrap();
-        let user = t.path().join("user");
-        let xdg = Xdg {
-            config: user.join(".config"),
-            data: user.join(".local/share"),
-        };
-        let home = Home::create(&t.path().join("parent")).unwrap();
-        let pcsx2 = crate::launch::known("pcsx2").unwrap();
-        assert!(existing(pcsx2, &home, &user, &xdg).sources.is_empty());
-
-        // The user's PCSX2: settings with a controller mapping, a memory
-        // card, a cache; and a Flatpak copy too.
-        let theirs = xdg.config.join("PCSX2");
-        std::fs::create_dir_all(theirs.join("inis")).unwrap();
-        std::fs::create_dir_all(theirs.join("memcards")).unwrap();
-        std::fs::create_dir_all(theirs.join("cache")).unwrap();
-        std::fs::write(theirs.join("inis/PCSX2.ini"), "[Pad1]\nType = DualShock2\n").unwrap();
-        std::fs::write(theirs.join("memcards/Mcd001.ps2"), b"card").unwrap();
-        std::fs::write(theirs.join("cache/gamelist.cache"), b"big").unwrap();
-        let flat = user.join(".var/app/net.pcsx2.PCSX2/config/PCSX2/memcards");
-        std::fs::create_dir_all(&flat).unwrap();
-        std::fs::write(flat.join("Mcd001.ps2"), b"flatpak card").unwrap();
-
-        // romforge already started it once (its own settings file), and a
-        // memory card of romforge's is there.
-        let dir = home.emulator_config("pcsx2");
-        let bios = home.bios().join("pcsx2");
-        prepare(&standalone("pcsx2", &dir, &bios).unwrap()).unwrap();
-
-        let found = existing(pcsx2, &home, &user, &xdg);
-        assert_eq!(found.sources.len(), 2);
-        assert_eq!(found.files, 3, "the cache is left out");
-
-        let conn = crate::db::open_in_memory().unwrap();
-        let done = import(&conn, pcsx2, &home, &user, &xdg).unwrap();
-        assert_eq!(
-            (done.copied, done.kept),
-            (2, 1),
-            "the Flatpak's card doesn't replace the native one"
-        );
-        assert_eq!(
-            std::fs::read(dir.join("PCSX2/memcards/Mcd001.ps2")).unwrap(),
-            b"card"
-        );
-        assert!(!dir.join("PCSX2/cache").exists());
-        let ini = dir.join("PCSX2/inis/PCSX2.ini");
-        assert_eq!(
-            std::fs::read_to_string(&ini).unwrap(),
-            "[Pad1]\nType = DualShock2\n"
-        );
-        // The next start puts romforge's keys back into the user's file.
-        prepare(&standalone("pcsx2", &dir, &bios).unwrap()).unwrap();
-        let text = std::fs::read_to_string(&ini).unwrap();
-        assert!(
-            text.starts_with("[Pad1]\nType = DualShock2\n") && text.contains("SettingsVersion = 1"),
-            "{text}"
-        );
-
-        // Undo: the copies go, romforge's own settings file comes back.
-        assert_eq!(undo(&conn, "pcsx2").unwrap(), 2);
-        assert!(!dir.join("PCSX2/memcards/Mcd001.ps2").exists());
-        assert!(
-            std::fs::read_to_string(&ini)
-                .unwrap()
-                .contains("[UI]\nSettingsVersion = 1")
-        );
-        assert!(undo(&conn, "pcsx2").is_err());
-        assert!(
-            theirs.join("memcards/Mcd001.ps2").exists(),
-            "the user's own files are untouched"
-        );
-    }
-}
+mod tests;

@@ -101,6 +101,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             }
         }
+        Command::Firmware(FirmwareCommand::InstallPs3) => {
+            let flash = lib.install_ps3_firmware()?;
+            println!("PS3 firmware installed into {}", flash.display());
+        }
         Command::Firmware(FirmwareCommand::Undo) => {
             let n = lib.firmware_undo()?;
             println!("removed {n} file(s)");

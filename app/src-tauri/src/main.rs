@@ -97,6 +97,7 @@ fn main() {
             firmware::firmware_import_plan,
             firmware::firmware_import,
             firmware::firmware_undo,
+            firmware::install_ps3_firmware,
             emulators::save_emulator_settings,
             emulators::import_emulator_setup,
             emulators::undo_emulator_setup,

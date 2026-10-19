@@ -66,3 +66,40 @@ fn mgba_runs_from_romforge_s_folder_with_its_bios() {
         dir.display().to_string()
     );
 }
+
+#[test]
+fn ps3_firmware_is_installed_and_checked() {
+    let t = tempfile::tempdir().unwrap();
+    let bin = t.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let home = romforge_core::home::Home::create(&t.path().join("parent")).unwrap();
+    let env = Env {
+        path: vec![bin.clone()],
+        home: Some(home.clone()),
+        ..Default::default()
+    };
+    let fake = |body: &str| {
+        std::fs::write(bin.join("rpcs3"), format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(bin.join("rpcs3"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    fake("exit 0");
+    let err = romforge_core::launch::install_ps3_firmware(&env)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("PS3UPDAT.PUP"), "{err}");
+
+    std::fs::create_dir_all(home.bios().join("rpcs3")).unwrap();
+    std::fs::write(home.bios().join("rpcs3/PS3UPDAT.PUP"), b"pup").unwrap();
+    // RPCS3 says 0 but installed nothing: reported, not taken as done.
+    let err = romforge_core::launch::install_ps3_firmware(&env)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("didn't install"), "{err}");
+
+    // A stand-in that installs where romforge's config sends it.
+    fake(
+        r#"[ "$1" = --installfw ] && [ "$3" = --headless ] && mkdir -p "$XDG_CONFIG_HOME/rpcs3/dev_flash/vsh/module" && touch "$XDG_CONFIG_HOME/rpcs3/dev_flash/vsh/module/vsh.self""#,
+    );
+    let flash = romforge_core::launch::install_ps3_firmware(&env).unwrap();
+    assert_eq!(flash, home.emulator_config("rpcs3").join("rpcs3/dev_flash"));
+}

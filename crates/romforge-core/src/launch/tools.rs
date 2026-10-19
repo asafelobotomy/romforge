@@ -95,3 +95,66 @@ pub fn spawn(spec: &LaunchSpec) -> Result<u32, Error> {
     std::thread::spawn(move || child.wait());
     Ok(pid)
 }
+
+/// Install PS3 firmware into RPCS3 as romforge runs it (milestone 20):
+/// `rpcs3 --installfw <Bios/rpcs3/PS3UPDAT.PUP> --headless`, with romforge's
+/// config, so it lands in the `dev_flash` that config names (the user's own
+/// RPCS3's, when romforge points at it). RPCS3 exits with 0 even when the
+/// install fails (its errors go to its log), so the firmware's main module
+/// is looked for afterwards. Returns the `dev_flash` folder.
+pub fn install_ps3_firmware(env: &Env) -> Result<PathBuf, Error> {
+    let home = env.home.as_ref().ok_or_else(|| {
+        Error::Settings("romforge sets RPCS3 up in a RomForge folder; create one first".into())
+    })?;
+    let pup = home.bios().join("rpcs3/PS3UPDAT.PUP");
+    if !pup.is_file() {
+        return Err(Error::Launch(format!(
+            "no PS3 firmware at {}: drop your PS3UPDAT.PUP on the BIOS page first",
+            pup.display()
+        )));
+    }
+    let e = known("rpcs3").ok_or_else(|| Error::Launch("RPCS3 is not in the table".into()))?;
+    let runner = env
+        .known(e)
+        .ok_or_else(|| Error::Launch("RPCS3 isn't installed".into()))?;
+    let system =
+        systems::by_key("PlayStation 3").ok_or_else(|| Error::UnknownSystem("PlayStation 3".into()))?;
+    let (dir, prep) = owned::owned(e, home, system, &env.options(e), env.user.as_ref())
+        .ok_or_else(|| Error::Launch("romforge doesn't set RPCS3 up".into()))?;
+    prepare(&prep)?;
+    let flash = prep
+        .writes
+        .iter()
+        .flat_map(|w| &w.keys)
+        .find(|(k, _)| k == "/dev_flash/")
+        .map(|(_, v)| PathBuf::from(v.trim_matches('"')))
+        .unwrap_or_else(|| dir.join("rpcs3/dev_flash"));
+    let args = vec![
+        "--installfw".to_owned(),
+        pup.to_string_lossy().into_owned(),
+        "--headless".to_owned(),
+    ];
+    let grants = vec![home.root().to_path_buf(), flash.clone()];
+    let (program, args, envs) = command(&runner, args, &grants, &prep.env);
+    let out = std::process::Command::new(&program)
+        .args(&args)
+        .envs(envs)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    if !out.status.success() || !flash.join("vsh/module/vsh.self").is_file() {
+        let log = String::from_utf8_lossy(&out.stderr);
+        let tail: Vec<&str> = log.lines().rev().take(3).collect();
+        return Err(Error::Launch(format!(
+            "RPCS3 didn't install the firmware into {} ({}){}",
+            flash.display(),
+            out.status,
+            if tail.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", tail.join(" / "))
+            }
+        )));
+    }
+    Ok(flash)
+}
