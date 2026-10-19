@@ -7,7 +7,7 @@
    -- -D warnings` and `cargo test` must pass before every commit.
 3. **No ROMs or DATs in git.** Only the tiny hand-made fixtures in
    `fixtures/`. Real DATs and dumps stay on the user's disk.
-4. **One table of systems** (`crates/romforge-core/src/systems.rs`) and **one
+4. **One table of systems** (`crates/romforge-core/src/systems/table.rs`) and **one
    table of copier headers** (`headers.rs`). Never a second detector or a
    second list.
 5. **No pile of docs, reports or scripts.** README, PLAN.md and this file.
@@ -38,3 +38,8 @@
     used, but never shipped: no copies in git, fixtures or releases; the user
     downloads it from inside romforge, and it fills only what the open
     sources leave empty.
+11. **No code file over 400 lines.** Rust, Svelte, JS and CSS, tests
+    included. A long module becomes a folder of child modules behind the
+    same root file; a long component becomes smaller components. The one
+    exemption is the systems table (`systems/table.rs`), which is data.
+    `tests/file_length.rs` enforces it.

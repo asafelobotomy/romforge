@@ -1345,6 +1345,15 @@ the checkerboard flooded away from the edges and reduced to 128 colours
 the lettering, so the grid and the sprites on it went. `Settings::logo`
 picks the toolbar's; the first-run screen shows the default.
 
+## 400 lines per file (2026-10-19, built)
+
+Every code file, tests and the app included, is at most 400 lines (house
+rule 11). The long ones were split into child modules behind the same
+root files, so public paths are unchanged; App.svelte became components;
+the long test files became smaller test binaries with shared helpers in
+`tests/common/`. Only the systems table (`systems/table.rs`) is exempt.
+`tests/file_length.rs` fails CI on a file over the limit.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
