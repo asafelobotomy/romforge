@@ -17,6 +17,7 @@ mod home;
 mod images;
 mod library;
 mod patch;
+mod play;
 mod scan;
 mod search;
 mod settings;
@@ -54,6 +55,7 @@ fn main() {
         })
         .manage(db)
         .manage(roots)
+        .manage(play::Now::default())
         .invoke_handler(tauri::generate_handler![
             library::summary,
             library::dat_games,
@@ -80,6 +82,7 @@ fn main() {
             scan::scan_folder,
             scan::scan_preview,
             enrich::platform_icons,
+            enrich::platform_logo,
             scan::can_refresh,
             cleanup::convert_plan,
             cleanup::convert_apply,
@@ -87,7 +90,9 @@ fn main() {
             home::home_create,
             home::home_move,
             enrich::enrich,
-            library::launch,
+            play::launch,
+            play::stop_game,
+            play::now_playing,
             library::library_view,
             library::game_detail,
             scan::refresh,

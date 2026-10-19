@@ -306,6 +306,8 @@ pub struct Link {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GameDetail {
     pub row: GameRow,
+    /// How much it has been played (from romforge's own starts).
+    pub play: Option<crate::launch::PlayStats>,
     pub fields: BTreeMap<String, String>,
     /// kind -> cached file
     pub art: BTreeMap<String, String>,

@@ -8,6 +8,13 @@
   // the other media and the files. `showEmpty`: empty media boxes too (a
   // setting).
   let { row, detail, showEmpty, artPicker } = $props();
+
+  // Play time romforge recorded: "3.2 h · 5 times · last 19 Oct 2026".
+  function played(p) {
+    const time = p.seconds < 5400 ? `${Math.max(1, Math.round(p.seconds / 60))} min` : `${(p.seconds / 3600).toFixed(1)} h`;
+    const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
+  }
   let f = $derived(detail.fields ?? {});
 
   // The fanart (and later other kinds) can be swapped for another the
@@ -36,6 +43,7 @@
     {/if}
     <dl class="facts info">
       {#if f.releaseyear}<div class="fact"><dt>Released</dt><dd>{released(f)}</dd></div>{/if}
+      {#if detail.play}<div class="fact"><dt>Played</dt><dd>{played(detail.play)}</dd></div>{/if}
       {#if f.genre}
         {@const gs = genres(f.genre)}
         <div class="fact"><dt>Genre</dt><dd class="icons">{#each gs as g}<span class="genre" title={g.name} aria-label={g.name}>{@html g.svg}</span>{/each}{#if gs.length === 1}<span class="gname">{gs[0].name}</span>{/if}</dd></div>

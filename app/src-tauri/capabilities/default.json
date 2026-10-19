@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call romforge's own commands, pick folders, ask a yes/no question, show a ROM in the file manager, and open https links in the browser.",
+  "description": "The main window may call romforge's own commands, pick folders, ask a yes/no question, go fullscreen behind a starting game, show a ROM in the file manager, and open https links in the browser.",
   "windows": [
     "main"
   ],
@@ -9,6 +9,7 @@
     "core:default",
     "dialog:allow-open",
     "dialog:allow-ask",
+    "core:window:allow-set-fullscreen",
     "opener:allow-reveal-item-in-dir",
     {
       "identifier": "opener:allow-open-url",

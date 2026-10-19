@@ -1116,6 +1116,35 @@ RetroDECK's `bios.json` is GPL-3.0: not used.
 - Play time and last played recorded from the process lifetime (the
   parked "play history" idea).
 
+*(Built 2026-10-19.)* `launch/session.rs`, `launch/plays.rs`; app
+`play.rs`, `NowPlaying.svelte`:
+- **Start:** Play starts a tracked session (one game at a time). The
+  window goes fullscreen behind a splash (`Splash.svelte`, owner's
+  design): the ROMFORGE wordmark at the top, the game's box in the middle
+  turning slowly (a 3D box render sways ±28°, since a full turn would
+  show the picture from behind; flat box art is wrapped onto a CSS box
+  with a spine that turns all the way round), and the platform's logo at
+  the bottom, large (9rem, at most 16% of the screen's height) and on its
+  own transparency (a faint light edge in
+  dark mode so a dark logo still reads) (Wikidata's, fetched once and cached, whatever
+  the sidebar shows; the platform's name until it arrives). No motion
+  when the system asks for less. It stays until the emulator's window
+  takes the focus, with a 15-second fallback. Not a separate borderless window, and focus
+  is the sign the emulator is up (no window-mapping check on Wayland).
+- **Running:** a bar under the toolbar says what's playing, for how long,
+  with Stop; Play is off meanwhile.
+- **Stop:** SIGTERM first (RetroArch 1.22.2's first SIGTERM is a clean
+  quit, read in `platform_unix.c`; DuckStation, PCSX2, Dolphin and
+  Mednafen likewise), a kill only after 10 seconds. The process is polled,
+  never reaped early, so the signal can't reach a reused pid. Not yet
+  checked: a Flatpak emulator (the signal reaches `flatpak run`).
+- **Play time:** each run of 10 seconds or more goes into
+  `play_sessions` (migration 38) by system key and title; Details shows
+  "Played 3.2 h · 5 times · last 19 Oct 2026". CLI: `launch --wait`
+  records it too.
+- **Not yet:** the emulators' own quit commands (RetroArch's UDP `QUIT`,
+  hotkey chords) and a controller combo to quit, with stage 2.
+
 ### Stage 2: controllers and a 10-foot mode
 
 - Gamepads read in Rust with `gilrs` (MIT/Apache-2.0), sent to the UI as

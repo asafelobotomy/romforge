@@ -28,4 +28,16 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         backup    TEXT,
         PRIMARY KEY (import_id, path)
     );",
+    // 38: play time (milestone 18, 1.6): each time a game was played, from
+    // its emulator's process lifetime, by system key and game title (what
+    // the library row and the launcher both name it by).
+    "CREATE TABLE play_sessions (
+        session_id INTEGER PRIMARY KEY,
+        system     TEXT NOT NULL,
+        game       TEXT NOT NULL,
+        emulator   TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        seconds    INTEGER NOT NULL
+    );
+    CREATE INDEX play_sessions_game ON play_sessions (system, game);",
 ];

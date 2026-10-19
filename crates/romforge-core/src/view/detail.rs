@@ -280,7 +280,12 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
         }
         None => Vec::new(),
     };
+    let play = match &row.system {
+        Some(system) => crate::launch::play_stats(conn, system, &row.title)?,
+        None => None,
+    };
     Ok(GameDetail {
+        play,
         patched,
         patch_links,
         patches,

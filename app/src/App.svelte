@@ -3,6 +3,7 @@
   import { artSrc } from "./lib.js";
   import SettingsDialog from "./SettingsDialog.svelte";
   import EmulatorSettingsDialog from "./EmulatorSettingsDialog.svelte";
+  import NowPlaying from "./NowPlaying.svelte";
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
   import PatchDialog from "./PatchDialog.svelte";
@@ -77,6 +78,8 @@
   // change).
   let settings = $state(null);
   let emulators = $state(null);
+  let nowPlaying = $state(null);
+  let playing = $state(null);
   let emuOpen = $state(false);
   let cleanup = $state(null);
   let search = $state(null);
@@ -214,7 +217,9 @@
     const row = lib.rows.find((r) => r.id === selected);
     if (!row) return;
     const r = await run(`Starting ${row.label ?? row.title}…`, "launch", { rowId: row.id });
-    if (r) note = r;
+    if (!r) return;
+    const mine = detail?.row?.id === row.id ? detail.art : {};
+    nowPlaying.started(r, { box3d: mine.box3d ?? null, boxart: mine.boxart ?? null, platform: row.system_name ?? r.system });
   }
 
   // Details: empty media boxes only when Settings says so.
@@ -283,7 +288,7 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
@@ -300,6 +305,8 @@
 
   <ImageViewer {detail} {row} />
 
+
+  <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error ended={() => selected && open(selected, true)} />
 
   <!-- One fixed-height line, so the controls below never move under the cursor. -->
   <p class="status" class:error={!!error && !busy} title={error || busy || note}>{busy || error || note}</p>

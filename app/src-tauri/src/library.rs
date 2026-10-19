@@ -3,7 +3,7 @@
 use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{DatGame, Summary};
 
-use crate::db::{Db, Res, blocking, read};
+use crate::db::{Db, Res, read};
 
 #[tauri::command]
 pub async fn summary(db: tauri::State<'_, Db>) -> Res<Summary> {
@@ -58,15 +58,4 @@ pub async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail
     // Pictures stay file paths: the page loads them through `art://` as
     // they're shown, instead of megabytes of base64 in this answer.
     read(&db, move |lib| lib.game_detail(&id)).await
-}
-
-#[tauri::command]
-/// Start one library row (exactly its files).
-pub async fn launch(db: tauri::State<'_, Db>, row_id: String) -> Res<String> {
-    let spec = read(&db, move |lib| lib.launch_row(&lib.env()?, &row_id, None)).await?;
-    blocking(move || {
-        romforge_core::launch::spawn(&spec)?;
-        Ok(format!("{} started with {}", spec.game, spec.emulator))
-    })
-    .await
 }

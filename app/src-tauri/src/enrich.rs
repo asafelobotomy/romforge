@@ -18,6 +18,20 @@ pub async fn platform_icons(db: tauri::State<'_, Db>) -> Res<romforge_core::Plat
     .await
 }
 
+/// One platform's logo (Wikidata, cached), for the splash.
+#[tauri::command]
+pub async fn platform_logo(db: tauri::State<'_, Db>, system: String) -> Res<Option<std::path::PathBuf>> {
+    read_net(&db, move |lib| {
+        lib.platform_logo(
+            &default_cache_dir(),
+            romforge_core::enrich::PLATFORM_ICONS_BASE,
+            romforge_core::wikidata::ENDPOINT,
+            &system,
+        )
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichReport> {
     let opts = EnrichOptions {

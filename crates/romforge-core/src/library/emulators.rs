@@ -95,6 +95,17 @@ impl Library {
         obtain::install_flatpak(&self.env()?, emulator)
     }
 
+    /// Record a game that ended (play time); a run under ten seconds isn't
+    /// counted.
+    pub fn record_play(&mut self, ended: &launch::Ended) -> Result<bool, Error> {
+        launch::record_play(&self.conn, ended)
+    }
+
+    /// How much a game (system key, title) has been played.
+    pub fn play_stats(&self, system: &str, game: &str) -> Result<Option<launch::PlayStats>, Error> {
+        launch::play_stats(&self.conn, system, game)
+    }
+
     /// Take away what the last BIOS import wrote.
     pub fn firmware_undo(&mut self) -> Result<usize, Error> {
         firmware::undo(&self.conn)

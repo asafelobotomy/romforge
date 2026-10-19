@@ -119,6 +119,21 @@ impl Library {
         })
     }
 
+    /// One platform's logo (Wikidata, fetched once and cached), whatever
+    /// the sidebar shows: for the splash while a game starts.
+    pub fn platform_logo(
+        &self,
+        cache_dir: &Path,
+        base: &str,
+        wikidata: &str,
+        system: &str,
+    ) -> Result<Option<PathBuf>, Error> {
+        let s = systems::by_key(system).ok_or_else(|| Error::UnknownSystem(system.to_owned()))?;
+        Ok(enrich::platform_icons(cache_dir, base, wikidata, "logo", &[s])
+            .0
+            .remove(system))
+    }
+
     /// Metadata and cached art for games whose name contains `query`.
     pub fn game_info(&self, query: &str) -> Result<Vec<enrich::GameInfo>, Error> {
         enrich::info(&self.conn, query)

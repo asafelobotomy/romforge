@@ -13,6 +13,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             query,
             emulator,
             dry_run,
+            wait,
         } => {
             let spec = lib.launch_plan(&lib.env()?, &query, emulator.as_deref())?;
             let shown: Vec<String> = std::iter::once(spec.program.display().to_string())
@@ -35,7 +36,21 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 let verb = if dry_run { "would set" } else { "sets" };
                 println!("  {verb} {} key(s) in {}", w.keys.len(), w.path.display());
             }
-            if !dry_run {
+            if wait && !dry_run {
+                let session = launch::Session::start(&spec)?;
+                println!("started (pid {}); waiting for it to end…", session.playing.pid);
+                let ended = session.wait();
+                let kept = lib.record_play(&ended)?;
+                println!(
+                    "ended after {} s{}",
+                    ended.seconds,
+                    if kept {
+                        "; play time recorded"
+                    } else {
+                        " (too short to count)"
+                    }
+                );
+            } else if !dry_run {
                 let pid = launch::spawn(&spec)?;
                 println!("started (pid {pid})");
             }

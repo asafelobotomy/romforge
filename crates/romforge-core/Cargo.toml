@@ -6,6 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# Asking an emulator to quit (SIGTERM) before stopping it hard.
+libc = "0.2"
 crc32fast = "1"
 md-5 = "0.11"
 sha1 = "0.11"

@@ -152,6 +152,9 @@ pub enum Command {
         /// Print the command instead of running it
         #[arg(long)]
         dry_run: bool,
+        /// Wait until the game ends and record its play time
+        #[arg(long)]
+        wait: bool,
     },
     /// List, add or remove emulators
     #[command(subcommand)]

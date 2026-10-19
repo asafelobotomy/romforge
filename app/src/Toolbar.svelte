@@ -4,7 +4,7 @@
 
   // The buttons along the top; the jobs themselves are App's, and the
   // dialogs' instances open theirs.
-  let { busy, canRefresh, homeRoot, row, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  let { busy, playing, canRefresh, homeRoot, row, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
 </script>
 
 <header class="toolbar">
@@ -44,7 +44,7 @@
   <button class="tool" onclick={() => emulators.openEmulatorSettings()} disabled={!!busy} title="Settings for every emulator at once, and for each installed one">
     <span class="glyph">⛭</span>Emulator Settings
   </button>
-  <button class="tool" onclick={play} disabled={!row || !row.playable || !!busy} title="Start the selected game">
+  <button class="tool" onclick={play} disabled={!row || !row.playable || !!busy || !!playing} title={playing ? "A game is running: stop it first" : "Start the selected game"}>
     <span class="glyph">▶</span>Play
   </button>
 </header>
