@@ -1354,6 +1354,72 @@ the long test files became smaller test binaries with shared helpers in
 `tests/common/`. Only the systems table (`systems/table.rs`) is exempt.
 `tests/file_length.rs` fails CI on a file over the limit.
 
+## Firmware (milestone 20; researched 2026-10-19, not built)
+
+romforge knows which core runs a system but not whether that core has the
+BIOS it needs: a PS1 game "launches" and RetroArch stops at a missing
+`scph5501.bin`. RetroBIOS (github.com/Abdess/retrobios, site
+abdess.github.io/retrobios) tracks, from each emulator's own source, every
+file 530 emulators and 12 frontends load: name, where it goes, required or
+optional, size, CRC32, MD5, SHA1.
+
+**What is used and what never is.** Its metadata (scripts, schemas,
+emulator profiles, platform lists, the generated database) is MIT and
+served as versioned static files with no account or key
+(`/retrobios/api/v1/`: `platforms.json` 2.5 MB, `emulators.json` 5.6 MB,
+`emulators/<id>.json`; also a SQLite snapshot, CSVs and a Logiqx
+"collection DAT", each with a published SHA256). That is tier 1 of house
+rule 10, fetched like DATs (1 s per host). The BIOS files themselves (the
+`bios/` tree, release packs, `install.sh`/`install.py`) are third-party
+system software it redistributes without a licence: romforge never
+downloads, links, ships or runs them (rules 7 and 10). It checks the
+user's own dumps against the hashes, nothing more.
+
+**Two kinds of "good".** RetroBIOS hashes say what an emulator's code
+accepts, not that a file is a verified dump; only 563 of its 5,339 system
+files are in No-Intro, Redump or TOSEC. So a firmware file matching by
+size + SHA1/MD5 (rule 8) is "accepted by <core>", its own status, never
+counted as DAT-verified. RetroArch only checks that the name exists, so a
+right name with a wrong hash is shown as "present, hash unknown".
+
+In this order:
+1. *Fetch the requirements.* `firmware download` (and DATs view →
+   Firmware) stores, per emulator: its cores, systems, and each file
+   (name, destination, required, size, hashes, archive contents for
+   MAME-style BIOS zips). RetroBIOS system ids (`atari-7800`,
+   `sony-playstation`) map to romforge systems through a new `retrobios`
+   column in `systems/table.rs` (rule 4), checked against
+   `platforms/_registry.yml`. Profiles carry the `source_commit` they were
+   read from; stored with the rows, refreshed when `generated_at` changes.
+2. *Check a firmware folder.* Settings gets a Firmware folder, found by
+   default from RetroArch's `system_directory` in `retroarch.cfg` (native
+   or Flatpak), else `RomForge/Firmware/`. Scanning it hashes every file
+   (zips as members, as today) and matches by size + SHA1/MD5. Read-only.
+3. *Report.* Per system and per core: required files present / missing /
+   wrong hash, optional files the same. Shown on the platform (a badge
+   when the first core lacks a required file) and as `firmware check
+   [--system X] [--core Y]`.
+4. *Launch.* Before starting a core, check its required files. If they're
+   missing, try the next core in the `cores` column whose files are
+   complete (or that needs none, per its profile), else say which file
+   is missing and where it goes, and start nothing. `--dry-run` shows the
+   check.
+5. *BIOS found among games.* Loose BIOS files in scanned folders show as
+   unknown today. Files matching RetroBIOS system files by size +
+   SHA1/MD5 become "firmware for <system>" rows instead (system files
+   only: its arcade sets overlap MAME's DATs and its game-engine data is
+   out of scope). The Redump BIOS DATs keep verifying where they cover.
+6. *Later, after a dry run:* copy (never move) your accepted firmware into
+   the firmware folder under the destination names a core expects,
+   journaled, never overwriting. Not built until steps 1–5 are solid.
+
+Not used: the `provenance/` catalog matches (No-Intro / Redump / TOSEC
+already verify those files directly); the per-frontend pack layouts
+other than RetroArch's (romforge launches RetroArch and standalone
+emulators, whose profiles are in `emulators.json`). Standalone emulators
+(DuckStation, PCSX2, Dolphin, ...) keep their BIOS in their own folders:
+those paths come from their profiles in step 2, read-only.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
