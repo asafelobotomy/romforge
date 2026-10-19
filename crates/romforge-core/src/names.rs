@@ -10,9 +10,15 @@
 
 use shiratsu_naming::naming::TokenizedName;
 use shiratsu_naming::naming::goodtools::{GoodToolsName, GoodToolsToken};
-use shiratsu_naming::naming::nointro::{NoIntroName, NoIntroToken};
-use shiratsu_naming::naming::tosec::{TOSECLanguage, TOSECName, TOSECToken};
+use shiratsu_naming::naming::nointro::NoIntroName;
+use shiratsu_naming::naming::tosec::{TOSECName, TOSECToken};
 use shiratsu_naming::region::Region;
+
+mod conventions;
+#[cfg(test)]
+mod tests;
+
+use conventions::{codes, from_goodtools, from_nointro, from_tosec};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -116,155 +122,6 @@ pub fn parse(name: &str) -> Name {
         return from_goodtools(&n);
     }
     loose(name)
-}
-
-fn codes(regions: &[Region]) -> Vec<String> {
-    regions.iter().map(|r| r.as_ref().to_owned()).collect()
-}
-
-fn from_nointro(n: &NoIntroName) -> Name {
-    let mut out = Name {
-        convention: Convention::NoIntro,
-        ..Name::default()
-    };
-    for t in n.iter() {
-        match t {
-            NoIntroToken::Title(s) => out.title = (*s).to_owned(),
-            NoIntroToken::Region {
-                region_strings,
-                regions,
-            } => {
-                out.regions = region_strings.iter().map(|s| (*s).to_owned()).collect();
-                out.region_codes = codes(regions);
-            }
-            NoIntroToken::Languages(l) => out.languages = l.iter().map(|l| l.code.to_owned()).collect(),
-            NoIntroToken::Version(v) => {
-                out.version = v.first().map(|v| match v.minor {
-                    Some(m) => format!("{} {}.{m}", v.version_type, v.major),
-                    None if v.version_type == "v" => format!("v{}", v.major),
-                    None => format!("{} {}", v.version_type, v.major),
-                })
-            }
-            NoIntroToken::Release { status, number } => {
-                out.status = Some(match number {
-                    Some(n) => format!("{status} {n}"),
-                    None => (*status).to_owned(),
-                })
-            }
-            NoIntroToken::Media { number, .. } => out.disc = Some((*number).to_owned()),
-            NoIntroToken::Flag { flag, .. } => flag_words(&mut out, flag),
-            NoIntroToken::Scene { .. } => {}
-        }
-    }
-    out
-}
-
-fn from_tosec(n: &TOSECName) -> Name {
-    let mut out = Name {
-        convention: Convention::Tosec,
-        ..Name::default()
-    };
-    for t in n.iter() {
-        match t {
-            TOSECToken::Title(s) => out.title = (*s).to_owned(),
-            TOSECToken::Region {
-                region_strings,
-                regions,
-            } => {
-                out.regions = region_strings.iter().map(|s| (*s).to_owned()).collect();
-                out.region_codes = codes(regions);
-            }
-            TOSECToken::Languages(TOSECLanguage::Single(l)) => out.languages = vec![(*l).to_owned()],
-            TOSECToken::Languages(TOSECLanguage::Double(a, b)) => {
-                out.languages = vec![(*a).to_owned(), (*b).to_owned()]
-            }
-            TOSECToken::Version {
-                version_type,
-                major,
-                minor,
-            } => {
-                out.version = Some(match minor {
-                    Some(m) => format!("{version_type}{major}.{m}"),
-                    None => format!("{version_type}{major}"),
-                })
-            }
-            TOSECToken::Demo(_) => out.status = Some("Demo".into()),
-            TOSECToken::Development(d) => out.status = Some((*d).to_owned()),
-            TOSECToken::Media(m) => out.disc = m.first().map(|m| m.number.to_owned()),
-            TOSECToken::DumpInfo { code, number, info } => {
-                let tag = || {
-                    [Some(*code), *number, *info]
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                };
-                match *code {
-                    "b" => out.bad_dump = true,
-                    "!" => out.verified_dump = true,
-                    "a" => out.alternate = true,
-                    "h" => out.hack = Some(tag()),
-                    "tr" | "t" => out.translation = Some(info.unwrap_or(code).to_owned()),
-                    "p" => out.status = Some("Pirate".into()),
-                    _ => {}
-                }
-            }
-            TOSECToken::Flag { flag, .. } => flag_words(&mut out, flag),
-            _ => {}
-        }
-    }
-    out
-}
-
-fn from_goodtools(n: &GoodToolsName) -> Name {
-    let mut out = Name {
-        convention: Convention::GoodTools,
-        ..Name::default()
-    };
-    for t in n.iter() {
-        match t {
-            GoodToolsToken::Title(s) => out.title = (*s).to_owned(),
-            GoodToolsToken::Region {
-                region_strings,
-                regions,
-            } => {
-                out.regions = region_strings.iter().map(|s| (*s).to_owned()).collect();
-                out.region_codes = codes(regions);
-            }
-            GoodToolsToken::Translation { tags, .. } => out.translation = Some((*tags).to_owned()),
-            GoodToolsToken::Version { prefix, major, minor } => {
-                out.version = Some(match minor {
-                    Some(m) => format!("{prefix}{major}.{m}"),
-                    None => format!("{prefix}{major}"),
-                })
-            }
-            GoodToolsToken::GameHack(h) => out.hack = Some(h.unwrap_or("Hack").to_owned()),
-            GoodToolsToken::Media { number, .. } => out.disc = Some((*number).to_owned()),
-            GoodToolsToken::DumpCode {
-                code,
-                number,
-                code_type,
-                ..
-            } => match *code {
-                "b" => out.bad_dump = true,
-                "!" => out.verified_dump = true,
-                "a" => out.alternate = true,
-                "h" => {
-                    out.hack = Some(
-                        [Some("h"), *number, *code_type]
-                            .into_iter()
-                            .flatten()
-                            .collect::<String>(),
-                    )
-                }
-                "p" => out.status = Some("Pirate".into()),
-                _ => {}
-            },
-            GoodToolsToken::Flag { flag, .. } => flag_words(&mut out, flag),
-            _ => {}
-        }
-    }
-    out
 }
 
 /// What a free-form bracket group says: hack, translation, bad dump,
@@ -407,94 +264,5 @@ impl Name {
                     .map_or(0, |b| (b.to_ascii_uppercase() - b'A' + 1) as u64),
             })
             .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nointro_and_redump() {
-        let n = parse("Legend of Zelda, The - A Link to the Past (USA).sfc");
-        assert_eq!(n.convention, Convention::NoIntro);
-        assert_eq!(n.title, "Legend of Zelda, The - A Link to the Past");
-        assert_eq!(n.regions, ["USA"]);
-        assert_eq!(n.region_codes, ["US"]);
-
-        let n = parse("Streets of Rage (World) (En,Ja)");
-        assert_eq!(n.regions, ["World"]);
-        assert_eq!(n.languages, ["En", "Ja"]);
-
-        let n = parse("Super Mario World (USA) (Rev 1) [b]");
-        assert_eq!(n.version.as_deref(), Some("Rev 1"));
-        assert_eq!(n.revision(), [1]);
-        assert!(n.bad_dump);
-
-        let n = parse("Final Fantasy VII (USA) (Disc 2)");
-        assert_eq!(n.disc.as_deref(), Some("2"));
-
-        let n = parse("Silent Hill (USA) (Beta) (1998-12-01)");
-        assert!(!n.is_retail(), "{n:?}");
-        assert!(!parse("101 Dalmatas (USA) (Pirate)").is_retail());
-        let n = parse("16 BIT XMAS 2011 - Christmas Craze (World) (Aftermarket) (Unl)");
-        assert!(n.is_retail() && n.unlicensed, "{n:?}");
-    }
-
-    #[test]
-    fn goodtools_and_tosec() {
-        let n = parse("Dragon Quest III (J) [T+Eng2.0_Addendum].smc");
-        assert_eq!(n.convention, Convention::GoodTools);
-        assert_eq!(n.title, "Dragon Quest III");
-        assert_eq!(n.region_codes, ["JP"]);
-        assert_eq!(n.translation.as_deref(), Some("Eng2.0_Addendum"));
-
-        let n = parse("Street Fighter II (E) [h1C]");
-        assert_eq!(n.hack.as_deref(), Some("h1C"));
-
-        let n = parse("Super Mario World (U) [!]");
-        assert!(n.verified_dump);
-        assert_eq!(n.region_codes, ["US"]);
-
-        let n = parse("Dragon Quest III (1996)(Enix)(JP)[tr en Addendum]");
-        assert_eq!(n.convention, Convention::Tosec);
-        assert_eq!(n.title, "Dragon Quest III");
-        assert_eq!(n.translation.as_deref(), Some("en Addendum"));
-    }
-
-    #[test]
-    fn loose_names() {
-        let n = parse("Dragon Quest III (English v2.0)[Addendum].sfc");
-        assert_eq!(n.convention, Convention::Loose);
-        assert_eq!(n.title, "Dragon Quest III");
-        assert_eq!(n.translation.as_deref(), Some("English v2.0 Addendum"));
-
-        let n = parse("Super Metroid (Hack) (Redesign)");
-        assert_eq!(n.title, "Super Metroid");
-        assert!(n.hack.is_some());
-
-        let n = parse("Post Mortem (Ukraine) (Disc 2)");
-        assert_eq!(n.regions, ["Ukraine"], "{n:?}");
-        assert_eq!(n.disc.as_deref(), Some("2"));
-        assert_eq!(parse("ps-22j(v)").title, "ps-22j");
-        let n = parse("Ancient Chozo [Hack by Albert V.]");
-        assert_eq!(
-            (n.title.as_str(), n.hack.as_deref()),
-            ("Ancient Chozo", Some("Hack by Albert V."))
-        );
-
-        let n = parse("zelda3.smc");
-        assert_eq!(n.title, "zelda3");
-        assert_eq!(n.translation, None);
-    }
-
-    #[test]
-    fn extensions_only_when_they_look_like_one() {
-        assert_eq!(without_extension("Game (USA).sfc"), "Game (USA)");
-        assert_eq!(
-            without_extension("Final Fantasy VII (USA) (v1.1)"),
-            "Final Fantasy VII (USA) (v1.1)"
-        );
-        assert_eq!(without_extension("Doom 1.9"), "Doom 1.9");
     }
 }

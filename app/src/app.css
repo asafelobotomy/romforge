@@ -1,0 +1,78 @@
+/* App-wide styles: colours, and the rules every screen and dialog shares. */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --line: #8883;
+  --text: #1d1f23;
+  --muted: #6b7078;
+  --accent: #3b6ea8;
+  --accent-bg: #dce8f5;
+  --ok: #2e7d32;
+  --warn: #a07800;
+  --bad: #c62828;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191c;
+    --panel: #1f2226;
+    --line: #fff2;
+    --text: #e4e6ea;
+    --muted: #969ba3;
+    --accent: #6aa0dc;
+    --accent-bg: #2a3a4e;
+    --ok: #6cc070;
+    --warn: #d8b24a;
+    --bad: #ef6b6b;
+  }
+}
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }
+.app button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.75rem; cursor: pointer; }
+.app button:disabled { opacity: 0.45; cursor: default; }
+.app input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
+.app h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.app h3 { font-size: 0.9rem; margin: 1rem 0 0.25rem; color: var(--muted); font-weight: 600; }
+.app .spacer { flex: 1; }
+.app .sys { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.app .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; align-content: start; font-size: 0.9rem; }
+.app dt { color: var(--muted); }
+.app dd { margin: 0; }
+.app .desc { line-height: 1.55; margin: 0; }
+.app .files { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
+.app .files li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.15rem 0; overflow: hidden; }
+/* rtl on the box and <bdi> inside: long paths are cut at the start, the
+   file name stays visible, and the text itself keeps its order */
+.app .fpath { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; min-width: 0; }
+.sortbar { display: flex; gap: 0.9rem; justify-content: center; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem; }
+.app .hint { color: var(--muted); font-size: 0.85rem; }
+.app .empty { padding: 2rem 1rem; color: var(--muted); text-align: center; }
+.app .badge { display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.75rem; white-space: nowrap; background: var(--line); }
+.app .badge.verified { color: var(--ok); }
+.app .badge.incomplete, .app .badge.candidate, .app .badge.duplicate { color: var(--warn); }
+.app .badge.unknown, .app .badge.wrong_system { color: var(--bad); }
+.app .wide { grid-column: 2 / 4; overflow: auto; padding: 0 0.75rem 1rem; }
+.app .bar { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; flex-wrap: wrap; }
+.app .bar input { flex: 1; min-width: 12rem; }
+.app table { border-collapse: collapse; width: 100%; background: var(--panel); }
+.app th, .app td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.9rem; }
+.app th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.app .num { text-align: right; white-space: nowrap; }
+.app .meta { color: var(--muted); font-size: 0.85rem; }
+.app .scrim { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
+.app .dialog { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
+.app .dialog h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
+.app .setting { padding: 0.6rem 0; border-top: 1px solid var(--line); }
+.app .setting > label { font-weight: 600; }
+.app .setting .hint { margin: 0.15rem 0 0.4rem; }
+.app .pick { display: flex; gap: 0.4rem; }
+.app .pick input { flex: 1; min-width: 0; }
+.app .toggle { display: flex; gap: 0.5rem; align-items: center; }
+.app .setting label { display: block; font-size: 0.85rem; margin-top: 0.4rem; }
+.app .setting > input { width: 100%; box-sizing: border-box; }
+.app h3.sub { color: var(--text); margin: 0; }
+.app .err { color: var(--bad); }
+.app .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
+.app button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.app .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
+.app .search-dialog { width: min(64rem, calc(100vw - 2rem)); }
+.app .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .badge.by_you, .app .badge.derivative, .app .badge.detected { color: var(--accent); }
