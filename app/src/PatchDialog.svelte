@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { open as pickFile } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { basename } from "./lib.js";
 
   // Milestone 19: apply a translation or hack you fetched to the selected
   // game. romforge makes a new copy (a version of the game); the original
@@ -83,7 +84,6 @@
     await load();
   }
 
-  const base = (p) => p.split("/").pop();
 </script>
 
 {#if open && row}
@@ -105,7 +105,7 @@
         {#if beside.length}
           <p class="hint">Found for it:</p>
           <div class="pick">
-            {#each beside as p}<button onclick={() => choose(p.path, p.relation)} class:primary={patch === p.path} title="{p.path} ({p.kind}, {p.relation}; {how[p.paired_by] ?? p.paired_by})">{p.name === base(p.path) ? p.name : `${base(p.path)} › ${p.name}`}</button>{/each}
+            {#each beside as p}<button onclick={() => choose(p.path, p.relation)} class:primary={patch === p.path} title="{p.path} ({p.kind}, {p.relation}; {how[p.paired_by] ?? p.paired_by})">{p.name === basename(p.path) ? p.name : `${basename(p.path)} › ${p.name}`}</button>{/each}
           </div>
         {/if}
         <div class="pick">

@@ -2,13 +2,13 @@
 
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, read_net, with};
 
 /// The sidebar's platform icons (fetched once from retroarch-assets):
 /// system key -> file, shown through `art://`.
 #[tauri::command]
 pub async fn platform_icons(db: tauri::State<'_, Db>) -> Res<romforge_core::PlatformIcons> {
-    read(&db, move |lib| {
+    read_net(&db, move |lib| {
         lib.platform_icons(
             &default_cache_dir(),
             romforge_core::enrich::PLATFORM_ICONS_BASE,
@@ -39,7 +39,7 @@ pub async fn art_choices(
     let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
     let opts = EnrichOptions::new(default_cache_dir());
     // Previews stay file paths, shown through `art://`.
-    read(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await
+    read_net(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await
 }
 
 /// Make one of those the row's picture.

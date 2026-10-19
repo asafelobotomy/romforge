@@ -4,9 +4,10 @@
 
   // The platforms down the left (all games, each platform, the
   // unidentified files), and the DATs and organize screens at the foot.
-  // `icons`: system key -> file of its picture; one that fails to load is
-  // dropped, so the platform keeps its badge.
-  let { lib, games, view, platform = $bindable(), icons = $bindable(), iconStyle, show } = $props();
+  // `icons`: system key -> file of its picture; one that fails to load
+  // keeps its badge, also after the next load (no retry, no flicker).
+  let { lib, games, view, platform = $bindable(), icons, iconStyle, show } = $props();
+  let failed = $state(new Set());
 </script>
 
 <nav class="platforms" aria-label="Platforms">
@@ -22,8 +23,8 @@
     >
       {#if !p.system}
         <span class="icon unknown">{@html iconSvg("unknown")}</span>
-      {:else if icons[p.system]}
-        <img class="picon" class:logo={iconStyle === "logo"} src={artSrc(icons[p.system])} alt="" onerror={(e) => (icons[p.system] = null)} />
+      {:else if icons[p.system] && !failed.has(icons[p.system])}
+        <img class="picon" class:logo={iconStyle === "logo"} src={artSrc(icons[p.system])} alt="" onerror={() => (failed = new Set(failed).add(icons[p.system]))} />
       {:else}
         <span class="icon" data-maker={p.manufacturer ?? "none"}>{p.short}</span>
       {/if}

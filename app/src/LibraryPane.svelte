@@ -7,7 +7,8 @@
 
   // The library's games: the filter, the view switch, the sort (for the
   // picture views; the list sorts by its headings) and the games as a list
-  // or pictures. `table` is the list's instance, for keyboard moves.
+  // or pictures. `table` is the view's instance (list or pictures), for
+  // keyboard moves.
   let {
     lib,
     rows,
@@ -44,10 +45,11 @@
       <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
     </div>
   {:else if listMode !== "list"}
-    <PictureGrid {rows} mode={listMode} {selected} {isOpen} {open} {toggle} {statusLabel} />
-    <p class="foot">{platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}</p>
+    <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {isOpen} {open} {toggle} {statusLabel} />
   {:else}
     <GameTable bind:this={table} {rows} {selected} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} bind:sort={listSort} />
+  {/if}
+  {#if lib.rows.length}
     <p class="foot">{platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}</p>
   {/if}
 </section>

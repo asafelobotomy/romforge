@@ -21,23 +21,20 @@
   let extBusy = $state("");
 
   async function loadExtdbs() {
-    extdbs = (await call("extdb_list")) ?? [];
+    extdbs = (await call("extdb_list", undefined, true)) ?? [];
   }
 
   async function getExtdb(d) {
     extBusy = d.db;
     note = `Downloading ${d.name}… (runs in the background; the rest of romforge stays usable)`;
-    let failed = "";
     try {
       const r = await invoke("extdb_download", { name: d.db });
       note = `${r.name}: ${r.entries?.toLocaleString()} entries. Enrich now uses it to fill what libretro and Wikidata leave empty.`;
     } catch (e) {
-      failed = `${d.name}: ${e}`;
+      error = `${d.name}: ${e}`;
     }
     extBusy = "";
     await loadExtdbs();
-    // Set after the reload, which clears errors as it starts.
-    if (failed) error = failed;
   }
 
   async function dropExtdb(d) {
@@ -48,13 +45,13 @@
 
   export async function loadDats() {
     loadExtdbs();
-    summary = (await call("summary")) ?? { files_by_status: [], dats: [] };
+    summary = (await call("summary", undefined, true)) ?? { files_by_status: [], dats: [] };
     if (datId !== null) await openDat(datId);
   }
 
   async function openDat(id) {
     datId = id;
-    datGames = (await call("dat_games", { datId: id })) ?? [];
+    datGames = (await call("dat_games", { datId: id }, true)) ?? [];
   }
 
   async function downloadDats() {
