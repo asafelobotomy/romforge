@@ -101,6 +101,20 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 None => println!("{emulator} {key} unset"),
             }
         }
+        Command::Emulator(EmulatorCommand::ImportSetup { emulator, undo }) => {
+            if undo {
+                let n = lib.undo_emulator_setup(&emulator)?;
+                println!("{emulator}: {n} file(s) taken back");
+            } else {
+                let d = lib.import_emulator_setup(&emulator)?;
+                println!(
+                    "{emulator}: {} file(s) copied ({} KiB), {} already there kept",
+                    d.copied,
+                    d.bytes / 1024,
+                    d.kept
+                );
+            }
+        }
         Command::Emulator(EmulatorCommand::Remove { name }) => {
             let n = lib.remove_emulator(&name)?;
             if n == 0 {

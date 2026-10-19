@@ -17,6 +17,7 @@ use super::{KnownEmulator, LaunchOptions};
 use crate::home::Home;
 use crate::{Error, systems::System};
 
+pub mod existing;
 mod formats;
 pub use formats::Format;
 mod standalone;

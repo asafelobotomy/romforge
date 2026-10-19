@@ -44,6 +44,10 @@ pub struct EmulatorTab {
     pub systems: Vec<&'static str>,
     /// The keys of [`SETTINGS`] that apply to it.
     pub settings: Vec<&'static str>,
+    /// Its setup in its usual folders, which "Import my existing setup"
+    /// copies into romforge's (with a RomForge folder, for emulators
+    /// romforge sets up).
+    pub existing: Option<launch::existing::ExistingSetup>,
 }
 
 /// What the Emulator Settings dialog shows.
@@ -227,6 +231,15 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 .map(|s| s.name)
                 .collect(),
             settings: SETTINGS.iter().filter(|d| applies(d, e)).map(|d| d.key).collect(),
+            existing: env
+                .home
+                .as_ref()
+                .zip(std::env::var_os("HOME"))
+                .filter(|_| launch::existing::importable(e.name))
+                .map(|(h, user)| {
+                    let user = PathBuf::from(user);
+                    launch::existing::existing(e, h, &user, &launch::existing::Xdg::detect(&user))
+                }),
         });
     }
     Ok(EmulatorSettingsView {

@@ -98,6 +98,8 @@ fn main() {
             firmware::firmware_import,
             firmware::firmware_undo,
             emulators::save_emulator_settings,
+            emulators::import_emulator_setup,
+            emulators::undo_emulator_setup,
             settings::get_settings,
             settings::save_settings,
             settings::settings_info,

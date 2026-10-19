@@ -24,7 +24,7 @@ pub use emulators::*;
 mod plan;
 pub use plan::*;
 mod owned;
-pub use owned::{ConfigWrite, Prepare, prepare};
+pub use owned::{ConfigWrite, Prepare, existing, prepare};
 mod start;
 use start::*;
 mod table;

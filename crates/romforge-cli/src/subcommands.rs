@@ -243,4 +243,12 @@ pub enum EmulatorCommand {
     },
     /// Remove an emulator you added
     Remove { name: String },
+    /// Copy an emulator's existing setup (memory cards, saves, controller
+    /// mappings, settings) from its usual folders into romforge's
+    ImportSetup {
+        emulator: String,
+        /// Take back the last import instead
+        #[arg(long)]
+        undo: bool,
+    },
 }

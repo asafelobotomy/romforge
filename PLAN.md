@@ -1588,10 +1588,21 @@ In this order:
    games or a hard disk image in their data folder, so they still start
    as set up: a folder of romforge's would hide those. Options: keep their
    own data folder and set only BIOS paths in it, or move/link their game
-   data into RomForge. Also: an emulator now started from romforge's
-   folder no longer sees saves or settings in its own folder (memory
-   cards, controller mappings); an "import my existing setup" step is not
-   built.
+   data into RomForge.
+   *(Built 2026-10-19: "Import my existing setup".)* An emulator started
+   from romforge's folder no longer sees its usual one, so Emulator
+   Settings (each emulator's tab) and `emulator import-setup NAME
+   [--undo]` copy it across (`launch/owned/existing.rs`): the usual
+   folders from each emulator's source, native and Flatpak
+   (`~/.var/app/<id>/config|data`), caches and logs left behind. Files
+   already in romforge's folder are kept, except the emulator's settings
+   file, which becomes the base (romforge's keys go back in at the next
+   start; the one replaced is kept beside it as `.romforge-before-import`).
+   Journaled (migration 37); undo removes the copies and restores that
+   file. RetroArch: its `retroarch.cfg` only, so its controller setup
+   comes along and its autoconfig, assets and remaps are read where they
+   are; its core-sorted saves aren't mapped to romforge's per-system
+   folders yet.
 5. *Launch.* Before starting a core, check its required files. If they're
    missing, try the next core in the `cores` column whose files are
    complete (or that needs none, per its profile: an HLE BIOS), else say

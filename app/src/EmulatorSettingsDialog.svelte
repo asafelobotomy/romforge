@@ -44,6 +44,31 @@
     if (typeof file === "string") draft.emulators[name][key] = file;
   }
 
+  // "Import my existing setup": copy what the emulator keeps in its usual
+  // folders (memory cards, saves, controller mappings, settings) into
+  // romforge's folder for it, or take the last import back.
+  let setupBusy = $state(false);
+  async function setup(name, undo) {
+    error = "";
+    setupBusy = true;
+    try {
+      if (undo) {
+        const n = await invoke("undo_emulator_setup", { emulator: name });
+        note = `Setup import taken back: ${n} file${n === 1 ? "" : "s"} removed.`;
+      } else {
+        const r = await invoke("import_emulator_setup", { emulator: name });
+        note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.kept ? `, ${r.kept} already there kept.` : ".");
+      }
+      const keep = draft;
+      await openEmulatorSettings();
+      draft = keep;
+    } catch (e) {
+      error = String(e).replace(/^(launch|settings): /, "");
+    }
+    setupBusy = false;
+  }
+  const kib = (b) => (b >= 1 << 20 ? `${(b / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(b / 1024)} KB`);
+
   async function save() {
     error = "";
     try {
@@ -98,6 +123,25 @@
         {@const e = view.installed.find((x) => x.name === tab)}
         {@const mine = draft.emulators[e.name]}
         <p class="hint">Started as <code>{e.found}</code>{#if e.systems.length}; runs {e.systems.join(", ")}{/if}.</p>
+        {#if e.existing}
+          <section class="setting">
+            <span class="flabel">Your existing setup</span>
+            {#if e.existing.sources.length}
+              <p class="hint">
+                romforge starts {e.label} from its own folder, so what's in its usual one isn't seen there: {e.existing.files}
+                file{e.existing.files === 1 ? "" : "s"} ({kib(e.existing.bytes)}) in {e.existing.sources.map((s) => s.from).join(", ")}.
+                Importing copies them across (memory cards, saves, controller mappings, settings; caches stay behind). Your
+                files aren't touched, and nothing already in romforge's folder is replaced except its settings file.
+              </p>
+              <div class="pick">
+                <button onclick={() => setup(e.name, false)} disabled={setupBusy}>Import my existing setup</button>
+                <button onclick={() => setup(e.name, true)} disabled={setupBusy}>Undo import</button>
+              </div>
+            {:else}
+              <p class="hint">No existing {e.label} setup found on this computer.</p>
+            {/if}
+          </section>
+        {/if}
         {#each e.settings.map(def) as s}
           <section class="setting">
             {#if s.kind === "bool" || s.kind === "choice"}

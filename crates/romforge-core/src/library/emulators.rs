@@ -66,6 +66,45 @@ impl Library {
         firmware::undo(&self.conn)
     }
 
+    /// Copy `emulator`'s setup from its usual folders into romforge's.
+    pub fn import_emulator_setup(
+        &mut self,
+        emulator: &str,
+    ) -> Result<launch::existing::SetupImported, Error> {
+        let (home, e, user) = self.setup_target(emulator)?;
+        let xdg = launch::existing::Xdg::detect(&user);
+        launch::existing::import(&self.conn, e, home, &user, &xdg)
+    }
+
+    /// Take back the last setup import of `emulator`.
+    pub fn undo_emulator_setup(&mut self, emulator: &str) -> Result<usize, Error> {
+        let (_, e, _) = self.setup_target(emulator)?;
+        launch::existing::undo(&self.conn, e.settings_name())
+    }
+
+    fn setup_target(
+        &self,
+        emulator: &str,
+    ) -> Result<
+        (
+            &crate::home::Home,
+            &'static launch::KnownEmulator,
+            std::path::PathBuf,
+        ),
+        Error,
+    > {
+        let home = self.home.as_ref().ok_or_else(|| {
+            Error::Settings("romforge keeps emulator setups in a RomForge folder; create one first".into())
+        })?;
+        let e = launch::known(emulator)
+            .filter(|e| launch::existing::importable(e.settings_name()))
+            .ok_or_else(|| Error::Launch(format!("romforge doesn't set up {emulator:?}")))?;
+        let user = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| Error::Settings("$HOME is not set".into()))?;
+        Ok((home, e, user))
+    }
+
     pub fn save_emulator_settings(
         &mut self,
         s: &emusettings::EmulatorSettings,
