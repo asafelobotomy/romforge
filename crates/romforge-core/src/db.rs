@@ -401,6 +401,29 @@ const MIGRATIONS: &[&str] = &[
          size INTEGER NOT NULL,
          PRIMARY KEY (sha1, size)
      );",
+    // 33: who made each game, as Wikidata items (studios and people), and
+    // each item's picture: a studio's logo, a person's photo, from
+    // Wikimedia Commons, with where the cached copy is.
+    "CREATE TABLE credits (
+         system_id INTEGER NOT NULL REFERENCES systems(system_id),
+         title     TEXT NOT NULL,
+         field     TEXT NOT NULL,
+         qid       TEXT NOT NULL,
+         label     TEXT NOT NULL,
+         PRIMARY KEY (system_id, title, field, qid)
+     );
+     CREATE TABLE wikidata_pictures (
+         qid        TEXT PRIMARY KEY,
+         url        TEXT,
+         kind       TEXT,
+         path       TEXT,
+         checked_at TEXT NOT NULL
+     );",
+    // 34: where each picture was downloaded from, and whether the owner
+    // picked it (Details' art picker); a picked one is never replaced by
+    // Enrich, even when refreshing.
+    "ALTER TABLE art ADD COLUMN url TEXT;
+     ALTER TABLE art ADD COLUMN chosen INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

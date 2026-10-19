@@ -2,6 +2,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { size } from "./lib.js";
+  import SortButton from "./SortButton.svelte";
+  import { sorted, remembered, remember } from "./sort.js";
 
   // Always mounted, so the DAT picked and the filter last until the app
   // closes; drawn only while `active`. `call` and `run` are the app's invoke
@@ -70,7 +72,21 @@
     await load();
   }
 
-  let visibleGames = $derived(datGames.filter((g) => gameFilter === "all" || (gameFilter === "have") === g.have));
+  // Both tables sort by any column (kept for next time).
+  let datSort = $state(remembered("dats", { key: "name", dir: 1 }));
+  let gameSort = $state(remembered("dat-games", { key: "name", dir: 1 }));
+  $effect(() => remember("dats", datSort));
+  $effect(() => remember("dat-games", gameSort));
+  const datGetters = { name: (d) => d.name, system: (d) => d.system, have: (d) => d.have, missing: (d) => d.missing };
+  const gameGetters = { have: (g) => (g.have ? 0 : 1), name: (g) => g.name, roms: (g) => g.roms_total };
+  let shownDats = $derived(sorted(summary.dats, datSort, datGetters));
+  let visibleGames = $derived(
+    sorted(
+      datGames.filter((g) => gameFilter === "all" || (gameFilter === "have") === g.have),
+      gameSort,
+      gameGetters,
+    ),
+  );
   let currentDat = $derived(summary.dats.find((d) => d.dat_id === datId));
 </script>
 
@@ -110,9 +126,14 @@
     <div class="dats">
       <div class="datpane">
         <table>
-          <thead><tr><th>DAT</th><th>System</th><th class="num">Have</th><th class="num">Missing</th></tr></thead>
+          <thead><tr>
+            <th><SortButton label="DAT" key="name" bind:sort={datSort} /></th>
+            <th><SortButton label="System" key="system" bind:sort={datSort} /></th>
+            <th class="num"><SortButton label="Have" key="have" bind:sort={datSort} /></th>
+            <th class="num"><SortButton label="Missing" key="missing" bind:sort={datSort} /></th>
+          </tr></thead>
           <tbody>
-            {#each summary.dats as d (d.dat_id)}
+            {#each shownDats as d (d.dat_id)}
               <tr class:selected={d.dat_id === datId} onclick={() => openDat(d.dat_id)}>
                 <td>{d.name}{d.version ? ` · v${d.version}` : ""}</td>
                 <td>{d.system ?? "—"}</td>
@@ -133,7 +154,11 @@
             {/each}
           </div>
           <table>
-            <thead><tr><th></th><th>Game</th><th class="num">ROMs</th></tr></thead>
+            <thead><tr>
+              <th><SortButton label="Have" key="have" bind:sort={gameSort} title="Sort by have / missing" /></th>
+              <th><SortButton label="Game" key="name" bind:sort={gameSort} /></th>
+              <th class="num"><SortButton label="ROMs" key="roms" bind:sort={gameSort} /></th>
+            </tr></thead>
             <tbody>
               {#each visibleGames as g (g.game_id)}
                 <tr>

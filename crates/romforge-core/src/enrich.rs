@@ -91,6 +91,30 @@ impl ArtKind {
     }
 }
 
+/// One image a source has for a game: the best first among a source's
+/// images of a kind. Enrich keeps the first that downloads; the art picker
+/// offers them all.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ArtFound {
+    pub kind: ArtKind,
+    pub url: String,
+    /// A smaller copy to preview, where the source has one.
+    pub thumb: Option<String>,
+    /// What tells it apart: its region, size or style.
+    pub label: Option<String>,
+}
+
+impl ArtFound {
+    pub fn new(kind: ArtKind, url: String) -> Self {
+        ArtFound {
+            kind,
+            url,
+            thumb: None,
+            label: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnrichOptions {
     /// Where art is saved (`<cache>/art/<system>/<kind>/<game>.png`).
@@ -503,40 +527,21 @@ pub fn enrich(
         // Art: libretro first (house rule 10, tier 1); the keyed sources
         // fill what it doesn't have.
         for (game, _) in games {
-            let lr_game: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
-                    params![system_id, game, LIBRETRO_NAME],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            // libretro names arcade thumbnails by the DAT's description,
-            // not the set ("Street Fighter II - The World Warrior ...").
-            let lr_game = match lr_game {
-                Some(n) => Some(n),
-                None if system.arcade => conn
-                    .query_row(
-                        "SELECT g.description FROM games g JOIN dats d ON d.dat_id = g.dat_id
-                         WHERE d.system_id = ?1 AND g.name = ?2 AND g.description IS NOT NULL
-                         ORDER BY g.game_id LIMIT 1",
-                        params![system_id, game],
-                        |r| r.get::<_, String>(0),
-                    )
-                    .optional()?,
-                None => None,
-            };
-            let lr_game = lr_game.as_deref().unwrap_or(game);
+            let lr_game = libretro_game(conn, system, *system_id, game)?;
+            let lr_game = lr_game.as_str();
             let mut missing: Vec<ArtKind> = Vec::new();
             for &kind in &opts.art {
-                let known: Option<Option<String>> = conn
+                let (known, chosen): (Option<Option<String>>, bool) = conn
                     .query_row(
-                        "SELECT path FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+                        "SELECT path, chosen FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
                         params![system_id, game, kind.as_str()],
-                        |r| r.get(0),
+                        |r| Ok((Some(r.get(0)?), r.get(1)?)),
                     )
-                    .optional()?;
+                    .optional()?
+                    .unwrap_or((None, false));
                 let still_there = matches!(&known, Some(Some(p)) if Path::new(p).exists());
-                if still_there && !opts.refresh {
+                // One the owner picked stays, even when refreshing.
+                if still_there && (!opts.refresh || chosen) {
                     report.art_cached += 1;
                     continue;
                 }
@@ -555,7 +560,9 @@ pub fn enrich(
                 });
                 match get_halting(&url, &mut halted_hosts) {
                     Ok(Some(data)) if image_ext(&data).is_some() => {
-                        match keep(conn, opts, system, *system_id, game, kind, &data, "libretro") {
+                        match keep(
+                            conn, opts, system, *system_id, game, kind, &data, "libretro", &url,
+                        ) {
                             Ok(()) => report.art_saved += 1,
                             Err(e) => report.errors.push(e.to_string()),
                         }
@@ -574,7 +581,7 @@ pub fn enrich(
             {
                 match crate::extdb::launchbox_lookup(lb, system, game, &opts.launchbox_images) {
                     Ok(Some(found)) => {
-                        for (kind, url) in found.images {
+                        for ArtFound { kind, url, .. } in found.images {
                             if !missing.contains(&kind) {
                                 continue;
                             }
@@ -585,8 +592,17 @@ pub fn enrich(
                             });
                             match get_halting(&url, &mut halted_hosts) {
                                 Ok(Some(data)) if image_ext(&data).is_some() => {
-                                    match keep(conn, opts, system, *system_id, game, kind, &data, "launchbox")
-                                    {
+                                    match keep(
+                                        conn,
+                                        opts,
+                                        system,
+                                        *system_id,
+                                        game,
+                                        kind,
+                                        &data,
+                                        "launchbox",
+                                        &url,
+                                    ) {
                                         Ok(()) => {
                                             report.art_saved += 1;
                                             missing.retain(|k| *k != kind);
@@ -628,7 +644,7 @@ pub fn enrich(
                 };
                 match crate::artsources::lookup(provider, &keys, &opts.sources, &mut session, &job) {
                     Ok(found) => {
-                        for (kind, url) in found {
+                        for ArtFound { kind, url, .. } in found {
                             if !missing.contains(&kind) {
                                 continue;
                             }
@@ -648,6 +664,7 @@ pub fn enrich(
                                         kind,
                                         &data,
                                         provider.name(),
+                                        &url,
                                     ) {
                                         Ok(()) => {
                                             report.art_saved += 1;
@@ -695,7 +712,16 @@ pub fn enrich(
         match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, |step| {
             progress(EnrichEvent::Wikidata { step })
         }) {
-            Ok(w) => report.wikidata = Some(w),
+            Ok(mut w) => {
+                // Logos and photos for Development, kept with the art.
+                let dir = opts
+                    .art_dir
+                    .clone()
+                    .unwrap_or_else(|| opts.cache_dir.join(crate::layout::LOOSE_ART_DIR));
+                progress(EnrichEvent::Wikidata { step: "pictures" });
+                crate::wikidata::fetch_pictures(conn, &dir.join("wikidata"), &mut w.errors)?;
+                report.wikidata = Some(w);
+            }
             Err(e) => report.errors.push(format!("Wikidata: {e}")),
         }
     }
@@ -882,6 +908,221 @@ fn games_without_meta(
     Ok(false)
 }
 
+/// The name libretro files a game's thumbnails under: its own name for
+/// it, an arcade set's DAT description ("Street Fighter II - The World
+/// Warrior ..."), else the DAT name.
+fn libretro_game(
+    conn: &Connection,
+    system: &systems::System,
+    system_id: i64,
+    game: &str,
+) -> Result<String, Error> {
+    let own: Option<String> = conn
+        .query_row(
+            "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
+            params![system_id, game, LIBRETRO_NAME],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let described = match own {
+        Some(n) => Some(n),
+        None if system.arcade => conn
+            .query_row(
+                "SELECT g.description FROM games g JOIN dats d ON d.dat_id = g.dat_id
+                 WHERE d.system_id = ?1 AND g.name = ?2 AND g.description IS NOT NULL
+                 ORDER BY g.game_id LIMIT 1",
+                params![system_id, game],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?,
+        None => None,
+    };
+    Ok(described.unwrap_or_else(|| game.to_owned()))
+}
+
+/// A picture the art picker offers for a game.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ArtChoice {
+    /// The full picture, downloaded when picked.
+    pub url: String,
+    /// "libretro", "launchbox", "screenscraper", "steamgriddb" or "igdb".
+    pub source: String,
+    /// Its region, size or style, where the source says.
+    pub label: Option<String>,
+    /// A small copy, downloaded to show (a file path).
+    pub preview: String,
+    /// The game's picture now.
+    pub current: bool,
+}
+
+/// What [`art_choices`] found, and what went wrong on the way.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct ArtChoices {
+    pub choices: Vec<ArtChoice>,
+    pub errors: Vec<String>,
+}
+
+/// Previews kept for the picker.
+const CHOICES_DIR: &str = "art-choices";
+
+/// Every picture of `kind` the sources have for a game (`lookup`: the title
+/// to look it up by; `game`: the title it is kept under): libretro's, the
+/// LaunchBox database's (if downloaded), and each keyed source's, best
+/// first, at most `limit`, with a small preview of each downloaded into the
+/// cache. Asks the network every time (nothing here is kept but previews).
+pub fn art_choices(
+    conn: &Connection,
+    opts: &EnrichOptions,
+    system_id: i64,
+    game: &str,
+    lookup: &str,
+    kind: ArtKind,
+    limit: usize,
+) -> Result<ArtChoices, Error> {
+    let system = systems::by_id(system_id).ok_or_else(|| Error::UnknownSystem(system_id.to_string()))?;
+    let mut out = ArtChoices::default();
+    let mut found: Vec<(String, ArtFound)> = Vec::new();
+    if let Some(lr) = libretro_name(system) {
+        let lr_game = libretro_game(conn, system, system_id, lookup)?;
+        if let Some(url) = thumbnail_url(&opts.thumbnails_base, lr, kind, &lr_game) {
+            found.push(("libretro".into(), ArtFound::new(kind, url)));
+        }
+    }
+    if let Some(lb) = opts
+        .extdb
+        .as_deref()
+        .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d))
+    {
+        match crate::extdb::launchbox_lookup(&lb, system, lookup, &opts.launchbox_images) {
+            Ok(Some(f)) => found.extend(
+                f.images
+                    .into_iter()
+                    .filter(|i| i.kind == kind)
+                    .map(|i| ("launchbox".to_owned(), i)),
+            ),
+            Ok(None) => {}
+            Err(e) => out.errors.push(format!("LaunchBox: {e}")),
+        }
+    }
+    let keys = crate::settings::load(conn)?.keys;
+    let mut session = crate::artsources::Session::default();
+    for provider in crate::artsources::Provider::available(&keys, system) {
+        let job = crate::artsources::Job {
+            system,
+            title: lookup,
+            rom: crate::artsources::rom_for(conn, system_id, lookup)?,
+        };
+        match crate::artsources::lookup(provider, &keys, &opts.sources, &mut session, &job) {
+            Ok(f) => found.extend(
+                f.into_iter()
+                    .filter(|i| i.kind == kind)
+                    .map(|i| (provider.name().to_owned(), i)),
+            ),
+            Err(e) => out.errors.push(format!("{}: {e}", provider.name())),
+        }
+    }
+    let current: Option<String> = conn
+        .query_row(
+            "SELECT url FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+            params![system_id, game, kind.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let dir = opts.cache_dir.join(CHOICES_DIR);
+    let mut halted = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
+    for (source, f) in found {
+        if out.choices.len() >= limit {
+            break;
+        }
+        if !seen.insert(f.url.clone()) {
+            continue;
+        }
+        let show = f.thumb.as_deref().unwrap_or(&f.url);
+        let stem = crate::hash::hex(&{
+            use sha1::Digest as _;
+            sha1::Sha1::digest(show.as_bytes())
+        });
+        // Kept from an earlier look, else downloaded now.
+        let cached = ["png", "jpg", "webp"]
+            .iter()
+            .map(|e| dir.join(format!("{stem}.{e}")))
+            .find(|p| p.exists());
+        let preview = match cached {
+            Some(p) => p,
+            None => match get_halting(show, &mut halted) {
+                Ok(Some(data)) => match image_ext(&data) {
+                    Some(ext) => {
+                        let p = dir.join(format!("{stem}.{ext}"));
+                        save(&p, &data)?;
+                        p
+                    }
+                    None => continue,
+                },
+                Ok(None) => continue,
+                Err(e) => {
+                    out.errors.push(format!("{source}: {e}"));
+                    continue;
+                }
+            },
+        };
+        out.choices.push(ArtChoice {
+            current: current.as_deref() == Some(f.url.as_str()),
+            url: f.url,
+            source,
+            label: f.label,
+            preview: preview.to_string_lossy().into_owned(),
+        });
+    }
+    Ok(out)
+}
+
+/// Make the picture at `url` (from [`art_choices`]) the game's `kind`: it
+/// is downloaded in full, kept as Enrich keeps art, and marked as picked so
+/// Enrich never replaces it.
+#[allow(clippy::too_many_arguments)]
+pub fn choose_art(
+    conn: &Connection,
+    opts: &EnrichOptions,
+    system_id: i64,
+    game: &str,
+    kind: ArtKind,
+    url: &str,
+    source: &str,
+) -> Result<(), Error> {
+    let system = systems::by_id(system_id).ok_or_else(|| Error::UnknownSystem(system_id.to_string()))?;
+    let data = fetch::get(url)?;
+    if image_ext(&data).is_none() {
+        return Err(Error::Http(format!("{url}: not an image romforge shows")));
+    }
+    let old: Option<String> = conn
+        .query_row(
+            "SELECT path FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+            params![system_id, game, kind.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    keep(conn, opts, system, system_id, game, kind, &data, source, url)?;
+    // A PNG replaced by a JPEG: the old file goes.
+    let new: Option<String> = conn.query_row(
+        "SELECT path FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+        params![system_id, game, kind.as_str()],
+        |r| r.get(0),
+    )?;
+    if let Some(old) = old
+        && Some(&old) != new.as_ref()
+    {
+        let _ = std::fs::remove_file(old);
+    }
+    conn.execute(
+        "UPDATE art SET chosen = 1 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+        params![system_id, game, kind.as_str()],
+    )?;
+    Ok(())
+}
+
 /// Save an image for a game and record it.
 #[allow(clippy::too_many_arguments)]
 fn keep(
@@ -893,6 +1134,7 @@ fn keep(
     kind: ArtKind,
     data: &[u8],
     source: &str,
+    url: &str,
 ) -> Result<(), Error> {
     let ext = image_ext(data).unwrap_or("png");
     let path = opts
@@ -903,7 +1145,12 @@ fn keep(
         .join(kind.as_str())
         .join(format!("{}.{ext}", cache_stem(game)));
     save(&path, data).map_err(|e| Error::Http(format!("{}: {e}", path.display())))?;
-    record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)
+    record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)?;
+    conn.execute(
+        "UPDATE art SET url = ?4, chosen = 0 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+        params![system_id, game, kind.as_str(), url],
+    )?;
+    Ok(())
 }
 
 /// Note what was found for a game (`path` None: looked for, not found).

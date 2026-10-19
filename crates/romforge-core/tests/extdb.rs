@@ -206,7 +206,7 @@ fn launchbox_needs_exactly_one_game() {
         found
             .images
             .iter()
-            .any(|(k, u)| *k == ArtKind::Boxart && u.ends_with("jp-box.png")),
+            .any(|f| f.kind == ArtKind::Boxart && f.url.ends_with("jp-box.png")),
         "alternate names match too"
     );
     let own = extdb::launchbox_lookup(&db, gb, "Test GB (USA)", "http://img")

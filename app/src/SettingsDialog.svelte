@@ -1,6 +1,8 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { iconCredits } from "./facts.js";
 
   // `call` is the app's invoke that reports errors on the status line.
   let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call } = $props();
@@ -189,6 +191,23 @@
         <p class="hint">Stored in romforge's database on this computer.</p>
       </section>
 
+      <details class="setting credits">
+        <summary><h3 class="sub">Credits</h3></summary>
+        {#snippet link(url, text)}<button class="linkish" onclick={() => openUrl(url)}>{text}</button>{/snippet}
+        <p class="hint">
+          Genre icons from {@render link("https://game-icons.net", "game-icons.net")}, licensed
+          {@render link("https://creativecommons.org/licenses/by/3.0/", "CC BY 3.0")} (background removed, recoloured):
+        </p>
+        <ul class="hint">
+          {#each iconCredits() as c}<li>{c.author}: {c.names.join(", ")}</li>{/each}
+        </ul>
+        <p class="hint">
+          Studio logos and people's photos come from {@render link("https://commons.wikimedia.org", "Wikimedia Commons")}
+          through Wikidata; each picture's own page (linked under it in Development) gives its author and licence.
+          Game facts from libretro, Wikidata and the sources set above. romforge is MIT licensed.
+        </p>
+      </details>
+
       {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
       <div class="actions">
         <button onclick={() => (open = false)}>Cancel</button>
@@ -201,4 +220,8 @@
 <style>
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   .two input { width: 100%; box-sizing: border-box; }
+  .credits summary { cursor: pointer; }
+  .credits summary h3 { display: inline; }
+  .credits ul { margin: 0.2rem 0 0.5rem; padding-left: 1.2rem; }
+  .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 </style>

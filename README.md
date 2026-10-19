@@ -240,9 +240,17 @@ there too. Refresh also scans `Games/`. An import is a cleanup into
 Every version of a game is kept: regions, revisions, translations, hacks.
 The library lists one row per game (grouped by the clone lists, the DAT's
 parent game, else the title without tags; translations and hacks with
-their base game), showing the version from the first of your **Preferred
-regions** (Settings; default USA, World, Europe, Japan); ▸ expands it to
-every version. Move the folder from Settings (**Move…**) or by hand: when
+their base game), showing the original release from the first of your
+**Preferred regions** (Settings; default USA, World, Europe, Japan), never
+a translation or hack. ▸ expands it to its other versions under headings
+that fold on their own: **Other regions**, **Editions** (special editions,
+re-releases, demos and betas), **Translations**, **Hacks**, and
+**Patches** (the patch files a scan found, as Translations and Hacks). A
+game you have only translations, hacks or patches of is still listed by
+its original, marked *not in your library*; a patch file for no game you
+have is listed under the DAT game its readme names (or on its own). Its
+Details offer **Apply…** when you have the game it is for. `romforge-cli
+games` prints the same tree. Move the folder from Settings (**Move…**) or by hand: when
 romforge opens it in a new place it rewrites the paths it stores. With a
 RomForge folder, Organize hands over to Import (its earlier batches can
 still be undone).
@@ -444,8 +452,15 @@ then SteamGridDB, then IGDB, each only asked for what's still missing.
 SteamGridDB's grids are never used as box art (they are Steam capsules),
 and IGDB images come at their largest sizes.
 
-**Details** shows fanart on top, the box beside the facts (with the logo),
-the overview, then Media (3D box, title screen, in-game, icon). Every image
+**Details** (centred) shows fanart on top (click it to pick another: a
+popup lists every fanart libretro, the LaunchBox database and the keyed
+sources have for the game, previewed small; your pick is kept even when
+Enrich refreshes), the facts (with the logo) on the
+left of the box, the overview, then Media (3D box, title screen, in-game,
+icon). Facts are pictures where they can be: a genre icon each (its name
+on hover), the ESRB rating as a badge, region flags for the edition, the
+community rating as stars, and the developer's and publisher's logos once
+Enrich has fetched them. Every image
 keeps its own aspect ratio and is never blown up; captions give its size in
 pixels and its source, and a click opens it full size (small screenshots
 scaled by whole steps, pixels kept sharp). Kinds with no art are hidden;
@@ -462,9 +477,20 @@ Details shows where an overview came from.
 
 **Development** groups what is known into Studios, Credits, Release and
 Identification (status, DATs, Wikidata item), leaving out anything empty.
-**Series** is a table (#, year, title, platform) in Wikidata's series order
-or, without it, the libretro franchise oldest first; games you have open
-with a click. **Links** separates the game's own pages (from Wikidata IDs)
+Studios and people Wikidata names are cards with the studio's logo or the
+person's photo from Wikimedia Commons (fetched by Enrich as small
+thumbnails, kept with the art; each links to its Commons page for its
+author and licence, and the card to the Wikidata item).
+**Series** lists each title once, with badges for the platforms you have it
+on: the numbered entries (Wikidata's series order) apart from the other
+games, or, without a series, the libretro franchise; games you have open
+with a click.
+
+**Sorting**: every list sorts by its column headings (click again to
+reverse): the games (title, platform, release year, status; a game's
+versions sort the same way under their headings), the series, the DATs and
+their games, Organize's moves and Import's games. Each list remembers its
+sort. `romforge-cli games --sort year --desc` does the same. **Links** separates the game's own pages (from Wikidata IDs)
 from plain site searches. libretro's `???` for an unknown value is hidden,
 and "Nintendo ???" shows as "Nintendo (unconfirmed)".
 
@@ -509,4 +535,9 @@ MIT (see [LICENSE](LICENSE)). The systems table is adapted from
 [remustwo](https://github.com/asafelobotomy/remustwo) (MIT). The DJW and
 FGK decoders in `vcdiff.rs` are ported from
 [xdelta3](https://github.com/jmacd/xdelta) (Copyright Joshua MacDonald,
-[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)).
+[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)). The genre icons
+in Details (`app/src/gameIcons.js`) are from
+[game-icons.net](https://game-icons.net) by Lorc, Delapouite and Skoll,
+licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), with
+their background removed and recoloured; the app lists them under
+Settings → Credits.

@@ -25,7 +25,8 @@ fn lit(v: &str) -> String {
 /// `busy` is set, detail queries get a 429 with a long Retry-After.
 fn serve(busy: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}/sparql", listener.local_addr().unwrap());
+    let host = format!("http://{}", listener.local_addr().unwrap());
+    let base = format!("{host}/sparql");
     let log = Arc::new(Mutex::new(Vec::new()));
     let seen = log.clone();
     std::thread::spawn(move || {
@@ -41,6 +42,18 @@ fn serve(busy: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
                 }
             }
             let target = line.split_whitespace().nth(1).unwrap_or("").to_owned();
+            // A studio's logo, as Commons serves a thumbnail.
+            if target.starts_with("/img/") {
+                let body = b"\x89PNG\r\n\x1a\nlogo";
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(body);
+                let _ = stream.flush();
+                continue;
+            }
             let query = target
                 .split_once("query=")
                 .map(|(_, q)| percent_decode(q))
@@ -113,6 +126,14 @@ fn serve(busy: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
                         lit("Test GB (video game)")
                     ),
                 ]
+            } else if query.contains("wdt:P154") {
+                vec![format!(
+                    r#"{{"e":{},"logo":{}}}"#,
+                    uri("Q9"),
+                    format!(
+                        r#"{{"type":"uri","value":"{host}/img/Special:FilePath/Test%20Studio%20logo.svg"}}"#
+                    )
+                )]
             } else if query.contains("GROUP BY ?s ?m") {
                 vec![
                     format!(
@@ -220,6 +241,20 @@ fn matches_fills_and_lists_the_series() {
     let d = lib.game_detail(id).unwrap();
     assert_eq!(d.fields.get("developer").map(String::as_str), Some("Test Studio"));
     assert_eq!(d.fields.get("wikidata").map(String::as_str), Some("Q100"));
+    // Who made it, with the studio's logo from Commons.
+    assert_eq!(d.credits.len(), 1, "{:?}", d.credits);
+    let c = &d.credits[0];
+    assert_eq!(
+        (c.role.as_str(), c.name.as_str(), c.qid.as_str()),
+        ("developer", "Test Studio", "Q9")
+    );
+    assert_eq!(c.kind.as_deref(), Some("logo"));
+    let pic = c.picture.as_deref().expect("fetched");
+    assert!(pic.ends_with("Q9.png"), "{pic}");
+    assert_eq!(
+        c.source.as_deref(),
+        Some("https://commons.wikimedia.org/wiki/File:Test%20Studio%20logo.svg")
+    );
     let titles: Vec<&str> = d.series.iter().map(|s| s.title.as_str()).collect();
     assert_eq!(titles, ["Test Zero", "Test GB", "Test GB 2"], "in series order");
     assert!(d.series[1].current && d.series[1].in_library);

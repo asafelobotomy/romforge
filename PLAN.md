@@ -1191,9 +1191,52 @@ Follow-up (2026-10-19, built and tested on scratch copies):
 - Tried on a real patch (Ps2restIPS.zip, Phantasy Star II restoration):
   read with its readme, paired by the readme, applied to a stand-in ROM
   in scratch; not yet on the real game (not in the library).
+- The list (2026-10-19): `view::listing` (the app's and `games`' view;
+  `view::library` stays the plain one inside the core) puts a game's
+  original on top, a placeholder row (status `missing`) when you have
+  only translations, hacks or patches of it, and gives every other
+  version a `Category` (region, edition, translation, hack, patch
+  translation, patch hack) and `base_id` (the row it is made from). Patch
+  files are rows (status `patch`); one for a game you don't have pairs
+  with the DAT game its readme names (one platform, or the platform the
+  readme names). The app folds each heading; a patch row's Apply opens
+  the patcher on its game.
 **Open:** discs aren't named on their own (only cartridges); a zip of
 several patches and patches in 7z archives aren't listed (pick one by
-hand).
+hand); the new list layout is tested in the core, not yet looked at in
+the running app.
+
+## Details, Development, Series and sorting (2026-10-19, built)
+
+- Details centred, its facts left of the box art.
+- Development: Wikidata's developer, publisher, director, designer and
+  composer kept as items (`credits`, migration 33) with each item's logo
+  (P154) or image (P18) from Commons (`wikidata_pictures`), fetched by
+  Enrich as 240 px thumbnails into the art folder (`wikidata/<qid>.png`);
+  cards in the app link to the item and to the picture's Commons page.
+  libretro-only names stay text.
+- Series: each title once with the platforms you have it on; numbered
+  entries apart from the rest.
+- Sorting: every list (games with a release-year column, series, DATs, DAT
+  games, Organize moves, Import items) by its headings, remembered per
+  list; `view::sort_rows` for `romforge-cli games --sort`.
+- Not checked yet with real Wikidata pictures (the test serves a stand-in).
+
+## Fanart picker (2026-10-19, built)
+
+- Every source now returns all its images of a kind, best first
+  (`enrich::ArtFound`: URL, preview thumbnail, label); Enrich still keeps
+  the first that downloads.
+- `enrich::art_choices` asks libretro, the LaunchBox database and each
+  keyed source for a game's pictures of a kind, downloads a preview of each
+  (thumbnails where the source has them) into `<cache>/art-choices`;
+  `choose_art` downloads the pick, keeps it as art and marks it `chosen`
+  (migration 34, with each picture's `url`), and Enrich never replaces a
+  chosen picture, even refreshing.
+- The app: click the fanart in Details (or "No fanart yet: find one…").
+  Only fanart for now; the core takes any kind, so box art, logos and
+  screenshots can get the same picker.
+- Not tried against the real sources yet (tested with a stand-in).
 
 ## Code review follow-ups (2026-10-18)
 

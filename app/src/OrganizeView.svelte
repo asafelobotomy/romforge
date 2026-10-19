@@ -1,4 +1,6 @@
 <script>
+  import SortButton from "./SortButton.svelte";
+  import { sorted } from "./sort.js";
   // Always mounted, so the folders and the plan last while you look at other
   // screens; drawn only while `active`. `run` is the app's invoke with
   // progress on the status line; `load` reloads the library.
@@ -19,6 +21,9 @@
     plan = await run("Planning…", "organize_plan", inputs);
     planned = plan ? inputs : null;
   }
+
+  let moveSort = $state({ key: "from", dir: 1 });
+  const moveGetters = { from: (m) => m.from, to: (m) => m.to };
 
   // Changing what to organize makes the plan on screen stale.
   function replan() {
@@ -80,9 +85,12 @@
     {#if plan}
       <p class="meta">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
       <table>
-        <thead><tr><th>From</th><th>To</th></tr></thead>
+        <thead><tr>
+          <th><SortButton label="From" key="from" bind:sort={moveSort} /></th>
+          <th><SortButton label="To" key="to" bind:sort={moveSort} /></th>
+        </tr></thead>
         <tbody>
-          {#each plan.moves as m}
+          {#each sorted(plan.moves, moveSort, moveGetters) as m}
             <tr><td class="path"><bdi>{m.from}</bdi></td><td class="path"><bdi>{m.to}</bdi></td></tr>
           {/each}
           {#each plan.skipped as s}

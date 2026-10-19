@@ -918,6 +918,26 @@ pub(crate) fn paired_with(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// The patch file a scan found at `path`.
+pub(crate) fn patch_at(conn: &Connection, path: &str) -> Result<Option<FoundPatch>, Error> {
+    use rusqlite::OptionalExtension;
+    Ok(conn
+        .query_row(
+            "SELECT path, name, kind, relation, coalesce(paired_by, 'folder') FROM patch_files WHERE path = ?1",
+            [path],
+            |r| {
+                Ok(FoundPatch {
+                    path: PathBuf::from(r.get::<_, String>(0)?),
+                    name: r.get(1)?,
+                    kind: r.get(2)?,
+                    relation: Relation::parse(&r.get::<_, String>(3)?).unwrap_or(Relation::Hack),
+                    paired_by: r.get(4)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
 /// Translation or hack, from a patch's name and readme. Names say it
 /// loosely ("English", "Eng"), readmes strictly ("translation").
 pub(crate) fn guess_relation(name: &str, readme: &str) -> Relation {
@@ -1132,6 +1152,8 @@ fn pair(conn: &Connection) -> Result<(), Error> {
         })?
         .collect::<Result<_, _>>()?;
     let titles: Vec<String> = owned.iter().map(|(_, t)| t.clone()).collect();
+    let mut dat_names: Option<(crate::titles::NameIndex, Vec<(i64, String)>)> = None;
+    let regions = crate::settings::load(conn)?.region_order();
     let index = crate::titles::TitleIndex::new(titles.iter().cloned());
     let keys: Vec<((i64, String), crate::titles::TitleKey)> = owned
         .iter()
@@ -1269,12 +1291,68 @@ fn pair(conn: &Connection) -> Result<(), Error> {
             }
             found = one(best.1).map(|g| (g, "readme"));
         }
+        if found.is_none()
+            && let Some(readme) = &p.readme
+        {
+            // A game you don't have: the DAT game its readme names.
+            let (index, games) = dat_names.get_or_insert_with(|| dat_name_index(conn).unwrap_or_default());
+            let text = crate::titles::text_words(readme);
+            let hits: Vec<(i64, String)> = index.named(&text).into_iter().map(|i| games[i].clone()).collect();
+            found = one_game(hits, readme, &regions).map(|g| (g, "readme"));
+        }
         match found {
             Some(((sid, title), by)) => set.execute(params![p.path, sid, title, by])?,
             None => set.execute(params![p.path, None::<i64>, None::<String>, None::<String>])?,
         };
     }
     Ok(())
+}
+
+/// Every DAT game's name, indexed for [`crate::titles::NameIndex::named`],
+/// with the games in its order.
+fn dat_name_index(conn: &Connection) -> Result<(crate::titles::NameIndex, Vec<(i64, String)>), Error> {
+    let all: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT DISTINCT d.system_id, g.name FROM games g JOIN dats d ON d.dat_id = g.dat_id
+             WHERE d.system_id IS NOT NULL ORDER BY d.system_id, g.name",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let index = crate::titles::NameIndex::new(all.iter().map(|(_, t)| t.as_str()));
+    Ok((index, all))
+}
+
+/// One game out of DAT games a readme names: versions of one title on one
+/// platform are one game (its best release in your region order); several
+/// platforms only when the readme names one of them.
+fn one_game(hits: Vec<(i64, String)>, readme: &str, regions: &[String]) -> Option<(i64, String)> {
+    let mut systems: Vec<i64> = hits.iter().map(|(s, _)| *s).collect();
+    systems.sort_unstable();
+    systems.dedup();
+    if systems.len() > 1 {
+        let text = readme.to_lowercase();
+        let says = |words: &str| {
+            let w = words.to_lowercase();
+            w.len() >= 3 && text.contains(&w)
+        };
+        systems.retain(|id| {
+            systems::by_id(*id)
+                .is_some_and(|s| says(s.name) || says(s.key) || says(&crate::view::short_name(s.key)))
+        });
+    }
+    let [sid] = systems.as_slice() else {
+        return None;
+    };
+    let of: Vec<&String> = hits.iter().filter(|(s, _)| s == sid).map(|(_, t)| t).collect();
+    let mut bases: Vec<String> = of.iter().map(|t| crate::organize::base_title(t)).collect();
+    bases.sort();
+    bases.dedup();
+    if bases.len() != 1 {
+        return None;
+    }
+    of.into_iter()
+        .max_by_key(|t| (crate::organize::rank(t, regions), std::cmp::Reverse((*t).clone())))
+        .map(|t| (*sid, t.clone()))
 }
 
 /// Name the unknown files that a paired patch beside them (in the same

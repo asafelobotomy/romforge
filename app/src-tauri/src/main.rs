@@ -385,6 +385,41 @@ async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichR
     with(&db, move |lib| lib.enrich(&opts, |_| {})).await
 }
 
+/// The pictures of `kind` the sources have for a row, each preview as a
+/// `data:` URL (Details' art picker).
+#[tauri::command]
+async fn art_choices(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    kind: String,
+) -> Res<romforge_core::enrich::ArtChoices> {
+    let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
+    let opts = EnrichOptions::new(default_cache_dir());
+    let mut found = read(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await?;
+    for c in &mut found.choices {
+        c.preview = image_url(Path::new(&c.preview)).unwrap_or_default();
+    }
+    found.choices.retain(|c| !c.preview.is_empty());
+    Ok(found)
+}
+
+/// Make one of those the row's picture.
+#[tauri::command]
+async fn choose_art(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    kind: String,
+    url: String,
+    source: String,
+) -> Res<()> {
+    let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
+    let opts = EnrichOptions::new(default_cache_dir());
+    with(&db, move |lib| {
+        lib.choose_art(&opts, &row_id, kind, &url, &source)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
     read(&db, move |lib| lib.settings_masked()).await
@@ -466,6 +501,9 @@ async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
         *path = image_url(Path::new(&*path)).unwrap_or_default();
     }
     d.art.retain(|_, v| !v.is_empty());
+    for c in &mut d.credits {
+        c.picture = c.picture.as_deref().and_then(|p| image_url(Path::new(p)));
+    }
     Ok(d)
 }
 
@@ -649,6 +687,8 @@ fn main() {
             patch_plan,
             patch_apply,
             patches_beside,
+            art_choices,
+            choose_art,
             home_info,
             home_create,
             home_move,

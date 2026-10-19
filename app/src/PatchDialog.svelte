@@ -17,7 +17,8 @@
   let plan = $state(null);
   let patchError = $state("");
 
-  export async function openPatch(r, detail) {
+  // `pick`: a patch to start with ({ path, relation }).
+  export async function openPatch(r, detail, pick = null) {
     row = r;
     links = detail?.patch_links ?? [];
     patch = null;
@@ -27,6 +28,7 @@
     patchError = "";
     open = true;
     beside = (await call("patches_beside", { rowId: r.id })) ?? [];
+    if (pick) await choose(pick.path, pick.relation);
   }
 
   async function choose(path, relation) {

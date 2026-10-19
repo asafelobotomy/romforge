@@ -472,8 +472,8 @@ pub fn fold_accents(s: &str) -> String {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Found {
     pub fields: Vec<(&'static str, String)>,
-    /// LaunchBox only: (kind, image URL), best region first.
-    pub images: Vec<(ArtKind, String)>,
+    /// LaunchBox only: every image, best region first.
+    pub images: Vec<crate::enrich::ArtFound>,
 }
 
 /// OpenVGDB by any of the game's ROMs (SHA1 and size). A SHA1 that is
@@ -675,10 +675,17 @@ pub fn launchbox_lookup(
         (ArtKind::Logo, &["Clear Logo"]),
         (ArtKind::Icon, &["Icon"]),
     ] {
-        let best = types.iter().find_map(|t| imgs.iter().find(|(_, ty, _)| ty == t));
-        if let Some((file, _, _)) = best {
-            f.images
-                .push((kind, format!("{images_base}/{}", fetch::encode_segment(file))));
+        // Each type in order (a reconstructed box after the real ones),
+        // each region-ranked.
+        for t in types {
+            for (file, _, region) in imgs.iter().filter(|(_, ty, _)| ty == t) {
+                f.images.push(crate::enrich::ArtFound {
+                    kind,
+                    url: format!("{images_base}/{}", fetch::encode_segment(file)),
+                    thumb: None,
+                    label: region.clone(),
+                });
+            }
         }
     }
     Ok(Some(f))

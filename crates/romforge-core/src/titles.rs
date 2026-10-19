@@ -207,6 +207,71 @@ pub fn named_in(title: &TitleKey, text: &[String]) -> usize {
     }
 }
 
+/// [`named_in`] for many titles at once (every DAT game): the titles a
+/// text names, by looking up each run of its words.
+#[derive(Default)]
+pub struct NameIndex {
+    /// (position in what [`NameIndex::new`] was given, key)
+    keys: Vec<(usize, TitleKey)>,
+    /// The words of a title (all of them, or its main title) joined by
+    /// spaces -> the titles.
+    runs: HashMap<String, Vec<usize>>,
+}
+
+/// The longest title run [`NameIndex`] looks up.
+const MAX_RUN: usize = 12;
+
+impl NameIndex {
+    pub fn new<'a>(titles: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut keys = Vec::new();
+        let mut runs: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, t) in titles.into_iter().enumerate() {
+            let k = key(t);
+            let main = k.main.len();
+            if main == 0 || (main == 1 && k.main[0].len() < 6 && k.sub.is_empty()) {
+                continue;
+            }
+            let i = keys.len();
+            let all: Vec<&str> = k.main.iter().chain(&k.sub).map(String::as_str).collect();
+            if all.len() <= MAX_RUN {
+                runs.entry(all.join(" ")).or_default().push(i);
+            }
+            if !k.sub.is_empty() && main <= MAX_RUN {
+                runs.entry(k.main.join(" ")).or_default().push(i);
+            }
+            keys.push((at, k));
+        }
+        NameIndex { keys, runs }
+    }
+
+    /// The titles (their positions in what [`NameIndex::new`] was given) a
+    /// text names with the most words.
+    pub fn named(&self, text: &[String]) -> Vec<usize> {
+        let mut best = (0usize, BTreeSet::new());
+        for i in 0..text.len() {
+            for n in 1..=MAX_RUN.min(text.len() - i) {
+                let Some(hits) = self.runs.get(&text[i..i + n].join(" ")) else {
+                    continue;
+                };
+                for &h in hits {
+                    let k = &self.keys[h].1;
+                    let fits = text
+                        .get(i + n)
+                        .is_none_or(|next| !is_hard(next) || k.hard.contains(next));
+                    if !fits || n < best.0 {
+                        continue;
+                    }
+                    if n > best.0 {
+                        best = (n, BTreeSet::new());
+                    }
+                    best.1.insert(h);
+                }
+            }
+        }
+        best.1.into_iter().map(|h| self.keys[h].0).collect()
+    }
+}
+
 /// [`score_keys`] for two titles.
 pub fn score(a: &str, b: &str) -> f32 {
     score_keys(&key(a), &key(b))
@@ -308,6 +373,14 @@ mod tests {
             "a 2 follows"
         );
         assert_eq!(named_in(&key("Star (Japan)"), &text), 0, "too short to say");
+        let index = NameIndex::new([
+            "Phantasy Star (Japan)",
+            "Phantasy Star II (Japan)",
+            "Star (Japan)",
+        ]);
+        assert_eq!(index.named(&text), vec![1]);
+        let index = NameIndex::new(["Star (Japan)", "Phantasy Star II (Japan)"]);
+        assert_eq!(index.named(&text), vec![1], "positions in the input");
     }
 
     #[test]

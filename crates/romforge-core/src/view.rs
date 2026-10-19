@@ -38,6 +38,57 @@ pub enum RowStatus {
     /// MD5s of their first bytes; never counted as verified).
     Detected,
     Unknown,
+    /// Listed only ([`listing`]): the original of versions you have
+    /// (translations, hacks, patches) when you don't have it.
+    Missing,
+    /// Listed only ([`listing`]): a patch file a scan found.
+    Patch,
+}
+
+/// Where a version sits under its game's original in [`listing`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Category {
+    /// Another region or revision of the game.
+    Region,
+    /// A special edition, re-release, or not a retail release (demo,
+    /// beta, prototype).
+    Edition,
+    /// A translated copy (named so by you or by romforge, never verified).
+    Translation,
+    /// A hacked copy.
+    Hack,
+    /// A translation patch file.
+    PatchTranslation,
+    /// A hack patch file.
+    PatchHack,
+}
+
+impl Category {
+    /// In the order the list shows them under a game's original.
+    pub const ORDER: [Category; 6] = [
+        Category::Region,
+        Category::Edition,
+        Category::Translation,
+        Category::Hack,
+        Category::PatchTranslation,
+        Category::PatchHack,
+    ];
+
+    /// The heading the list shows it under.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Category::Region => "Other regions",
+            Category::Edition => "Editions",
+            Category::Translation | Category::PatchTranslation => "Translations",
+            Category::Hack | Category::PatchHack => "Hacks",
+        }
+    }
+
+    /// A patch file, listed under "Patches".
+    pub fn is_patch(self) -> bool {
+        matches!(self, Category::PatchTranslation | Category::PatchHack)
+    }
 }
 
 impl RowStatus {
@@ -95,10 +146,22 @@ pub struct GameRow {
     /// ("Street Fighter II: The World Warrior (World 910522)"); the title
     /// stays its set name.
     pub label: Option<String>,
+    /// In [`listing`], on a version: which kind of version it is (`None`
+    /// on the original, and on rows not in a group).
+    pub category: Option<Category>,
+    /// On a translation, hack or patch: the row of the game it is made from
+    /// (or for), when you have it.
+    pub base_id: Option<String>,
+    /// Its release year (a translation, hack or patch: its game's), from
+    /// the metadata Enrich gathered.
+    pub year: Option<i32>,
     #[serde(skip)]
     pub(crate) system_id: Option<i64>,
     #[serde(skip)]
     file_ids: Vec<i64>,
+    /// A patch row's game, and whether it is a translation or a hack.
+    #[serde(skip)]
+    patch_of: Option<(String, Relation)>,
 }
 
 impl GameRow {
@@ -233,6 +296,58 @@ pub struct GameDetail {
     /// For a derivative romforge named itself: the patch beside it that,
     /// applied to your verified copy of the base game, gives exactly it.
     pub proof: Option<String>,
+    /// Who made it (Wikidata): studios and people, with their pictures.
+    pub credits: Vec<Credit>,
+}
+
+/// A studio or person credited for a game, from Wikidata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Credit {
+    /// "developer", "publisher", "director", "designer" or "composer".
+    pub role: String,
+    pub name: String,
+    pub qid: String,
+    /// The cached picture (a logo or a photo), if one was fetched.
+    pub picture: Option<String>,
+    /// "logo" or "photo".
+    pub kind: Option<String>,
+    /// The picture's page on Wikimedia Commons (its author and licence).
+    pub source: Option<String>,
+}
+
+/// Who made a game (or, for a translation or hack, its base game).
+fn credits(conn: &Connection, system_id: i64, titles: &[&str]) -> Result<Vec<Credit>, Error> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT c.field, c.label, c.qid, p.path, p.kind, p.url FROM credits c
+         LEFT JOIN wikidata_pictures p ON p.qid = c.qid
+         WHERE c.system_id = ?1 AND c.title = ?2",
+    )?;
+    for title in titles {
+        let mut out: Vec<Credit> = stmt
+            .query_map(params![system_id, title], |r| {
+                let url: Option<String> = r.get(5)?;
+                Ok(Credit {
+                    role: r.get(0)?,
+                    name: r.get(1)?,
+                    qid: r.get(2)?,
+                    picture: r
+                        .get::<_, Option<String>>(3)?
+                        .filter(|p| std::path::Path::new(p).exists()),
+                    kind: r.get(4)?,
+                    source: url.and_then(|u| {
+                        let file = u.rsplit_once("Special:FilePath/")?.1;
+                        Some(format!("https://commons.wikimedia.org/wiki/File:{file}"))
+                    }),
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        if !out.is_empty() {
+            let order = |r: &str| crate::wikidata::CREDIT_FIELDS.iter().position(|f| *f == r);
+            out.sort_by(|a, b| (order(&a.role), &a.name).cmp(&(order(&b.role), &b.name)));
+            return Ok(out);
+        }
+    }
+    Ok(Vec::new())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -259,6 +374,87 @@ struct FileRec {
 }
 
 pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
+    finish(conn, rows_of(conn)?, false)
+}
+
+/// The library as the app and `games` list it: [`library`], plus the patch
+/// files a scan found, every game's versions under its original by
+/// [`Category`], and the original itself ([`RowStatus::Missing`]) when you
+/// have only translations, hacks or patches of it.
+pub fn listing(conn: &Connection) -> Result<LibraryView, Error> {
+    let mut rows = rows_of(conn)?;
+    rows.extend(patch_rows(conn)?);
+    finish(conn, rows, true)
+}
+
+/// A row with nothing in it yet.
+fn bare_row(id: String, system_id: Option<i64>, title: &str, status: RowStatus) -> GameRow {
+    let sys = system_id.and_then(systems::by_id);
+    GameRow {
+        id,
+        title: title.to_owned(),
+        system: sys.map(|s| s.key.to_owned()),
+        system_name: sys.map(|s| s.name.to_owned()),
+        status,
+        cue_differs: false,
+        cue_fits: false,
+        files: 0,
+        size: 0,
+        metadata: false,
+        art: Vec::new(),
+        playable: false,
+        group: None,
+        main: true,
+        versions: 1,
+        folder: None,
+        label: None,
+        category: None,
+        year: None,
+        base_id: None,
+        system_id,
+        file_ids: Vec::new(),
+        patch_of: None,
+    }
+}
+
+/// The patch files a scan found, a row each: under their game when paired.
+fn patch_rows(conn: &Connection) -> Result<Vec<GameRow>, Error> {
+    let mut out = Vec::new();
+    for r in conn
+        .prepare("SELECT path, name, size, relation, system_id, title FROM patch_files ORDER BY name, path")?
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, u64>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<i64>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?
+    {
+        let (path, name, size, relation, system_id, title) = r?;
+        let mut row = bare_row(
+            format!("p:{path}"),
+            system_id.filter(|_| title.is_some()),
+            &name,
+            RowStatus::Patch,
+        );
+        let file = path.rsplit(['/', '\\']).next().unwrap_or(&path);
+        if !file.eq_ignore_ascii_case(&name) {
+            row.label = Some(format!("{name} ({file})"));
+        }
+        row.files = 1;
+        row.size = size;
+        let relation = Relation::parse(&relation).unwrap_or(Relation::Hack);
+        row.patch_of = title.map(|t| (t, relation));
+        out.push(row);
+    }
+    Ok(out)
+}
+
+/// Every row of the library, before versions are grouped.
+fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
     let files: Vec<FileRec> = conn
         .prepare("SELECT file_id, path, member, status, size, sha1 FROM files ORDER BY path, member")?
         .query_map([], |r| {
@@ -427,8 +623,12 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
             versions: 1,
             folder: None,
             label: None,
+            category: None,
+            year: None,
+            base_id: None,
             system_id,
             file_ids: Vec::new(),
+            patch_of: None,
         }
     };
     // Titles the owner gave files in Search (and whether as a derivative).
@@ -516,8 +716,12 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 versions: 1,
                 folder: None,
                 label: None,
+                category: None,
+                year: None,
+                base_id: None,
                 system_id,
                 file_ids: Vec::new(),
+                patch_of: None,
             })
         };
         row.files += 1;
@@ -564,9 +768,19 @@ pub fn library(conn: &Connection) -> Result<LibraryView, Error> {
                 .optional()?;
         }
     }
+    Ok(rows)
+}
+
+/// Sort, group versions, count games per platform.
+fn finish(conn: &Connection, mut rows: Vec<GameRow>, listing: bool) -> Result<LibraryView, Error> {
     let shown = |r: &GameRow| sort_key(r.label.as_deref().unwrap_or(&r.title));
     rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
-    group_versions(conn, &mut rows)?;
+    group_versions(conn, &mut rows, listing)?;
+    release_years(conn, &mut rows)?;
+    if listing {
+        // Originals added for missing games go in their place.
+        rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
+    }
     // Games, not versions.
     let mut counts: BTreeMap<Option<i64>, usize> = BTreeMap::new();
     for r in rows.iter().filter(|r| r.main) {
@@ -727,36 +941,56 @@ pub fn short_name(key: &str) -> String {
 /// and hacks by their base game. The main row is the best release in the
 /// Settings region order (a translation or hack only when nothing else is
 /// there). Unidentified files are never grouped.
-fn group_versions(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> {
+///
+/// For a `listing`, patch rows join their game's group too, a game's
+/// original is its main row (added as [`RowStatus::Missing`] when only
+/// translations, hacks or patches of it are here), and every other version
+/// gets its [`Category`] and the row it is made from.
+fn group_versions(conn: &Connection, rows: &mut Vec<GameRow>, listing: bool) -> Result<(), Error> {
     use crate::organize::{base_title, rank};
     let regions = crate::settings::load(conn)?.region_order();
     let clones = crate::organize::clone_groups(conn)?;
-    let bases: HashMap<(i64, String), String> = conn
-        .prepare("SELECT DISTINCT system_id, title, base FROM manual_ids WHERE base IS NOT NULL")?
-        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), r.get(2)?)))?
+    let bases: HashMap<(i64, String), (String, Option<Relation>)> = conn
+        .prepare("SELECT DISTINCT system_id, title, base, relation FROM manual_ids WHERE base IS NOT NULL")?
+        .query_map([], |r| {
+            Ok((
+                (r.get(0)?, r.get(1)?),
+                (
+                    r.get(2)?,
+                    r.get::<_, Option<String>>(3)?
+                        .as_deref()
+                        .and_then(Relation::parse),
+                ),
+            ))
+        })?
         .collect::<Result<_, _>>()?;
     let mut parent_of = conn.prepare(
         "SELECT g.cloneof FROM games g JOIN dats d ON d.dat_id = g.dat_id
          WHERE g.name = ?2 AND d.system_id = ?1 AND g.cloneof IS NOT NULL AND g.cloneof <> ''
          LIMIT 1",
     )?;
-    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    // What a translation, hack or patch row is made from.
+    let base_of = |r: &GameRow| -> Option<(String, Relation)> {
+        if r.status == RowStatus::Patch {
+            return r.patch_of.clone();
+        }
+        let (base, rel) = bases.get(&(r.system_id?, r.title.clone()))?;
+        (r.status == RowStatus::Derivative).then(|| (base.clone(), rel.unwrap_or(Relation::Hack)))
+    };
+    let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut priority: HashMap<usize, i64> = HashMap::new();
     for (i, r) in rows.iter().enumerate() {
         let identified = matches!(
             r.status,
             RowStatus::Verified | RowStatus::Incomplete | RowStatus::ByYou | RowStatus::Derivative
-        );
+        ) || (listing && r.status == RowStatus::Patch);
         let (Some(sid), Some(key)) = (r.system_id, r.system.as_deref()) else {
             continue;
         };
         if !identified {
             continue;
         }
-        let name = bases
-            .get(&(sid, r.title.clone()))
-            .cloned()
-            .unwrap_or_else(|| r.title.clone());
+        let name = base_of(r).map(|(b, _)| b).unwrap_or_else(|| r.title.clone());
         let parent: Option<String> = parent_of.query_row(params![sid, name], |r| r.get(0)).optional()?;
         let base = base_title(parent.as_deref().unwrap_or(&name));
         let group = match clones.get(&(key.to_owned(), base.clone())) {
@@ -768,7 +1002,29 @@ fn group_versions(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> 
         };
         groups.entry(group).or_default().push(i);
     }
-    for (group, idx) in groups {
+    let original = |r: &GameRow| {
+        matches!(
+            r.status,
+            RowStatus::Verified | RowStatus::Incomplete | RowStatus::ByYou
+        )
+    };
+    for (group, mut idx) in groups {
+        // Only translations, hacks or patches: their original goes on top.
+        if listing && !idx.iter().any(|&i| original(&rows[i])) {
+            let first = &rows[idx[0]];
+            let sid = first.system_id;
+            let title = idx
+                .iter()
+                .filter_map(|&i| base_of(&rows[i]).map(|(b, _)| b))
+                .max_by_key(|t| {
+                    let (retail, region, revision) = rank(t, &regions);
+                    (retail, region, revision, std::cmp::Reverse(t.clone()))
+                })
+                .unwrap_or_else(|| first.title.clone());
+            let id = format!("x:{}:{title}", sid.map_or("-".to_owned(), |s| s.to_string()));
+            rows.push(bare_row(id, sid, &title, RowStatus::Missing));
+            idx.push(rows.len() - 1);
+        }
         if idx.len() < 2 {
             continue;
         }
@@ -778,6 +1034,8 @@ fn group_versions(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> 
                 let r = &rows[i];
                 let (retail, region, revision) = rank(&r.title, &regions);
                 (
+                    r.status == RowStatus::Missing,
+                    r.status != RowStatus::Patch,
                     r.status != RowStatus::Derivative,
                     r.status != RowStatus::Incomplete,
                     retail,
@@ -789,12 +1047,135 @@ fn group_versions(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> 
             })
             .unwrap_or(&idx[0]);
         for &i in &idx {
-            rows[i].group = Some(group.clone());
-            rows[i].main = i == best;
-            rows[i].versions = if i == best { idx.len() } else { 1 };
+            let category = (listing && i != best).then(|| match base_of(&rows[i]) {
+                Some((_, rel)) => match (rows[i].status, rel) {
+                    (RowStatus::Patch, Relation::Translation) => Category::PatchTranslation,
+                    (RowStatus::Patch, Relation::Hack) => Category::PatchHack,
+                    (_, Relation::Translation) => Category::Translation,
+                    (_, Relation::Hack) => Category::Hack,
+                },
+                None if is_edition(&rows[i].title) => Category::Edition,
+                None => Category::Region,
+            });
+            let r = &mut rows[i];
+            r.group = Some(group.clone());
+            r.main = i == best;
+            r.versions = if i == best { idx.len() } else { 1 };
+            r.category = category;
+        }
+    }
+    if listing {
+        // The row each translation, hack and patch is made from.
+        let owned: HashMap<(Option<i64>, String), String> = rows
+            .iter()
+            .filter(|r| matches!(r.status, RowStatus::Verified | RowStatus::ByYou))
+            .map(|r| ((r.system_id, r.title.clone()), r.id.clone()))
+            .collect();
+        let ids: Vec<Option<String>> = rows
+            .iter()
+            .map(|r| base_of(r).and_then(|(b, _)| owned.get(&(r.system_id, b)).cloned()))
+            .collect();
+        for (r, id) in rows.iter_mut().zip(ids) {
+            r.base_id = id;
         }
     }
     Ok(())
+}
+
+/// Each row's release year: its own, else (a translation, hack or patch)
+/// its game's.
+fn release_years(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> {
+    let years: HashMap<(i64, String), i32> = conn
+        .prepare("SELECT system_id, title, value FROM game_meta WHERE field = 'releaseyear'")?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), r.get::<_, String>(2)?)))?
+        .filter_map(|r| r.ok())
+        .filter_map(|(k, v)| Some((k, v.trim().get(..4)?.parse().ok()?)))
+        .collect();
+    if years.is_empty() {
+        return Ok(());
+    }
+    let bases: HashMap<(i64, String), String> = conn
+        .prepare("SELECT system_id, title, base FROM manual_ids WHERE base IS NOT NULL")?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    for r in rows {
+        let Some(sid) = r.system_id else { continue };
+        let base = r
+            .patch_of
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .or_else(|| bases.get(&(sid, r.title.clone())).cloned());
+        r.year = years
+            .get(&(sid, r.title.clone()))
+            .or_else(|| base.and_then(|b| years.get(&(sid, b))))
+            .copied();
+    }
+    Ok(())
+}
+
+/// What a list of games can be sorted by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortBy {
+    Title,
+    Platform,
+    Year,
+    Status,
+}
+
+impl SortBy {
+    pub fn parse(s: &str) -> Option<SortBy> {
+        match s.to_ascii_lowercase().as_str() {
+            "title" | "name" => Some(SortBy::Title),
+            "platform" | "system" => Some(SortBy::Platform),
+            "year" => Some(SortBy::Year),
+            "status" => Some(SortBy::Status),
+            _ => None,
+        }
+    }
+}
+
+/// Sort rows by `by` (then title), ascending or not; rows without a year
+/// or platform go last either way. Stable, so a group's versions keep their
+/// order among equals.
+pub fn sort_rows(rows: &mut [GameRow], by: SortBy, descending: bool) {
+    let title = |r: &GameRow| sort_key(r.label.as_deref().unwrap_or(&r.title));
+    rows.sort_by(|a, b| {
+        let (missing, ord) = match by {
+            SortBy::Title => (std::cmp::Ordering::Equal, title(a).cmp(&title(b))),
+            SortBy::Platform => (
+                a.system_name.is_none().cmp(&b.system_name.is_none()),
+                a.system_name.cmp(&b.system_name),
+            ),
+            SortBy::Year => (a.year.is_none().cmp(&b.year.is_none()), a.year.cmp(&b.year)),
+            SortBy::Status => (std::cmp::Ordering::Equal, a.status.cmp(&b.status)),
+        };
+        let ord = if descending { ord.reverse() } else { ord };
+        missing.then(ord).then_with(|| title(a).cmp(&title(b)))
+    });
+}
+
+/// Words that make a release a special edition or re-release.
+const EDITION_WORDS: &[&str] = &[
+    "edition",
+    "collector",
+    "limited",
+    "deluxe",
+    "virtual console",
+    "switch online",
+    "greatest hits",
+    "platinum",
+    "player's choice",
+    "players choice",
+    "the best",
+    "classics",
+    "reprint",
+];
+
+/// A special edition, re-release, or not a retail release, by its name.
+fn is_edition(title: &str) -> bool {
+    let n = crate::names::parse(title);
+    let t = title.to_lowercase();
+    n.status.is_some() || EDITION_WORDS.iter().any(|w| t.contains(w))
 }
 
 /// Sort "Legend of Zelda, The - ..." under L, ignoring case.
@@ -1157,19 +1538,35 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
             break;
         }
     }
-    let (patch_links, patches) = if matches!(row.status, RowStatus::Verified | RowStatus::ByYou) {
-        (
+    let (patch_links, patches) = match row.status {
+        RowStatus::Verified | RowStatus::ByYou | RowStatus::Missing => (
             patch_links(&row.title),
             crate::patcher::paired_with(conn, row.system_id, &row.title)?,
-        )
-    } else {
-        (Vec::new(), Vec::new())
+        ),
+        // A patch row: that patch.
+        RowStatus::Patch => (
+            Vec::new(),
+            crate::patcher::patch_at(conn, row.id.strip_prefix("p:").unwrap_or(&row.id))?
+                .into_iter()
+                .collect(),
+        ),
+        _ => (Vec::new(), Vec::new()),
+    };
+    let credits = match row.system_id {
+        Some(sid) => {
+            let titles: Vec<&str> = std::iter::once(row.title.as_str())
+                .chain(derived.as_ref().map(|d| d.base.as_str()))
+                .collect();
+            credits(conn, sid, &titles)?
+        }
+        None => Vec::new(),
     };
     Ok(GameDetail {
         patched,
         patch_links,
         patches,
         proof,
+        credits,
         name: crate::names::parse(&row.title),
         derived,
         row,
@@ -1203,6 +1600,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn rows_sort_by_year_with_unknown_years_last() {
+        let row = |t: &str, y: Option<i32>| {
+            let mut r = bare_row(t.into(), Some(6), t, RowStatus::Verified);
+            r.year = y;
+            r
+        };
+        let mut rows = vec![row("B", Some(1991)), row("A", None), row("C", Some(1989))];
+        let titles = |rows: &[GameRow]| rows.iter().map(|r| r.title.clone()).collect::<Vec<_>>();
+        sort_rows(&mut rows, SortBy::Year, false);
+        assert_eq!(titles(&rows), ["C", "B", "A"]);
+        sort_rows(&mut rows, SortBy::Year, true);
+        assert_eq!(titles(&rows), ["B", "C", "A"], "unknown last both ways");
+        sort_rows(&mut rows, SortBy::Title, true);
+        assert_eq!(titles(&rows), ["C", "B", "A"]);
+    }
 
     #[test]
     fn search_titles() {

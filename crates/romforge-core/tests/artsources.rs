@@ -75,6 +75,16 @@ fn serve() -> (String, Log) {
                     "application/json",
                     br#"{"success":true,"data":[{"id":80,"name":"MD5 Only"},{"id":81,"name":"MD5 Only"}]}"#.to_vec(),
                 ),
+                // Two heroes for Test GB, each with a thumbnail.
+                "/sgdb/heroes/game/7" => (
+                    "application/json",
+                    format!(
+                        r#"{{"success":true,"data":[
+                            {{"url":"{host}/img/hero-a.jpg","thumb":"{host}/img/hero-a-thumb.jpg","width":1920,"height":620,"style":"alternate"}},
+                            {{"url":"{host}/img/hero-b.jpg","thumb":"{host}/img/hero-b-thumb.jpg","width":3840,"height":1240,"style":"blurred"}}]}}"#
+                    )
+                    .into_bytes(),
+                ),
                 p if p.starts_with("/sgdb/") && (p.contains("/game/7") || p.contains("/game/8")) => (
                     "application/json",
                     format!(r#"{{"success":true,"data":[{{"url":"{host}/img/sgdb{}.jpg"}}]}}"#, p.len()).into_bytes(),
@@ -209,4 +219,54 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         .map(|(p, _)| p.clone())
         .collect();
     assert!(again.iter().all(|p| p.starts_with("/none")), "{again:?}");
+
+    // The fanart picker offers both heroes, previewed by their thumbnails;
+    // the first is the one in use.
+    let id = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.title == "Test GB")
+        .unwrap()
+        .id;
+    let c = lib.art_choices(&opts, &id, ArtKind::Hero).unwrap();
+    let shown: Vec<(&str, Option<&str>, bool)> = c
+        .choices
+        .iter()
+        .map(|x| (x.source.as_str(), x.label.as_deref(), x.current))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("steamgriddb", Some("1920×620"), true),
+            ("steamgriddb", Some("blurred · 3840×1240"), false)
+        ],
+        "{:?}",
+        c.errors
+    );
+    assert!(c.choices.iter().all(|x| Path::new(&x.preview).exists()));
+    let thumbs = log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| p.ends_with("-thumb.jpg"))
+        .count();
+    assert_eq!(thumbs, 2, "previews from the thumbnails");
+
+    // Picking the second keeps it, even through a refresh.
+    lib.choose_art(&opts, &id, ArtKind::Hero, &c.choices[1].url, "steamgriddb")
+        .unwrap();
+    let mut refresh = opts.clone();
+    refresh.refresh = true;
+    lib.enrich(&refresh, |_| {}).unwrap();
+    let c = lib.art_choices(&opts, &id, ArtKind::Hero).unwrap();
+    assert!(c.choices[1].current && !c.choices[0].current, "{c:?}");
+    let previews = log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(p, _)| p.ends_with("-thumb.jpg"))
+        .count();
+    assert_eq!(previews, 2, "previews kept from the first look");
 }

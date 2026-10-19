@@ -9,11 +9,9 @@
 //! - IGDB looks it up by title and platform, exact titles only: cover,
 //!   artwork (hero), screenshot.
 
-use std::collections::HashMap;
-
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::enrich::ArtKind;
+use crate::enrich::{ArtFound, ArtKind};
 use crate::fetch::{self, Request};
 use crate::settings::Keys;
 use crate::systems::System;
@@ -142,14 +140,14 @@ pub struct Session {
     igdb_token: Option<String>,
 }
 
-/// Image URLs `provider` has for the job, by kind.
+/// Every image `provider` has for the job, the best of each kind first.
 pub fn lookup(
     provider: Provider,
     keys: &Keys,
     bases: &Bases,
     session: &mut Session,
     job: &Job,
-) -> Result<Vec<(ArtKind, String)>, Error> {
+) -> Result<Vec<ArtFound>, Error> {
     match provider {
         Provider::ScreenScraper => screenscraper(keys, bases, job),
         Provider::SteamGridDb => steamgriddb(keys, bases, job),
@@ -161,7 +159,7 @@ fn json(body: &[u8]) -> Result<serde_json::Value, Error> {
     serde_json::from_slice(body).map_err(|e| Error::Http(format!("unexpected answer: {e}")))
 }
 
-fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, String)>, Error> {
+fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<ArtFound>, Error> {
     let (Some(system_id), Some(rom)) = (job.system.screenscraper, &job.rom) else {
         return Ok(Vec::new());
     };
@@ -196,7 +194,7 @@ fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, 
             .position(|x| *x == r)
             .unwrap_or(9)
     };
-    let mut best: HashMap<ArtKind, (usize, String)> = HashMap::new();
+    let mut all: Vec<(usize, ArtFound)> = Vec::new();
     for m in medias {
         let kind = match m["type"].as_str().unwrap_or_default() {
             "box-2D" => ArtKind::Boxart,
@@ -208,15 +206,24 @@ fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, 
             _ => continue,
         };
         let Some(url) = m["url"].as_str() else { continue };
-        let r = rank(m["region"].as_str().unwrap_or("ss"));
-        if best.get(&kind).is_none_or(|(b, _)| r < *b) {
-            best.insert(kind, (r, url.to_owned()));
-        }
+        let region = m["region"].as_str().unwrap_or("ss");
+        let sep = if url.contains('?') { '&' } else { '?' };
+        all.push((
+            rank(region),
+            ArtFound {
+                kind,
+                url: url.to_owned(),
+                // ScreenScraper scales its media on request.
+                thumb: Some(format!("{url}{sep}maxwidth=480")),
+                label: Some(region.to_uppercase()),
+            },
+        ));
     }
-    Ok(best.into_iter().map(|(k, (_, u))| (k, u)).collect())
+    all.sort_by_key(|(r, _)| *r);
+    Ok(all.into_iter().map(|(_, f)| f).collect())
 }
 
-fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, String)>, Error> {
+fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<ArtFound>, Error> {
     let Some(key) = &keys.steamgriddb_key else {
         return Ok(Vec::new());
     };
@@ -259,24 +266,36 @@ fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<(ArtKind, St
         (ArtKind::Logo, format!("logos/game/{id}")),
         (ArtKind::Icon, format!("icons/game/{id}")),
     ] {
-        if let Some(v) = get(format!("{}/{path}", bases.steamgriddb))?
-            && let Some(url) = v["data"]
-                .as_array()
-                .and_then(|a| a.first())
-                .and_then(|x| x["url"].as_str())
-        {
-            out.push((kind, url.to_owned()));
+        let Some(v) = get(format!("{}/{path}", bases.steamgriddb))? else {
+            continue;
+        };
+        for x in v["data"].as_array().into_iter().flatten() {
+            let Some(url) = x["url"].as_str() else { continue };
+            let size = match (x["width"].as_u64(), x["height"].as_u64()) {
+                (Some(w), Some(h)) => Some(format!("{w}×{h}")),
+                _ => None,
+            };
+            let style = x["style"]
+                .as_str()
+                .filter(|s| *s != "alternate")
+                .map(str::to_owned);
+            let label = [style, size]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ");
+            out.push(ArtFound {
+                kind,
+                url: url.to_owned(),
+                thumb: x["thumb"].as_str().map(str::to_owned),
+                label: (!label.is_empty()).then_some(label),
+            });
         }
     }
     Ok(out)
 }
 
-fn igdb(
-    keys: &Keys,
-    bases: &Bases,
-    session: &mut Session,
-    job: &Job,
-) -> Result<Vec<(ArtKind, String)>, Error> {
+fn igdb(keys: &Keys, bases: &Bases, session: &mut Session, job: &Job) -> Result<Vec<ArtFound>, Error> {
     let (Some(id), Some(secret)) = (&keys.igdb_client_id, &keys.igdb_client_secret) else {
         return Ok(Vec::new());
     };
@@ -334,23 +353,24 @@ fn igdb(
     };
     let mut out = Vec::new();
     // The largest sizes IGDB serves without scaling past the original
-    // (cover 528x748, artwork 1920x1080, screenshot 1280x720).
-    if let Some(u) = image("t_cover_big_2x", &g["cover"]["image_id"]) {
-        out.push((ArtKind::Boxart, u));
+    // (cover 528x748, artwork 1920x1080, screenshot 1280x720), and a small
+    // one to preview.
+    let mut add = |kind: ArtKind, size: &str, id: &serde_json::Value| {
+        if let Some(url) = image(size, id) {
+            out.push(ArtFound {
+                kind,
+                url,
+                thumb: image("t_screenshot_med", id),
+                label: None,
+            });
+        }
+    };
+    add(ArtKind::Boxart, "t_cover_big_2x", &g["cover"]["image_id"]);
+    for a in g["artworks"].as_array().into_iter().flatten() {
+        add(ArtKind::Hero, "t_1080p", &a["image_id"]);
     }
-    if let Some(u) = g["artworks"]
-        .as_array()
-        .and_then(|a| a.first())
-        .and_then(|a| image("t_1080p", &a["image_id"]))
-    {
-        out.push((ArtKind::Hero, u));
-    }
-    if let Some(u) = g["screenshots"]
-        .as_array()
-        .and_then(|a| a.first())
-        .and_then(|a| image("t_screenshot_huge", &a["image_id"]))
-    {
-        out.push((ArtKind::Snap, u));
+    for a in g["screenshots"].as_array().into_iter().flatten() {
+        add(ArtKind::Snap, "t_screenshot_huge", &a["image_id"]);
     }
     Ok(out)
 }

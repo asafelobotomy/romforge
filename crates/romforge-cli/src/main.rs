@@ -194,6 +194,12 @@ enum Command {
         /// Only this platform (system key)
         #[arg(long)]
         platform: Option<String>,
+        /// Sort by title, platform, year or status
+        #[arg(long, default_value = "title")]
+        sort: String,
+        /// Sort the other way
+        #[arg(long)]
+        desc: bool,
     },
     /// Identify what hashes couldn't, and settle Wikidata matches (milestone 8)
     #[command(subcommand)]
@@ -1391,21 +1397,58 @@ fn main() -> Result<()> {
             lib.settle_wikidata(romforge_core::wikidata::ENDPOINT, &row, &qid)?;
             println!("matched to {qid}");
         }
-        Command::Games { platform } => {
-            let v = lib.library_view()?;
-            for r in v.rows.iter().filter(|r| {
-                platform
-                    .as_deref()
-                    .is_none_or(|p| r.system.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(p)))
-            }) {
+        Command::Games { platform, sort, desc } => {
+            use romforge_core::view::{Category, GameRow, SortBy};
+            let by = SortBy::parse(&sort).ok_or_else(|| {
+                anyhow::anyhow!("--sort takes title, platform, year or status, not {sort:?}")
+            })?;
+            let mut v = lib.library_view()?;
+            romforge_core::view::sort_rows(&mut v.rows, by, desc);
+            let line = |r: &GameRow, indent: &str| {
                 let gathered = format!("{}{}", if r.metadata { "info " } else { "" }, r.art.join(" "));
                 println!(
-                    "{:<11} {:<16} {}  [{}]",
+                    "{:<11} {:<16} {indent}{}  [{}]",
                     format!("{:?}", r.status).to_lowercase(),
                     r.system.as_deref().unwrap_or("-"),
-                    r.title,
+                    r.label.as_deref().unwrap_or(&r.title),
                     gathered.trim()
                 );
+            };
+            // A game's original, then its versions under their headings.
+            for r in v.rows.iter().filter(|r| {
+                r.main
+                    && platform
+                        .as_deref()
+                        .is_none_or(|p| r.system.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(p)))
+            }) {
+                line(r, "");
+                let Some(group) = &r.group else {
+                    continue;
+                };
+                let mut patches = false;
+                for c in Category::ORDER {
+                    let of: Vec<&GameRow> = v
+                        .rows
+                        .iter()
+                        .filter(|m| m.group.as_ref() == Some(group) && m.category == Some(c))
+                        .collect();
+                    if of.is_empty() {
+                        continue;
+                    }
+                    let indent = if c.is_patch() {
+                        if !patches {
+                            println!("{:<28} - Patches", "");
+                            patches = true;
+                        }
+                        "    "
+                    } else {
+                        ""
+                    };
+                    println!("{:<28} {indent}- {}", "", c.heading());
+                    for m in of {
+                        line(m, &format!("{indent}    "));
+                    }
+                }
             }
             let n: Vec<String> = v
                 .platforms

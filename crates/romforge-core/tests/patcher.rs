@@ -511,3 +511,110 @@ fn scanned_patches_pair_with_their_game() {
     let d = lib.game_detail(&row_id(&lib, "Test GB")).unwrap();
     assert_eq!(d.patches.len(), 2);
 }
+
+/// The list puts each game's original on top and its versions under
+/// headings: other regions, editions, translations, hacks, and patch files
+/// apart. A game you have only a patch of is still listed, as missing,
+/// with the patch under it.
+#[test]
+fn the_list_shows_originals_with_their_versions() {
+    use romforge_core::view::Category;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    let games = [
+        ("Quest (USA)", pattern(1, 2048)),
+        ("Quest (Japan)", pattern(2, 2048)),
+        ("Quest (USA) (Limited Edition)", pattern(3, 2048)),
+        ("Other Story (USA)", pattern(4, 2048)),
+    ];
+    let mut dat =
+        String::from("<?xml version=\"1.0\"?><datafile><header><name>Nintendo - Game Boy</name></header>");
+    for (name, d) in &games {
+        let h = romforge_core::hash::hash_stream(&d[..], d.len() as u64)
+            .unwrap()
+            .raw;
+        dat += &format!(
+            "<game name=\"{name}\"><rom name=\"{name}.gb\" size=\"{}\" crc=\"{}\" md5=\"{}\" sha1=\"{}\"/></game>",
+            d.len(),
+            h.crc32,
+            h.md5,
+            h.sha1
+        );
+    }
+    dat += "</datafile>";
+    std::fs::write(tmp.path().join("gb.dat"), dat).unwrap();
+    for (name, d) in &games[..3] {
+        std::fs::write(incoming.join(format!("{name}.gb")), d).unwrap();
+    }
+    // A translation of the Japanese release, and the copy it made.
+    let japan = &games[1].1;
+    let mut english = japan.clone();
+    english[0..4].copy_from_slice(b"ENGL");
+    std::fs::write(
+        incoming.join("English.bps"),
+        bps(japan.len() as u64, crc32fast::hash(japan), &english),
+    )
+    .unwrap();
+    std::fs::write(incoming.join("Quest translated.gb"), &english).unwrap();
+    // A hack patch of the US release, beside it.
+    std::fs::write(incoming.join("Quest (USA).ips"), ips(4, b"HARD")).unwrap();
+    // A translation of a game you don't have, named by its readme.
+    let mut z = zip::ZipWriter::new(std::fs::File::create(incoming.join("os-en.zip")).unwrap());
+    z.start_file("os.ips", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    z.write_all(&ips(0, b"EN")).unwrap();
+    z.start_file("readme.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    z.write_all(b"v1.0\n\nAn English translation of Other Story for the Game Boy.\n")
+        .unwrap();
+    z.finish().unwrap();
+
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.import_dat(tmp.path().join("gb.dat"), None).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let find = |t: &str| {
+        rows.iter()
+            .find(|r| r.title == t)
+            .unwrap_or_else(|| panic!("no {t}: {rows:#?}"))
+    };
+    let usa = find("Quest (USA)");
+    assert!(usa.main && usa.status == RowStatus::Verified);
+    assert_eq!(usa.versions, 6, "{rows:#?}");
+    let of = |t: &str| {
+        let r = find(t);
+        assert_eq!(r.group, usa.group, "{t}");
+        assert!(!r.main, "{t}");
+        r.category
+    };
+    assert_eq!(of("Quest (Japan)"), Some(Category::Region));
+    assert_eq!(of("Quest (USA) (Limited Edition)"), Some(Category::Edition));
+    assert_eq!(
+        of("Quest (Japan) [Translation: English]"),
+        Some(Category::Translation)
+    );
+    assert_eq!(of("English.bps"), Some(Category::PatchTranslation));
+    assert_eq!(of("Quest (USA).ips"), Some(Category::PatchHack));
+    assert_eq!(find("Quest (USA).ips").base_id.as_ref(), Some(&usa.id));
+    assert_eq!(
+        find("English.bps").base_id.as_ref(),
+        Some(&find("Quest (Japan)").id),
+        "for the release it was made from"
+    );
+
+    let other = find("Other Story (USA)");
+    assert_eq!(other.status, RowStatus::Missing);
+    assert!(other.main);
+    let patch = find("os.ips");
+    assert_eq!(patch.status, RowStatus::Patch);
+    assert_eq!(patch.label.as_deref(), Some("os.ips (os-en.zip)"));
+    assert_eq!(patch.group, other.group);
+    assert_eq!(patch.category, Some(Category::PatchTranslation));
+    assert_eq!(patch.base_id, None, "nothing to apply it to");
+    let d = lib.game_detail(&patch.id).unwrap();
+    assert_eq!(d.patches.len(), 1);
+    let d = lib.game_detail(&other.id).unwrap();
+    assert_eq!(d.patches.len(), 1, "the missing game lists its patch");
+}

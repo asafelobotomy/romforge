@@ -38,6 +38,10 @@ pub const LABEL_FIELDS: &[(&str, &str)] = &[
     ("P404", "game_mode"),
 ];
 
+/// Label fields naming who made a game (studios and people), kept with
+/// their Wikidata items in `credits` for the Development tab's pictures.
+pub const CREDIT_FIELDS: &[&str] = &["developer", "publisher", "director", "designer", "composer"];
+
 /// External-ID properties and their `game_meta` field.
 pub const ID_FIELDS: &[(&str, &str)] = &[
     ("P11688", "mobygames_id"),
@@ -215,6 +219,10 @@ pub fn parse_results(body: &[u8]) -> Result<Vec<HashMap<String, String>>, Error>
                 .collect()
         })
         .collect())
+}
+
+fn is_qid(s: &str) -> bool {
+    s.len() > 1 && s.starts_with('Q') && s[1..].chars().all(|c| c.is_ascii_digit())
 }
 
 fn year_of(date: &str) -> Option<i32> {
@@ -470,7 +478,15 @@ fn item_details(
             }
             other => match field_of.get(other) {
                 Some(f) if LABEL_FIELDS.iter().any(|(_, lf)| lf == f) => {
-                    (*f, row.get("vLabel").cloned().unwrap_or_else(|| v.clone()))
+                    let label = row.get("vLabel").cloned().unwrap_or_else(|| v.clone());
+                    if CREDIT_FIELDS.contains(f) && is_qid(v) && !is_qid(&label) {
+                        out.entry(g.clone())
+                            .or_default()
+                            .entry(format!("credit:{f}"))
+                            .or_default()
+                            .insert(format!("{v}\t{label}"));
+                    }
+                    (*f, label)
                 }
                 Some(f) => (*f, v.clone()),
                 None => continue,
@@ -487,6 +503,71 @@ fn item_details(
             .insert(value);
     }
     Ok(out)
+}
+
+/// Each item's picture on Wikimedia Commons: its logo (P154), else its
+/// image (P18, a person's photo), as (file URL, "logo" or "photo").
+fn pictures(endpoint: &str, qids: &[String]) -> Result<HashMap<String, (String, &'static str)>, Error> {
+    let values: String = qids.iter().map(|q| format!("wd:{q} ")).collect();
+    let q = format!(
+        "SELECT ?e ?logo ?img WHERE {{
+           VALUES ?e {{ {values} }}
+           OPTIONAL {{ ?e wdt:P154 ?logo }}
+           OPTIONAL {{ ?e wdt:P18 ?img }}
+         }}"
+    );
+    let mut out: HashMap<String, (String, &'static str)> = HashMap::new();
+    for row in sparql(endpoint, &q)? {
+        let Some(e) = row.get("e") else { continue };
+        if let Some(l) = row.get("logo") {
+            out.insert(e.clone(), (l.clone(), "logo"));
+        } else if let Some(i) = row.get("img") {
+            out.entry(e.clone()).or_insert((i.clone(), "photo"));
+        }
+    }
+    Ok(out)
+}
+
+/// Download the pictures not cached yet into `dir` (`<qid>.<ext>`), a
+/// small thumbnail each (Commons scales SVG logos to PNG). Returns how many
+/// it fetched; errors are listed, the rest goes on.
+pub fn fetch_pictures(
+    conn: &Connection,
+    dir: &std::path::Path,
+    errors: &mut Vec<String>,
+) -> Result<usize, Error> {
+    let todo: Vec<(String, String)> = conn
+        .prepare("SELECT qid, url FROM wikidata_pictures WHERE url IS NOT NULL AND path IS NULL")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut n = 0;
+    for (qid, url) in todo {
+        let sep = if url.contains('?') { '&' } else { '?' };
+        let body = match fetch::get(&format!("{url}{sep}width=240")) {
+            Ok(b) => b,
+            Err(e) => {
+                let limited = fetch::is_rate_limited(&e);
+                errors.push(format!("picture of {qid}: {e}"));
+                if limited {
+                    break;
+                }
+                continue;
+            }
+        };
+        let Some(ext) = crate::enrich::image_ext(&body) else {
+            errors.push(format!("picture of {qid}: not an image romforge shows"));
+            continue;
+        };
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join(format!("{qid}.{ext}"));
+        std::fs::write(&path, &body)?;
+        conn.execute(
+            "UPDATE wikidata_pictures SET path = ?2 WHERE qid = ?1",
+            params![qid, path.to_string_lossy()],
+        )?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 /// (series, member, title, ordinal, year)
@@ -678,10 +759,23 @@ pub fn enrich(
                 "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
             )?;
+            let mut drop_credits = tx.prepare("DELETE FROM credits WHERE system_id = ?1 AND title = ?2")?;
+            let mut credit = tx.prepare(
+                "INSERT OR IGNORE INTO credits (system_id, title, field, qid, label) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
             for (system_id, title, qid) in chunk {
                 put.execute(params![system_id, title, "wikidata", qid])?;
                 let Some(fields) = found.get(qid) else { continue };
+                drop_credits.execute(params![system_id, title])?;
                 for (field, values) in fields {
+                    if let Some(f) = field.strip_prefix("credit:") {
+                        for v in values {
+                            if let Some((q, label)) = v.split_once('\t') {
+                                credit.execute(params![system_id, title, f, q, label])?;
+                            }
+                        }
+                        continue;
+                    }
                     let value = values.iter().cloned().collect::<Vec<_>>().join(", ");
                     // Fill what libretro left empty (or marked unknown); Wikidata's
                     // own fields are always its.
@@ -720,6 +814,50 @@ pub fn enrich(
                          ON CONFLICT(series_qid, qid) DO UPDATE SET title = excluded.title,
                            ordinal = excluded.ordinal, year = excluded.year",
                         params![s, m, title, ord, year],
+                    )?;
+                }
+                tx.commit()?;
+            }
+            Err(e) => {
+                halted |= fetch::is_rate_limited(&e);
+                report.errors.push(e.to_string());
+            }
+        }
+    }
+
+    // Pictures of who made them: a studio's logo, a person's photo.
+    let wanted: Vec<String> = conn
+        .prepare(if refresh {
+            "SELECT DISTINCT qid FROM credits ORDER BY qid"
+        } else {
+            "SELECT DISTINCT c.qid FROM credits c
+             WHERE NOT EXISTS (SELECT 1 FROM wikidata_pictures p WHERE p.qid = c.qid) ORDER BY c.qid"
+        })?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    for chunk in wanted.chunks(50) {
+        if halted {
+            break;
+        }
+        progress("pictures");
+        match pictures(endpoint, chunk) {
+            Ok(found) => {
+                let tx = conn.transaction()?;
+                for q in chunk {
+                    let (url, kind) = match found.get(q) {
+                        Some((u, k)) => (Some(u.as_str()), Some(*k)),
+                        None => (None, None),
+                    };
+                    tx.execute(
+                        concat!(
+                            "INSERT INTO wikidata_pictures (qid, url, kind, checked_at) VALUES (?1, ?2, ?3, ",
+                            crate::db::now!(),
+                            ")
+                         ON CONFLICT(qid) DO UPDATE SET url = excluded.url, kind = excluded.kind,
+                           checked_at = excluded.checked_at,
+                           path = CASE WHEN excluded.url IS wikidata_pictures.url THEN wikidata_pictures.path END"
+                        ),
+                        params![q, url, kind],
                     )?;
                 }
                 tx.commit()?;

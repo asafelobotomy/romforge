@@ -1,5 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import SortButton from "./SortButton.svelte";
+  import { sorted, remembered, remember } from "./sort.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library.
@@ -89,6 +91,9 @@
   }
 
   const base = (p) => p.split("/").pop();
+  let itemSort = $state(remembered("import", { key: "name", dir: 1 }));
+  $effect(() => remember("import", itemSort));
+  const itemGetters = { name: (it) => base(it.target), platform: (it) => it.system, files: (it) => it.parts.length };
 </script>
 
 {#if open}
@@ -126,8 +131,14 @@
               : "originals go to .romforge-trash next to them, until you undo or empty it"}
         </p>
         {#if cleanPlan.items.length}
+          <p class="sortbar">
+            Sort:
+            <SortButton label="Name" key="name" bind:sort={itemSort} />
+            <SortButton label="Platform" key="platform" bind:sort={itemSort} />
+            <SortButton label="Files" key="files" bind:sort={itemSort} />
+          </p>
           <ul class="choices">
-            {#each cleanPlan.items as it}
+            {#each sorted(cleanPlan.items, itemSort, itemGetters) as it}
               <li title={it.parts.map((p) => p.name).join("\n")}>
                 <span class="ctitle">{base(it.target)}</span>
                 {#if it.existing}
