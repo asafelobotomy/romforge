@@ -56,6 +56,18 @@ fn main() {
         .manage(db)
         .manage(roots)
         .manage(play::Now::default())
+        // Game pads, heard even while an emulator has the focus: "pad"
+        // events for the page (no pads, or no access: the app works without).
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let listening = romforge_core::controller::listen(move |e| {
+                let _ = tauri::Emitter::emit(&handle, "pad", &e);
+            });
+            if let Err(e) = listening {
+                eprintln!("romforge: {e}");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             library::summary,
             library::dat_games,

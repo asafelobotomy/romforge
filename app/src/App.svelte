@@ -24,6 +24,8 @@
   import { storedView, storeView, libraryRows } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
   import { ui } from "./ui.svelte.js";
+  import { listen } from "@tauri-apps/api/event";
+  import { padAction } from "./padnav.js";
 
   // Which screen: the library (default), DATs, BIOS, or organize.
   let view = $state("library");
@@ -261,6 +263,33 @@
     open(rows[j].id);
     table?.reveal(j);
   }
+
+  // Game pads: the library moves with the d-pad, A plays, the shoulders
+  // switch platform, the triggers jump to the first or last game, Start
+  // opens Settings and Select Emulator Settings. Not while a game runs
+  // (the emulator has the pad then).
+  function padLibrary(action) {
+    if (view !== "library") return;
+    const games = rows.filter((r) => !r.head);
+    if (action === "up" || action === "down") listKeys({ key: action === "up" ? "ArrowUp" : "ArrowDown", preventDefault() {} });
+    else if (action === "accept" && row?.playable && !busy) play();
+    else if (action === "page_up" || action === "page_down") {
+      const all = ["*", ...lib.platforms.map((p) => p.system ?? "")];
+      const i = Math.max(0, all.indexOf(platform));
+      platform = all[(i + (action === "page_down" ? 1 : all.length - 1)) % all.length];
+    } else if ((action === "first" || action === "last") && games.length) {
+      const g = action === "first" ? games[0] : games[games.length - 1];
+      open(g.id);
+      table?.reveal(rows.indexOf(g));
+    } else if (action === "menu") settings.openSettings();
+    else if (action === "context") emulators.openEmulatorSettings();
+  }
+  listen("pad", (e) => {
+    const p = e.payload;
+    if (p.kind === "connected") note = `Game pad connected: ${p.name}`;
+    else if (p.kind === "disconnected") note = `Game pad disconnected: ${p.name}`;
+    else if (!playing) padAction(p.action, padLibrary);
+  });
 
   load();
   // Details' empty boxes: read at start and whenever Settings closes (the

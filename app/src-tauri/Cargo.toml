@@ -9,7 +9,7 @@ rust-version.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-romforge-core.workspace = true
+romforge-core = { workspace = true, features = ["controller"] }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }

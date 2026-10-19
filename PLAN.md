@@ -1145,21 +1145,124 @@ RetroDECK's `bios.json` is GPL-3.0: not used.
 - **Not yet:** the emulators' own quit commands (RetroArch's UDP `QUIT`,
   hotkey chords) and a controller combo to quit, with stage 2.
 
-### Stage 2: controllers and a 10-foot mode
+### Stage 2: controllers and a fullscreen mode (researched and decided 2026-10-20)
 
-- Gamepads read in Rust with `gilrs` (MIT/Apache-2.0), sent to the UI as
-  events. Not WebKitGTK's Gamepad API: it is a build option some distros
-  turn off. Remove Steam's virtual pad (28de:11ff) duplicates.
-- One hotkey scheme for every emulator, as RetroDECK does: each config binds
-  the same keyboard chords (save/load state, pause, fast-forward, quit), and
-  romforge watches a controller combo (e.g. Select+Start) to send them or
-  quit cleanly.
-- A controller-first fullscreen view of the library (Big Box style).
-- Later: a pause menu over the game (save/load state, reset, quit), driven
-  through RetroArch's UDP interface or the hotkey chords.
-- Optional: RetroAchievements login written into RetroArch, PCSX2 and
-  DuckStation configs as one global setting; Steam Deck integration
-  (`shortcuts.vdf` entry plus art, a Steam Input template).
+**Goal (owner's):** a fully native fullscreen experience like RetroDECK's
+and EmuDeck's, with far more options and customization, and custom
+themes. Researched online the same day (sources below); decided:
+
+- **romforge's own fullscreen mode, in the same app**, not ES-DE or
+  Pegasus in front of it. RetroDECK and EmuDeck are configurators around
+  someone else's frontend: their UI is themable only as far as ES-DE or
+  Pegasus allow, and their hotkeys are only as unified as each emulator
+  lets them (RetroDECK lists Cemu, xemu and Vita3k as having little or
+  none). romforge owns the launcher, every emulator's config, the BIOS
+  setup and play time, so it can go further. The webview is fine for a
+  10-foot UI; it is unfit only for reading pads (below).
+- **Pads from Rust** with `gilrs` (Apache-2.0/MIT; evdev on Linux, SDL's
+  GameControllerDB, hotplug, rumble), sent to the UI as events, never
+  WebKitGTK's Gamepad API: WebKit gives pad input only to the focused,
+  visible window, so romforge would go deaf whenever an emulator has the
+  focus (and a pad appears only after a button press). Steam Input adds a
+  virtual pad (28de:11ff) beside the physical one; gilrs doesn't dedupe,
+  so romforge does: honour `SDL_GAMECONTROLLER_IGNORE_DEVICES` (what
+  Steam sets for its games) and, when a Steam pad is there, use only
+  Steam's. `tauri-plugin-gamepad` is out (non-standard licence, rule 9).
+- **Navigation:** Norigin spatial navigation core (MIT) in the
+  fullscreen mode, `simple-keyboard` (MIT) as the on-screen keyboard;
+  not `js-spatial-navigation` (MPL-2.0, stale).
+- **One hotkey table** (`hotkeys.rs`: a hotkey button plus a chord →
+  an action), written into each emulator's config romforge owns:
+  RetroArch's pad hotkeys and its command port (UDP 55355, no
+  authentication: bound to localhost) for QUIT / SAVE_STATE / MENU;
+  PCSX2's and DuckStation's native chords (`A & B`) and their PINE socket
+  for saving state; the native pad hotkeys of Dolphin, PPSSPP, melonDS,
+  mGBA and Flycast. Where an emulator has none (xemu, Cemu: to check),
+  romforge's own watcher still does **quit**, since it owns the process.
+  Keyboard injection through `/dev/uinput` only if ever needed, off by
+  default, and only where it is already allowed (Steam's udev rules); no
+  portal.
+- **Quit** (Hotkey+Start): the emulator's own quit command first, then
+  SIGTERM (1.6), then a kill; romforge back in front. **Pause:** each
+  emulator's own pause menu (RetroArch's menu, PCSX2's / DuckStation's
+  fullscreen menu). A romforge menu drawn over the game is parked as an
+  experiment: no overlay layer on GNOME, KWin refuses focus stealing on
+  Wayland, gamescope's external-overlay hook is undocumented.
+- **Steam Deck:** romforge runs as the non-Steam game and starts
+  emulators as its children (launchers that hand off and exit lose their
+  windows under gamescope); a `--fullscreen` start option; later a
+  `shortcuts.vdf` writer and Steam Input templates.
+- **Themes are data, never code.** A theme is a manifest (built-in
+  layouts to choose from: carousel, grid, list, game page; options it
+  offers; colour schemes; aspect ratios, vertical ones too; font sizes;
+  fallback variants when a game has no video or art) plus CSS variables,
+  one scoped CSS file and its assets, served read-only through a custom
+  protocol with a CSP (no `@import`, no remote URLs). No theme JavaScript:
+  on Linux Tauri can't tell an iframe from its window, so theme code would
+  get romforge's own rights, moving and deleting files included. A
+  versioned theme API with stable `data-*` hooks and variables, never
+  internal class names (Steam Deck CSS themes broke en masse when Valve
+  renamed classes). Live reload and an in-app editor for a theme's
+  options (Big Box's and Playnite's XAML with no live preview is their
+  users' recurring complaint).
+- **Where themes live:** romforge's own themes (its own assets) in this
+  repo; **community themes in a separate `romforge-themes` repo** with a
+  `themes.json` index, listed, downloaded and updated from inside romforge
+  (as ES-DE's theme downloader does). Not a long-lived branch of this
+  repo, which would drift into a second app. Each theme's licence is shown
+  before download and none is bundled: many frontend themes are
+  CC BY-NC-SA and carry console logos (rules 3 and 10). ES-DE's theme
+  format is documented and MIT, so reading its themes is possible later,
+  but costly; parked.
+
+**Steps, in order:**
+1. *Controller core:* `controller.rs` (gilrs, Steam dedupe, d-pad and
+   stick to directions with a held-key repeat, buttons to actions),
+   events to the app; the desktop UI driven by a pad too.
+   *(Built 2026-10-20.)* `controller.rs`: Steam dedupe (`usable`, with
+   `SDL_GAMECONTROLLER_IGNORE_DEVICES` / `SDL_GAMEPAD_IGNORE_DEVICES`),
+   buttons to actions by SDL's names (South = accept, East = back, Start =
+   menu, Select = context, shoulders page, triggers jump; the guide button
+   left to Steam and the system), d-pad and left stick to directions (the
+   stick past 0.6, let go under 0.35) repeating 400 ms then every 110 ms.
+   gilrs itself (`controller/pad.rs`) is behind the `controller` feature,
+   which only the app turns on, so the CLI needs no udev. The app listens
+   from start-up and sends "pad" events; the desktop UI follows them
+   (`padnav.js`): in a dialog the d-pad moves the focus, A presses, B
+   closes; in the library up/down move, A plays, shoulders switch
+   platform, triggers jump to the first or last game, Start opens
+   Settings, Select Emulator Settings; nothing while a game runs. Pad
+   access: systemd's udev rules give the logged-in user joysticks. Not yet
+   tried with a real pad (none on the dev machine), nor with Steam's
+   virtual pad.
+2. *Fullscreen mode:* platform carousel, game grid and game page with the
+   built-in theme; Start for the main menu, Select for a context menu,
+   North for per-game options, left/right to switch platforms, shoulders
+   to page, triggers to jump; a help bar always on; `--fullscreen`.
+3. *Hotkeys:* the table above, written into every emulator; the graceful
+   quit chord.
+4. *Theme engine v1:* manifest, variables, options, fallback variants,
+   live reload; two or three first-party themes, SNES UK the default.
+5. *`romforge-themes`:* the index, downloads and updates, licences shown.
+6. *Extras:* favourites, recently and most played (from `play_sessions`),
+   quick search with the on-screen keyboard, attract mode separate from a
+   screensaver, background music (the user's files), per-game settings
+   from the game page, startup and exit splashes per platform.
+7. *Steam Deck:* `shortcuts.vdf` entry with art, Steam Input templates.
+
+Not yet sourced: video snaps (no current art source has videos;
+ScreenScraper does, keyed, so later as an art source); RetroAchievements
+(a login token, optional, as before).
+
+Sources (2026-10-20): ES-DE's THEMES.md and LICENSE (gitlab.com/es-de);
+RetroDECK's wiki (hotkeys, known issues); EmuDeck's hotkey docs; Big Box
+startup/pause/attract docs (launchbox.featurebase.app); Playnite theme
+docs; DeckThemes CSS Loader docs and v2.1 notes; Tauri capabilities and
+isolation docs; gilrs and SDL docs; WebKit bugs 160760 and 160699;
+RetroArch's network control docs; PCSX2's `InputManager.cpp` and PINE;
+gamescope-session; Valve's steam-devices rules. Unchecked and to verify
+in source before use: gilrs with Steam's virtual pad, xemu's and Cemu's
+hotkeys, DuckStation's PINE in current builds.
 
 ### Stage 3 (future): truly one window for everything
 

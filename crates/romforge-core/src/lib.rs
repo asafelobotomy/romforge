@@ -7,6 +7,7 @@
 pub mod artsources;
 mod atomic;
 pub mod cleanup;
+pub mod controller;
 pub mod dat;
 mod db;
 pub mod disc;
