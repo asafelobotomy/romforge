@@ -33,7 +33,7 @@ pub struct PatchPlan {
     pub kind: &'static str,
     pub relation: Relation,
     pub tag: String,
-    /// The new game's title: "<base> [Translation: <tag>]".
+    /// The new game's title: `<base> [Translation: <tag>]`.
     pub title: String,
     pub target: PathBuf,
     pub disc: bool,

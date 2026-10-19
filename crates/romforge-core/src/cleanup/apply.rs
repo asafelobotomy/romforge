@@ -15,7 +15,7 @@ use super::{CleanupPlan, CleanupReport, Format, Item};
 
 /// Carry out a plan. Each game is written next to its target, read back
 /// and checked, then moved into place; originals go to the trash only after
-/// that (and not at all with "keep originals"). Journaled for [`undo`].
+/// that (and not at all with "keep originals"). Journaled for [`undo`](super::undo).
 pub fn apply(
     conn: &mut Connection,
     plan: &CleanupPlan,

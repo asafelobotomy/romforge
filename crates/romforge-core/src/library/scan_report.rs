@@ -12,7 +12,7 @@ pub struct FolderScan {
     pub became_source: Option<Result<(), String>>,
 }
 
-/// What a scan would find ([`Library::scan_preview`]).
+/// What a scan would find ([`Library::scan_preview`](crate::Library::scan_preview)).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ScanPreview {
     pub report: ScanReport,

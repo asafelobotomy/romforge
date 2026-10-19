@@ -3,7 +3,7 @@
 //!
 //! DAT names and well-kept files follow No-Intro, Redump (No-Intro's
 //! form), TOSEC or GoodTools naming, parsed by `shiratsu-naming`. Anything
-//! else ("Dragon Quest III (English v2.0)[Addendum]", "zelda3") gets a
+//! else ("Dragon Quest III (English v2.0)\[Addendum\]", "zelda3") gets a
 //! loose reading: the text before the first bracket is the title, and the
 //! groups are looked at for translation and hack markers. A name is never
 //! evidence of a match by itself (house rule 8).

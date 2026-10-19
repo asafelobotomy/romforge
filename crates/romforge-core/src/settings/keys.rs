@@ -1,5 +1,5 @@
 /// Credentials for the online sources that need them. All optional.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Keys {
     /// ScreenScraper developer credentials (issued to an app).
@@ -12,6 +12,25 @@ pub struct Keys {
     /// IGDB goes through a Twitch application.
     pub igdb_client_id: Option<String>,
     pub igdb_client_secret: Option<String>,
+}
+
+/// Says which keys are set, never what they are.
+impl std::fmt::Debug for Keys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let set = |v: &Option<String>| if v.is_some() { "set" } else { "-" };
+        f.debug_struct("Keys")
+            .field("screenscraper_dev_id", &set(&self.screenscraper_dev_id))
+            .field(
+                "screenscraper_dev_password",
+                &set(&self.screenscraper_dev_password),
+            )
+            .field("screenscraper_user", &set(&self.screenscraper_user))
+            .field("screenscraper_password", &set(&self.screenscraper_password))
+            .field("steamgriddb_key", &set(&self.steamgriddb_key))
+            .field("igdb_client_id", &set(&self.igdb_client_id))
+            .field("igdb_client_secret", &set(&self.igdb_client_secret))
+            .finish()
+    }
 }
 
 /// What a set secret looks like outside the core (the app's settings

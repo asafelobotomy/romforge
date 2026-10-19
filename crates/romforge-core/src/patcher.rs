@@ -15,8 +15,8 @@
 //!   xdelta's checksums refuse the others). A CHD is unpacked to staging
 //!   first, with a cue sheet from its own track list.
 //!
-//! The new file is named as a derivative of the game ("<Game> [Translation:
-//! <tag>]", identified by you, never verified: rule 8, unless a hack DAT
+//! The new file is named as a derivative of the game (`<Game> [Translation:
+//! <tag>]`, identified by you, never verified: rule 8, unless a hack DAT
 //! lists its hash) and remembers which patch made it. Journaled as a
 //! cleanup batch, so `cleanup undo` removes it.
 

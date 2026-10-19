@@ -205,9 +205,9 @@ pub(crate) fn heal(conn: &mut rusqlite::Connection, root: &Path) -> Result<bool,
 /// Move the whole folder into `new_parent` (as `new_parent/RomForge`),
 /// with no connection open on its database: one rename on the same drive,
 /// else copied whole beside its new place, checked, renamed into place, and
-/// only then removed from the old one ([`move_tree`]). Nothing is ever
+/// only then removed from the old one (`move_tree`). Nothing is ever
 /// replaced. The caller records the new place ([`Home::remember`]); the
-/// database fixes its stored paths the next time it opens ([`heal`]).
+/// database fixes its stored paths the next time it opens (`heal`).
 pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
     let to = root_in(new_parent)?;
     if to.starts_with(&home.root) {

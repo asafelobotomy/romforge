@@ -94,7 +94,7 @@ pub struct System {
     pub urls: &'static [&'static str],
 }
 
-/// How a system's games are stored ([`System::folders`]).
+/// How a system's games are stored (`System::folders`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Folders {
     /// One ROM, disc or disk set per game.
