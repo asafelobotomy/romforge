@@ -113,3 +113,131 @@ fn bios_files_are_checked_where_each_emulator_finds_them() {
             .contains("firmware download")
     );
 }
+
+fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, data) in entries {
+        w.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        std::io::Write::write_all(&mut w, data).unwrap();
+    }
+    w.finish().unwrap().into_inner()
+}
+
+#[test]
+fn a_drop_is_matched_by_contents_and_placed_once() {
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(t.path()).unwrap();
+    let dir = t.path().join("db");
+    std::fs::create_dir_all(&dir).unwrap();
+    let us = b"psx-us-bios".to_vec();
+    std::fs::write(dir.join(FILE), list(&us)).unwrap();
+    let env = Env::default();
+    let conn = crate::db::open_in_memory().unwrap();
+
+    // A pack that renamed the BIOS, the same file again in a zip inside a
+    // zip, a file whose name fits but has no hash listed, and a stranger.
+    let drop = t.path().join("drop");
+    std::fs::create_dir_all(&drop).unwrap();
+    std::fs::write(drop.join("renamed.bin"), &us).unwrap();
+    let inner = zip_of(&[("bios/again.bin", &us)]);
+    std::fs::write(
+        drop.join("pack.zip"),
+        zip_of(&[("inner.zip", &inner), ("ps1_rom.bin", b"rom")]),
+    )
+    .unwrap();
+    std::fs::write(drop.join("notes.txt"), b"hello").unwrap();
+    std::fs::write(drop.join("big.zip.001"), b"slice").unwrap();
+    let paths = vec![drop.clone()];
+
+    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let by = |n: &str| p.files.iter().find(|f| f.name == n).unwrap();
+    let renamed = by("renamed.bin");
+    assert_eq!(renamed.matched, Match::Accepted);
+    let places: Vec<&Path> = renamed.targets.iter().map(|t| t.place.as_path()).collect();
+    let (ra, duck) = (
+        home.bios().join("RetroArch/scph5501.bin"),
+        home.bios().join("duckstation/scph5501.bin"),
+    );
+    assert_eq!(places, [ra.as_path(), duck.as_path()]);
+    // The copy in the nested zip is read first (`pack.zip` sorts before
+    // `renamed.bin`), so it is the one written; this one is a duplicate.
+    assert!(renamed.targets.iter().all(|t| t.state == TargetState::Claimed));
+    assert!(
+        renamed.targets[0]
+            .used_by
+            .contains(&"RetroArch: Sony - PlayStation (SwanStation)".to_owned())
+    );
+    let again = by("again.bin");
+    assert!(
+        again.shown.ends_with("pack.zip › inner.zip › bios/again.bin"),
+        "{}",
+        again.shown
+    );
+    assert!(again.targets.iter().all(|t| t.state == TargetState::New));
+    assert_eq!(by("ps1_rom.bin").matched, Match::NameOnly);
+    assert_eq!(by("notes.txt").matched, Match::Unknown);
+    assert!(
+        p.skipped
+            .iter()
+            .any(|(what, why)| what.ends_with("big.zip.001") && why.contains("split"))
+    );
+    assert_eq!(p.new_places, 2);
+    assert!(!ra.exists(), "planning writes nothing");
+
+    // Apply, with the name-only file picked too.
+    let ps1 = by("ps1_rom.bin").shown.clone();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[ps1]).unwrap();
+    assert_eq!((done.written, done.linked), (2, 1));
+    assert_eq!(std::fs::read(&ra).unwrap(), us);
+    assert_eq!(std::fs::read(&duck).unwrap(), us);
+    assert_eq!(
+        std::fs::read(home.bios().join("RetroArch/extra/ps1_rom.bin")).unwrap(),
+        b"rom"
+    );
+    assert!(drop.join("renamed.bin").exists(), "copied, never moved");
+    let r = report(&dir, &home, &env).unwrap();
+    let ps = r.systems.iter().find(|s| s.key == "PlayStation").unwrap();
+    assert!(
+        ps.emulators
+            .iter()
+            .find(|e| e.name == "duckstation")
+            .unwrap()
+            .ready
+    );
+
+    // Again: everything is there already.
+    let p = plan(&dir, &home, &env, &paths).unwrap();
+    assert_eq!(p.new_places, 0);
+    assert!(
+        p.files
+            .iter()
+            .find(|f| f.name == "renamed.bin")
+            .unwrap()
+            .targets
+            .iter()
+            .all(|t| t.state == TargetState::AlreadyThere)
+    );
+
+    // Undo takes the files away; another file at a place is never replaced.
+    assert_eq!(undo(&conn).unwrap(), 3);
+    assert!(!ra.exists() && !duck.exists());
+    std::fs::write(&duck, b"someone else's").unwrap();
+    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let states: Vec<TargetState> = p
+        .files
+        .iter()
+        .find(|f| f.name == "again.bin")
+        .unwrap()
+        .targets
+        .iter()
+        .map(|t| t.state)
+        .collect();
+    assert_eq!(states, [TargetState::New, TargetState::Taken]);
+    apply(&conn, &dir, &home, &env, &paths, &[]).unwrap();
+    assert_eq!(std::fs::read(&duck).unwrap(), b"someone else's");
+    assert!(
+        undo(&conn).is_ok() && undo(&conn).is_err(),
+        "nothing left to undo"
+    );
+}

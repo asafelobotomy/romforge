@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import BiosImport from "./BiosImport.svelte";
 
   // The BIOS page (milestone 20): what each system's emulators load, from
   // RetroBIOS's list, against the files in the RomForge folder's Bios/.
@@ -50,9 +51,9 @@
     </div>
     <p class="hint">
       Which files each emulator loads comes from RetroBIOS, read from the emulators' own source. romforge fetches that list
-      only, never BIOS files: put your own dumps where each one goes. A file is accepted when its size and hash are ones
-      the emulator takes.
+      only, never BIOS files: bring your own dumps. A file is accepted when its size and hash are ones the emulator takes.
     </p>
+    {#if report}<BiosImport {active} {busy} bind:note bind:error done={loadBios} />{/if}
     {#if problem}
       <p class="hint" role="status">{problem}</p>
     {:else if report}

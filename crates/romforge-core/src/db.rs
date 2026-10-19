@@ -17,13 +17,20 @@ pub(crate) use now;
 
 mod migrations_20_35;
 mod migrations_2_19;
+mod migrations_36_51;
 
 /// Schema changes after version 1, in order. Entry `i` upgrades to version `i + 2`.
-const MIGRATIONS: &[&str] =
-    &concat::<{ migrations_2_19::MIGRATIONS_2_19.len() + migrations_20_35::MIGRATIONS_20_35.len() }>(&[
-        migrations_2_19::MIGRATIONS_2_19,
-        migrations_20_35::MIGRATIONS_20_35,
-    ]);
+const MIGRATIONS: &[&str] = &concat::<
+    {
+        migrations_2_19::MIGRATIONS_2_19.len()
+            + migrations_20_35::MIGRATIONS_20_35.len()
+            + migrations_36_51::MIGRATIONS_36_51.len()
+    },
+>(&[
+    migrations_2_19::MIGRATIONS_2_19,
+    migrations_20_35::MIGRATIONS_20_35,
+    migrations_36_51::MIGRATIONS_36_51,
+]);
 
 /// The migration files' lists, one after the other.
 const fn concat<const N: usize>(parts: &[&[&'static str]]) -> [&'static str; N] {

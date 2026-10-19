@@ -1538,6 +1538,28 @@ In this order:
      One file needed under several names or folders is stored once and
      hard-linked (same drive). Each new file is re-hashed, nothing is
      overwritten, the batch is journaled, and "Undo" removes it.
+
+   *(Built 2026-10-19.)* `firmware/walk.rs` reads a drop (folders all
+   the way down, files, zip and 7z with archives inside them one level,
+   nested ones up to 256 MiB in memory) as streams; the same walk plans
+   and copies. `firmware/import.rs`:
+   - **Plan:** each file hashed and matched against every place a core
+     or emulator of a romforge system loads it from (`Bios/RetroArch/…`,
+     `Bios/<emulator>/…`), with who loads it. Per place: goes there /
+     already there / another file there (left alone) / another dropped
+     file goes there.
+   - **Apply:** writes each file once (create-new, never replacing),
+     re-hashes it, hard-links its other places (a copy where a link
+     fails), and journals every file it makes (migration 36,
+     `firmware_batches` / `firmware_outputs`); "Undo last import" removes
+     them. Name-only files are placed only when ticked.
+   - **App:** the BIOS page takes drops (Tauri's webview drag-drop event,
+     paths passed to the core), plus Add folder… / Add files…; it shows the
+     plan and imports on "Import (n places)". CLI: `firmware import PATH…
+     [--apply] [--also NAME]`, `firmware undo`.
+   - **Not yet:** a needed BIOS zip dropped whole (e.g. `neogeo.zip`) is
+     opened, not placed as a zip; "placed by you" isn't shown on the page
+     afterwards (a name-only file then reads as present).
 4. *Point the emulators at it.* Each emulator's BIOS path is set in
    romforge's own copy of its config (milestone 18, 1.3): RetroArch's
    `system_directory`, DuckStation's BIOS search folder, PCSX2's BIOS

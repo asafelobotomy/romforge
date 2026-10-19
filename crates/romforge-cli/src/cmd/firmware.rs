@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use romforge_core::Library;
-use romforge_core::firmware::State;
+use romforge_core::firmware::{Match, State, TargetState};
 
 use crate::args::Command;
 use crate::subcommands::FirmwareCommand;
@@ -68,6 +68,42 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                     }
                 }
             }
+        }
+        Command::Firmware(FirmwareCommand::Import { paths, apply, also }) => {
+            let plan = lib.firmware_import_plan(&paths)?;
+            for f in &plan.files {
+                let what = match f.matched {
+                    Match::Accepted => "accepted",
+                    Match::NameOnly => "name fits, hash unknown",
+                    Match::Unknown => "unknown",
+                };
+                println!("{}  ({what})", f.shown);
+                for t in &f.targets {
+                    let state = match t.state {
+                        TargetState::New => "goes to",
+                        TargetState::AlreadyThere => "already in",
+                        TargetState::Taken => "another file in (left alone)",
+                        TargetState::Claimed => "another dropped file goes to",
+                    };
+                    println!("    {state} {}  [{}]", t.place.display(), t.used_by.join(", "));
+                }
+            }
+            for (what, why) in &plan.skipped {
+                println!("skipped {what}: {why}");
+            }
+            if apply {
+                let done = lib.firmware_import(&paths, &also)?;
+                println!("wrote {} file(s), linked {} more", done.written, done.linked);
+            } else {
+                println!(
+                    "{} place(s) would be filled; run again with --apply",
+                    plan.new_places
+                );
+            }
+        }
+        Command::Firmware(FirmwareCommand::Undo) => {
+            let n = lib.firmware_undo()?;
+            println!("removed {n} file(s)");
         }
         _ => unreachable!(),
     }

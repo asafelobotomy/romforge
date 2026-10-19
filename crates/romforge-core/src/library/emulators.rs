@@ -30,14 +30,40 @@ impl Library {
         firmware::download(&dir)
     }
 
+    /// The RomForge folder and the downloaded lists' folder, for BIOS work.
+    fn firmware_dirs(&self) -> Result<(&crate::home::Home, std::path::PathBuf), Error> {
+        let home = self.home.as_ref().ok_or_else(|| {
+            Error::Settings("BIOS files are kept in a RomForge folder; create one first".into())
+        })?;
+        Ok((home, self.extdb_dir().unwrap_or_else(|| home.databases())))
+    }
+
     /// Which BIOS files each system's emulators need, and which are in the
     /// RomForge folder's `Bios/`.
     pub fn firmware_report(&self) -> Result<firmware::FirmwareReport, Error> {
-        let home = self.home.as_ref().ok_or_else(|| {
-            Error::Settings("BIOS files are checked in a RomForge folder; create one first".into())
-        })?;
-        let dir = self.extdb_dir().unwrap_or_else(|| home.databases());
+        let (home, dir) = self.firmware_dirs()?;
         firmware::report(&dir, home, &self.env()?)
+    }
+
+    /// What importing the BIOS files in `paths` would do; nothing is written.
+    pub fn firmware_import_plan(&self, paths: &[std::path::PathBuf]) -> Result<firmware::ImportPlan, Error> {
+        let (home, dir) = self.firmware_dirs()?;
+        firmware::plan(&dir, home, &self.env()?, paths)
+    }
+
+    /// Import them: accepted files, and the name-only ones in `also`.
+    pub fn firmware_import(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        also: &[String],
+    ) -> Result<firmware::Imported, Error> {
+        let (home, dir) = self.firmware_dirs()?;
+        firmware::apply(&self.conn, &dir, home, &self.env()?, paths, also)
+    }
+
+    /// Take away what the last BIOS import wrote.
+    pub fn firmware_undo(&mut self) -> Result<usize, Error> {
+        firmware::undo(&self.conn)
     }
 
     pub fn save_emulator_settings(

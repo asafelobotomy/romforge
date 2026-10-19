@@ -23,6 +23,10 @@ use crate::{Error, systems};
 
 mod data;
 pub use data::{FileReq, Profile};
+mod import;
+pub use import::*;
+mod walk;
+pub use walk::SourceId;
 
 /// RetroBIOS's emulator profiles.
 pub const URL: &str = "https://abdess.github.io/retrobios/api/v1/emulators.json";
@@ -99,43 +103,98 @@ pub fn download(dir: &Path) -> Result<usize, Error> {
     Ok(profiles.len())
 }
 
-/// Check the RomForge folder's `Bios/` against the list in `dir`.
-pub fn report(dir: &Path, home: &Home, env: &Env) -> Result<FirmwareReport, Error> {
+/// The list kept in `dir`, read (and when RetroBIOS made it).
+fn load(dir: &Path) -> Result<(Vec<Profile>, String), Error> {
     let bytes = std::fs::read(dir.join(FILE)).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
             Error::Launch("no BIOS list yet: download RetroBIOS's list first (`firmware download`)".into())
         }
         _ => e.into(),
     })?;
-    let (profiles, generated_at) = data::parse(&bytes)?;
-    let mut check = Checker::default();
+    data::parse(&bytes)
+}
+
+/// One core or emulator of a system: its profile, if RetroBIOS has one,
+/// and the folder it finds BIOS files in.
+struct Slot<'a> {
+    system: &'static systems::System,
+    /// `retroarch:<core>` or the emulator's name.
+    name: String,
+    profile: Option<&'a Profile>,
+    dir: PathBuf,
+    installed: bool,
+}
+
+impl Slot<'_> {
+    /// How the app names it.
+    fn label(&self) -> String {
+        match (self.name.strip_prefix("retroarch:"), self.profile) {
+            (Some(_), Some(p)) => format!("RetroArch: {}", p.display_name),
+            (Some(core), None) => format!("RetroArch: {core}"),
+            (None, _) => launch::known(&self.name)
+                .map_or(self.name.as_str(), |e| e.label)
+                .to_owned(),
+        }
+    }
+
+    /// Its profile's files for its system: those tied to the system, and
+    /// those tied to none.
+    fn files(&self) -> impl Iterator<Item = &FileReq> {
+        let ids = self.system.retrobios;
+        self.profile
+            .into_iter()
+            .flat_map(|p| &p.files)
+            .filter(move |f| f.system.as_deref().is_none_or(|sys| ids.contains(&sys)))
+    }
+}
+
+/// Every system's cores and emulators (arcade systems aside).
+fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
     let mut out = Vec::new();
     for s in systems::SYSTEMS.iter().filter(|s| !s.arcade) {
-        let mut emulators = Vec::new();
         for core in s.cores {
-            let p = profiles.iter().find(|p| p.cores.iter().any(|c| c == core));
-            let dir = home.bios().join("RetroArch");
-            let installed = env.find(&RETROARCH).is_some() && env.core_installed(core);
-            emulators.push(check.emulator(&format!("retroarch:{core}"), p, s, &dir, installed));
+            out.push(Slot {
+                system: s,
+                name: format!("retroarch:{core}"),
+                profile: profiles.iter().find(|p| p.cores.iter().any(|c| c == core)),
+                dir: home.bios().join("RetroArch"),
+                installed: env.find(&RETROARCH).is_some() && env.core_installed(core),
+            });
         }
         for name in s.emulators {
             let Some(e) = KNOWN_EMULATORS.iter().find(|e| e.name == *name) else {
                 continue;
             };
             let id = e.settings_name();
-            let p = profiles
-                .iter()
-                .find(|p| p.id == id)
-                .or_else(|| profiles.iter().find(|p| p.cores.iter().any(|c| c == id)));
-            let dir = home.bios().join(id);
-            emulators.push(check.emulator(e.name, p, s, &dir, env.find(e).is_some()));
-        }
-        if !emulators.is_empty() {
-            out.push(SystemFirmware {
-                key: s.key,
-                name: s.name,
-                emulators,
+            out.push(Slot {
+                system: s,
+                name: e.name.to_owned(),
+                profile: profiles
+                    .iter()
+                    .find(|p| p.id == id)
+                    .or_else(|| profiles.iter().find(|p| p.cores.iter().any(|c| c == id))),
+                dir: home.bios().join(id),
+                installed: env.find(e).is_some(),
             });
+        }
+    }
+    out
+}
+
+/// Check the RomForge folder's `Bios/` against the list in `dir`.
+pub fn report(dir: &Path, home: &Home, env: &Env) -> Result<FirmwareReport, Error> {
+    let (profiles, generated_at) = load(dir)?;
+    let mut check = Checker::default();
+    let mut out: Vec<SystemFirmware> = Vec::new();
+    for slot in slots(&profiles, home, env) {
+        let e = check.emulator(&slot);
+        match out.last_mut().filter(|s| s.key == slot.system.key) {
+            Some(s) => s.emulators.push(e),
+            None => out.push(SystemFirmware {
+                key: slot.system.key,
+                name: slot.system.name,
+                emulators: vec![e],
+            }),
         }
     }
     Ok(FirmwareReport {
@@ -153,38 +212,15 @@ struct Checker {
 }
 
 impl Checker {
-    fn emulator(
-        &mut self,
-        name: &str,
-        p: Option<&Profile>,
-        s: &systems::System,
-        dir: &Path,
-        installed: bool,
-    ) -> EmulatorFirmware {
-        let for_system = |f: &&FileReq| f.system.as_deref().is_none_or(|sys| s.retrobios.contains(&sys));
-        let files: Vec<FileState> = p
-            .map(|p| {
-                p.files
-                    .iter()
-                    .filter(for_system)
-                    .map(|f| self.file(f, dir))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let reqs: Vec<&FileReq> = p
-            .map(|p| p.files.iter().filter(for_system).collect())
-            .unwrap_or_default();
+    fn emulator(&mut self, slot: &Slot) -> EmulatorFirmware {
+        let reqs: Vec<&FileReq> = slot.files().collect();
+        let files: Vec<FileState> = reqs.iter().map(|f| self.file(f, &slot.dir)).collect();
         let (ready, regions) = readiness(&reqs, &files);
-        let label = match (name.strip_prefix("retroarch:"), p) {
-            (Some(_), Some(p)) => format!("RetroArch: {}", p.display_name),
-            (Some(core), None) => format!("RetroArch: {core}"),
-            (None, _) => launch::known(name).map_or(name, |e| e.label).to_owned(),
-        };
         EmulatorFirmware {
-            name: name.to_owned(),
-            label,
-            installed,
-            profiled: p.is_some(),
+            name: slot.name.clone(),
+            label: slot.label(),
+            installed: slot.installed,
+            profiled: slot.profile.is_some(),
             files,
             ready,
             regions,

@@ -188,6 +188,21 @@ pub enum FirmwareCommand {
         #[arg(long)]
         all: bool,
     },
+    /// Put BIOS files from folders, files, zips or 7z where each emulator
+    /// finds them, matched by contents (shows the plan unless --apply)
+    Import {
+        #[arg(required = true)]
+        paths: Vec<std::path::PathBuf>,
+        /// Do it (copies; never replaces a file; `firmware undo` takes it back)
+        #[arg(long)]
+        apply: bool,
+        /// Also place this file whose name fits but whose hash isn't known
+        /// (as the plan shows it); may be given several times
+        #[arg(long)]
+        also: Vec<String>,
+    },
+    /// Take away what the last import wrote
+    Undo,
 }
 
 #[derive(Subcommand)]
