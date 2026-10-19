@@ -1491,6 +1491,50 @@ Milestone 20 uses it to set BIOS paths.
 - Each config format and key is checked against the emulator's source
   (pinned to a release), never written from memory.
 
+## Nintendo Switch (milestone 22; decided 2026-10-19, not built)
+
+Switch is a system already (`nsp`, `xci`, no DATs, no emulator). It gets
+launch, emulator settings (milestone 21) and its keys and firmware
+through the BIOS page (milestone 20).
+
+- *Which emulators.* Yuzu and Ryujinx are gone (2024); their forks
+  change fast, and Nintendo sent a DMCA notice covering about thirteen
+  of them in February 2026. Reported 2026-10-19 (weak, conflicting
+  sources, to verify on each project's own site): Eden (yuzu fork, tagged
+  stable releases, v0.2.2 in September 2026, self-hosted since March)
+  looks current; Citron (nightlies into October) and Ryubing (Ryujinx
+  fork, said to be in maintenance since February) are unclear. The
+  milestone 21 rule decides, checked when this starts: every fork that
+  qualifies, at least one. Each fork's config, keys and data folders
+  and command line are read from its own source, pinned to a release.
+  Forks are entries in the launch and config tables like any emulator,
+  so one that disappears is dropped without touching the rest.
+- *Keys and firmware come only from the user.* `prod.keys`,
+  `title.keys` and firmware are the most sensitive files in this plan:
+  decrypting with them is what Nintendo's case against Yuzu was about.
+  romforge never downloads, links, ships or derives them, never points
+  to a site that hosts them, and never decrypts anything itself.
+  - **Keys:** dropped on the BIOS page, recognized by their format (lines
+    of `name = hex`), never by a list of key values or key hashes.
+    Placed as "placed by you", never "accepted". Copied to
+    `RomForge/Firmware/switch/` and to each configured fork's keys folder
+    (or its config pointed there), journaled as in milestone 20.
+  - **Firmware:** a dropped folder or zip of `.nca` files, recognized by
+    its shape, not its contents. Each fork installs firmware itself
+    (into its NAND); romforge keeps the user's copy in
+    `RomForge/Firmware/switch/` and runs the fork's own install path if
+    it has a non-interactive one, else shows where to click.
+  - The BIOS page shows Switch as "keys: yes/no, firmware: yes/no" per
+    fork, plus the firmware version when the fork reports it.
+- *Games.* `nsp` and `xci` are hashed as today; they stay unidentified
+  until a free Switch DAT source is found (No-Intro's public mirror and
+  Redump: to check). Header ID reading is limited to fields stored
+  unencrypted, never anything that needs a key. Search and "identified
+  by you" work as for any system.
+- *Launch:* the fork's command line for one game, fullscreen; a game
+  folder with updates and DLC is left to the fork (each installs them
+  into its NAND).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
