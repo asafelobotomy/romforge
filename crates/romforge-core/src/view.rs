@@ -221,6 +221,10 @@ pub struct GameDetail {
     /// What the row's title (a DAT name, or a file name) says: regions,
     /// languages, version, flags.
     pub name: crate::names::Name,
+    /// For a game romforge made by patching one of yours: which patch.
+    pub patched: Option<crate::patcher::PatchedFrom>,
+    /// Where to look for a translation or hack of it (an identified game).
+    pub patch_links: Vec<Link>,
     /// For [`RowStatus::Derivative`]: what it is made from. Its metadata and
     /// art fall back to the base game's.
     pub derived: Option<Derived>,
@@ -834,6 +838,30 @@ pub fn shown_value(v: &str) -> Option<String> {
     (!rest.is_empty()).then(|| format!("{rest} (unconfirmed)"))
 }
 
+/// Where to look for a translation or hack of a game (searches, opened in
+/// the browser; romforge fetches no patch itself, milestone 19).
+pub fn patch_links(title: &str) -> Vec<Link> {
+    let q = fetch::encode_segment(&search_title(title));
+    [
+        (
+            "Translations (romhacking.net)",
+            format!("https://www.romhacking.net/?page=translations&title={q}"),
+        ),
+        (
+            "Hacks (romhacking.net)",
+            format!("https://www.romhacking.net/?page=hacks&title={q}"),
+        ),
+        ("Romhack Plaza", format!("https://romhackplaza.org/?s={q}")),
+    ]
+    .into_iter()
+    .map(|(label, url)| Link {
+        label: label.into(),
+        url,
+        direct: false,
+    })
+    .collect()
+}
+
 pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, String>) -> Vec<Link> {
     let q = search_title(title);
     let enc = |s: &str| fetch::encode_segment(s);
@@ -1113,7 +1141,21 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
             (a.year.is_none(), &a.year, &a.title).cmp(&(b.year.is_none(), &b.year, &b.title))
         });
     }
+    let mut patched = None;
+    for f in &files {
+        if let Some(p) = crate::patcher::made_by(conn, &f.sha1, f.size)? {
+            patched = Some(p);
+            break;
+        }
+    }
+    let patch_links = if matches!(row.status, RowStatus::Verified | RowStatus::ByYou) {
+        patch_links(&row.title)
+    } else {
+        Vec::new()
+    };
     Ok(GameDetail {
+        patched,
+        patch_links,
         name: crate::names::parse(&row.title),
         derived,
         row,

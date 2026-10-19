@@ -5,6 +5,7 @@
   import SettingsDialog from "./SettingsDialog.svelte";
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
+  import PatchDialog from "./PatchDialog.svelte";
   import DatsView from "./DatsView.svelte";
   import OrganizeView from "./OrganizeView.svelte";
   import HomeDialog from "./HomeDialog.svelte";
@@ -39,6 +40,8 @@
   let settings = $state(null);
   let cleanup = $state(null);
   let search = $state(null);
+  let patcher = $state(null);
+  let patchOpen = $state(false);
   let dats = $state(null);
   let settingsOpen = $state(false);
   let cleanOpen = $state(false);
@@ -269,7 +272,7 @@
 
   // Up/Down move through the list when no text field has focus.
   function listKeys(e) {
-    if (view !== "library" || settingsOpen || searchOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+    if (view !== "library" || settingsOpen || searchOpen || patchOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     e.preventDefault();
     const i = rows.findIndex((r) => r.id === selected);
@@ -297,6 +300,7 @@
     else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
     else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
+    else if (e.key === "Escape" && patchOpen) patchOpen = false;
     else listKeys(e);
   }}
 />
@@ -340,6 +344,8 @@
   <HomeDialog bind:this={home} bind:root={homeRoot} bind:note {load} />
 
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
+
+  <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:busy bind:note {call} {load} />
 
   {#if viewer}
     {@const k = viewer.kind}
@@ -452,6 +458,10 @@
               {#if row.status === "by_you" || row.status === "derivative"}
                 <button class="link" onclick={forget} disabled={!!busy} title="Undo naming these files: they show as unknown again">Forget</button>
               {/if}
+              {#if detail.patch_links?.length}
+                <button class="link" onclick={() => patcher.openPatch(row, detail)} disabled={!!busy} title="Apply a translation or hack you downloaded: a new copy, your original untouched">Patch…</button>
+              {/if}
+              {#if detail.patched}<span class="badge" title="romforge made it from {detail.patched.patch} ({detail.patched.kind}) on {detail.patched.created_at}">patched from {detail.patched.patch}</span>{/if}
               {#if row.cue_differs && row.cue_fits}<span class="badge" title="All tracks match; the cue sheet was rewritten but names exactly these tracks">cue rewritten</span>{:else if row.cue_differs}<span class="badge" title="All tracks match; the cue sheet differs from the DAT's">cue differs</span>{/if}
             </p>
           </div>

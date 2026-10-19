@@ -24,6 +24,7 @@ shiratsu-naming = "1.1"
 strsim = "0.11"
 flate2 = "1"
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
+oxidelta = { version = "0.1.4", default-features = false, features = ["adler32", "lzma-secondary"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

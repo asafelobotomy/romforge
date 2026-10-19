@@ -162,6 +162,30 @@ pub fn chd_sha1(path: &Path) -> Option<String> {
 
 /// The tracks of a CHD as `.bin`/`.iso` members: (member name, hashes).
 pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
+    let mut out = Vec::new();
+    let mut hasher = RawHasher::default();
+    read_chd(path, &mut |o| {
+        match o {
+            ChdOut::Data(d) => hasher.update(d),
+            ChdOut::End(name, _) => out.push((name, std::mem::take(&mut hasher).finish())),
+        }
+        Ok(())
+    })?;
+    Ok(out)
+}
+
+/// What [`read_chd`] hands on: a track's bytes as its `.bin` (or the DVD's
+/// `.iso`) holds them, then the end of it with its name and, for a CD,
+/// its metadata.
+pub enum ChdOut<'a> {
+    Data(&'a [u8]),
+    End(String, Option<&'a Track>),
+}
+
+/// Read a CHD's tracks in order, as their Redump `.bin`s (subcode dropped,
+/// padding skipped, audio byte order restored, an unstored pregap as
+/// silence), or a DVD's image as one `.iso`.
+pub fn read_chd(path: &Path, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>) -> Result<(), Error> {
     let chd_err = |e: chd::Error| Error::Chd(format!("{}: {e}", path.display()));
     let file = BufReader::new(File::open(path)?);
     let mut chd = chd::Chd::open(file, None).map_err(chd_err)?;
@@ -190,17 +214,16 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
 
     if tracks.is_empty() {
         // Not a CD: the logical data is the image.
-        let mut h = RawHasher::default();
         let mut left = logical;
         for n in 0..hunks {
             chd.hunk(n)
                 .and_then(|mut x| x.read_hunk_in(&mut scratch, &mut hunk))
                 .map_err(chd_err)?;
             let take = (left as usize).min(hunk_bytes);
-            h.update(&hunk[..take]);
+            sink(ChdOut::Data(&hunk[..take]))?;
             left -= take as u64;
         }
-        return Ok(vec![(format!("{stem}.iso"), h.finish())]);
+        return sink(ChdOut::End(format!("{stem}.iso"), None));
     }
     if !hunk_bytes.is_multiple_of(FRAME) {
         return Err(Error::Chd(format!(
@@ -223,20 +246,19 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
         )));
     }
     let many = tracks.len() > 1;
-    let mut out = Vec::new();
-    // (track index, frames of it left to hash, padding frames left to skip)
+    // (track index, frames of it left to read, padding frames left to skip)
     let mut current = 0usize;
-    let mut hasher = RawHasher::default();
-    let start_track = |t: &Track, h: &mut RawHasher| {
-        if !t.pregap_stored && t.pregap > 0 {
-            let zeros = vec![0u8; t.sector_bytes()];
-            for _ in 0..t.pregap {
-                h.update(&zeros);
+    let start_track =
+        |t: &Track, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>| -> Result<(u64, u64), Error> {
+            if !t.pregap_stored && t.pregap > 0 {
+                let zeros = vec![0u8; t.sector_bytes()];
+                for _ in 0..t.pregap {
+                    sink(ChdOut::Data(&zeros))?;
+                }
             }
-        }
-        (t.frames, t.padding())
-    };
-    let (mut data_left, mut pad_left) = start_track(&tracks[0], &mut hasher);
+            Ok((t.frames, t.padding()))
+        };
+    let (mut data_left, mut pad_left) = start_track(&tracks[0], sink)?;
     let mut swapped = vec![0u8; SECTOR];
 
     'hunks: for n in 0..hunks {
@@ -252,12 +274,12 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
                 } else {
                     format!("{stem}.bin")
                 };
-                out.push((name, std::mem::take(&mut hasher).finish()));
+                sink(ChdOut::End(name, Some(t)))?;
                 current += 1;
                 if current == tracks.len() {
                     break 'hunks;
                 }
-                (data_left, pad_left) = start_track(&tracks[current], &mut hasher);
+                (data_left, pad_left) = start_track(&tracks[current], sink)?;
             }
             if data_left > 0 {
                 let t = &tracks[current];
@@ -272,9 +294,9 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
                         o[0] = i[1];
                         o[1] = i[0];
                     }
-                    hasher.update(&swapped[..sector.len()]);
+                    sink(ChdOut::Data(&swapped[..sector.len()]))?;
                 } else {
-                    hasher.update(sector);
+                    sink(ChdOut::Data(sector))?;
                 }
                 data_left -= 1;
             } else {
@@ -291,7 +313,7 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
         } else {
             format!("{stem}.bin")
         };
-        out.push((name, hasher.finish()));
+        sink(ChdOut::End(name, Some(t)))?;
         current += 1;
     }
     if current < tracks.len() {
@@ -301,7 +323,7 @@ pub fn chd_members(path: &Path) -> Result<Vec<(String, Hashes)>, Error> {
             tracks[current].number
         )));
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]

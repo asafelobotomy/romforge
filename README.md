@@ -330,6 +330,36 @@ by name) into `Games/<System>/`, the parent's and BIOS's zips once, CHD
 folders along; nothing is repacked. Box art comes from libretro's MAME and
 FBNeo thumbnails, by description.
 
+## Patches: translations and hacks (milestone 19)
+
+```bash
+romforge-cli patch "Mother 3"                                   # where to look; patches beside it
+romforge-cli patch "Mother 3" ~/Downloads/mother3_1.3.zip       # what it would do
+romforge-cli patch "Mother 3" ~/Downloads/mother3_1.3.zip --tag "English v1.3" --apply
+```
+
+Apply a translation or hack you downloaded to a game you have: romforge
+makes a **new copy** and never touches the original. It doesn't download
+patches itself (romhacking.net is read-only, its archive is private, and
+no site offers an API): Details → **Patch…** gives search links to
+romhacking.net and Romhack Plaza, offers patches lying beside your copy,
+or takes one you pick: IPS, BPS, UPS, PPF or xdelta, or a zip holding one
+(its readme is kept with the copy).
+
+- **Cartridges** are patched in memory, in the form the patch wants: BPS
+  and UPS say it (their source's size and CRC32; one made for another
+  revision is refused, naming what it wants), an IPS goes on the DAT's
+  form (no copier header) unless its name says headered; a header taken
+  off goes back on. Written as a zip like any import.
+- **Discs** (xdelta, PPF; a PPF's check block is compared) are patched on
+  their first track, streamed, the other tracks kept, and written as a CHD;
+  a CHD is unpacked first, with a cue sheet from its own track list so
+  pregaps stay right.
+- The copy goes into `Games/<System>/` as "<Game> [Translation: <tag>]"
+  (or Hack; `:` becomes `-` in the file name), lists as a version of the
+  game, says which patch made it, and is "identified by you", never
+  verified, unless a hack DAT lists it. `cleanup undo` removes it.
+
 ## Cleanup and rename (dry run, apply, undo)
 
 ```bash
@@ -446,7 +476,8 @@ cd app && npm install && npm run tauri dev
   `dat`, `fetch`, `organize`, `cleanup`, `enrich`, `disc`, `launch`, `view`,
   `search`, `suggest`, `names`, `titles`, `ident`, `patch`, `wikidata`,
   `extdb`, `artsources`, `home` (the RomForge folder), `layout` (every
-  file and folder name romforge writes), `scummvm`,
+  file and folder name romforge writes), `scummvm`, `patcher` (patched
+  copies),
   `settings`, `report`, `db` (schema and migrations); one table of systems (`systems.rs`), one of copier
   headers and byte orders (`headers.rs`), one of game ID readers
   (`ident.rs`)

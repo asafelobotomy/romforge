@@ -1119,7 +1119,7 @@ on romforge's distribution. Non-commercial cores carry their warning as in
 - Whether RetroArch's UDP interface is enough for a pause menu (it saves
   only to the current slot).
 
-## Patcher (milestone 19; decided 2026-10-19, not built)
+## Patcher (milestone 19; decided 2026-10-19; built the same day, tested on scratch copies)
 
 Apply a translation or hack to a game you have, making a new patched copy
 and leaving the original as it is.
@@ -1161,6 +1161,17 @@ nothing: the DAT's form unless the patch's name says headered, and the
 result is checked against hack DATs where there is one); which track of a
 multi-track disc an xdelta patch targets; patches that need an older
 revision than the one you have (refused, naming the one it wants).
+
+As built: `patcher.rs` (plan, apply, patches beside a game), PPF 1-3 and
+xdelta in `patch.rs` (oxidelta, MIT, its plain and LZMA secondary
+compression; streamed for discs), `disc::read_chd` (a CHD's tracks to a
+hasher or to files), `patched` (migration 31) for what made a copy,
+`romforge-cli patch`, Details → **Patch…** and `patch_links`. Journaled as
+a cleanup batch. Tested with an IPS on a headered NES ROM, a BPS (and one
+for another ROM, refused), and an xdelta and a PPF on a two-track CHD.
+**Open:** xdelta's DJW and FGK secondary compression aren't read (an
+error says so); a disc patch always goes on the first track; a cartridge
+game of several ROMs isn't patched; not yet tried with real patches.
 
 ## Code review follow-ups (2026-10-18)
 

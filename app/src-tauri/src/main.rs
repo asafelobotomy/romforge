@@ -313,6 +313,50 @@ async fn cleanup_undo(db: tauri::State<'_, Db>) -> Res<CleanupUndone> {
     with(&db, move |lib| lib.cleanup_undo(None)).await
 }
 
+/// Milestone 19: what applying a patch to a game would make.
+#[tauri::command]
+async fn patch_plan(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    patch: String,
+    hack: bool,
+    tag: Option<String>,
+) -> Res<romforge_core::patcher::PatchPlan> {
+    read(&db, move |lib| {
+        lib.patch_plan(&row_id, Path::new(&patch), relation(hack), tag.as_deref())
+    })
+    .await
+}
+
+/// Make the patched copy (planned again here: the plan isn't sent back).
+#[tauri::command]
+async fn patch_apply(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    patch: String,
+    hack: bool,
+    tag: Option<String>,
+) -> Res<romforge_core::patcher::Patched> {
+    with(&db, move |lib| {
+        let plan = lib.patch_plan(&row_id, Path::new(&patch), relation(hack), tag.as_deref())?;
+        lib.patch_apply(&plan)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn patches_beside(db: tauri::State<'_, Db>, row_id: String) -> Res<Vec<PathBuf>> {
+    read(&db, move |lib| lib.patches_beside(&row_id)).await
+}
+
+fn relation(hack: bool) -> romforge_core::view::Relation {
+    if hack {
+        romforge_core::view::Relation::Hack
+    } else {
+        romforge_core::view::Relation::Translation
+    }
+}
+
 #[tauri::command]
 async fn trash_contents(db: tauri::State<'_, Db>) -> Res<romforge_core::cleanup::TrashSummary> {
     read(&db, move |lib| lib.trash_contents(None)).await
@@ -599,6 +643,9 @@ fn main() {
             cleanup_batches,
             trash_contents,
             empty_trash,
+            patch_plan,
+            patch_apply,
+            patches_beside,
             home_info,
             home_create,
             home_move,

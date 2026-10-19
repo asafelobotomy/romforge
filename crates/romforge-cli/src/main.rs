@@ -69,6 +69,26 @@ enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
+    /// Apply a translation or hack you fetched (IPS, BPS, UPS, PPF, xdelta,
+    /// or a zip holding one) to a game: a new copy, listed as a version of
+    /// it, the original untouched (milestone 19)
+    ///
+    /// Shows what it would do unless --apply. Without PATCH: where to look
+    /// for one, and the patches lying beside the game.
+    Patch {
+        /// The game: its title, or part of it
+        game: String,
+        patch: Option<PathBuf>,
+        /// A hack, not a translation
+        #[arg(long)]
+        hack: bool,
+        /// What the copy is called after the game ("English v1.1") [default: the patch's name]
+        #[arg(long)]
+        tag: Option<String>,
+        /// Write it
+        #[arg(long)]
+        apply: bool,
+    },
     /// ScummVM games: named by ScummVM's own detection list (milestone 14)
     #[command(subcommand)]
     Scummvm(ScummvmCommand),
@@ -794,6 +814,55 @@ fn main() -> Result<()> {
             }
         }
         Command::Home(_) => unreachable!("handled before the library opens"),
+        Command::Patch {
+            game,
+            patch,
+            hack,
+            tag,
+            apply,
+        } => {
+            let row = lib.find_row(&game)?;
+            let Some(patch) = patch else {
+                println!(
+                    "{}: where to look for a patch (opens in your browser):",
+                    row.title
+                );
+                for l in romforge_core::view::patch_links(&row.title) {
+                    println!("  {:<32} {}", l.label, l.url);
+                }
+                let beside = lib.patches_beside(&row.id)?;
+                if !beside.is_empty() {
+                    println!("patches beside it:");
+                    for p in beside {
+                        println!("  {}", p.display());
+                    }
+                }
+                return Ok(());
+            };
+            let relation = if hack {
+                romforge_core::view::Relation::Hack
+            } else {
+                romforge_core::view::Relation::Translation
+            };
+            let plan = lib.patch_plan(&row.id, &patch, relation, tag.as_deref())?;
+            println!("{} ({} patch {})", plan.title, plan.kind, plan.patch_name);
+            println!("  applied to {}", plan.applies_to);
+            println!("  into {}", plan.target.display());
+            for n in &plan.notes {
+                println!("  note: {n}");
+            }
+            if apply {
+                let done = lib.patch_apply(&plan)?;
+                println!(
+                    "batch #{}: wrote {} (undo with `cleanup undo --batch {}`)",
+                    done.batch_id,
+                    done.target.display(),
+                    done.batch_id
+                );
+            } else {
+                println!("nothing written (run with --apply)");
+            }
+        }
         Command::Scummvm(cmd) => {
             // libretro's names for ScummVM games (its box art goes by them);
             // without them, ScummVM's own names stay.

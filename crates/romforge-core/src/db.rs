@@ -357,6 +357,19 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE files ADD COLUMN chd_sha1 TEXT;
      CREATE INDEX files_chd_sha1 ON files(chd_sha1);
      UPDATE files SET mtime = NULL WHERE lower(path) GLOB '*.chd';",
+    // 31: what romforge patched (milestone 19): the new file (a ROM, or a
+    // disc's patched track) by content, the game and the patch.
+    "CREATE TABLE patched (
+         sha1       TEXT NOT NULL,
+         size       INTEGER NOT NULL,
+         base       TEXT NOT NULL,
+         system_id  INTEGER NOT NULL REFERENCES systems(system_id),
+         patch_name TEXT NOT NULL,
+         patch_sha1 TEXT NOT NULL,
+         kind       TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         PRIMARY KEY (sha1, size)
+     );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

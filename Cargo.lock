@@ -2368,6 +2368,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
 
 [[package]]
+name = "lzma-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
+]
+
+[[package]]
 name = "lzma-rust2"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2841,6 +2851,19 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "oxidelta"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1754ebd72de1f61efc690ca75beb1f46b07cba4c37c02879c11d1940dd1556f2"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
+ "lzma-rs",
+ "simd-adler32",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3389,6 +3412,7 @@ dependencies = [
  "libc",
  "lz4_flex",
  "md-5 0.11.0",
+ "oxidelta",
  "quick-xml",
  "rusqlite",
  "serde",

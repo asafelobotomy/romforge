@@ -127,7 +127,7 @@ pub struct CleanupReport {
 }
 
 /// Which files a cleanup or import takes games from.
-enum Source {
+pub(crate) enum Source {
     /// The Source folder (no RomForge folder), or one folder being
     /// imported.
     Folder(PathBuf),
@@ -733,7 +733,7 @@ impl<R: Read> Read for Sha1Read<R> {
 }
 
 /// The SHA1 of a whole stream.
-fn sha1_of(r: impl Read) -> std::io::Result<String> {
+pub(crate) fn sha1_of(r: impl Read) -> std::io::Result<String> {
     use sha1::Digest as _;
     let mut h = Sha1Read {
         inner: r,
@@ -744,7 +744,7 @@ fn sha1_of(r: impl Read) -> std::io::Result<String> {
 }
 
 /// Copy `r` into `w`, returning the SHA1 of what was copied.
-fn copy_hashed(r: impl Read, w: &mut impl Write) -> std::io::Result<String> {
+pub(crate) fn copy_hashed(r: impl Read, w: &mut impl Write) -> std::io::Result<String> {
     use sha1::Digest as _;
     let mut h = Sha1Read {
         inner: r,
@@ -818,7 +818,7 @@ fn write_loose(
 /// same permissions and compression for every member, so the same game
 /// always zips to the same bytes (as TorrentZip does; with
 /// [`zip_order`]). Zip64 only for a member that needs it.
-fn zip_options(size: u64) -> zip::write::SimpleFileOptions {
+pub(crate) fn zip_options(size: u64) -> zip::write::SimpleFileOptions {
     zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .compression_level(Some(6))
@@ -833,7 +833,10 @@ fn zip_order(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// Art and details into a zip's `romforge/` folder, in order.
-fn write_extras(zip: &mut zip::ZipWriter<File>, extras: &[(String, Vec<u8>)]) -> Result<(), Error> {
+pub(crate) fn write_extras(
+    zip: &mut zip::ZipWriter<File>,
+    extras: &[(String, Vec<u8>)],
+) -> Result<(), Error> {
     let mut sorted: Vec<&(String, Vec<u8>)> = extras.iter().collect();
     sorted.sort_by(|a, b| zip_order(&a.0, &b.0));
     for (name, data) in sorted {
@@ -1031,13 +1034,13 @@ fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// (the ROMs to write, other copies of them in Source)
-type PartsAndCopies = (Vec<Part>, Vec<Part>);
+pub(crate) type PartsAndCopies = (Vec<Part>, Vec<Part>);
 
 /// The ROMs of a hash-verified game: one file per ROM (the copy in Source
 /// first, a matched file before a duplicate), from the DAT that has them
 /// all, and the other copies of them in Source. Cue sheets are taken when
 /// matched; a game is complete without one (a CHD needs none).
-fn verified_parts(
+pub(crate) fn verified_parts(
     conn: &Connection,
     system_id: i64,
     title: &str,
@@ -1132,7 +1135,11 @@ fn verified_parts(
 /// The files of a game you named: one per content (other copies of it in
 /// Source are `copies`, the one in Source first), tracks in natural order
 /// ("Track 2" before "Track 10") as there is no DAT to give it.
-fn named_parts(conn: &Connection, row_id: &str, source: &Source) -> Result<Option<PartsAndCopies>, Error> {
+pub(crate) fn named_parts(
+    conn: &Connection,
+    row_id: &str,
+    source: &Source,
+) -> Result<Option<PartsAndCopies>, Error> {
     let d = view::detail(conn, row_id)?;
     let mut all: Vec<Part> = d
         .files
@@ -1194,7 +1201,7 @@ fn natural_key(name: &str) -> Vec<(String, u64)> {
 
 /// Open a part's data as a stream: a plain file or a zip member directly;
 /// a 7z member is unpacked into `staging` first (one compressed stream).
-fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Error> {
+pub(crate) fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Error> {
     if part.member.is_empty() {
         return Ok(Box::new(BufReader::new(File::open(&part.path)?)));
     }
@@ -1406,7 +1413,7 @@ fn cue_pregaps(cue: &str) -> Vec<u64> {
 }
 
 /// Whether [`Item::sheet`] was taken into the CHD.
-fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool, Error> {
+pub(crate) fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool, Error> {
     use chd::metadata::KnownMetadata;
     use chd::write::{ChdWriteOptions, ChdWriter};
     let cerr = |e: chd::Error| Error::Chd(format!("{}: {e}", out.display()));
@@ -1509,7 +1516,7 @@ fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool, Error> {
 
 /// The one `.cue` in the same archive or folder as a disc's tracks, when
 /// the DAT's cue wasn't found ([`Item::sheet`]).
-fn loose_cue(conn: &Connection, parts: &[Part]) -> Result<Option<Part>, Error> {
+pub(crate) fn loose_cue(conn: &Connection, parts: &[Part]) -> Result<Option<Part>, Error> {
     let Some(first) = parts.first() else {
         return Ok(None);
     };
@@ -1893,7 +1900,7 @@ fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) -> Result<u
     Ok(n)
 }
 
-fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &str) -> Result<(), Error> {
+pub(crate) fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &str) -> Result<(), Error> {
     conn.execute(
         "INSERT INTO cleanup_outputs (batch_id, path, kind) VALUES (?1, ?2, ?3)",
         params![batch, path.to_string_lossy(), kind],
