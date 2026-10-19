@@ -23,6 +23,8 @@ mod emulators;
 pub use emulators::*;
 mod plan;
 pub use plan::*;
+mod owned;
+pub use owned::{ConfigWrite, Prepare, prepare};
 mod start;
 use start::*;
 mod table;
@@ -48,6 +50,8 @@ pub struct LaunchSpec {
     pub rom: PathBuf,
     pub program: PathBuf,
     pub args: Vec<String>,
+    /// romforge's config for the emulator, written by [`spawn`] first.
+    pub prepare: Prepare,
 }
 
 /// An emulator a user added (`emulator add`).
@@ -88,6 +92,9 @@ pub struct Env {
     /// The rest of Emulator Settings, by settings name; missing: the
     /// defaults (fullscreen, no extra arguments).
     pub options: BTreeMap<String, LaunchOptions>,
+    /// The RomForge folder: emulators romforge writes a config for run
+    /// from their copy in it. `None`: as they are set up.
+    pub home: Option<crate::home::Home>,
 }
 
 /// How an emulator is started, as set in Emulator Settings.
@@ -214,14 +221,15 @@ fn is_executable(p: &Path) -> bool {
 }
 
 /// The command line for `runner`. A Flatpak sees only what it was given
-/// (often just home), so it gets `grant` (the game's folder) for this run:
-/// a game on another drive opens too, and nothing is changed for good.
-fn command(runner: &Runner, args: Vec<String>, grant: Option<&Path>) -> (PathBuf, Vec<String>) {
+/// (often just home), so it gets `grants` (the game's folder, and the
+/// RomForge folder for romforge's config) for this run: a game on another
+/// drive opens too, and nothing is changed for good.
+fn command(runner: &Runner, args: Vec<String>, grants: &[PathBuf]) -> (PathBuf, Vec<String>) {
     match runner {
         Runner::Program(p) => (p.clone(), args),
         Runner::Flatpak(id) => {
             let mut a = vec!["run".to_owned()];
-            if let Some(g) = grant {
+            for g in grants {
                 a.push(format!("--filesystem={}", g.display()));
             }
             a.push(id.clone());
@@ -237,6 +245,10 @@ pub(crate) struct Vars<'a> {
     /// An arcade game's DAT name, else the file's stem.
     pub set: &'a str,
     pub core: Option<&'a Path>,
+    /// romforge's config folder for the emulator, if it writes one.
+    pub config: Option<&'a Path>,
+    /// The game's system (its key).
+    pub system: &'a str,
 }
 
 /// An emulator's arguments for a game: `{rom}` the file, `{dir}` its
@@ -244,6 +256,7 @@ pub(crate) struct Vars<'a> {
 fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
     let dir = v.rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
     let core = v.core.map(|c| c.to_string_lossy()).unwrap_or_default();
+    let config = v.config.map(|c| c.to_string_lossy()).unwrap_or_default();
     args.iter()
         .map(|a| {
             a.as_ref()
@@ -251,18 +264,26 @@ fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
                 .replace("{dir}", &dir)
                 .replace("{set}", v.set)
                 .replace("{core}", &core)
+                .replace("{config}", &config)
+                .replace("{system}", v.system)
         })
         .collect()
 }
 
 /// A known emulator's whole command line: its fullscreen flags (unless set
-/// windowed), the extra arguments set for it, then its arguments for the
-/// game.
+/// windowed), its config flags (with romforge's config), the extra
+/// arguments set for it, then its arguments for the game.
 fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
     let fullscreen = if o.windowed { &[][..] } else { e.fullscreen };
+    let config = if v.config.is_some() {
+        fill(e.config, v)
+    } else {
+        Vec::new()
+    };
     fullscreen
         .iter()
         .map(|f| (*f).to_owned())
+        .chain(config)
         .chain(o.args.iter().cloned())
         .chain(fill(e.args, v))
         .collect()

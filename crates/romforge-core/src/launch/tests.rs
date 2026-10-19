@@ -33,19 +33,28 @@ fn known_emulators_cover_the_systems_table() {
 
 #[test]
 fn flatpak_commands() {
-    let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], None);
+    let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], &[]);
     assert_eq!(p, PathBuf::from("flatpak"));
     assert_eq!(a, ["run", "org.x.Y", "{rom}"]);
     let (_, a) = command(
         &Runner::Flatpak("org.x.Y".into()),
         vec!["/m/g/a.zip".into()],
-        Some(Path::new("/m/g")),
+        &["/m/g".into(), "/h/RomForge".into()],
     );
-    assert_eq!(a, ["run", "--filesystem=/m/g", "org.x.Y", "/m/g/a.zip"]);
+    assert_eq!(
+        a,
+        [
+            "run",
+            "--filesystem=/m/g",
+            "--filesystem=/h/RomForge",
+            "org.x.Y",
+            "/m/g/a.zip"
+        ]
+    );
     let (p, a) = command(
         &Runner::Program("/bin/x".into()),
         vec!["r".into()],
-        Some(Path::new("/m")),
+        &["/m".into()],
     );
     assert_eq!(
         (p, a),
@@ -56,6 +65,8 @@ fn flatpak_commands() {
         rom: Path::new("/r/a b.iso"),
         set: "a b",
         core: Some(Path::new("/c/x_libretro.so")),
+        config: None,
+        system: "GBA",
     };
     assert_eq!(fill(&["-e", "{rom}"], &vars), ["-e", "/r/a b.iso"]);
     assert_eq!(
@@ -71,6 +82,20 @@ fn flatpak_commands() {
         known_args(&RETROARCH, &vars, &set),
         ["--verbose", "-L", "/c/x_libretro.so", "/r/a b.iso"],
         "windowed, extra arguments before the game's"
+    );
+    let owned = Vars {
+        config: Some(Path::new("/h/RomForge/Emulators/config/retroarch")),
+        ..vars
+    };
+    assert_eq!(
+        known_args(&RETROARCH, &owned, &LaunchOptions::default())[1..5],
+        [
+            "--config",
+            "/h/RomForge/Emulators/config/retroarch/retroarch.cfg",
+            "--appendconfig",
+            "/h/RomForge/Emulators/config/retroarch/systems/GBA.cfg"
+        ],
+        "romforge's config after the fullscreen flag"
     );
 }
 

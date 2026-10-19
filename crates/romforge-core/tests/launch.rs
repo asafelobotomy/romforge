@@ -256,3 +256,61 @@ fn launch_by_row() {
     let err = lib.launch_row(&f.env, &unknown.id, None).unwrap_err().to_string();
     assert!(err.contains("isn't identified"), "{err}");
 }
+
+/// With a RomForge folder, RetroArch runs from romforge's copy of its
+/// config: written when the game starts, the user's own keys kept.
+#[test]
+fn retroarch_runs_from_romforge_s_own_config() {
+    let lib = library();
+    let mut f = fake();
+    let out = f.root.join("args.txt");
+    script(
+        &f.root.join("bin/retroarch"),
+        &format!("echo \"$@\" > '{}'", out.display()),
+    );
+    core(&f, "mgba");
+    let home = romforge_core::home::Home::create(&f.root.join("parent")).unwrap();
+    f.env.home = Some(home.clone());
+
+    let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
+    let config = home.emulator_config("retroarch");
+    let (base, system) = (
+        config.join("retroarch.cfg"),
+        config.join("systems/Game Boy Advance.cfg"),
+    );
+    assert_eq!(
+        spec.args[..5],
+        [
+            "-f".to_owned(),
+            "--config".to_owned(),
+            base.display().to_string(),
+            "--appendconfig".to_owned(),
+            system.display().to_string()
+        ]
+    );
+    assert!(!base.exists(), "planning writes nothing");
+
+    romforge_core::launch::spawn(&spec).unwrap();
+    let text = std::fs::read_to_string(&base).unwrap();
+    let bios = home.bios().join("RetroArch");
+    assert!(
+        text.contains(&format!("system_directory = \"{}\"", bios.display())),
+        "{text}"
+    );
+    assert!(text.contains("config_save_on_exit = \"false\""));
+    let saves = home.saves().join("Game Boy Advance");
+    let per_system = std::fs::read_to_string(&system).unwrap();
+    assert!(per_system.contains(&format!("savefile_directory = \"{}\"", saves.display())));
+    assert!(saves.is_dir() && home.states().join("Game Boy Advance").is_dir() && bios.is_dir());
+
+    // A key set by hand in romforge's copy stays; romforge's own come back.
+    let edited = text.replace(
+        "config_save_on_exit = \"false\"",
+        "config_save_on_exit = \"true\"",
+    );
+    std::fs::write(&base, format!("video_driver = \"vulkan\"\n{edited}")).unwrap();
+    romforge_core::launch::spawn(&spec).unwrap();
+    let text = std::fs::read_to_string(&base).unwrap();
+    assert!(text.starts_with("video_driver = \"vulkan\"\n"), "{text}");
+    assert!(text.contains("config_save_on_exit = \"false\""));
+}

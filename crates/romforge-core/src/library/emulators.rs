@@ -10,6 +10,7 @@ impl Library {
         let mut env = launch::Env::detect();
         if let Some(h) = &self.home {
             env = env.with_emulators_dir(&h.emulators());
+            env.home = Some(h.clone());
         }
         emusettings::apply(&emusettings::load(&self.conn)?, &mut env);
         Ok(env)

@@ -21,6 +21,17 @@ pub const MEDIA_DIR: &str = "Media";
 pub const DATABASES_DIR: &str = "Databases";
 /// Emulators and cores you fetched or put there (milestone 18).
 pub const EMULATORS_DIR: &str = "Emulators";
+/// In `Emulators/`: romforge's own copy of each emulator's config, one
+/// folder per emulator (milestone 18, 1.3).
+pub const EMULATOR_CONFIG_DIR: &str = "config";
+/// BIOS files, laid out per emulator (`Bios/RetroArch/` as RetroArch's
+/// system folder; milestone 20).
+pub const BIOS_DIR: &str = "Bios";
+/// What games save, one folder per system: SRAM and memory cards, save
+/// states, screenshots.
+pub const SAVES_DIR: &str = "Saves";
+pub const STATES_DIR: &str = "States";
+pub const SCREENSHOTS_DIR: &str = "Screenshots";
 
 /// Without a RomForge folder: downloaded databases next to the library
 /// database, and art in romforge's cache folder.

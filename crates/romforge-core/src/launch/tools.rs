@@ -49,7 +49,8 @@ fn run_known(
     let runner = env
         .known(e)
         .ok_or_else(|| Error::Launch(format!("{shown} isn't installed (on PATH or as a Flatpak)")))?;
-    let (program, args) = command(&runner, args.to_vec(), grant);
+    let grants: Vec<PathBuf> = grant.map(Path::to_path_buf).into_iter().collect();
+    let (program, args) = command(&runner, args.to_vec(), &grants);
     let out = std::process::Command::new(&program)
         .args(&args)
         .stdin(std::process::Stdio::null())
@@ -82,6 +83,7 @@ pub fn mame_listxml(env: &Env) -> Result<(Vec<u8>, String), Error> {
 /// Start the emulator and return its process id. romforge doesn't wait for
 /// it, but a thread reaps it when it exits so no zombie is left behind.
 pub fn spawn(spec: &LaunchSpec) -> Result<u32, Error> {
+    prepare(&spec.prepare)?;
     let mut child = std::process::Command::new(&spec.program)
         .args(&spec.args)
         .stdin(std::process::Stdio::null())

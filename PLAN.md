@@ -976,6 +976,12 @@ RomForge/
 Saves in one tree means backup or sync is a copy of one folder (rclone or
 Syncthing, outside romforge).
 
+*(Built 2026-10-19.)* `Emulators/` (with `config/<emulator>/`), `Bios/`,
+`Saves/`, `States/` and `Screenshots/` are in `layout.rs` and `Home`;
+`home create` makes them, and a launch makes what it needs in an
+existing folder. Per-system folders are named by the system's key, as
+`Games/` is (`Saves/Game Boy Advance/`).
+
 #### 1.3 Owned configs, written as patches
 
 *Changed 2026-10-19 (owner's choice):* romforge runs every emulator from
@@ -1022,6 +1028,32 @@ settings" per emulator.
   Flatpak emulators keep config under `~/.var/app/<id>/`; they get
   `--filesystem=<RomForge>` and config written there, or a portable dir
   where the emulator supports one.
+
+*(Built 2026-10-19 for RetroArch.)* `launch/owned.rs`: with a RomForge
+folder, RetroArch starts as `retroarch -f --config
+<RomForge>/Emulators/config/retroarch/retroarch.cfg --appendconfig
+…/systems/<system>.cfg -L <core> <game>`. romforge sets, on every start,
+in `retroarch.cfg`: `system_directory` (`Bios/RetroArch`),
+`config_save_on_exit` false, `pause_nonactive` false, the
+`*_in_content_dir` and `sort_*` keys false; in the system's file:
+`savefile_directory`, `savestate_directory` and `screenshot_directory`
+(`Saves/`, `States/`, `Screenshots/` per system; RetroArch has one save
+folder, so each system gets an append file). Every other key in those
+files is kept, in order. Keys checked in RetroArch 1.22.2's own config;
+`--save`/`--savestate` are deprecated there, hence `--appendconfig`.
+The files are written when the game starts (`spawn`), never by a plan or
+`--dry-run`, which prints them. A Flatpak RetroArch is also given the
+RomForge folder for that run. Without a RomForge folder RetroArch starts
+as it is set up.
+Not yet:
+- `network_cmd_enable` (an open UDP port) waits for 1.6, which uses it;
+- the menu toggle stays bound until 1.6 gives a controller exit;
+- a new copy starts from RetroArch's built-in defaults: whether
+  controller autoconfig and assets still resolve is to check on a real
+  start (else seed those paths, or import the user's config once);
+- the other emulators' configs (their data folders are in the table above:
+  environment variables or portable markers);
+- RetroArch's settings as Emulator Settings rows (milestone 21).
 
 #### 1.4 Get emulators from inside romforge
 

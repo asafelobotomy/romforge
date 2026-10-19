@@ -25,8 +25,9 @@ pub struct KnownEmulator {
     /// Put before `args` on every start: fullscreen, without the
     /// emulator's own UI.
     pub fullscreen: &'static [&'static str],
-    /// How to run it from a config folder of romforge's (`{config}`,
-    /// milestone 18, 1.3).
+    /// How to run it from a config folder of romforge's (`{config}`, and
+    /// `{system}` the game's system; milestone 18, 1.3). Used only for an
+    /// emulator romforge writes a config for (`launch/owned.rs`).
     pub config: &'static [&'static str],
     /// Opens a ROM inside a zip/7z itself.
     pub archives: bool,
@@ -91,7 +92,12 @@ pub const RETROARCH: KnownEmulator = emu(
     true,
 )
 .fullscreen(&["-f"])
-.config(&["--config", "{config}/retroarch.cfg"]);
+.config(&[
+    "--config",
+    "{config}/retroarch.cfg",
+    "--appendconfig",
+    "{config}/systems/{system}.cfg",
+]);
 
 // The console emulators' flags were read from their source at the
 // release named (2026-10-19). One with no `config` has no flag for a data

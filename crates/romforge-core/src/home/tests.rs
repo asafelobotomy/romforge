@@ -6,6 +6,7 @@ fn create_finds_and_refuses() {
     let home = Home::create(tmp.path()).unwrap();
     assert_eq!(home.root(), tmp.path().join("RomForge"));
     assert!(home.games().is_dir() && home.media().is_dir() && home.trash().is_dir());
+    assert!(home.bios().is_dir() && home.saves().is_dir() && home.emulators().is_dir());
     assert_eq!(Home::at(home.root()), Some(home.clone()));
     assert_eq!(
         Home::create(home.root()).unwrap(),

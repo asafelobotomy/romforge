@@ -46,8 +46,9 @@ pub(super) fn start(
     } else {
         rom.parent().map(Path::to_path_buf)
     };
-    let spec = |emulator: String, runner: &Runner, args: Vec<String>| {
-        let (program, args) = command(runner, args, grant.as_deref());
+    let spec = |emulator: String, runner: &Runner, args: Vec<String>, prepare: Prepare| {
+        let home = env.home.as_ref().filter(|_| !prepare.writes.is_empty());
+        let (program, args) = command(runner, args, &owned::grants(grant.as_deref(), home));
         LaunchSpec {
             game: game.clone(),
             system: system.key.to_owned(),
@@ -55,8 +56,12 @@ pub(super) fn start(
             rom: rom.clone(),
             program,
             args,
+            prepare,
         }
     };
+    // romforge's own config for a known emulator, when there is a RomForge
+    // folder and romforge writes one for it.
+    let owned = |e: &KnownEmulator| env.home.as_ref().and_then(|h| owned::owned(e, h, system));
     // An arcade game is started by its set's name; anything else, by its file.
     let set = if system.arcade {
         game.clone()
@@ -89,8 +94,11 @@ pub(super) fn start(
                             rom: &rom,
                             set: &set,
                             core: None,
+                            config: None,
+                            system: system.key,
                         },
                     ),
+                    Prepare::default(),
                 ));
             }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
@@ -118,13 +126,16 @@ pub(super) fn start(
             };
             match env.core(core) {
                 Some(c) => {
+                    let (config, prepare) = owned(&RETROARCH).unzip();
                     let vars = Vars {
                         rom: &content,
                         set: &set,
                         core: Some(&c),
+                        config: config.as_deref(),
+                        system: system.key,
                     };
                     let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
-                    return Ok(spec(name, &ra, args));
+                    return Ok(spec(name, &ra, args, prepare.unwrap_or_default()));
                 }
                 None => why_not.push(format!("{name}: core not installed")),
             }
@@ -145,12 +156,16 @@ pub(super) fn start(
         }
         match env.known(e) {
             Some(r) => {
+                let (config, prepare) = owned(e).unzip();
                 let vars = Vars {
                     rom: &rom,
                     set: &set,
                     core: None,
+                    config: config.as_deref(),
+                    system: system.key,
                 };
-                return Ok(spec(e.name.to_owned(), &r, known_args(e, &vars, &env.options(e))));
+                let args = known_args(e, &vars, &env.options(e));
+                return Ok(spec(e.name.to_owned(), &r, args, prepare.unwrap_or_default()));
             }
             None => why_not.push(format!("{} not installed", e.name)),
         }

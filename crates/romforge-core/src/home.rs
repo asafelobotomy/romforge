@@ -9,7 +9,10 @@
 //!   Games/<System>/...        imported games (zips, CHDs and sidecars)
 //!   Media/<System>/<kind>/... art
 //!   Databases/                OpenVGDB, LaunchBox (downloaded by you)
-//!   Emulators/                emulators and cores (AppImages, `cores/`)
+//!   Emulators/                emulators and cores (AppImages, `cores/`);
+//!                             `config/<emulator>/`: romforge's copy of its config
+//!   Bios/                     BIOS files (`Bios/RetroArch/`: its system folder)
+//!   Saves/ States/ Screenshots/   what games save, per system
 //!   .romforge-staging/        scratch space for imports
 //!   .romforge-trash/<batch>/  originals until undone or emptied
 //! ```
@@ -27,7 +30,8 @@ use crate::Error;
 use crate::organize::{move_file, rename_noreplace};
 
 use crate::layout::{
-    DATABASES_DIR, DB_FILE, EMULATORS_DIR, GAMES_DIR, HOME_DIR as DIR, HOME_MARKER as MARKER, MEDIA_DIR,
+    BIOS_DIR, DATABASES_DIR, DB_FILE, EMULATOR_CONFIG_DIR, EMULATORS_DIR, GAMES_DIR, HOME_DIR as DIR,
+    HOME_MARKER as MARKER, MEDIA_DIR, SAVES_DIR, SCREENSHOTS_DIR, STATES_DIR,
 };
 
 /// The layout version the marker file records.
@@ -56,6 +60,11 @@ impl Home {
             home.games(),
             home.media(),
             home.databases(),
+            home.emulators(),
+            home.bios(),
+            home.saves(),
+            home.states(),
+            home.screenshots(),
             home.staging(),
             home.trash(),
         ] {
@@ -118,6 +127,22 @@ impl Home {
     }
     pub fn emulators(&self) -> PathBuf {
         self.root.join(EMULATORS_DIR)
+    }
+    /// romforge's own copy of `emulator`'s config.
+    pub fn emulator_config(&self, emulator: &str) -> PathBuf {
+        self.emulators().join(EMULATOR_CONFIG_DIR).join(emulator)
+    }
+    pub fn bios(&self) -> PathBuf {
+        self.root.join(BIOS_DIR)
+    }
+    pub fn saves(&self) -> PathBuf {
+        self.root.join(SAVES_DIR)
+    }
+    pub fn states(&self) -> PathBuf {
+        self.root.join(STATES_DIR)
+    }
+    pub fn screenshots(&self) -> PathBuf {
+        self.root.join(SCREENSHOTS_DIR)
     }
     pub fn databases(&self) -> PathBuf {
         self.root.join(DATABASES_DIR)

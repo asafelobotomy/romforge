@@ -31,6 +31,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 spec.emulator,
                 shown.join(" ")
             );
+            for w in &spec.prepare.writes {
+                let verb = if dry_run { "would set" } else { "sets" };
+                println!("  {verb} {} key(s) in {}", w.keys.len(), w.path.display());
+            }
             if !dry_run {
                 let pid = launch::spawn(&spec)?;
                 println!("started (pid {pid})");
