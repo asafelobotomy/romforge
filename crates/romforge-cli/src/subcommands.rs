@@ -198,6 +198,12 @@ pub enum EmulatorCommand {
         #[arg(long)]
         archives: bool,
     },
+    /// Start a known emulator (e.g. retroarch, duckstation) from this
+    /// program instead of the copy romforge finds; no program: find it again
+    Path {
+        name: String,
+        program: Option<std::path::PathBuf>,
+    },
     /// Remove an emulator you added
     Remove { name: String },
 }

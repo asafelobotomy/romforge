@@ -202,11 +202,13 @@ fn mame_sets_are_matched_imported_whole_and_started_by_name() {
         path: vec![bin],
         core_dirs: vec![],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
     let spec = lib.launch_row(&env, &clone.id, Some("mame")).unwrap();
     assert_eq!(
         spec.args,
         [
+            "-nowindow".to_owned(),
             "-rompath".to_owned(),
             games.display().to_string(),
             "mslugj".to_owned()

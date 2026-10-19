@@ -46,7 +46,8 @@ pub async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
 #[tauri::command]
 pub async fn mame_dat(db: tauri::State<'_, Db>) -> Res<romforge_core::ImportedDat> {
     with(&db, move |lib| {
-        lib.mame_dat(&romforge_core::launch::Env::detect())
+        let env = lib.env()?;
+        lib.mame_dat(&env)
     })
     .await
 }
@@ -86,7 +87,10 @@ pub async fn scummvm_list(db: tauri::State<'_, Db>, file: Option<String>) -> Res
         let _ = lib.scummvm_titles_download();
         match file {
             Some(f) => lib.scummvm_import(&std::fs::read(f)?),
-            None => lib.scummvm_read(&romforge_core::launch::Env::detect()),
+            None => {
+                let env = lib.env()?;
+                lib.scummvm_read(&env)
+            }
         }
     })
     .await

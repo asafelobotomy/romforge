@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use romforge_core::{DatState, ImportedDat, Library, extdb, fetch, launch};
+use romforge_core::{DatState, ImportedDat, Library, extdb, fetch};
 
 use crate::args::Command;
 use crate::print::{print_dats, print_imported};
@@ -12,7 +12,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
     match command {
         Command::Dat(DatCommand::Mame) => {
             eprintln!("asking MAME for its list (-listxml); this takes a minute…");
-            print_imported(lib.mame_dat(&launch::Env::detect())?);
+            let env = lib.env()?;
+            print_imported(lib.mame_dat(&env)?);
         }
         Command::Dat(DatCommand::Import { files, system }) => {
             lib.batch(|lib| -> Result<()> {
@@ -146,7 +147,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 Err(e) => eprintln!("warning: libretro's ScummVM.dat: {e} (ScummVM's own names are used)"),
             }
             let r = match cmd {
-                ScummvmCommand::Read => lib.scummvm_read(&launch::Env::detect())?,
+                ScummvmCommand::Read => {
+                    let env = lib.env()?;
+                    lib.scummvm_read(&env)?
+                }
                 ScummvmCommand::Import { file } => {
                     let bytes =
                         std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;

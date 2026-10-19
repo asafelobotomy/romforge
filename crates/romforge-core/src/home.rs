@@ -9,6 +9,7 @@
 //!   Games/<System>/...        imported games (zips, CHDs and sidecars)
 //!   Media/<System>/<kind>/... art
 //!   Databases/                OpenVGDB, LaunchBox (downloaded by you)
+//!   Emulators/                emulators and cores (AppImages, `cores/`)
 //!   .romforge-staging/        scratch space for imports
 //!   .romforge-trash/<batch>/  originals until undone or emptied
 //! ```
@@ -25,7 +26,9 @@ use rusqlite::params;
 use crate::Error;
 use crate::organize::{move_file, rename_noreplace};
 
-use crate::layout::{DATABASES_DIR, DB_FILE, GAMES_DIR, HOME_DIR as DIR, HOME_MARKER as MARKER, MEDIA_DIR};
+use crate::layout::{
+    DATABASES_DIR, DB_FILE, EMULATORS_DIR, GAMES_DIR, HOME_DIR as DIR, HOME_MARKER as MARKER, MEDIA_DIR,
+};
 
 /// The layout version the marker file records.
 const LAYOUT: &str = "1";
@@ -112,6 +115,9 @@ impl Home {
     }
     pub fn media(&self) -> PathBuf {
         self.root.join(MEDIA_DIR)
+    }
+    pub fn emulators(&self) -> PathBuf {
+        self.root.join(EMULATORS_DIR)
     }
     pub fn databases(&self) -> PathBuf {
         self.root.join(DATABASES_DIR)

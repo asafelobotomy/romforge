@@ -83,7 +83,14 @@ pub(super) fn start(
                 return Ok(spec(
                     u.name.clone(),
                     &Runner::Program(p),
-                    fill(&u.args, &rom, &set),
+                    fill(
+                        &u.args,
+                        &Vars {
+                            rom: &rom,
+                            set: &set,
+                            core: None,
+                        },
+                    ),
                 ));
             }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
@@ -111,12 +118,12 @@ pub(super) fn start(
             };
             match env.core(core) {
                 Some(c) => {
-                    let args = vec![
-                        "-L".to_owned(),
-                        c.to_string_lossy().into_owned(),
-                        content.to_string_lossy().into_owned(),
-                    ];
-                    return Ok(spec(name, &ra, args));
+                    let vars = Vars {
+                        rom: &content,
+                        set: &set,
+                        core: Some(&c),
+                    };
+                    return Ok(spec(name, &ra, known_args(&RETROARCH, &vars)));
                 }
                 None => why_not.push(format!("{name}: core not installed")),
             }
@@ -136,7 +143,14 @@ pub(super) fn start(
             continue;
         }
         match env.known(e) {
-            Some(r) => return Ok(spec(e.name.to_owned(), &r, fill(e.args, &rom, &set))),
+            Some(r) => {
+                let vars = Vars {
+                    rom: &rom,
+                    set: &set,
+                    core: None,
+                };
+                return Ok(spec(e.name.to_owned(), &r, known_args(e, &vars)));
+            }
             None => why_not.push(format!("{} not installed", e.name)),
         }
     }

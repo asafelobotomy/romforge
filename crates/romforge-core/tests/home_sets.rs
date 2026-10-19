@@ -52,6 +52,7 @@ fn a_pc98_set_is_kept_loose_with_its_cmd() {
         path: vec![bin],
         core_dirs: vec![cores],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
     let spec = lib.launch_row(&env, &disk2.id, None).unwrap();
     assert_eq!(spec.rom, set.join("Ys (1987)(Nihon Falcom).cmd"));

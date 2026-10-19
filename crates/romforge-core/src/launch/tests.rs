@@ -11,12 +11,23 @@ fn known_emulators_cover_the_systems_table() {
             );
         }
     }
-    for e in KNOWN_EMULATORS {
+    for e in std::iter::once(&RETROARCH).chain(KNOWN_EMULATORS) {
         assert!(
             e.args.iter().any(|a| a.contains("{rom}") || a.contains("{set}")),
             "{}",
             e.name
         );
+        assert!(
+            e.config.is_empty() || e.config.iter().any(|a| a.contains("{config}")),
+            "{}: config flags without {{config}}",
+            e.name
+        );
+        assert!(
+            e.fullscreen.iter().all(|a| !a.contains('{')),
+            "{}: fullscreen flags take no file",
+            e.name
+        );
+        assert_eq!(known(&e.name.to_uppercase()), Some(e), "found by name");
     }
 }
 
@@ -41,8 +52,71 @@ fn flatpak_commands() {
         (PathBuf::from("/bin/x"), vec!["r".to_owned()]),
         "a plain program needs none"
     );
+    let vars = Vars {
+        rom: Path::new("/r/a b.iso"),
+        set: "a b",
+        core: Some(Path::new("/c/x_libretro.so")),
+    };
+    assert_eq!(fill(&["-e", "{rom}"], &vars), ["-e", "/r/a b.iso"]);
     assert_eq!(
-        fill(&["-e", "{rom}"], Path::new("/r/a b.iso"), "a b"),
-        ["-e", "/r/a b.iso"]
+        known_args(&RETROARCH, &vars),
+        ["-f", "-L", "/c/x_libretro.so", "/r/a b.iso"],
+        "fullscreen first"
     );
+}
+
+fn program(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn find_rules_in_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let t = tmp.path();
+    let duck = known("duckstation").unwrap();
+    let mut env = Env::default().with_emulators_dir(&t.join("RomForge/Emulators"));
+    env.emulator_dirs.insert(0, t.join("Applications"));
+    assert_eq!(env.known(duck), None);
+
+    // An AppImage in RomForge/Emulators, any case; the newest name wins.
+    program(&t.join("RomForge/Emulators/DuckStation-1.AppImage"));
+    program(&t.join("RomForge/Emulators/duckstation-2.appimage"));
+    std::fs::write(t.join("RomForge/Emulators/duckstation-3.AppImage"), "").unwrap();
+    let image2 = Runner::Program(t.join("RomForge/Emulators/duckstation-2.appimage"));
+    assert_eq!(env.known(duck), Some(image2), "not executable: skipped");
+    // ~/Applications comes first.
+    program(&t.join("Applications/DuckStation-x64.AppImage"));
+    let apps = Runner::Program(t.join("Applications/DuckStation-x64.AppImage"));
+    assert_eq!(env.known(duck), Some(apps));
+    // A Flatpak before either.
+    env.flatpak_dirs = vec![t.join("flatpak")];
+    std::fs::create_dir_all(t.join("flatpak/org.duckstation.DuckStation")).unwrap();
+    assert_eq!(
+        env.known(duck),
+        Some(Runner::Flatpak("org.duckstation.DuckStation".into()))
+    );
+    // PATH before that.
+    program(&t.join("bin/duckstation-qt"));
+    env.path = vec![t.join("bin")];
+    assert_eq!(
+        env.known(duck),
+        Some(Runner::Program(t.join("bin/duckstation-qt")))
+    );
+    // And the path set in Settings first of all.
+    program(&t.join("mine/ds"));
+    env.user_paths.insert("duckstation".into(), t.join("mine/ds"));
+    assert_eq!(env.known(duck), Some(Runner::Program(t.join("mine/ds"))));
+
+    // MAME's machine entries look for MAME's AppImage.
+    program(&t.join("Applications/MAME-0.289.AppImage"));
+    let fm7 = known("mame-fm7").unwrap();
+    assert_eq!(
+        env.known(fm7),
+        Some(Runner::Program(t.join("Applications/MAME-0.289.AppImage")))
+    );
+    // RomForge's cores come before the system's.
+    assert_eq!(env.core_dirs[0], t.join("RomForge/Emulators/cores"));
 }

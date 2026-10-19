@@ -19,6 +19,8 @@ pub const HOME_MARKER: &str = ".romforge";
 pub const GAMES_DIR: &str = "Games";
 pub const MEDIA_DIR: &str = "Media";
 pub const DATABASES_DIR: &str = "Databases";
+/// Emulators and cores you fetched or put there (milestone 18).
+pub const EMULATORS_DIR: &str = "Emulators";
 
 /// Without a RomForge folder: downloaded databases next to the library
 /// database, and art in romforge's cache folder.

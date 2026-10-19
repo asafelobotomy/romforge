@@ -12,6 +12,7 @@
 //! never extracts. For a loose disc set the sheet (`.cue`, `.gdi`, `.m3u`)
 //! is started, not a track.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
@@ -24,137 +25,10 @@ mod plan;
 pub use plan::*;
 mod start;
 use start::*;
+mod table;
+pub use table::*;
 mod tools;
 pub use tools::*;
-
-/// A standalone emulator romforge knows how to start.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KnownEmulator {
-    pub name: &'static str,
-    /// Executable names to look for on `PATH`.
-    pub programs: &'static [&'static str],
-    pub flatpak: Option<&'static str>,
-    /// Arguments; `{rom}` is the file.
-    pub args: &'static [&'static str],
-    /// Opens a ROM inside a zip/7z itself.
-    pub archives: bool,
-}
-
-const fn emu(
-    name: &'static str,
-    programs: &'static [&'static str],
-    flatpak: &'static str,
-    args: &'static [&'static str],
-    archives: bool,
-) -> KnownEmulator {
-    KnownEmulator {
-        name,
-        programs,
-        flatpak: Some(flatpak),
-        args,
-        archives,
-    }
-}
-
-pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
-    emu(
-        "duckstation",
-        &["duckstation-qt", "duckstation"],
-        "org.duckstation.DuckStation",
-        &["{rom}"],
-        false,
-    ),
-    emu(
-        "pcsx2",
-        &["pcsx2-qt", "pcsx2"],
-        "net.pcsx2.PCSX2",
-        &["{rom}"],
-        false,
-    ),
-    emu(
-        "dolphin",
-        &["dolphin-emu"],
-        "org.DolphinEmu.dolphin-emu",
-        &["-b", "-e", "{rom}"],
-        false,
-    ),
-    emu(
-        "ppsspp",
-        &["PPSSPPSDL", "ppsspp"],
-        "org.ppsspp.PPSSPP",
-        &["{rom}"],
-        false,
-    ),
-    emu("flycast", &["flycast"], "org.flycast.Flycast", &["{rom}"], false),
-    emu("mgba", &["mgba-qt", "mgba"], "io.mgba.mGBA", &["{rom}"], true),
-    emu("melonds", &["melonDS"], "net.kuribo64.melonDS", &["{rom}"], true),
-    emu("xemu", &["xemu"], "app.xemu.xemu", &["-dvd_path", "{rom}"], false),
-    emu(
-        "rpcs3",
-        &["rpcs3"],
-        "net.rpcs3.RPCS3",
-        &["--no-gui", "{rom}"],
-        false,
-    ),
-    emu("mednafen", &["mednafen"], "com.github.mednafen", &["{rom}"], true),
-    emu(
-        "cemu",
-        &["cemu", "Cemu"],
-        "info.cemu.Cemu",
-        &["-g", "{rom}"],
-        false,
-    ),
-    // A folder is mounted as C:, a program run from its folder; images
-    // and archives need the core.
-    emu(
-        "dosbox-staging",
-        &["dosbox-staging", "dosbox"],
-        "io.github.dosbox-staging",
-        &["{rom}"],
-        false,
-    ),
-    emu(
-        "dosbox-x",
-        &["dosbox-x"],
-        "com.dosbox_x.DOSBox-X",
-        &["{rom}"],
-        false,
-    ),
-    // ScummVM finds the game in the folder itself.
-    emu(
-        "scummvm",
-        &["scummvm"],
-        "org.scummvm.ScummVM",
-        &["--path={rom}", "--auto-detect"],
-        false,
-    ),
-    // Arcade sets by name, from the folder holding them (and their parents
-    // and BIOS sets).
-    emu(
-        "mame",
-        &["mame"],
-        "org.mamedev.MAME",
-        &["-rompath", "{dir}", "{set}"],
-        true,
-    ),
-    // MAME needs the machine's own ROMs in its rompath.
-    emu(
-        "mame-fm7",
-        &["mame"],
-        "org.mamedev.MAME",
-        &["fm7", "-flop1", "{rom}"],
-        false,
-    ),
-    emu(
-        "mame-fmtowns",
-        &["mame"],
-        "org.mamedev.MAME",
-        &["fmtowns", "-cdrom", "{rom}"],
-        false,
-    ),
-];
-
-pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
 
 /// How a program is started.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -195,12 +69,21 @@ pub struct EmulatorStatus {
 }
 
 /// Where to look for installed emulators. [`Env::detect`] reads the real
-/// environment; tests point it elsewhere.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// environment (`Library::env` adds the RomForge folder and Settings);
+/// tests point it elsewhere.
+///
+/// An emulator is found, in this order: at the path set for it in
+/// Settings, on `PATH`, as a Flatpak, then in `emulator_dirs` as one of
+/// its programs or an AppImage (`<name>*.AppImage`, any case).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Env {
     pub path: Vec<PathBuf>,
     pub core_dirs: Vec<PathBuf>,
     pub flatpak_dirs: Vec<PathBuf>,
+    /// `~/Applications`, then `RomForge/Emulators`.
+    pub emulator_dirs: Vec<PathBuf>,
+    /// Settings' path per emulator name.
+    pub user_paths: BTreeMap<String, PathBuf>,
 }
 
 impl Env {
@@ -230,7 +113,16 @@ impl Env {
             path,
             core_dirs,
             flatpak_dirs,
+            emulator_dirs: home.iter().map(|h| h.join("Applications")).collect(),
+            user_paths: BTreeMap::new(),
         }
+    }
+
+    /// Also look in a RomForge folder's `Emulators/` (and its `cores/`).
+    pub fn with_emulators_dir(mut self, dir: &Path) -> Self {
+        self.core_dirs.insert(0, dir.join("cores"));
+        self.emulator_dirs.push(dir.to_path_buf());
+        self
     }
 
     fn which(&self, program: &str) -> Option<PathBuf> {
@@ -252,9 +144,7 @@ impl Env {
     }
 
     fn retroarch(&self) -> Option<Runner> {
-        self.which("retroarch")
-            .map(Runner::Program)
-            .or_else(|| self.flatpak(RETROARCH_FLATPAK).map(Runner::Flatpak))
+        self.known(&RETROARCH)
     }
 
     fn core(&self, name: &str) -> Option<PathBuf> {
@@ -263,11 +153,34 @@ impl Env {
     }
 
     fn known(&self, e: &KnownEmulator) -> Option<Runner> {
-        e.programs
-            .iter()
-            .find_map(|p| self.which(p))
+        let user = self.user_paths.get(e.name).filter(|p| is_executable(p));
+        user.cloned()
+            .or_else(|| e.programs.iter().find_map(|p| self.which(p)))
             .map(Runner::Program)
             .or_else(|| e.flatpak.and_then(|id| self.flatpak(id)).map(Runner::Flatpak))
+            .or_else(|| self.in_emulator_dirs(e).map(Runner::Program))
+    }
+
+    /// One of `e`'s programs, else its newest-named AppImage, in the first
+    /// emulator folder that has either.
+    fn in_emulator_dirs(&self, e: &KnownEmulator) -> Option<PathBuf> {
+        let prefix = e.appimage.unwrap_or(e.name).to_ascii_lowercase();
+        self.emulator_dirs.iter().find_map(|d| {
+            if let Some(p) = e.programs.iter().map(|p| d.join(p)).find(|p| is_executable(p)) {
+                return Some(p);
+            }
+            let mut images: Vec<PathBuf> = std::fs::read_dir(d)
+                .ok()?
+                .filter_map(|f| f.ok().map(|f| f.path()))
+                .filter(|p| {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase());
+                    name.is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".appimage"))
+                        && is_executable(p)
+                })
+                .collect();
+            images.sort();
+            images.pop()
+        })
     }
 }
 
@@ -302,18 +215,37 @@ fn command(runner: &Runner, args: Vec<String>, grant: Option<&Path>) -> (PathBuf
     }
 }
 
+/// What an emulator's arguments are filled with.
+pub(crate) struct Vars<'a> {
+    pub rom: &'a Path,
+    /// An arcade game's DAT name, else the file's stem.
+    pub set: &'a str,
+    pub core: Option<&'a Path>,
+}
+
 /// An emulator's arguments for a game: `{rom}` the file, `{dir}` its
-/// folder, `{set}` the set's name (an arcade game's DAT name, else the
-/// file's stem).
-fn fill(args: &[impl AsRef<str>], rom: &Path, set: &str) -> Vec<String> {
-    let dir = rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
+/// folder, `{set}` the set's name, `{core}` the RetroArch core.
+fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
+    let dir = v.rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
+    let core = v.core.map(|c| c.to_string_lossy()).unwrap_or_default();
     args.iter()
         .map(|a| {
             a.as_ref()
-                .replace("{rom}", &rom.to_string_lossy())
+                .replace("{rom}", &v.rom.to_string_lossy())
                 .replace("{dir}", &dir)
-                .replace("{set}", set)
+                .replace("{set}", v.set)
+                .replace("{core}", &core)
         })
+        .collect()
+}
+
+/// A known emulator's whole command line: its fullscreen flags, then its
+/// arguments for the game.
+fn known_args(e: &KnownEmulator, v: &Vars) -> Vec<String> {
+    e.fullscreen
+        .iter()
+        .map(|f| (*f).to_owned())
+        .chain(fill(e.args, v))
         .collect()
 }
 

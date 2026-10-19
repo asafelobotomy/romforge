@@ -35,6 +35,7 @@ fn fake() -> Fake {
         path: vec![root.join("bin")],
         core_dirs: vec![root.join("cores")],
         flatpak_dirs: vec![root.join("flatpak")],
+        ..Default::default()
     };
     Fake { _dir: dir, root, env }
 }
@@ -76,6 +77,7 @@ fn retroarch_gets_the_archive_and_the_best_installed_core() {
     assert_eq!(
         spec.args,
         [
+            "-f".to_owned(),
             "-L".to_owned(),
             vbam.display().to_string(),
             archive.display().to_string()
@@ -85,7 +87,7 @@ fn retroarch_gets_the_archive_and_the_best_installed_core() {
     let mgba = core(&f, "mgba");
     let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
     assert_eq!(spec.emulator, "retroarch:mgba", "the system's first core wins");
-    assert_eq!(spec.args[1], mgba.display().to_string());
+    assert_eq!(spec.args[2], mgba.display().to_string());
     let spec = lib
         .launch_plan(&f.env, "Test GBA", Some("retroarch:vbam"))
         .unwrap();

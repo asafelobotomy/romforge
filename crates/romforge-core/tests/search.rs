@@ -56,6 +56,7 @@ fn queue_suggest_identify_forget() {
         path: vec![],
         core_dirs: vec![],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
     let err = lib
         .launch_plan(&nothing, "Test GB Deluxe (Hack)", None)

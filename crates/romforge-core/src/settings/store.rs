@@ -32,8 +32,20 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
                     .collect()
             })
             .unwrap_or_default(),
+        emulator_paths: {
+            let mut stmt = conn.prepare("SELECT key, value FROM settings WHERE key LIKE ?1")?;
+            let rows = stmt.query_map([format!("{EMULATOR_PATH}%")], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            rows.filter_map(|r| r.ok())
+                .filter_map(|(k, v)| Some((k.strip_prefix(EMULATOR_PATH)?.to_owned(), PathBuf::from(v))))
+                .collect()
+        },
     })
 }
+
+/// Settings keys of [`Settings::emulator_paths`]: this and the name.
+const EMULATOR_PATH: &str = "emulator_path:";
 
 /// Validate and store. Returns what was stored (absolute paths).
 pub fn save(conn: &mut Connection, s: &Settings) -> Result<Settings, Error> {
@@ -92,6 +104,13 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 Some(v) => put.execute(params![key, v])?,
                 None => del.execute([key])?,
             };
+        }
+        tx.execute(
+            "DELETE FROM settings WHERE key LIKE ?1",
+            [format!("{EMULATOR_PATH}%")],
+        )?;
+        for (name, path) in &s.emulator_paths {
+            put.execute(params![format!("{EMULATOR_PATH}{name}"), path.to_string_lossy()])?;
         }
     }
     tx.commit()?;

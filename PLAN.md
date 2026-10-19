@@ -941,6 +941,25 @@ ES-DE's `es_find_rules.xml` and `es_systems.xml` are MIT and can be adapted
 with attribution. Playnite's `emulator.yaml` definitions are MIT too, but
 Windows-oriented.
 
+*(Built 2026-10-19, first part.)* `launch/table.rs` is the one table,
+RetroArch included (`RETROARCH`, `known(name)`). Each entry has its
+game arguments (`{rom}`, `{dir}`, `{set}`, `{core}`), `fullscreen`
+flags put before them on every start, `config` flags for a romforge
+config folder (`{config}`, used from 1.3), and an AppImage prefix.
+Flags are filled in only once checked; so far on the dev machine's
+installs: RetroArch 1.22.2 (`-f`, `--config`), ScummVM 2026.3.0 (`-f`,
+`--config=`), MAME 0.289 (`-nowindow`, `-inipath`), DOSBox Staging 0.83
+(`--fullscreen`, `--noprimaryconf --conf`), DOSBox-X 2026.10.01
+(`-fullscreen`, `-conf`). Find order: the path set in Settings
+(`emulator_paths`, CLI `emulator path NAME [PROGRAM]`), `PATH`,
+Flatpak, then `~/Applications` and `RomForge/Emulators/` (a program by
+name or `<name>*.AppImage`, any case, newest name first);
+`RomForge/Emulators/cores/` is searched before the system's cores.
+`Library::env()` builds this for the CLI and the app.
+Not yet: flags for the console emulators (to check against their
+source), the per-emulator quit method (with 1.6), and the path setting
+in the app (the Emulators page, milestone 21).
+
 #### 1.2 RomForge folder grows
 
 ```
@@ -958,12 +977,15 @@ Syncthing, outside romforge).
 
 #### 1.3 Owned configs, written as patches
 
-romforge writes only the keys it manages (paths, fullscreen, hotkeys,
-RetroAchievements login, menu off) and records what it wrote, so drift after
-an emulator update can be seen and re-applied. Other keys are the user's
-and are never touched. Config schemas are versioned per emulator, with
-migrations in the core (RetroDECK's `post_update` idea). "Reset to
-romforge's settings" per emulator.
+*Changed 2026-10-19 (owner's choice):* romforge runs every emulator from
+its own copy of the config in `RomForge/Emulators/config/<emulator>/`
+and controls that copy completely; the user changes any setting from
+inside romforge (milestone 21). The emulator's own config (the one it
+uses when started outside romforge) is never read or written. romforge
+records what it wrote, so drift after an emulator update can be seen and
+re-applied. Config schemas are versioned per emulator, with migrations in
+the core (RetroDECK's `post_update` idea). "Reset to romforge's
+settings" per emulator.
 
 - **RetroArch:** `retroarch -f -L <core> --config <RomForge>/Emulators/config/retroarch/retroarch.cfg --appendconfig <per-game.cfg> <rom>`.
   The config sets `savefile_directory`, `savestate_directory`,
@@ -1006,11 +1028,10 @@ Like rule 10's "the user downloads it": never shipped, fetched on request.
 
 #### 1.5 BIOS check
 
-Per system: required, optional, present, wrong hash, by MD5 against
-libretro-database's `System.dat` (CC BY-SA 4.0; downloaded like the DATs,
-or shipped with attribution as data only). Reuse the existing hashing.
-Name the exact file and folder that is missing. RetroDECK's `bios.json` is
-GPL-3.0: not used.
+*Replaced 2026-10-19 by milestone 20* (the BIOS page): RetroBIOS's
+metadata covers `System.dat`'s list (its RetroArch platform is built from
+it) plus every standalone emulator, and files go to `RomForge/Bios/`.
+RetroDECK's `bios.json` is GPL-3.0: not used.
 
 #### 1.6 Seamless start and exit
 
@@ -1098,6 +1119,14 @@ Licensing: romforge never ships cores or emulators. The user downloads each
 one, so an MIT program loading a GPL core at runtime places no obligation
 on romforge's distribution. Non-commercial cores carry their warning as in
 1.4.
+
+### Order with milestones 20–22 (decided 2026-10-19)
+
+Stage 1 and milestones 20–22 are one piece of work, built in this order:
+1.1 the emulator table, 1.2 the folders, 1.3 owned configs with
+milestone 21's settings (RetroArch first), milestone 20's BIOS page
+(replacing 1.5), 1.4 getting emulators, 1.6 start and exit, then each
+standalone emulator's settings, and milestone 22 (Switch).
 
 ### Not planned
 
@@ -1416,9 +1445,9 @@ In this order:
      complete, what is still missing, what was skipped. Nothing written
      until the user confirms (rule 6).
    - **Apply:** copied, never moved (the dropped pack stays as it was),
-     into `RomForge/Firmware/`:
+     into `RomForge/Bios/` (milestone 18's folder):
      ```
-     RomForge/Firmware/
+     RomForge/Bios/
        RetroArch/            laid out exactly as RetroArch's system folder
          scph5501.bin
          dc/dc_boot.bin
@@ -1428,15 +1457,15 @@ In this order:
      One file needed under several names or folders is stored once and
      hard-linked (same drive). Each new file is re-hashed, nothing is
      overwritten, the batch is journaled, and "Undo" removes it.
-4. *Point the emulators at it.* Each emulator's BIOS path is set in its
-   own config through milestone 21, so it works when the emulator is
-   started outside romforge too: RetroArch's `system_directory`,
-   DuckStation's BIOS search folder, PCSX2's BIOS folder, and so on. For
-   an emulator with no BIOS-path setting, symlinks in its own BIOS folder
-   point into `RomForge/Firmware/` (planned, journaled, never replacing a
-   file; undo removes only romforge's links). Windows needs Developer Mode
-   for symlinks, so there the files are copied instead. A Flatpak that
-   can't read `RomForge/` is reported with the access it needs.
+4. *Point the emulators at it.* Each emulator's BIOS path is set in
+   romforge's own copy of its config (milestone 18, 1.3): RetroArch's
+   `system_directory`, DuckStation's BIOS search folder, PCSX2's BIOS
+   folder, and so on. An emulator with no BIOS-path setting keeps BIOS
+   files inside its data folder, which romforge owns too
+   (`RomForge/Emulators/config/<emulator>/`), so they are hard-linked
+   there from `RomForge/Bios/`. Nothing is written outside RomForge. A
+   Flatpak that can't read `RomForge/` is reported with the access it
+   needs.
 5. *Launch.* Before starting a core, check its required files. If they're
    missing, try the next core in the `cores` column whose files are
    complete (or that needs none, per its profile: an HLE BIOS), else say
@@ -1457,23 +1486,27 @@ emulators, whose BIOS folders come from their profiles in
 
 ## Emulator settings (milestone 21; decided 2026-10-19, not built)
 
-romforge has full control of each emulator's config, so users set up
-every emulator inside romforge instead of in each emulator's own menus.
-Milestone 20 uses it to set BIOS paths.
+romforge has full control of its own copy of each emulator's config
+(milestone 18, 1.3: `RomForge/Emulators/config/<emulator>/`), so users
+set up every emulator inside romforge instead of in each emulator's own
+menus. The emulator's own config, used when it is started outside
+romforge, is never touched. Milestone 20 uses this to set BIOS paths.
 
-- *One table of emulators' config files* (like `headers.rs`): where each
-  config lives (native and Flatpak paths, per OS), its format (RetroArch
+- *One table of emulators' config files* (like `headers.rs`): how to
+  point the emulator at romforge's config folder (a flag, a portable
+  marker, a Flatpak data path), its format (RetroArch
   `key = "value"` cfg, INI for DuckStation / PCSX2 / Dolphin, ...) and
   the settings romforge offers: BIOS and save folders, video (renderer,
   resolution scale, fullscreen), input, per-core options
   (`retroarch-core-options.cfg`), each with its type and allowed values.
 - *An Emulators page* (or a tab per emulator in Settings) to view and
   change them; CLI `emulator config <id> [get|set KEY VALUE]`.
-- *Writing safely:* the file is parsed and rewritten keeping the user's
-  other keys, comments and order; the write is atomic (temp file +
-  rename); the original is backed up once into `RomForge/` before
-  romforge first touches it; every change is journaled with its old
-  value, so one change or a whole batch can be undone. Not written while
+- *Writing safely:* a new copy starts from the emulator's defaults
+  (or, if the user asks, from a one-time read of their existing config).
+  The file is parsed and rewritten keeping keys and comments romforge
+  doesn't know, in order; the write is atomic (temp file + rename);
+  every change is journaled with its old value, so one change or a whole
+  batch can be undone. Not written while
   the emulator is running (it would overwrite on exit): romforge waits or
   says so.
 - *Per game* where the emulator supports it (RetroArch per-game
@@ -1492,9 +1525,11 @@ Milestone 20 uses it to set BIOS paths.
   emulator no longer developed is still supported when it was widely
   used and the community still has its builds (yuzu, Ryujinx, Citra,
   ...). Its entries are pinned to its last release, which then never
-  changes. romforge only finds it where the user installed it (on
-  `PATH`, Flatpak, or a path set in Settings), as with every emulator: it
-  never downloads, links or ships emulators.
+  changes. romforge never downloads it (its official downloads are gone,
+  and mirrors can't be trusted): it is only found where the user
+  installed it (on `PATH`, Flatpak, AppImage, or a path set in
+  Settings). Current emulators can be fetched from their own projects
+  (milestone 18, 1.4); romforge never ships any.
 - Each config format and key is checked against the emulator's source
   (pinned to a release), never written from memory.
 
@@ -1523,19 +1558,22 @@ through the BIOS page (milestone 20).
   copied, journaled and undoable as in milestone 20. The limits:
   romforge never downloads, links, ships or derives them, never points
   to a site that hosts them, and never decrypts anything (decryption is
-  what Nintendo's case against yuzu was about). So recognition reads
-  only what is plain:
+  what Nintendo's case against yuzu was about), except to compress with
+  the user's own keys (milestone 23, owner's choice 2026-10-19). So
+  recognition reads only what is plain:
   - **Keys** (`prod.keys`, `title.keys`): by format, lines of
     `name = hex` with the known key names. There is no hash list for
     them (they are per console in part, and romforge keeps no key
     values or key hashes), so they show as "Switch keys, recognized by
-    format", not "accepted". Placed in `RomForge/Firmware/switch/keys/`
-    and in each emulator's keys folder (yuzu family: `keys/`; Ryujinx
-    family: `system/`), or the emulator's config pointed there.
+    format", not "accepted". Placed in `RomForge/Bios/switch/keys/`
+    and hard-linked into each emulator's keys folder inside its
+    romforge-owned data folder (yuzu family: `keys/`; Ryujinx family:
+    `system/`).
   - **Firmware**: a folder or zip of `.nca` files with 32-hex names,
     recognized by that shape (an NCA's contents are encrypted).
-    Kept in `RomForge/Firmware/switch/firmware/` and placed as each
-    emulator stores installed firmware in its NAND (yuzu family: the
+    Kept in `RomForge/Bios/switch/firmware/` and placed as each
+    emulator stores installed firmware in its NAND, inside its
+    romforge-owned data folder (yuzu family: the
     files in `nand/system/Contents/registered/`; Ryujinx family:
     `bis/system/Contents/registered/<name>.nca/00`), both to confirm
     against their source. That is copying files, as their own "Install
@@ -1550,6 +1588,139 @@ through the BIOS page (milestone 20).
 - *Launch:* the fork's command line for one game, fullscreen; a game
   folder with updates and DLC is left to the fork (each installs them
   into its NAND).
+
+## Native compression (milestone 23; decided 2026-10-19, not built)
+
+Every large format whose emulators load a compressed form gets a writer
+in the core, like CHD today (the `chd` crate's encoder): no chdman,
+DolphinTool, nsz or other program, nothing for the user to download
+(rule 7). A new romforge-only format is not made: emulators couldn't
+load it, and each system's own format already compresses best. The
+same guardrails as CHD: stream to stream, the new file read back and
+re-hashed against the DAT before the original goes to the trash,
+journaled for undo, and offered by Convert and by Cleanup for the
+platforms whose emulators read it (as `chd` is today).
+
+Each writer is written from its published spec, never ported from GPL
+code (rule 9: Dolphin and Azahar are GPL); MIT-licensed reference code
+(ZArchive, nsz) may be read and ported. Compression: the `zstd` crate
+(MIT/Apache).
+
+**Decryption only to compress** (owner's choice 2026-10-19; milestone
+22's never-decrypt rule otherwise holds). Some formats only compress
+well, or only exist, after decryption: Wii partitions in RVZ, NSZ /
+XCZ, and WUD / WUX to WUA. For those three, and nothing else:
+- keys come only from the user, dropped on the BIOS page (milestone 20);
+  romforge never ships, downloads, links or derives a key, and keeps
+  no key values or hashes in its code or data;
+- a key is right when the data it decrypts passes the format's own
+  check (Wii: the partition's hash tree; Switch: the NCA header's
+  magic; Wii U: the TMD's content hashes); otherwise the game is
+  reported and left alone, never written half done;
+- decrypted bytes exist only in memory and inside the new compressed
+  file, never as a loose decrypted file on disk;
+- scanning, identification, launch and the BIOS page stay without
+  decryption: a game that isn't converted is never decrypted;
+- without the keys, Convert still offers what needs none, and says
+  which key a game is waiting for.
+
+In this order:
+
+1. **RVZ** (GameCube, Wii), from Dolphin's `docs/WiaAndRvz.md`. Header
+   with the ISO size and the disc's first 0x80 bytes (already read, 12.9),
+   then groups compressed with zstd, and RVZ's packing of Nintendo's
+   junk padding (a PRNG the reader re-creates, so it costs almost
+   nothing). GameCube discs are unencrypted: the whole disc goes in
+   raw data entries, no key needed. Wii partitions are encrypted; they
+   are stored as Dolphin does, decrypted with hashes stripped
+   (`wia_part_t`), using the Wii common key the user supplies. Without
+   it, Wii discs aren't offered (raw entries would barely shrink).
+   Convert and Cleanup then stop skipping GameCube and Wii.
+   The re-hash reads the new RVZ back in full, re-creating hashes and
+   re-encrypting Wii partitions, and hashes the ISO it gives against the
+   DAT. The same reader lets the scan verify RVZs the user already has
+   (today *Likely: compressed image*, 12.9); a Wii one needs the common
+   key, since reading it back means re-encrypting, not decrypting.
+2. **NSZ / XCZ** (Switch, after milestone 22), from nsz's
+   `docs/formats.md` (MIT). An NCZ keeps the NCA's first 0x4000 bytes,
+   then a table of sections (offset, size, crypto type, key, counter)
+   and a zstd stream of the *decrypted* sections. Writing it decrypts
+   with the user's `prod.keys` (header key, key area keys) and the
+   title key from the game's ticket or `title.keys`. The re-hash
+   re-encrypts each NCZ back into its NCA and checks it against the
+   original NCA's hash (an NCA's name is the start of its SHA-256), so a
+   converted game is provably byte-identical. An XCZ is an XCI whose
+   NCAs became NCZs (the XCI's HFS0 partitions rebuilt around them).
+   AES-CTR and AES-XTS from the RustCrypto crates (MIT/Apache).
+3. **Z3DS** (3DS: `.zcci`, `.zcia`, `.zcxi`, `.z3dsx`), with milestone 24.
+   Azahar's format (added in Azahar 2123): the ROM in seekable zstd
+   (frames plus a seek table in a final skippable frame, zstd's
+   `contrib/seekable_format`). Its header is read from Azahar's source,
+   pinned to a release. It compresses the file's bytes as they are, so
+   nothing is decrypted; encrypted dumps shrink little, decrypted ones
+   by about a third to a half.
+4. **WUA** (Wii U), with milestone 25. Cemu's ZArchive (MIT-0): zstd in
+   64 KiB blocks with random access, one folder per title named
+   `<16-hex title ID>_v<version>`, holding game, update and DLC
+   together. It stores decrypted files. From a folder that is already
+   decrypted (`code/`, `content/`, `meta/`) it needs no key. From a
+   WUD / WUX it decrypts the game partition with the disc key from the
+   user's Cemu `keys.txt` (and the Wii U common key, also the user's),
+   checks each content against the TMD's hash, and packs the files.
+   The re-hash compares each file in the new WUA with the same file
+   read from the source. A WUA can't be turned back into the WUD, so
+   undo is the original kept in the trash, and the plan says so.
+
+Not planned: PS3 and Xbox 360 (RPCS3 and Xenia load no compressed
+image), original Xbox (xiso trims, it doesn't compress), CSO / ZSO
+writing (CHD covers PSP and PS2).
+
+## Nintendo 3DS (milestone 24; decided 2026-10-19, not built)
+
+3DS is a system already (`3ds`, `cia`, `cci`, `cxi`; No-Intro DATs,
+"Nintendo 3DS" and "New Nintendo 3DS") but has no emulator, no ID
+reading, and no compressed format. It gets:
+
+- *Emulator.* Azahar (Citra's successor, current releases) through the
+  launch and config tables and milestone 21's rule; Citra's last release
+  under the discontinued exception. Command line, config folder and
+  key file location read from Azahar's source, pinned to a release.
+- *Formats.* Add `3dsx` and the Z3DS extensions (`zcci`, `zcia`,
+  `zcxi`, `z3dsx`) to the systems table; a Z3DS file is hashed as the
+  ROM inside it (streaming zstd), so it matches the DAT like a zip
+  member.
+- *ID reading* (`ident.rs`), from plain header fields only: a CCI's
+  NCSD header (magic `NCSD` at 0x100) and the NCCH partition's product
+  code (`CTR-P-XXXX`) and program ID. Offsets checked against 3dbrew
+  before building. CIA: the TMD's title ID. The product code joins
+  No-Intro serials like other cartridges.
+- *BIOS page* (milestone 20): Azahar's system files and `aes_keys.txt`
+  recognized by format only, placed like Switch keys; never
+  downloaded, linked or derived.
+- *Compression:* Z3DS (milestone 23, 3).
+
+## Wii U (milestone 25; decided 2026-10-19, not built)
+
+Wii U is a system already (`wud`, `wux`, `rpx`, Cemu in the launch
+table, no DATs). It gets:
+
+- *Emulator.* Cemu through the config table and milestone 21's rule;
+  its command line (`-g <file> -f`, unverified) and portable folder read
+  from its source, pinned to a release.
+- *Formats.* Add `wua` to the systems table, and decrypted game folders
+  (`code/`, `content/`, `meta/`) as folder games like DOS ones. A WUA is
+  read with ZArchive's layout: its title folders give the title ID and
+  version without decompressing everything.
+- *Identification.* No free Wii U DAT known (Redump's: to check). ID
+  reading from plain fields: the WUD's product code (`WUP-P-XXXX`) at the
+  start of the disc, a WUX's header (magic `WUX0`), and `meta/meta.xml`
+  in folders and WUAs (title ID, product code, names). Offsets checked
+  before building. Search and "identified by you" as for any system.
+- *BIOS page:* Cemu's `keys.txt` (disc keys) and the Wii U common key
+  recognized by format only, placed in Cemu's romforge-owned folder;
+  never downloaded or derived. Used by romforge itself only to compress.
+- *Compression:* WUA from decrypted folders, and from WUD / WUX with
+  the user's keys (milestone 23, 4).
 
 ## Code review follow-ups (2026-10-18)
 

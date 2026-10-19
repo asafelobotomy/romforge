@@ -1,6 +1,5 @@
 //! The library list, a game's details, and starting a game.
 
-use romforge_core::launch::Env;
 use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{DatGame, Summary};
 
@@ -64,7 +63,7 @@ pub async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail
 #[tauri::command]
 /// Start one library row (exactly its files).
 pub async fn launch(db: tauri::State<'_, Db>, row_id: String) -> Res<String> {
-    let spec = read(&db, move |lib| lib.launch_row(&Env::detect(), &row_id, None)).await?;
+    let spec = read(&db, move |lib| lib.launch_row(&lib.env()?, &row_id, None)).await?;
     blocking(move || {
         romforge_core::launch::spawn(&spec)?;
         Ok(format!("{} started with {}", spec.game, spec.emulator))

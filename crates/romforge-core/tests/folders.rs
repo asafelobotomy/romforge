@@ -147,6 +147,7 @@ fn a_dos_game_is_its_folder() {
         path: vec![bin.clone()],
         core_dirs: vec![cores.clone()],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
     let err = lib.launch_row(&env, &keen.id, None).unwrap_err().to_string();
     assert!(err.contains("dosbox-staging can't open archives"), "{err}");
@@ -264,12 +265,17 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
         path: vec![bin],
         core_dirs: vec![],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
     let spec = lib.launch_row(&env, &sky.id, None).unwrap();
     assert_eq!(spec.emulator, "scummvm");
     assert_eq!(
         spec.args,
-        [format!("--path={}", target.display()), "--auto-detect".to_owned()]
+        [
+            "-f".to_owned(),
+            format!("--path={}", target.display()),
+            "--auto-detect".to_owned()
+        ]
     );
     // By title too (the CLI's `launch`), with the folder, not its program.
     let by_name = lib.launch_plan(&env, "Steel Sky", None).unwrap();
@@ -318,6 +324,7 @@ fn scummvm_names_what_its_list_leaves_out() {
         path: vec![bin],
         core_dirs: vec![],
         flatpak_dirs: vec![],
+        ..Default::default()
     };
 
     let mut lib = Library::open(home.db()).unwrap();

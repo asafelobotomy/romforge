@@ -140,3 +140,34 @@ fn folders_must_make_sense_together() {
         .is_ok()
     );
 }
+
+#[test]
+fn emulator_paths_are_checked_and_kept() {
+    let t = tempfile::tempdir().unwrap();
+    let ds = t.path().join("DuckStation.AppImage");
+    std::fs::write(&ds, "").unwrap();
+    let mut conn = crate::db::open_in_memory().unwrap();
+    let mut s = Settings::default();
+    s.emulator_paths.insert("DuckStation".into(), ds.clone());
+    s.emulator_paths.insert("mame".into(), PathBuf::new());
+    let saved = save(&mut conn, &s).unwrap();
+    let want = BTreeMap::from([("duckstation".to_owned(), std::fs::canonicalize(&ds).unwrap())]);
+    assert_eq!(
+        saved.emulator_paths, want,
+        "named as the table names it; empty dropped"
+    );
+    assert_eq!(load(&conn).unwrap().emulator_paths, want);
+
+    // Saving without it forgets it.
+    save(&mut conn, &Settings::default()).unwrap();
+    assert!(load(&conn).unwrap().emulator_paths.is_empty());
+
+    let mut bad = |name: &str, path: PathBuf| {
+        let mut s = Settings::default();
+        s.emulator_paths.insert(name.into(), path);
+        save(&mut conn, &s).unwrap_err().to_string()
+    };
+    assert!(bad("nosuchemu", ds.clone()).contains("no emulator"));
+    assert!(bad("pcsx2", t.path().join("missing")).contains("pcsx2 program"));
+    assert!(bad("pcsx2", t.path().to_path_buf()).contains("not a program"));
+}
