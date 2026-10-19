@@ -1169,9 +1169,31 @@ hasher or to files), `patched` (migration 31) for what made a copy,
 `romforge-cli patch`, Details → **Patch…** and `patch_links`. Journaled as
 a cleanup batch. Tested with an IPS on a headered NES ROM, a BPS (and one
 for another ROM, refused), and an xdelta and a PPF on a two-track CHD.
-**Open:** xdelta's DJW and FGK secondary compression aren't read (an
-error says so); a disc patch always goes on the first track; a cartridge
-game of several ROMs isn't patched; not yet tried with real patches.
+Follow-up (2026-10-19, built and tested on scratch copies):
+- `vcdiff.rs`: xdelta3's DJW and FGK secondary compression, ported from
+  xdelta3 (Apache-2.0), rewriting such a patch as plain VCDIFF for
+  oxidelta; its application header names the source file. Tested with
+  patches xdelta3 made (`fixtures/patches/`; FGK single-window, as
+  xdelta3's own multi-window FGK fails).
+- Discs: the track an xdelta names, else the first that takes it.
+- Cartridge games of several ROMs: BPS/UPS by their source, else by name,
+  else the biggest (a note says so); the zip keeps the DAT's names.
+- Patches join their game (migration 32: `patch_files`): a scan records
+  the patch files it finds (loose, or a zip with one patch) and pairs
+  each with a game by its source ROM, the file it names, a same-name file
+  beside it, its names against your titles, or the title its readme
+  names; translation or hack from its name and readme. Details → Patch…
+  and `romforge-cli patch <game>` list them.
+- Patched ROMs named on their own: an unknown cartridge ROM that a paired
+  patch beside it makes from your verified copy of its game gets a
+  derived name (`manual_ids.proof`), never verified; Forget puts it in
+  `proofs_declined` so it isn't named again.
+- Tried on a real patch (Ps2restIPS.zip, Phantasy Star II restoration):
+  read with its readme, paired by the readme, applied to a stand-in ROM
+  in scratch; not yet on the real game (not in the library).
+**Open:** discs aren't named on their own (only cartridges); a zip of
+several patches and patches in 7z archives aren't listed (pick one by
+hand).
 
 ## Code review follow-ups (2026-10-18)
 

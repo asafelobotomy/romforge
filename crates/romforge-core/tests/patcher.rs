@@ -90,7 +90,7 @@ fn an_ips_makes_a_translated_copy() {
     lib.scan(&incoming, Scope::All).unwrap();
     let base = row_id(&lib, "Test NES (iNES)");
     let plan = lib
-        .patch_plan(&base, &patch, Relation::Translation, Some("English"))
+        .patch_plan(&base, &patch, Some(Relation::Translation), Some("English"))
         .unwrap();
     assert_eq!(plan.title, "Test NES (iNES) [Translation: English]");
     assert!(!plan.disc);
@@ -140,7 +140,7 @@ fn an_ips_makes_a_translated_copy() {
 
     // Patching again into the same name is refused; undo removes the copy.
     assert!(
-        lib.patch_plan(&base, &patch, Relation::Translation, Some("English"))
+        lib.patch_plan(&base, &patch, Some(Relation::Translation), Some("English"))
             .is_err()
     );
     lib.cleanup_undo(None).unwrap();
@@ -165,7 +165,7 @@ fn a_bps_for_another_rom_is_refused() {
     let wrong = tmp.path().join("other.bps");
     std::fs::write(&wrong, bps(data.len() as u64, 0x1234_5678, &data)).unwrap();
     let err = lib
-        .patch_plan(&base, &wrong, Relation::Hack, None)
+        .patch_plan(&base, &wrong, Some(Relation::Hack), None)
         .unwrap_err()
         .to_string();
     assert!(err.contains("made for a ROM"), "{err}");
@@ -174,7 +174,7 @@ fn a_bps_for_another_rom_is_refused() {
     target[0] ^= 0xff;
     let right = tmp.path().join("Hard Mode.bps");
     std::fs::write(&right, bps(data.len() as u64, crc32fast::hash(&data), &target)).unwrap();
-    let plan = lib.patch_plan(&base, &right, Relation::Hack, None).unwrap();
+    let plan = lib.patch_plan(&base, &right, Some(Relation::Hack), None).unwrap();
     assert_eq!(
         plan.title, "Test GB [Hack: Hard Mode]",
         "the tag from the patch's name"
@@ -278,7 +278,7 @@ fn a_disc_patch_makes_a_new_chd() {
     let patch = tmp.path().join("Game English.xdelta");
     std::fs::write(&patch, &delta).unwrap();
     let plan = lib
-        .patch_plan(&base, &patch, Relation::Translation, Some("English"))
+        .patch_plan(&base, &patch, Some(Relation::Translation), Some("English"))
         .unwrap();
     assert!(plan.disc);
     let done = lib.patch_apply(&plan).unwrap();
@@ -312,7 +312,9 @@ fn a_disc_patch_makes_a_new_chd() {
     ppf.extend_from_slice(b"HARD");
     let ppf_path = tmp.path().join("hard.ppf");
     std::fs::write(&ppf_path, &ppf).unwrap();
-    let plan = lib.patch_plan(&base, &ppf_path, Relation::Hack, None).unwrap();
+    let plan = lib
+        .patch_plan(&base, &ppf_path, Some(Relation::Hack), None)
+        .unwrap();
     assert_eq!(
         plan.title, "Game (Japan) [Hack: Hard Mode]",
         "the PPF's own description"
@@ -322,4 +324,190 @@ fn a_disc_patch_makes_a_new_chd() {
     let mut hard = data.clone();
     hard[200..204].copy_from_slice(b"HARD");
     assert_eq!(tracks[0].1.raw.sha1, sha1(&hard));
+
+    // An xdelta made from the second track: the first refuses it (its
+    // checksums don't match), so it goes on the second.
+    let mut remix = audio.clone();
+    remix[5000..5005].copy_from_slice(b"REMIX");
+    let mut delta = Vec::new();
+    oxidelta::engine::encode(&audio, &remix, &mut delta).unwrap();
+    let patch = tmp.path().join("remix.xdelta");
+    std::fs::write(&patch, &delta).unwrap();
+    let plan = lib.patch_plan(&base, &patch, Some(Relation::Hack), None).unwrap();
+    let done = lib.patch_apply(&plan).unwrap();
+    let tracks = romforge_core::disc::chd_members(&done.target).unwrap();
+    assert_eq!(tracks[0].1.raw.sha1, sha1(&data), "the first track as it was");
+    assert_eq!(tracks[1].1.raw.sha1, sha1(&remix), "the second track patched");
+    assert_eq!(done.sha1, sha1(&remix));
+}
+
+/// A cartridge game of two ROMs in a zip: a BPS goes on the one it names,
+/// an IPS (which names none) on the bigger; the other ROM comes through,
+/// both under the DAT's names.
+#[test]
+fn a_game_of_two_roms_patches_the_right_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    let (prg, chr) = (pattern(7, 4096), pattern(9, 1024));
+    let rom = |name: &str, d: &[u8]| {
+        let h = romforge_core::hash::hash_stream(d, d.len() as u64).unwrap().raw;
+        format!(
+            "<rom name=\"{name}\" size=\"{}\" crc=\"{}\" md5=\"{}\" sha1=\"{}\"/>",
+            d.len(),
+            h.crc32,
+            h.md5,
+            h.sha1
+        )
+    };
+    let dat = tmp.path().join("gb.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            "<?xml version=\"1.0\"?><datafile><header><name>Nintendo - Game Boy</name></header>\
+             <game name=\"Two Chips (Japan)\">{}{}</game></datafile>",
+            rom("chr.gb", &chr),
+            rom("prg.gb", &prg)
+        ),
+    )
+    .unwrap();
+    let mut z = zip::ZipWriter::new(std::fs::File::create(incoming.join("Two Chips (Japan).zip")).unwrap());
+    for (n, d) in [("chr.gb", &chr), ("prg.gb", &prg)] {
+        z.start_file(n, zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(d).unwrap();
+    }
+    z.finish().unwrap();
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let base = row_id(&lib, "Two Chips (Japan)");
+
+    let read = |path: &Path, name: &str| {
+        let mut z = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+        let mut d = Vec::new();
+        z.by_name(name).unwrap().read_to_end(&mut d).unwrap();
+        d
+    };
+    let mut new_chr = chr.clone();
+    new_chr[0..3].copy_from_slice(b"ABC");
+    let p = tmp.path().join("Font.bps");
+    std::fs::write(&p, bps(chr.len() as u64, crc32fast::hash(&chr), &new_chr)).unwrap();
+    let plan = lib
+        .patch_plan(&base, &p, Some(Relation::Translation), Some("English"))
+        .unwrap();
+    assert!(plan.applies_to.starts_with("chr.gb"), "{plan:?}");
+    let done = lib.patch_apply(&plan).unwrap();
+    assert_eq!(read(&done.target, "chr.gb"), new_chr);
+    assert_eq!(read(&done.target, "prg.gb"), prg, "the other ROM kept");
+    assert_eq!(done.sha1, sha1(&new_chr));
+
+    let p = tmp.path().join("Hard.ips");
+    std::fs::write(&p, ips(10, b"HARD")).unwrap();
+    let plan = lib.patch_plan(&base, &p, Some(Relation::Hack), None).unwrap();
+    assert!(plan.applies_to.starts_with("prg.gb"), "{plan:?}");
+    assert!(plan.notes.iter().any(|n| n.contains("the biggest")), "{plan:?}");
+    let done = lib.patch_apply(&plan).unwrap();
+    assert_eq!(&read(&done.target, "prg.gb")[10..14], b"HARD");
+    assert_eq!(read(&done.target, "chr.gb"), chr);
+    let rows = lib.library_view().unwrap().rows;
+    assert!(
+        rows.iter()
+            .any(|r| r.title == plan.title && r.status == RowStatus::Derivative),
+        "{rows:#?}"
+    );
+}
+
+/// Patches a scan finds join their game: a BPS by the ROM it was made
+/// from, an IPS beside the ROM of the same name, a zipped patch by its
+/// readme's title. A ROM no DAT knows that a paired BPS beside it makes
+/// from the verified game is named a translation of it, with no click,
+/// never verified; taken off by the owner, it isn't named again.
+#[test]
+fn scanned_patches_pair_with_their_game() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    std::fs::copy(fixtures().join("roms/gb/Test GB.gb"), incoming.join("Test GB.gb")).unwrap();
+    let data = std::fs::read(incoming.join("Test GB.gb")).unwrap();
+    let mut english = data.clone();
+    english[0x134..0x138].copy_from_slice(b"ENGL");
+    // A BPS with a name that says nothing of the game, and the ROM it makes.
+    std::fs::write(
+        incoming.join("mtl_v1.bps"),
+        bps(data.len() as u64, crc32fast::hash(&data), &english),
+    )
+    .unwrap();
+    std::fs::write(incoming.join("Some download.gb"), &english).unwrap();
+    // An IPS of the ROM's own name; a zip with a readme naming the game.
+    std::fs::write(incoming.join("Test GB.ips"), ips(4, b"HARD")).unwrap();
+    let mut z = zip::ZipWriter::new(std::fs::File::create(incoming.join("xyz123.zip")).unwrap());
+    z.start_file("patch.ips", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    z.write_all(&ips(8, b"EASY")).unwrap();
+    z.start_file("readme.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    z.write_all(b"=====\n  Test GB  \n=====\nAn easy-mode hack.\n")
+        .unwrap();
+    z.finish().unwrap();
+    // Not for this game.
+    std::fs::write(incoming.join("Other Game.ips"), ips(0, b"X")).unwrap();
+
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    let report = lib.scan(&incoming, Scope::All).unwrap();
+    assert!(
+        report.skipped_kinds.iter().any(|k| k.ext == "ips"),
+        "patches aren't hashed as ROMs"
+    );
+    let base = row_id(&lib, "Test GB");
+    let d = lib.game_detail(&base).unwrap();
+    let by: Vec<(String, String)> = d
+        .patches
+        .iter()
+        .map(|p| (p.name.clone(), p.paired_by.clone()))
+        .collect();
+    assert!(by.contains(&("mtl_v1.bps".into(), "source".into())), "{by:?}");
+    assert!(by.contains(&("Test GB.ips".into(), "beside".into())), "{by:?}");
+    assert!(by.contains(&("patch.ips".into(), "title".into())), "{by:?}");
+    assert_eq!(d.patches.len(), 3, "{by:?}");
+    let offered = lib.patches_beside(&base).unwrap();
+    let other = offered
+        .iter()
+        .find(|p| p.name == "Other Game.ips")
+        .expect("in the folder");
+    assert_eq!(other.paired_by, "folder");
+    let easy = d.patches.iter().find(|p| p.name == "patch.ips").unwrap();
+    assert!(easy.path.ends_with("xyz123.zip"), "the zip is what's applied");
+    assert_eq!(easy.relation, Relation::Hack);
+    // Planned without saying: the guess from its names.
+    let plan = lib.patch_plan(&base, &easy.path, None, None).unwrap();
+    assert_eq!(plan.relation, Relation::Hack);
+
+    // The download is the BPS applied to the verified game: named so.
+    let rows = lib.library_view().unwrap().rows;
+    let named = rows
+        .iter()
+        .find(|r| r.title == "Test GB [Hack: mtl v1]")
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    assert_eq!(named.status, RowStatus::Derivative, "never verified");
+    let nd = lib.game_detail(&named.id).unwrap();
+    assert_eq!(nd.proof.as_deref(), Some("mtl_v1.bps"));
+    assert_eq!(nd.derived.as_ref().map(|x| x.base.as_str()), Some("Test GB"));
+
+    // Taken off: it stays unknown, rescans too.
+    lib.forget_identity(&named.id).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    assert!(
+        !rows.iter().any(|r| r.title == "Test GB [Hack: mtl v1]"),
+        "{rows:#?}"
+    );
+
+    // A patch that goes away is forgotten.
+    std::fs::remove_file(incoming.join("Test GB.ips")).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let d = lib.game_detail(&row_id(&lib, "Test GB")).unwrap();
+    assert_eq!(d.patches.len(), 2);
 }

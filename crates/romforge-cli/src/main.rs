@@ -73,15 +73,18 @@ enum Command {
     /// or a zip holding one) to a game: a new copy, listed as a version of
     /// it, the original untouched (milestone 19)
     ///
-    /// Shows what it would do unless --apply. Without PATCH: where to look
-    /// for one, and the patches lying beside the game.
+    /// Shows what it would do unless --apply. Without PATCH: the patches a
+    /// scan found for the game, and where to look for one.
     Patch {
         /// The game: its title, or part of it
         game: String,
         patch: Option<PathBuf>,
-        /// A hack, not a translation
-        #[arg(long)]
+        /// A hack [default: what the patch's name and readme say]
+        #[arg(long, conflicts_with = "translation")]
         hack: bool,
+        /// A translation [default: what the patch's name and readme say]
+        #[arg(long)]
+        translation: bool,
         /// What the copy is called after the game ("English v1.1") [default: the patch's name]
         #[arg(long)]
         tag: Option<String>,
@@ -818,6 +821,7 @@ fn main() -> Result<()> {
             game,
             patch,
             hack,
+            translation,
             tag,
             apply,
         } => {
@@ -830,19 +834,34 @@ fn main() -> Result<()> {
                 for l in romforge_core::view::patch_links(&row.title) {
                     println!("  {:<32} {}", l.label, l.url);
                 }
-                let beside = lib.patches_beside(&row.id)?;
-                if !beside.is_empty() {
-                    println!("patches beside it:");
-                    for p in beside {
-                        println!("  {}", p.display());
+                let found = lib.patches_beside(&row.id)?;
+                if !found.is_empty() {
+                    println!("patches for it:");
+                    for p in found {
+                        let how = match p.paired_by.as_str() {
+                            "source" => "made from its ROM",
+                            "names" => "names its file",
+                            "beside" => "beside it, same name",
+                            "title" => "named after the game",
+                            "readme" => "its readme names the game",
+                            _ => "in its folder",
+                        };
+                        println!(
+                            "  {} ({}, {}; {how})",
+                            p.path.display(),
+                            p.kind,
+                            p.relation.as_str()
+                        );
                     }
                 }
                 return Ok(());
             };
             let relation = if hack {
-                romforge_core::view::Relation::Hack
+                Some(romforge_core::view::Relation::Hack)
+            } else if translation {
+                Some(romforge_core::view::Relation::Translation)
             } else {
-                romforge_core::view::Relation::Translation
+                None
             };
             let plan = lib.patch_plan(&row.id, &patch, relation, tag.as_deref())?;
             println!("{} ({} patch {})", plan.title, plan.kind, plan.patch_name);

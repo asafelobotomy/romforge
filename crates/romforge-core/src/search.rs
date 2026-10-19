@@ -152,7 +152,7 @@ pub fn identify(
                 crate::db::now!(),
                 ", ?5, ?6, ?7)
              ON CONFLICT(sha1, size) DO UPDATE SET system_id = excluded.system_id, title = excluded.title,
-               base = excluded.base, relation = excluded.relation, tag = excluded.tag"
+               base = excluded.base, relation = excluded.relation, tag = excluded.tag, proof = NULL"
             ),
             params![
                 f.sha1,
@@ -175,6 +175,12 @@ pub fn forget(conn: &mut Connection, row_id: &str) -> Result<(), Error> {
     let d = view::detail(conn, row_id)?;
     let tx = conn.transaction()?;
     for f in &d.files {
+        // A name romforge gave from a patch's proof isn't given again.
+        tx.execute(
+            "INSERT OR IGNORE INTO proofs_declined (sha1, size)
+             SELECT sha1, size FROM manual_ids WHERE sha1 = ?1 AND size = ?2 AND proof IS NOT NULL",
+            params![f.sha1, f.size],
+        )?;
         tx.execute(
             "DELETE FROM manual_ids WHERE sha1 = ?1 AND size = ?2",
             params![f.sha1, f.size],

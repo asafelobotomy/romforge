@@ -174,6 +174,39 @@ pub fn score_keys(a: &TitleKey, b: &TitleKey) -> f32 {
     ((2.0 * main + dice(&all_a, &all_b)) / 3.0).min(0.84)
 }
 
+/// The words of a text (a readme) as titles are compared.
+pub fn text_words(text: &str) -> Vec<String> {
+    words(text)
+}
+
+/// Whether a text names a title: the title's words (two at least, or one
+/// long one) in a row in it, not followed by a number the title doesn't
+/// have ("Phantasy Star 2" doesn't name "Phantasy Star"). How many words
+/// matched, or 0.
+pub fn named_in(title: &TitleKey, text: &[String]) -> usize {
+    let want: Vec<&String> = title.main.iter().chain(&title.sub).collect();
+    let main = title.main.len();
+    if main == 0 || (main == 1 && title.main[0].len() < 6 && title.sub.is_empty()) {
+        return 0;
+    }
+    let runs = |n: usize| {
+        let w = &want[..n];
+        text.windows(n).enumerate().any(|(i, win)| {
+            win.iter().zip(w).all(|(a, b)| a == *b)
+                && text
+                    .get(i + n)
+                    .is_none_or(|next| !is_hard(next) || title.hard.contains(next))
+        })
+    };
+    if runs(want.len()) {
+        want.len()
+    } else if want.len() > main && runs(main) {
+        main
+    } else {
+        0
+    }
+}
+
 /// [`score_keys`] for two titles.
 pub fn score(a: &str, b: &str) -> f32 {
     score_keys(&key(a), &key(b))
@@ -264,6 +297,18 @@ impl TitleIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readmes_name_titles() {
+        let text = text_words("The goal: insert the translated script of Phantasy Star 2 into the game.");
+        assert_eq!(named_in(&key("Phantasy Star II (USA, Europe) (Rev A)"), &text), 3);
+        assert_eq!(
+            named_in(&key("Phantasy Star (USA, Europe)"), &text),
+            0,
+            "a 2 follows"
+        );
+        assert_eq!(named_in(&key("Star (Japan)"), &text), 0, "too short to say");
+    }
 
     #[test]
     fn keys_normalize() {

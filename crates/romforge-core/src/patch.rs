@@ -171,7 +171,7 @@ pub fn apply(patch: &[u8], source: &[u8]) -> Option<Vec<u8>> {
             }
             out
         }
-        Kind::Xdelta => oxidelta::vcdiff::decode_memory(patch, source).ok()?,
+        Kind::Xdelta => oxidelta::vcdiff::decode_memory(&crate::vcdiff::plain(patch).ok()?, source).ok()?,
     };
     if let Some((size, crc)) = i.target
         && (size != out.len() as u64 || crc != crc32fast::hash(&out))
@@ -306,8 +306,9 @@ pub fn apply_file(patch: &[u8], source: &Path, out: &Path) -> Result<(), crate::
         }
         Kind::Xdelta => {
             let mut src = FileSource(std::fs::File::open(source)?, std::fs::metadata(source)?.len());
+            let plain = crate::vcdiff::plain(patch).map_err(|e| bad(&format!("xdelta: {e}")))?;
             let mut w = std::io::BufWriter::new(std::fs::File::create_new(out)?);
-            oxidelta::compress::DeltaDecoder::new(patch)
+            oxidelta::compress::DeltaDecoder::new(&plain[..])
                 .decode_to(&mut src, &mut w)
                 .map_err(|e| bad(&format!("xdelta: {e}")))?;
             w.into_inner().map_err(|e| e.into_error())?.sync_all()?;
@@ -519,7 +520,8 @@ fn stem_of(name: &str) -> String {
     n.rsplit_once('.').map_or(n, |(s, _)| s).to_owned()
 }
 
-fn is_patch(name: &str) -> bool {
+/// Whether a file name has a patch extension.
+pub fn is_patch_name(name: &str) -> bool {
     name.rsplit_once('.')
         .is_some_and(|(_, e)| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
@@ -537,7 +539,7 @@ impl PatchFinder {
                         entries
                             .flatten()
                             .map(|e| e.path())
-                            .filter(|p| p.file_name().is_some_and(|n| is_patch(&n.to_string_lossy())))
+                            .filter(|p| p.file_name().is_some_and(|n| is_patch_name(&n.to_string_lossy())))
                             .collect()
                     })
                     .unwrap_or_default()
@@ -566,7 +568,7 @@ impl PatchFinder {
                     .unwrap_or_default(),
                 _ => Vec::new(),
             };
-            all.into_iter().filter(|n| is_patch(n)).collect()
+            all.into_iter().filter(|n| is_patch_name(n)).collect()
         });
         let stem = stem_of(member);
         let wanted: Vec<String> = names.iter().filter(|n| stem_of(n) == stem).cloned().collect();

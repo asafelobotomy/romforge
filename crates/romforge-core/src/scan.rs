@@ -114,7 +114,9 @@ fn is_archive(ext: &str) -> bool {
 fn wanted(name: &str, opts: ScanOptions) -> bool {
     // A game's details as import writes them (`.md` is a Mega Drive
     // extension too).
+    // Patches are listed apart, to pair with their games.
     !name.ends_with(crate::layout::DETAILS_SUFFIX)
+        && !crate::patch::is_patch_name(name)
         && (opts.all_files || systems::is_rom_extension(&ext_of(name)))
 }
 

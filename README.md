@@ -333,7 +333,7 @@ FBNeo thumbnails, by description.
 ## Patches: translations and hacks (milestone 19)
 
 ```bash
-romforge-cli patch "Mother 3"                                   # where to look; patches beside it
+romforge-cli patch "Mother 3"                                   # patches found for it; where to look
 romforge-cli patch "Mother 3" ~/Downloads/mother3_1.3.zip       # what it would do
 romforge-cli patch "Mother 3" ~/Downloads/mother3_1.3.zip --tag "English v1.3" --apply
 ```
@@ -342,19 +342,36 @@ Apply a translation or hack you downloaded to a game you have: romforge
 makes a **new copy** and never touches the original. It doesn't download
 patches itself (romhacking.net is read-only, its archive is private, and
 no site offers an API): Details → **Patch…** gives search links to
-romhacking.net and Romhack Plaza, offers patches lying beside your copy,
-or takes one you pick: IPS, BPS, UPS, PPF or xdelta, or a zip holding one
-(its readme is kept with the copy).
+romhacking.net and Romhack Plaza, offers the patches found for the game,
+or takes one you pick: IPS, BPS, UPS, PPF or xdelta (DJW, FGK and LZMA
+compression too), or a zip holding one (its readme is kept with the copy).
+
+- **Patches join their game.** A scan lists the patch files it finds
+  (loose, or the one patch in a zip) under the game they are for: a BPS or
+  UPS by the ROM it was made from (size and CRC32), an xdelta by the file
+  it names, any patch by a game's file of the same name beside it, by its
+  name or its readme's title, or by the game its readme names. Whether it
+  is a translation or a hack is read from its name and readme (you can
+  change it). Details → **Patch…** shows them, ready to apply.
+- **Patched ROMs are named on their own.** A ROM no DAT knows, which a
+  patch beside it (same name, or a BPS/UPS's target size and CRC32) turns
+  your verified copy of its game into exactly, is named "<Game>
+  [Translation: <tag>]" (or Hack) in the game's group with no click:
+  named by romforge, never verified. Forget it and it stays unknown.
 
 - **Cartridges** are patched in memory, in the form the patch wants: BPS
   and UPS say it (their source's size and CRC32; one made for another
   revision is refused, naming what it wants), an IPS goes on the DAT's
   form (no copier header) unless its name says headered; a header taken
-  off goes back on. Written as a zip like any import.
-- **Discs** (xdelta, PPF; a PPF's check block is compared) are patched on
-  their first track, streamed, the other tracks kept, and written as a CHD;
-  a CHD is unpacked first, with a cue sheet from its own track list so
-  pregaps stay right.
+  off goes back on. Written as a zip like any import. In a game of several
+  ROMs, a BPS or UPS goes on the one it was made from, others on the one
+  they are named after, else (said in a note) the biggest; the rest come
+  through under the DAT's names.
+- **Discs** (xdelta, PPF) are patched on the track they were made from,
+  streamed, the other tracks kept, and written as a CHD: the track an
+  xdelta names, else the first that takes it (a PPF's check block and an
+  xdelta's checksums refuse the others). A CHD is unpacked first, with a
+  cue sheet from its own track list so pregaps stay right.
 - The copy goes into `Games/<System>/` as "<Game> [Translation: <tag>]"
   (or Hack; `:` becomes `-` in the file name), lists as a version of the
   game, says which patch made it, and is "identified by you", never
@@ -489,4 +506,7 @@ cd app && npm install && npm run tauri dev
 ## License
 
 MIT (see [LICENSE](LICENSE)). The systems table is adapted from
-[remustwo](https://github.com/asafelobotomy/remustwo) (MIT).
+[remustwo](https://github.com/asafelobotomy/remustwo) (MIT). The DJW and
+FGK decoders in `vcdiff.rs` are ported from
+[xdelta3](https://github.com/jmacd/xdelta) (Copyright Joshua MacDonald,
+[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)).

@@ -29,11 +29,22 @@
     beside = (await call("patches_beside", { rowId: r.id })) ?? [];
   }
 
-  async function choose(path) {
+  async function choose(path, relation) {
     patch = path;
     tag = "";
+    if (relation) hack = relation === "hack";
     await planPatch();
   }
+
+  // How romforge knows a patch is for this game.
+  const how = {
+    source: "made from its ROM",
+    names: "names its file",
+    beside: "beside it, same name",
+    title: "named after the game",
+    readme: "its readme names the game",
+    folder: "in its folder",
+  };
 
   async function browse() {
     const f = await pickFile({
@@ -90,9 +101,9 @@
       <section class="setting">
         <span class="flabel">Patch</span>
         {#if beside.length}
-          <p class="hint">Beside your copy:</p>
+          <p class="hint">Found for it:</p>
           <div class="pick">
-            {#each beside as p}<button onclick={() => choose(p)} class:primary={patch === p} title={p}>{base(p)}</button>{/each}
+            {#each beside as p}<button onclick={() => choose(p.path, p.relation)} class:primary={patch === p.path} title="{p.path} ({p.kind}, {p.relation}; {how[p.paired_by] ?? p.paired_by})">{p.name === base(p.path) ? p.name : `${base(p.path)} › ${p.name}`}</button>{/each}
           </div>
         {/if}
         <div class="pick">

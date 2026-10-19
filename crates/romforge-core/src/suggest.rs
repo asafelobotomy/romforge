@@ -111,7 +111,11 @@ struct Facts {
 }
 
 /// Your hash-verified copy of a DAT game's (single) ROM, if any.
-fn verified_copy(conn: &Connection, system_id: i64, title: &str) -> Result<Option<(String, String)>, Error> {
+pub(crate) fn verified_copy(
+    conn: &Connection,
+    system_id: i64,
+    title: &str,
+) -> Result<Option<(String, String)>, Error> {
     Ok(conn
         .prepare_cached(concat!(
             "SELECT f.path, f.member FROM files f JOIN matches m ON m.file_id = f.file_id

@@ -31,6 +31,7 @@ pub mod settings;
 pub mod suggest;
 pub mod systems;
 pub mod titles;
+mod vcdiff;
 pub mod view;
 pub mod wikidata;
 
@@ -834,6 +835,7 @@ impl Library {
             self.batch_dirty = true;
         } else {
             identify::identify_all(&tx)?;
+            patcher::refresh(&tx)?;
         }
         tx.commit()?;
 
@@ -939,6 +941,8 @@ impl Library {
             ..ScanReport::default()
         };
         let mut skipped_kinds: std::collections::BTreeMap<String, SkippedKind> = Default::default();
+        // Patch files (or zips holding one) seen, to pair with their games.
+        let mut patch_files: std::collections::BTreeSet<PathBuf> = Default::default();
         {
             let mut upsert = tx.prepare(
                 concat!("INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
@@ -979,6 +983,9 @@ impl Library {
                         } else {
                             member.clone()
                         };
+                        if patch::is_patch_name(&name) {
+                            patch_files.insert(path.clone());
+                        }
                         if !layout::is_extra(&member) && !layout::is_extra(&name) {
                             let ext = std::path::Path::new(&name)
                                 .extension()
@@ -1124,6 +1131,8 @@ impl Library {
             )?;
         }
         identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
+        patcher::record(&tx, root_id, &patch_files, &seen)?;
+        patcher::refresh(&tx)?;
         scummvm::refresh(&tx, scummvm_list.as_deref())?;
         tx.commit()?;
         let kinds: Vec<SkippedKind> = skipped_kinds.into_values().collect();
@@ -1203,6 +1212,7 @@ impl Library {
     pub fn identify(&mut self) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         identify::identify_all(&tx)?;
+        patcher::refresh(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -1321,7 +1331,7 @@ impl Library {
         &self,
         row_id: &str,
         patch: &Path,
-        relation: view::Relation,
+        relation: Option<view::Relation>,
         tag: Option<&str>,
     ) -> Result<patcher::PatchPlan, Error> {
         let (games, staging) = self.patch_places()?;
@@ -1371,8 +1381,9 @@ impl Library {
         }
     }
 
-    /// Patches lying beside a game's files, to offer.
-    pub fn patches_beside(&self, row_id: &str) -> Result<Vec<PathBuf>, Error> {
+    /// The patches for a game: those a scan paired with it, then the others
+    /// lying in its folders.
+    pub fn patches_beside(&self, row_id: &str) -> Result<Vec<patcher::FoundPatch>, Error> {
         patcher::beside(&self.conn, row_id)
     }
 

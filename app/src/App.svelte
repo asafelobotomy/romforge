@@ -459,7 +459,7 @@
                 <button class="link" onclick={forget} disabled={!!busy} title="Undo naming these files: they show as unknown again">Forget</button>
               {/if}
               {#if detail.patch_links?.length}
-                <button class="link" onclick={() => patcher.openPatch(row, detail)} disabled={!!busy} title="Apply a translation or hack you downloaded: a new copy, your original untouched">Patch…</button>
+                <button class="link" onclick={() => patcher.openPatch(row, detail)} disabled={!!busy} title="Apply a translation or hack you downloaded: a new copy, your original untouched">{detail.patches?.length ? `Patch… (${detail.patches.length} found)` : "Patch…"}</button>
               {/if}
               {#if detail.patched}<span class="badge" title="romforge made it from {detail.patched.patch} ({detail.patched.kind}) on {detail.patched.created_at}">patched from {detail.patched.patch}</span>{/if}
               {#if row.cue_differs && row.cue_fits}<span class="badge" title="All tracks match; the cue sheet was rewritten but names exactly these tracks">cue rewritten</span>{:else if row.cue_differs}<span class="badge" title="All tracks match; the cue sheet differs from the DAT's">cue differs</span>{/if}
@@ -514,6 +514,7 @@
                   {#if f.esrb}<dt>Rating</dt><dd>{f.esrb}</dd>{/if}
                   {#if f.community_rating}<dt>Community</dt><dd>{f.community_rating}</dd>{/if}
                   {#if detail.derived}<dt>{detail.derived.relation === "translation" ? "Translation of" : "Hack of"}</dt><dd>{detail.derived.base}{detail.derived.tag ? ` (${detail.derived.tag})` : ""}</dd>{/if}
+                  {#if detail.proof}<dt>Named by</dt><dd title="Not verified: {detail.proof}, beside it, applied to your verified {detail.derived?.base} gives exactly this file">romforge, from {detail.proof}</dd>{/if}
                   {#if edition(detail.name)}<dt>Edition</dt><dd>{edition(detail.name)}</dd>{/if}
                   <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
                   {#if row.folder}<dt>Folder</dt><dd class="fpath" title="The game is this whole folder (or archive): Import and Play take all of it"><bdi>{row.folder}</bdi></dd>{/if}

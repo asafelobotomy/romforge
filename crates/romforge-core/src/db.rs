@@ -370,6 +370,37 @@ const MIGRATIONS: &[&str] = &[
          created_at TEXT NOT NULL,
          PRIMARY KEY (sha1, size)
      );",
+    // 32: patch files a scan found (loose, or the one patch in a zip), with
+    // the game each is for; the patch that proved a file is a patched copy
+    // of its game, when romforge named it so; and the files whose such
+    // name the owner took off, never named again.
+    "CREATE TABLE patch_files (
+         path         TEXT PRIMARY KEY,
+         root_id      INTEGER NOT NULL REFERENCES scan_roots(root_id) ON DELETE CASCADE,
+         name         TEXT NOT NULL,
+         kind         TEXT NOT NULL,
+         sha1         TEXT NOT NULL,
+         size         INTEGER NOT NULL,
+         mtime        INTEGER,
+         source_size  INTEGER,
+         source_crc32 TEXT,
+         target_size  INTEGER,
+         target_crc32 TEXT,
+         names_source TEXT,
+         hint         TEXT NOT NULL,
+         readme       TEXT,
+         relation     TEXT NOT NULL,
+         system_id    INTEGER REFERENCES systems(system_id),
+         title        TEXT,
+         paired_by    TEXT
+     );
+     CREATE INDEX patch_files_game ON patch_files(system_id, title);
+     ALTER TABLE manual_ids ADD COLUMN proof TEXT;
+     CREATE TABLE proofs_declined (
+         sha1 TEXT NOT NULL,
+         size INTEGER NOT NULL,
+         PRIMARY KEY (sha1, size)
+     );",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;

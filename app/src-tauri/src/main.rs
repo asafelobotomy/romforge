@@ -323,7 +323,7 @@ async fn patch_plan(
     tag: Option<String>,
 ) -> Res<romforge_core::patcher::PatchPlan> {
     read(&db, move |lib| {
-        lib.patch_plan(&row_id, Path::new(&patch), relation(hack), tag.as_deref())
+        lib.patch_plan(&row_id, Path::new(&patch), Some(relation(hack)), tag.as_deref())
     })
     .await
 }
@@ -338,14 +338,17 @@ async fn patch_apply(
     tag: Option<String>,
 ) -> Res<romforge_core::patcher::Patched> {
     with(&db, move |lib| {
-        let plan = lib.patch_plan(&row_id, Path::new(&patch), relation(hack), tag.as_deref())?;
+        let plan = lib.patch_plan(&row_id, Path::new(&patch), Some(relation(hack)), tag.as_deref())?;
         lib.patch_apply(&plan)
     })
     .await
 }
 
 #[tauri::command]
-async fn patches_beside(db: tauri::State<'_, Db>, row_id: String) -> Res<Vec<PathBuf>> {
+async fn patches_beside(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+) -> Res<Vec<romforge_core::patcher::FoundPatch>> {
     read(&db, move |lib| lib.patches_beside(&row_id)).await
 }
 

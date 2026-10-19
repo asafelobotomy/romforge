@@ -96,7 +96,7 @@ pub struct GameRow {
     /// stays its set name.
     pub label: Option<String>,
     #[serde(skip)]
-    system_id: Option<i64>,
+    pub(crate) system_id: Option<i64>,
     #[serde(skip)]
     file_ids: Vec<i64>,
 }
@@ -225,9 +225,14 @@ pub struct GameDetail {
     pub patched: Option<crate::patcher::PatchedFrom>,
     /// Where to look for a translation or hack of it (an identified game).
     pub patch_links: Vec<Link>,
+    /// Patch files a scan found for it (an identified game), ready to apply.
+    pub patches: Vec<crate::patcher::FoundPatch>,
     /// For [`RowStatus::Derivative`]: what it is made from. Its metadata and
     /// art fall back to the base game's.
     pub derived: Option<Derived>,
+    /// For a derivative romforge named itself: the patch beside it that,
+    /// applied to your verified copy of the base game, gives exactly it.
+    pub proof: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -958,9 +963,11 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
     let mut field_sources = BTreeMap::new();
     let mut dats = Vec::new();
     // A derivative: what its files were named as.
+    let mut proof = None;
     let derived: Option<Derived> = if row.status == RowStatus::Derivative {
         let mut stmt = conn.prepare(
-            "SELECT m.base, m.relation, m.tag FROM manual_ids m JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size
+            "SELECT m.base, m.relation, m.tag, m.proof FROM manual_ids m
+             JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size
              WHERE f.file_id = ?1 AND m.base IS NOT NULL",
         )?;
         row.file_ids.iter().find_map(|id| {
@@ -969,10 +976,12 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
                 ))
             })
             .ok()
-            .and_then(|(base, rel, tag)| {
+            .and_then(|(base, rel, tag, by)| {
+                proof = by;
                 Some(Derived {
                     relation: Relation::parse(&rel)?,
                     base,
@@ -1148,14 +1157,19 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
             break;
         }
     }
-    let patch_links = if matches!(row.status, RowStatus::Verified | RowStatus::ByYou) {
-        patch_links(&row.title)
+    let (patch_links, patches) = if matches!(row.status, RowStatus::Verified | RowStatus::ByYou) {
+        (
+            patch_links(&row.title),
+            crate::patcher::paired_with(conn, row.system_id, &row.title)?,
+        )
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     Ok(GameDetail {
         patched,
         patch_links,
+        patches,
+        proof,
         name: crate::names::parse(&row.title),
         derived,
         row,
