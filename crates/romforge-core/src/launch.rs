@@ -299,6 +299,11 @@ impl Env {
         self.known(e).map(|r| describe(&r))
     }
 
+    /// Whether RetroArch's core `name` is installed.
+    pub fn core_installed(&self, name: &str) -> bool {
+        self.core(name).is_some()
+    }
+
     fn options(&self, e: &KnownEmulator) -> LaunchOptions {
         self.options.get(e.settings_name()).cloned().unwrap_or_default()
     }

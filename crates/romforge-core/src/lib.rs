@@ -14,6 +14,7 @@ pub mod emusettings;
 pub mod enrich;
 pub mod extdb;
 pub mod fetch;
+pub mod firmware;
 pub mod hash;
 pub mod headers;
 pub mod home;

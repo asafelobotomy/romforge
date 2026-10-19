@@ -10,6 +10,7 @@
   import ScanPreview from "./ScanPreview.svelte";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import DatsView from "./DatsView.svelte";
+  import BiosView from "./BiosView.svelte";
   import OrganizeView from "./OrganizeView.svelte";
   import HomeDialog from "./HomeDialog.svelte";
   import Toolbar from "./Toolbar.svelte";
@@ -23,7 +24,7 @@
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
   import { ui } from "./ui.svelte.js";
 
-  // Which screen: the library (default), DATs, or organize.
+  // Which screen: the library (default), DATs, BIOS, or organize.
   let view = $state("library");
   let error = $state("");
   let busy = $state("");
@@ -84,6 +85,7 @@
   let artPicker = $state(null);
   let pickerOpen = $state(false);
   let dats = $state(null);
+  let bios = $state(null);
   let settingsOpen = $state(false);
   let cleanOpen = $state(false);
   let searchOpen = $state(false);
@@ -153,6 +155,7 @@
     note = "";
     confirmUndo = false;
     if (v === "dats") dats.loadDats();
+    if (v === "bios") bios.loadBios();
   }
 
   async function refresh() {
@@ -312,6 +315,7 @@
       <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} {open} {forget} {applyPatchRow} {patcher} {artPicker} bind:error />
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
+    <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} />
     <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>
 </div>

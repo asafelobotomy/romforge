@@ -59,6 +59,10 @@ pub struct System {
     /// Wikidata items of the platform (games are matched against the video
     /// games listed for it).
     pub wikidata: &'static [&'static str],
+    /// RetroBIOS's ids for the system (several spellings): a BIOS file its
+    /// list ties to one of these, or to none, is listed for it (milestone
+    /// 20). Empty for arcade systems, whose BIOS sets MAME's DATs cover.
+    pub retrobios: &'static [&'static str],
     /// ScreenScraper's system id (unverified until checked with a key).
     pub screenscraper: Option<u32>,
     /// IGDB platform ids (unverified until checked with a key).
@@ -139,6 +143,7 @@ const fn s(
         cores: &[],
         emulators: &[],
         wikidata: &[],
+        retrobios: &[],
         screenscraper: None,
         igdb: &[],
         launchbox: &[],
@@ -191,6 +196,11 @@ impl System {
 
     const fn wikidata(mut self, items: &'static [&'static str]) -> Self {
         self.wikidata = items;
+        self
+    }
+
+    const fn retrobios(mut self, ids: &'static [&'static str]) -> Self {
+        self.retrobios = ids;
         self
     }
 

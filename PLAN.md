@@ -1477,6 +1477,35 @@ In this order:
    (accepted / present, hash unknown / missing / wrong hash), where each
    one goes, and a badge on the platform when its first core lacks a
    required file. CLI: `firmware check [--system X] [--core Y]`.
+
+   *(Steps 1 and 2 built 2026-10-19.)* `firmware.rs`:
+   - **List:** `firmware download` (and the page's button) keeps
+     `api/v1/emulators.json` (534 profiles, 5.6 MB) as
+     `Databases/retrobios-emulators.json`, read whole each time (no tables
+     or migration). Read leniently (`firmware/data.rs`): a hash is one
+     value, a list or comma-separated; aliases fold into their target's
+     cores. Profiles cover 82 of romforge's 85 cores and emulators (not
+     yet: `o2em`).
+   - **Systems:** the `retrobios` column lists each system's RetroBIOS ids
+     (106 systems, every id checked against the list; several spellings
+     each). Arcade systems have none: MAME's DATs cover their BIOS sets.
+     A file tied to a RetroBIOS system is listed only for its systems; a
+     file tied to none, for every system of its emulator.
+   - **Check:** each file at its place, `Bios/RetroArch/<path>` for
+     cores, `Bios/<emulator>/<path>` for the others (read once per run).
+     States: accepted (size + SHA1/MD5), present (no hash listed), wrong
+     file, missing.
+   - **Ready:** every required file without an HLE fallback is there,
+     except that files of one `variant_group` are alternatives and
+     regional files (`region`) need one region's: "ready for
+     north-america". DuckStation's three regional BIOS files are then one
+     requirement, not three.
+   - **Page:** BIOS in the sidebar under DATs: platforms with "ready n /
+     m", each emulator's files with state, need, region and where it goes.
+     CLI `firmware check [--system X] [--all]`.
+   - **Not yet:** the platform badge in the library sidebar; `--core`;
+     archive members (a BIOS zip is checked as a file); checking files
+     outside `Bios/`.
 3. *Import BIOS files by dropping them on the page* (or "Add BIOS…", or
    `firmware import <path>`). Dropping a folder or an archive starts the
    process; Tauri's webview drag-drop event gives the paths, and the app

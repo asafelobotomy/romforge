@@ -34,6 +34,7 @@
   {/each}
   <span class="spacer"></span>
   <button class="plat small" class:active={view === "dats"} onclick={() => show("dats")}>DATs</button>
+  <button class="plat small" class:active={view === "bios"} onclick={() => show("bios")}>BIOS</button>
   <button class="plat small" class:active={view === "organize"} onclick={() => show("organize")}>Organize</button>
 </nav>
 

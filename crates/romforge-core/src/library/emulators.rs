@@ -1,6 +1,6 @@
 //! Emulators and launching.
 
-use crate::{Error, Library, emusettings, launch};
+use crate::{Error, Library, emusettings, firmware, launch};
 
 impl Library {
     /// Where to look for emulators and how to start them: the real
@@ -19,6 +19,25 @@ impl Library {
     /// What the Emulator Settings dialog shows.
     pub fn emulator_settings(&self) -> Result<emusettings::EmulatorSettingsView, Error> {
         emusettings::view(&self.conn, &self.env()?)
+    }
+
+    /// Fetch RetroBIOS's list of what emulators need (milestone 20).
+    pub fn firmware_download(&self) -> Result<usize, Error> {
+        let dir = self
+            .extdb_dir()
+            .ok_or_else(|| Error::Settings("no folder for downloaded lists".into()))?;
+        std::fs::create_dir_all(&dir)?;
+        firmware::download(&dir)
+    }
+
+    /// Which BIOS files each system's emulators need, and which are in the
+    /// RomForge folder's `Bios/`.
+    pub fn firmware_report(&self) -> Result<firmware::FirmwareReport, Error> {
+        let home = self.home.as_ref().ok_or_else(|| {
+            Error::Settings("BIOS files are checked in a RomForge folder; create one first".into())
+        })?;
+        let dir = self.extdb_dir().unwrap_or_else(|| home.databases());
+        firmware::report(&dir, home, &self.env()?)
     }
 
     pub fn save_emulator_settings(

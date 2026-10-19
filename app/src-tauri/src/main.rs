@@ -12,6 +12,7 @@ mod dats;
 mod db;
 mod emulators;
 mod enrich;
+mod firmware;
 mod home;
 mod images;
 mod library;
@@ -91,6 +92,8 @@ fn main() {
             library::game_detail,
             scan::refresh,
             emulators::get_emulator_settings,
+            firmware::firmware_report,
+            firmware::firmware_download,
             emulators::save_emulator_settings,
             settings::get_settings,
             settings::save_settings,

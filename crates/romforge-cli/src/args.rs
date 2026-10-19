@@ -7,8 +7,8 @@ use clap::{Args, Parser, Subcommand};
 use romforge_core::organize;
 
 use crate::subcommands::{
-    CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, HomeCommand, OrganizeCommand,
-    ScummvmCommand, SearchCommand,
+    CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
+    OrganizeCommand, ScummvmCommand, SearchCommand,
 };
 
 #[derive(Parser)]
@@ -156,6 +156,9 @@ pub enum Command {
     /// List, add or remove emulators
     #[command(subcommand)]
     Emulator(EmulatorCommand),
+    /// BIOS files: what each system's emulators need, and what you have
+    #[command(subcommand)]
+    Firmware(FirmwareCommand),
     /// Show or change your Source / Library folders and cleanup options
     Settings {
         /// Folder of unprocessed ROMs ("" to clear)

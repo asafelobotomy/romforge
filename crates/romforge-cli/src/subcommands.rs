@@ -175,6 +175,22 @@ pub enum SearchCommand {
 }
 
 #[derive(Subcommand)]
+pub enum FirmwareCommand {
+    /// Fetch RetroBIOS's list of the files each emulator loads (the list
+    /// only, never BIOS files)
+    Download,
+    /// Check the RomForge folder's Bios/ against it
+    Check {
+        /// Only this system (as `dat systems` names it)
+        #[arg(long)]
+        system: Option<String>,
+        /// Show every file, not only required ones and ones you have
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum EmulatorCommand {
     /// Emulators romforge knows, and which are installed
     List {
