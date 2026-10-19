@@ -40,4 +40,17 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         seconds    INTEGER NOT NULL
     );
     CREATE INDEX play_sessions_game ON play_sessions (system, game);",
+    // 39: manuals (milestone 26): a game's PDF, where it came from, its
+    // Vimm's Lair id from Hasheous (asked once: `checked_at`) and the page
+    // last read, by system key and title.
+    "CREATE TABLE manuals (
+        system     TEXT NOT NULL,
+        game       TEXT NOT NULL,
+        path       TEXT,
+        source     TEXT,
+        vimm_id    TEXT,
+        checked_at TEXT,
+        last_page  INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (system, game)
+    );",
 ];

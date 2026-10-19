@@ -2071,7 +2071,7 @@ table, no DATs). It gets:
 - *Compression:* WUA from decrypted folders, and from WUD / WUX with
   the user's keys (milestone 23, 4).
 
-## Manuals (milestone 26; researched and decided 2026-10-19, not built)
+## Manuals (milestone 26; researched and decided 2026-10-19; first part built 2026-10-20)
 
 A game's manual, read in a Manual tab next to Details or in a window of
 its own. Neither downloaded database has manuals (LaunchBox's 33 image
@@ -2142,6 +2142,35 @@ The reader:
   (when Hasheous gave an id) and a drop zone. Components `ManualTab`,
   `ManualReader` and `PageStrip`, each under 400 lines (rule 11).
 - CLI: `manual show|add|download|remove <game>`, all logic in the core.
+
+*(Built 2026-10-20, first part.)* `manual.rs`, `library/manuals.rs`,
+app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
+- **Kept** in a `manuals` table (migration 39) by system key and title:
+  path, source, Vimm id, whether Hasheous was asked, last page. Files at
+  `<Media>/<System>/manual/<Title>.pdf` (the art cache's `art/` without a
+  RomForge folder). A PDF must start with `%PDF`; adding copies it.
+- **Hasheous** asked once per game, by each of its files' SHA1, when the
+  Manual tab first opens on a game without a manual (not from Enrich);
+  the answer, even none, is kept. Checked 2026-10-20: Super Mario World
+  (USA) gives `VIMMManualId` 4770.
+- **Vimm's Lair** download only on the button (DPI 150 / 300 / 600),
+  with a Referer of the manual's page, kept only if it is a PDF; else the
+  tab says to download it from their page and drop it on the tab. Not
+  tried against the live server (its robots.txt asks for no automated
+  fetching, so only a user's click should). The restricted fallback
+  window from the plan isn't built: the page opens in the browser
+  instead.
+- **Reader:** pdf.js 6.4.299 (Apache-2.0), loaded only when a manual is
+  opened (the main bundle stays as it was); one page or a spread (cover
+  alone, then pairs), fit width or whole page, zoom 50–400%, arrows /
+  Page Up/Down / Home / End, a lazily drawn thumbnail strip, the page
+  remembered. `art://` serves `.pdf`; the CSP gained `connect-src art:`
+  and `worker-src 'self' blob:`. Tried in a dev preview with a generated
+  PDF.
+- **Not yet:** the pop-out window, ScreenScraper manuals, reading ES-DE's
+  and LaunchBox's manual folders in "Import my existing setup", Cleanup
+  putting the manual in the archive's `romforge/` folder, pad control of
+  the reader.
 
 ## Code review follow-ups (2026-10-18)
 

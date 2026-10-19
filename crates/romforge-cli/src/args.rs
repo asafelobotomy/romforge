@@ -8,7 +8,7 @@ use romforge_core::organize;
 
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
-    OrganizeCommand, ScummvmCommand, SearchCommand,
+    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand,
 };
 
 #[derive(Parser)]
@@ -162,6 +162,9 @@ pub enum Command {
     /// BIOS files: what each system's emulators need, and what you have
     #[command(subcommand)]
     Firmware(FirmwareCommand),
+    /// A game's manual (a PDF): yours, or Vimm's Lair's scan
+    #[command(subcommand)]
+    Manual(ManualCommand),
     /// Show or change your Source / Library folders and cleanup options
     Settings {
         /// Folder of unprocessed ROMs ("" to clear)

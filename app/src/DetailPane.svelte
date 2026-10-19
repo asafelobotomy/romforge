@@ -1,6 +1,7 @@
 <script>
   import DetailsTab from "./DetailsTab.svelte";
   import DevelopmentTab from "./DevelopmentTab.svelte";
+  import ManualTab from "./ManualTab.svelte";
   import SeriesTab from "./SeriesTab.svelte";
   import VersionsTab from "./VersionsTab.svelte";
   import LinksTab from "./LinksTab.svelte";
@@ -40,13 +41,15 @@
       </p>
     </div>
     <div class="tabs" role="tablist">
-      {#each [["details", "Details"], ["development", "Development"], ["series", "Series"], ["versions", "Versions"], ["links", "Links"]] as [k, label]}
+      {#each [["details", "Details"], ["manual", "Manual"], ["development", "Development"], ["series", "Series"], ["versions", "Versions"], ["links", "Links"]] as [k, label]}
         <button role="tab" aria-selected={ui.tab === k} class:active={ui.tab === k} onclick={() => (ui.tab = k)}>{label}</button>
       {/each}
     </div>
 
     {#if ui.tab === "details"}
       <DetailsTab {row} {detail} {showEmpty} {artPicker} />
+    {:else if ui.tab === "manual"}
+      {#if row.system && row.playable}<ManualTab {row} bind:error />{:else}<p class="hint">Manuals are for identified games.</p>{/if}
     {:else if ui.tab === "development"}
       <DevelopmentTab {detail} bind:error />
     {:else if ui.tab === "versions"}

@@ -175,6 +175,24 @@ pub enum SearchCommand {
 }
 
 #[derive(Subcommand)]
+pub enum ManualCommand {
+    /// Where the game's manual is, or whether Vimm's Lair has one (asks
+    /// Hasheous once, by the game's hash)
+    Show { game: String },
+    /// Keep this PDF as the game's manual (a copy)
+    Add { game: String, pdf: std::path::PathBuf },
+    /// Download the game's manual from Vimm's Lair (one at a time)
+    Download {
+        game: String,
+        /// The scan's resolution, 50 to 640
+        #[arg(long, default_value_t = 300)]
+        dpi: u32,
+    },
+    /// Forget the game's manual and delete romforge's copy
+    Remove { game: String },
+}
+
+#[derive(Subcommand)]
 pub enum FirmwareCommand {
     /// Fetch RetroBIOS's list of the files each emulator loads (the list
     /// only, never BIOS files)

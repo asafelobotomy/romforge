@@ -26,7 +26,7 @@ impl ArtRoots {
     }
 }
 
-/// `art://localhost/<file path>`: a picture file under one of the art
+/// `art://localhost/<file path>`: a picture (or a manual's PDF) under one of the art
 /// roots, so the list's picture views load only what is on screen, from
 /// disk, without passing it through a command as base64. With `?h=<px>`,
 /// a thumbnail that tall (made on first request, kept in the cache), or
@@ -47,6 +47,8 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
         Some("png") => Some("image/png"),
         Some("jpg" | "jpeg") => Some("image/jpeg"),
         Some("webp") => Some("image/webp"),
+        // Manuals (milestone 26), read with pdf.js.
+        Some("pdf") => Some("application/pdf"),
         _ => None,
     };
     let path = PathBuf::from(percent_decode(uri_path));

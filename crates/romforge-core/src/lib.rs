@@ -24,6 +24,7 @@ mod identify;
 pub mod launch;
 pub mod layout;
 mod library;
+pub mod manual;
 pub mod names;
 pub mod obtain;
 pub mod organize;

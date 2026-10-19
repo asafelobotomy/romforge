@@ -7,6 +7,7 @@ mod dats;
 mod emulators;
 mod files;
 mod folders;
+mod manuals;
 mod open;
 mod patching;
 mod scan_report;

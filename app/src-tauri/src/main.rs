@@ -16,6 +16,7 @@ mod firmware;
 mod home;
 mod images;
 mod library;
+mod manual;
 mod patch;
 mod play;
 mod scan;
@@ -103,6 +104,12 @@ fn main() {
             home::home_move,
             enrich::enrich,
             play::launch,
+            manual::manual_info,
+            manual::manual_lookup,
+            manual::add_manual,
+            manual::download_manual,
+            manual::remove_manual,
+            manual::set_manual_page,
             play::stop_game,
             play::now_playing,
             library::library_view,

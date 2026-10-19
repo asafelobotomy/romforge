@@ -112,6 +112,7 @@ fn main() -> Result<()> {
         c @ (Command::Enrich { .. } | Command::Info { .. }) => cmd::enrich::run(&mut lib, c)?,
         c @ (Command::Launch { .. } | Command::Emulator(_)) => cmd::launch::run(&mut lib, c)?,
         c @ Command::Firmware(_) => cmd::firmware::run(&mut lib, c)?,
+        c @ Command::Manual(_) => cmd::manual::run(&mut lib, c)?,
         c @ Command::Settings { .. } => cmd::settings::run(&mut lib, c)?,
         c @ Command::Search(_) => cmd::search::run(&mut lib, c)?,
         c @ Command::Games { .. } => cmd::games::run(&mut lib, c)?,
