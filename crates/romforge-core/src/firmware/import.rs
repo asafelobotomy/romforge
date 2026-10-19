@@ -95,7 +95,7 @@ fn places<'a>(slots: &'a [Slot<'a>]) -> BTreeMap<PathBuf, Place<'a>> {
     let mut out: BTreeMap<PathBuf, Place> = BTreeMap::new();
     for slot in slots {
         for f in slot.files() {
-            let p = out.entry(slot.dir.join(f.place())).or_insert(Place {
+            let p = out.entry(slot.place(f)).or_insert(Place {
                 reqs: Vec::new(),
                 used_by: Vec::new(),
             });

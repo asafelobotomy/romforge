@@ -24,6 +24,9 @@ pub struct FileReq {
     pub name: String,
     /// Where it goes, relative to the emulator's BIOS folder (else `name`).
     pub path: Option<String>,
+    /// Where the standalone emulator reads it, relative to its data folder,
+    /// when that differs from `path` (Dolphin's `GC/USA/IPL.bin`).
+    pub standalone_path: Option<String>,
     pub required: bool,
     /// The emulator runs without it (high-level emulation).
     pub hle: bool,
@@ -105,6 +108,10 @@ fn file(v: &Value) -> Option<FileReq> {
     Some(FileReq {
         name,
         path: v.get("path").and_then(Value::as_str).map(str::to_owned),
+        standalone_path: v
+            .get("standalone_path")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         required: flag("required"),
         hle: flag("hle_fallback"),
         size: v.get("size").and_then(Value::as_u64),

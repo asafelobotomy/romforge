@@ -137,6 +137,16 @@ impl Slot<'_> {
         }
     }
 
+    /// Where it finds `f`: the standalone emulator's own place for it when
+    /// the list gives one, else its place in RetroArch's layout.
+    fn place(&self, f: &FileReq) -> PathBuf {
+        let standalone = f
+            .standalone_path
+            .as_deref()
+            .filter(|_| !self.name.starts_with("retroarch:"));
+        self.dir.join(standalone.unwrap_or(f.place()))
+    }
+
     /// Its profile's files for its system: those tied to the system, and
     /// those tied to none.
     fn files(&self) -> impl Iterator<Item = &FileReq> {
@@ -214,7 +224,7 @@ struct Checker {
 impl Checker {
     fn emulator(&mut self, slot: &Slot) -> EmulatorFirmware {
         let reqs: Vec<&FileReq> = slot.files().collect();
-        let files: Vec<FileState> = reqs.iter().map(|f| self.file(f, &slot.dir)).collect();
+        let files: Vec<FileState> = reqs.iter().map(|f| self.file(f, slot.place(f))).collect();
         let (ready, regions) = readiness(&reqs, &files);
         EmulatorFirmware {
             name: slot.name.clone(),
@@ -227,8 +237,7 @@ impl Checker {
         }
     }
 
-    fn file(&mut self, f: &FileReq, dir: &Path) -> FileState {
-        let place = dir.join(f.place());
+    fn file(&mut self, f: &FileReq, place: PathBuf) -> FileState {
         let digest = self
             .seen
             .entry(place.clone())

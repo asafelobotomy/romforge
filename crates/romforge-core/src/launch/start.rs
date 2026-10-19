@@ -48,7 +48,8 @@ pub(super) fn start(
     };
     let spec = |emulator: String, runner: &Runner, args: Vec<String>, prepare: Prepare| {
         let home = env.home.as_ref().filter(|_| !prepare.writes.is_empty());
-        let (program, args) = command(runner, args, &owned::grants(grant.as_deref(), home));
+        let grants = owned::grants(grant.as_deref(), home);
+        let (program, args, env) = command(runner, args, &grants, &prepare.env);
         LaunchSpec {
             game: game.clone(),
             system: system.key.to_owned(),
@@ -56,6 +57,7 @@ pub(super) fn start(
             rom: rom.clone(),
             program,
             args,
+            env,
             prepare,
         }
     };

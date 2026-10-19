@@ -50,6 +50,8 @@ pub struct LaunchSpec {
     pub rom: PathBuf,
     pub program: PathBuf,
     pub args: Vec<String>,
+    /// Set in the emulator's environment.
+    pub env: Vec<(String, String)>,
     /// romforge's config for the emulator, written by [`spawn`] first.
     pub prepare: Prepare,
 }
@@ -228,17 +230,29 @@ fn is_executable(p: &Path) -> bool {
 /// (often just home), so it gets `grants` (the game's folder, and the
 /// RomForge folder for romforge's config) for this run: a game on another
 /// drive opens too, and nothing is changed for good.
-fn command(runner: &Runner, args: Vec<String>, grants: &[PathBuf]) -> (PathBuf, Vec<String>) {
+///
+/// `env` is set for the emulator: in the process for a program, as
+/// `--env=` for a Flatpak (which sets its own XDG folders otherwise). The
+/// third part is what [`spawn`] sets.
+fn command(
+    runner: &Runner,
+    args: Vec<String>,
+    grants: &[PathBuf],
+    env: &[(String, String)],
+) -> (PathBuf, Vec<String>, Vec<(String, String)>) {
     match runner {
-        Runner::Program(p) => (p.clone(), args),
+        Runner::Program(p) => (p.clone(), args, env.to_vec()),
         Runner::Flatpak(id) => {
             let mut a = vec!["run".to_owned()];
             for g in grants {
                 a.push(format!("--filesystem={}", g.display()));
             }
+            for (k, v) in env {
+                a.push(format!("--env={k}={v}"));
+            }
             a.push(id.clone());
             a.extend(args);
-            (PathBuf::from("flatpak"), a)
+            (PathBuf::from("flatpak"), a, Vec::new())
         }
     }
 }

@@ -50,9 +50,10 @@ fn run_known(
         .known(e)
         .ok_or_else(|| Error::Launch(format!("{shown} isn't installed (on PATH or as a Flatpak)")))?;
     let grants: Vec<PathBuf> = grant.map(Path::to_path_buf).into_iter().collect();
-    let (program, args) = command(&runner, args.to_vec(), &grants);
+    let (program, args, env) = command(&runner, args.to_vec(), &grants, &[]);
     let out = std::process::Command::new(&program)
         .args(&args)
+        .envs(env)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
@@ -86,6 +87,7 @@ pub fn spawn(spec: &LaunchSpec) -> Result<u32, Error> {
     prepare(&spec.prepare)?;
     let mut child = std::process::Command::new(&spec.program)
         .args(&spec.args)
+        .envs(spec.env.iter().map(|(k, v)| (k, v)))
         .stdin(std::process::Stdio::null())
         .spawn()
         .map_err(|e| Error::Launch(format!("{}: {e}", spec.program.display())))?;

@@ -5,10 +5,11 @@
 //! keeps every other key as it is, so a setting changed elsewhere in that
 //! copy survives.
 //!
-//! RetroArch first: `retroarch.cfg` for what is the same everywhere, and
+//! RetroArch: `retroarch.cfg` for what is the same everywhere, and
 //! `systems/<system>.cfg`, given with `--appendconfig`, for the folders of
 //! one system (RetroArch has one save folder, so each system gets its own
-//! file). The keys were checked in RetroArch 1.22.2's own config.
+//! file). The keys were checked in RetroArch 1.22.2's own config. The
+//! standalone emulators are in `owned/standalone.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -16,19 +17,30 @@ use super::{KnownEmulator, LaunchOptions};
 use crate::home::Home;
 use crate::{Error, systems::System};
 
+mod formats;
+pub use formats::Format;
+mod standalone;
+
 /// A config file, the keys romforge sets in it and the ones it takes out.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ConfigWrite {
     pub path: PathBuf,
+    pub format: Format,
     pub keys: Vec<(String, String)>,
     pub remove: Vec<String>,
 }
 
-/// What has to exist before an emulator starts from romforge's config.
+/// What has to exist before an emulator starts from romforge's config,
+/// and the environment it starts with.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Prepare {
     pub dirs: Vec<PathBuf>,
     pub writes: Vec<ConfigWrite>,
+    pub env: Vec<(String, String)>,
+    /// (from, to): every file under `from` is linked to the same place
+    /// under `to`, where nothing is yet (an emulator with no key for its
+    /// BIOS files).
+    pub links: Vec<(PathBuf, PathBuf)>,
 }
 
 /// romforge's config for `e` running a game of `system`: its folder (the
@@ -80,24 +92,30 @@ pub(super) fn owned(
                 writes: vec![
                     ConfigWrite {
                         path: dir.join("retroarch.cfg"),
+                        format: Format::RetroArch,
                         keys,
                         remove: options.unset.clone(),
                     },
                     ConfigWrite {
                         path: dir.join("systems").join(format!("{}.cfg", system.key)),
+                        format: Format::RetroArch,
                         keys: pairs(&per_system),
                         remove: Vec::new(),
                     },
                 ],
+                ..Prepare::default()
             };
             Some((dir, prepare))
         }
-        _ => None,
+        name => {
+            let bios = home.bios().join(name);
+            standalone::standalone(name, &dir, &bios).map(|p| (dir, p))
+        }
     }
 }
 
-/// Make the folders and set the keys, each file written whole (others'
-/// keys, comments and order kept).
+/// Make the folders, set the keys (each file written whole, with others'
+/// keys, comments and order kept) and link BIOS files in.
 pub fn prepare(p: &Prepare) -> Result<(), Error> {
     for d in &p.dirs {
         std::fs::create_dir_all(d)?;
@@ -108,48 +126,44 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e.into()),
         };
-        let new = merge_cfg(&old, &w.keys, &w.remove)?;
-        if new != old {
+        let new = formats::merge(w.format, &old, &w.keys, &w.remove)?;
+        if new != old || !w.path.exists() {
             crate::atomic::write(&w.path, new.as_bytes())?;
         }
+    }
+    for (from, to) in &p.links {
+        link_tree(from, from, to)?;
     }
     Ok(())
 }
 
-/// `text` (RetroArch's `key = "value"` lines) with `keys` set and the
-/// lines of `remove` gone: a line for a key is replaced where it is, a key
-/// with no line is added at the end.
-fn merge_cfg(text: &str, keys: &[(String, String)], remove: &[String]) -> Result<String, Error> {
-    let line = |k: &str, v: &str| -> Result<String, Error> {
-        if v.contains('"') || v.contains('\n') {
-            return Err(Error::Launch(format!(
-                "{k}: can't write {v:?} into a RetroArch config"
-            )));
-        }
-        Ok(format!("{k} = \"{v}\""))
+/// Link each file under `dir` (inside `root`) to the same place under
+/// `to`, where nothing is yet: a hard link, else a copy.
+fn link_tree(root: &Path, dir: &Path, to: &Path) -> Result<(), Error> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
     };
-    let key_of = |l: &str| l.split_once('=').map(|(k, _)| k.trim().to_owned());
-    let mut done = vec![false; keys.len()];
-    let mut out = String::new();
-    for l in text.lines() {
-        match key_of(l).and_then(|k| keys.iter().position(|(key, _)| *key == k)) {
-            Some(i) if !done[i] => {
-                done[i] = true;
-                out.push_str(&line(&keys[i].0, &keys[i].1)?);
-            }
-            Some(_) => continue,
-            None if key_of(l).is_some_and(|k| remove.contains(&k)) => continue,
-            None => out.push_str(l),
+    for e in entries.filter_map(Result::ok) {
+        let path = e.path();
+        if path.is_dir() {
+            link_tree(root, &path, to)?;
+            continue;
         }
-        out.push('\n');
-    }
-    for (i, (k, v)) in keys.iter().enumerate() {
-        if !done[i] {
-            out.push_str(&line(k, v)?);
-            out.push('\n');
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
+        let target = to.join(rel);
+        if target.exists() {
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if std::fs::hard_link(&path, &target).is_err() {
+            std::fs::copy(&path, &target)?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The folders a Flatpak emulator must be able to read: the game's and,
@@ -159,35 +173,4 @@ pub(super) fn grants(game: Option<&Path>, home: Option<&Home>) -> Vec<PathBuf> {
         .into_iter()
         .chain(home.map(|h| h.root().to_path_buf()))
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keys_are_set_and_the_rest_kept() {
-        let text =
-            "# mine\nvideo_driver = \"vulkan\"\nsystem_directory = \"/old\"\nsystem_directory = \"/dup\"\n";
-        let keys = vec![
-            ("system_directory".to_owned(), "/rf/Bios/RetroArch".to_owned()),
-            ("config_save_on_exit".to_owned(), "false".to_owned()),
-        ];
-        assert_eq!(
-            merge_cfg(text, &keys, &[]).unwrap(),
-            "# mine\nvideo_driver = \"vulkan\"\nsystem_directory = \"/rf/Bios/RetroArch\"\nconfig_save_on_exit = \"false\"\n"
-        );
-        assert_eq!(merge_cfg("", &keys, &[]).unwrap().lines().count(), 2);
-        let quoted = vec![("x".to_owned(), "a\"b".to_owned())];
-        assert!(merge_cfg("", &quoted, &[]).is_err());
-        // A setting no longer set goes, so RetroArch's default applies.
-        let unset = ["video_driver".to_owned()];
-        assert_eq!(
-            merge_cfg(text, &[], &unset)
-                .unwrap()
-                .matches("video_driver")
-                .count(),
-            0
-        );
-    }
 }

@@ -1051,8 +1051,8 @@ Not yet:
 - a new copy starts from RetroArch's built-in defaults: whether
   controller autoconfig and assets still resolve is to check on a real
   start (else seed those paths, or import the user's config once);
-- the other emulators' configs (their data folders are in the table above:
-  environment variables or portable markers).
+- the other emulators' configs: seven are done (milestone 20, step 4);
+  RPCS3, Cemu and xemu wait on a decision (their data folders hold games).
 
 *(Built 2026-10-19, RetroArch's settings.)* Emulator Settings rows with
 config keys (`emusettings/table.rs`, `keys`) are written into romforge's
@@ -1569,6 +1569,29 @@ In this order:
    there from `RomForge/Bios/`. Nothing is written outside RomForge. A
    Flatpak that can't read `RomForge/` is reported with the access it
    needs.
+   *(Built 2026-10-19 for seven emulators.)* `launch/owned/standalone.rs`,
+   each read from its source (keys and folders in the file's header):
+   DuckStation (`XDG_CONFIG_HOME`, `[BIOS] SearchDirectory`), PCSX2
+   (`-datapath`, `[Folders] Bios`), mGBA (`XDG_CONFIG_HOME`,
+   `[ports.qt] gba.bios`… for files there are), Mednafen
+   (`MEDNAFEN_HOME`, `filesys.path_firmware`), Flycast (XDG folders,
+   `FLYCAST_BIOS_PATH`), Dolphin (`-u`; files linked into the user folder
+   where it reads them, as it has no key) and PPSSPP (no BIOS). Each also
+   gets the keys that keep its first-run wizard from opening or its
+   settings from being reset (DuckStation's and PCSX2's wizard flags,
+   PCSX2's `SettingsVersion`). The BIOS check and import use RetroBIOS's
+   `standalone_path` for a standalone emulator where it gives one
+   (Dolphin's `GC/<region>/IPL.bin`). Writers for INI and Mednafen's
+   `key value` files are in `owned/formats.rs`; environment variables
+   reach a Flatpak as `--env=`.
+   **Open (owner's call):** RPCS3, Cemu and xemu keep firmware, installed
+   games or a hard disk image in their data folder, so they still start
+   as set up: a folder of romforge's would hide those. Options: keep their
+   own data folder and set only BIOS paths in it, or move/link their game
+   data into RomForge. Also: an emulator now started from romforge's
+   folder no longer sees saves or settings in its own folder (memory
+   cards, controller mappings); an "import my existing setup" step is not
+   built.
 5. *Launch.* Before starting a core, check its required files. If they're
    missing, try the next core in the `cores` column whose files are
    complete (or that needs none, per its profile: an HLE BIOS), else say

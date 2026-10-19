@@ -33,13 +33,14 @@ fn known_emulators_cover_the_systems_table() {
 
 #[test]
 fn flatpak_commands() {
-    let (p, a) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], &[]);
+    let (p, a, _) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], &[], &[]);
     assert_eq!(p, PathBuf::from("flatpak"));
     assert_eq!(a, ["run", "org.x.Y", "{rom}"]);
-    let (_, a) = command(
+    let (_, a, _) = command(
         &Runner::Flatpak("org.x.Y".into()),
         vec!["/m/g/a.zip".into()],
         &["/m/g".into(), "/h/RomForge".into()],
+        &[("XDG_CONFIG_HOME".into(), "/h/c".into())],
     );
     assert_eq!(
         a,
@@ -47,20 +48,24 @@ fn flatpak_commands() {
             "run",
             "--filesystem=/m/g",
             "--filesystem=/h/RomForge",
+            "--env=XDG_CONFIG_HOME=/h/c",
             "org.x.Y",
             "/m/g/a.zip"
         ]
     );
-    let (p, a) = command(
+    let env = [("MEDNAFEN_HOME".to_owned(), "/h/m".to_owned())];
+    let (p, a, e) = command(
         &Runner::Program("/bin/x".into()),
         vec!["r".into()],
         &["/m".into()],
+        &env,
     );
     assert_eq!(
         (p, a),
         (PathBuf::from("/bin/x"), vec!["r".to_owned()]),
-        "a plain program needs none"
+        "a plain program needs no grants"
     );
+    assert_eq!(e, env, "its environment is set by spawn");
     let vars = Vars {
         rom: Path::new("/r/a b.iso"),
         set: "a b",
