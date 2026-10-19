@@ -58,6 +58,7 @@ pub(super) fn plan_as(
     let in_source = |p: &Path| source.contains(p);
     let games = home.map(Home::games);
     let mut path_of = conn.prepare("SELECT path FROM files WHERE file_id = ?1")?;
+    let mut held_at = conn.prepare("SELECT path FROM files WHERE sha1 = ?1 AND size = ?2")?;
 
     let v = view::library(conn)?;
     // Which library rows each file belongs to: an original another game
@@ -163,7 +164,9 @@ pub(super) fn plan_as(
         {
             continue;
         }
-        // Already in Games/: the copies outside are redundant.
+        // Already in Games/: the copies outside are redundant, but only when
+        // every ROM (a CHD holds no cue sheet) is held there, by size and
+        // SHA1; one file of the game there isn't the game.
         if let (Some(games), false) = (&games, in_place) {
             let mut there = None;
             for f in row.file_ids() {
@@ -173,7 +176,20 @@ pub(super) fn plan_as(
                     break;
                 }
             }
-            if let Some(target) = there {
+            let mut held = |p: &Part| -> Result<bool, Error> {
+                let paths = held_at
+                    .query_map(rusqlite::params![p.sha1, p.size], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(paths.iter().any(|q| Path::new(q).starts_with(games)))
+            };
+            let mut all_held = true;
+            for p in parts.iter().filter(|p| !p.name.to_lowercase().ends_with(".cue")) {
+                if !held(p)? {
+                    all_held = false;
+                    break;
+                }
+            }
+            if let (Some(target), true) = (there, all_held) {
                 let outside: Vec<Part> = parts
                     .into_iter()
                     .chain(copies)

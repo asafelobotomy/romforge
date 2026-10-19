@@ -9,15 +9,14 @@ use super::apply::absolute_dest;
 use super::names::{base_title, clone_groups, common_game, rank, sanitize};
 use super::{GameRef, Member, Move, OrganizeOptions, Plan, Skip};
 
-/// Whether `path` is under the source (`from`) of `opts`.
-pub(super) fn in_source(path: &str, opts: &OrganizeOptions) -> bool {
-    let Ok(from) = std::fs::canonicalize(&opts.from) else {
-        return false;
-    };
-    if from.is_dir() {
-        path.starts_with(&format!("{}/", from.display()))
-    } else {
-        Path::new(path) == from
+/// Whether `path` is under the source: `from` (canonical) when it is a
+/// folder, else `from` itself.
+fn in_source(path: &str, from: Option<&(PathBuf, bool)>) -> bool {
+    let path = Path::new(path);
+    match from {
+        Some((from, true)) => path != from && path.starts_with(from),
+        Some((from, false)) => path == from,
+        None => false,
     }
 }
 
@@ -131,8 +130,11 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
         }
     }
 
+    let source = std::fs::canonicalize(&opts.from)
+        .ok()
+        .map(|f| (f.clone(), f.is_dir()));
     for (path, members) in &files {
-        if !in_source(path, opts) {
+        if !in_source(path, source.as_ref()) {
             continue;
         }
         let from = PathBuf::from(path);

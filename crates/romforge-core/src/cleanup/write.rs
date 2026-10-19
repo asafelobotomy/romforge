@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 
 use crate::hash::{hash_stream, hex};
-use crate::organize::{move_file, sanitize};
+use crate::organize::{move_file, rename_noreplace, sanitize};
 use crate::{Error, layout};
 
 use super::apply::journal_output;
@@ -51,6 +51,17 @@ pub(crate) fn copy_hashed(r: impl Read, w: &mut impl Write) -> std::io::Result<S
     Ok(hex(&h.sha1.finalize()))
 }
 
+/// A finished file or folder renamed into place, never over anything that
+/// appeared there meanwhile.
+pub(crate) fn place(from: &Path, to: &Path) -> Result<(), Error> {
+    match rename_noreplace(from, to) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(Error::Cleanup(format!("{} already exists", to.display())))
+        }
+        r => Ok(r?),
+    }
+}
+
 /// One disk of a set as a plain file in the set's folder, checked against
 /// its hash; its art and details go in `romforge/<title>/` there.
 pub(super) fn write_loose(
@@ -79,19 +90,12 @@ pub(super) fn write_loose(
                 name
             )));
         }
-        if item.target.exists() {
-            return Err(Error::Cleanup(format!(
-                "{} already exists",
-                item.target.display()
-            )));
-        }
-        Ok(())
+        place(&part, &item.target)
     })();
     if let Err(e) = result {
         let _ = std::fs::remove_file(&part);
         return Err(e);
     }
-    std::fs::rename(&part, &item.target)?;
     journal_output(conn, batch, &item.target, "file")?;
     let side = dir.join(layout::EXTRAS_DIR).join(sanitize(&item.title));
     if !extras.is_empty() && !side.exists() {
@@ -110,7 +114,6 @@ pub(super) fn write_loose(
     Ok(())
 }
 
-/// A folder game (or the archive holding it) into one zip, every file
 /// The settings of every zip romforge writes: no clock (1980-01-01), the
 /// same permissions and compression for every member, so the same game
 /// always zips to the same bytes (as TorrentZip does; with
@@ -197,42 +200,15 @@ pub(super) fn write_folder_zip(
     // The folder goes to the trash whole: it must hold just what was
     // planned, nothing added since.
     let now: BTreeSet<String> = if src.is_dir() {
-        walkdir::WalkDir::new(src)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| {
-                e.path()
-                    .strip_prefix(src)
-                    .ok()
-                    .map(|r| r.to_string_lossy().replace('\\', "/"))
-            })
-            .collect()
+        files_in(src)
     } else if source_is_zip(src) {
         archive_names(src)?.into_iter().collect()
     } else {
-        walkdir::WalkDir::new(&unpacked)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| {
-                e.path()
-                    .strip_prefix(&unpacked)
-                    .ok()
-                    .map(|r| r.to_string_lossy().into_owned())
-            })
-            .collect()
+        files_in(&unpacked)
     };
-    let planned: BTreeSet<String> = item.parts.iter().map(|p| p.name.clone()).collect();
-    if now != planned {
+    if let Err(e) = unchanged(item, src, &now) {
         let _ = std::fs::remove_dir_all(&unpacked);
-        return Err(Error::Cleanup(format!(
-            "{} changed since the plan ({} files planned, {} now); plan again",
-            src.display(),
-            planned.len(),
-            now.len()
-        )));
+        return Err(e);
     }
     let mut source_zip = match source_is_zip(src) {
         true => Some(zip::ZipArchive::new(BufReader::new(File::open(src)?))?),
@@ -268,10 +244,43 @@ pub(super) fn write_folder_zip(
     Ok(())
 }
 
+/// Every file under a folder, by its path there (with `/`).
+fn files_in(dir: &Path) -> BTreeSet<String> {
+    walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            e.path()
+                .strip_prefix(dir)
+                .ok()
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+        })
+        .collect()
+}
+
+/// A folder game goes to the trash whole: it must hold just what was
+/// planned (`now`: what it holds), nothing added since.
+fn unchanged(item: &Item, src: &Path, now: &BTreeSet<String>) -> Result<(), Error> {
+    let planned: BTreeSet<String> = item.parts.iter().map(|p| p.name.clone()).collect();
+    if *now != planned {
+        return Err(Error::Cleanup(format!(
+            "{} changed since the plan ({} files planned, {} now); plan again",
+            src.display(),
+            planned.len(),
+            now.len()
+        )));
+    }
+    Ok(())
+}
+
 /// A folder game copied as a folder into `out` (which must not exist),
 /// each file read back and checked; its art and details go in
 /// `romforge/`, and a ScummVM game gets its `<id>.scummvm`.
 pub(super) fn copy_folder(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<(), Error> {
+    let src = item.folder.as_deref().unwrap_or(Path::new(""));
+    unchanged(item, src, &files_in(src))?;
     std::fs::create_dir(out)?;
     for p in &item.parts {
         let to = out.join(&p.name);
@@ -307,22 +316,17 @@ pub(super) fn copy_folder(item: &Item, extras: &[(String, Vec<u8>)], out: &Path)
     Ok(())
 }
 
-/// Move a file, or a folder whole (one rename on the same drive, else file
-/// by file).
+/// Move a file, or a folder whole (one rename on the same drive, else
+/// copied whole beside `to` and renamed into place before the original
+/// goes: [`crate::home::move_tree`]). Never replaces anything.
 pub(super) fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
     if !from.is_dir() {
         return move_file(from, to).map(|_| ());
     }
-    if to.exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::AlreadyExists,
-            format!("{} exists", to.display()),
-        ));
-    }
     if let Some(p) = to.parent() {
         std::fs::create_dir_all(p)?;
     }
-    match std::fs::rename(from, to) {
+    match rename_noreplace(from, to) {
         Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => crate::home::move_tree(from, to)
             .map(|_| ())
             .map_err(|e| std::io::Error::other(e.to_string())),

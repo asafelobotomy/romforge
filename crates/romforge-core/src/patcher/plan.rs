@@ -174,6 +174,14 @@ pub fn plan(
     .ok_or_else(|| bad(format!("{}: no complete set of files to patch", row.title)))?;
     let mut notes = Vec::new();
     let disc = system.is_disc_based;
+    // A cartridge's ROM names go in the new zip, and come from the DAT,
+    // which is untrusted: none may climb out of it or shadow `romforge/`.
+    if !disc && let Some(odd) = parts.iter().find(|x| !cleanup::safe_member_name(&x.name)) {
+        return Err(bad(format!(
+            "the DAT names a file {:?}, which can't go in an archive safely",
+            odd.name
+        )));
+    }
     let (target, applies_to, (form, rom)) = if disc {
         if !matches!(p.kind, Kind::Xdelta | Kind::Ppf) {
             notes.push(format!(

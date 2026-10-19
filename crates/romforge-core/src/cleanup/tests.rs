@@ -58,7 +58,14 @@ fn natural_order() {
 #[test]
 fn cue_pregaps_by_track() {
     let cue = "FILE \"a (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE \"a (Track 2).bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:00\n";
-    assert_eq!(cue_pregaps(cue), [0, 150]);
+    assert_eq!(cue_pregaps(cue).unwrap(), [0, 150]);
+    // Untrusted times: one that overflows is unreadable, not wrapped.
+    let huge = format!(
+        "  TRACK 01 AUDIO\n    INDEX 00 {}:00:00\n    INDEX 01 00:02:00\n",
+        u64::MAX
+    );
+    assert_eq!(cue_pregaps(&huge), None);
+    assert_eq!(cue_pregaps("  TRACK 01 AUDIO\n    INDEX 01 00:xx:00\n"), None);
 }
 
 #[test]

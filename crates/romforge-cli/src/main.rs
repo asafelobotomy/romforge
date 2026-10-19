@@ -32,29 +32,27 @@ fn main() -> Result<()> {
 
     match &cli.command {
         Command::Home(HomeCommand::Create { parent }) => {
-            if let Some(old) = &home
-                && cli.db.is_none()
-                && !std::path::absolute(parent)?.starts_with(old.root())
-            {
-                bail!(
-                    "already using {}; to move it, move that folder and run `home create` on its new place",
-                    old.root().display()
-                );
-            }
-            let new = romforge_core::home::Home::create(parent)?;
-            if new.db().exists() {
-                println!("{} is already a RomForge folder", new.root().display());
-            } else if db.exists() && home.as_ref() != Some(&new) {
-                let art = enrich::default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
-                let a = romforge_core::home::adopt(&new, &db, &art)
-                    .with_context(|| format!("moving {} into {}", db.display(), new.root().display()))?;
-                println!(
+            use romforge_core::home::{Created, Home};
+            // The folder in use: the one the database given is in, else
+            // the one recorded.
+            let current = match &cli.db {
+                Some(d) => Home::of_db(d),
+                None => home.clone(),
+            };
+            let art = enrich::default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
+            let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &db, &art)
+                .with_context(|| format!("setting up the RomForge folder in {}", parent.display()))?;
+            let new = done.home();
+            match &done {
+                Created::Existing { .. } => println!("{} is already a RomForge folder", new.root().display()),
+                Created::Adopted { moved: a, .. } => println!(
                     "moved the library into {}: database {}, {} downloaded databases, {} images",
                     new.root().display(),
                     if a.database { "yes" } else { "no" },
                     a.databases,
                     a.art
-                );
+                ),
+                Created::New { .. } => {}
             }
             new.remember()?;
             println!("using {}", new.root().display());

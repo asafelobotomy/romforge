@@ -16,7 +16,7 @@ use super::{Format, Item, Part, Source};
 /// Whether a DAT's ROM name is safe as a path inside an archive: relative,
 /// no `.` or `..` parts, no backslashes or drive letters, and not in the
 /// `romforge/` folder kept for art and details.
-pub(super) fn safe_member_name(name: &str) -> bool {
+pub(crate) fn safe_member_name(name: &str) -> bool {
     let parts: Vec<&str> = name.split('/').collect();
     !name.is_empty()
         && !name.contains('\\')
@@ -191,7 +191,9 @@ pub(super) fn set_item(
             (true, Some(set)) => format!("{}/{file}", set.to_string_lossy()),
             _ => file,
         };
-        if parts.iter().any(|p| p.path == path) || taken.contains(&path) || dir.join(&name).exists() {
+        // Keyed by where it goes: one file per name in `Games/<System>/`.
+        let to = dir.join(&name);
+        if parts.iter().any(|p| p.path == path || p.name == name) || taken.contains(&to) || to.exists() {
             continue;
         }
         let size = std::fs::metadata(&path)?.len();
@@ -206,7 +208,7 @@ pub(super) fn set_item(
     if parts.is_empty() {
         return Ok(Ok(None));
     }
-    taken.extend(parts.iter().map(|p| p.path.clone()));
+    taken.extend(parts.iter().map(|p| dir.join(&p.name)));
     parts.sort_by(|a, b| zip_order(&a.name, &b.name));
     let own = parts
         .iter()
@@ -234,13 +236,22 @@ pub(super) fn set_item(
     })))
 }
 
-/// Copy an arcade set's files whole, each read back and checked.
+/// Copy an arcade set's files whole, each read back and checked. A file
+/// there already (since the plan) must be the same one, else the set
+/// fails: its original would go to the trash with no copy of it.
 pub(super) fn write_set(conn: &Connection, batch: i64, item: &Item) -> Result<(), Error> {
     let dir = item.target.parent().unwrap_or(Path::new("."));
     for p in &item.parts {
         let to = dir.join(&p.name);
-        if to.exists() {
-            continue; // another game of the batch brought it
+        if to.symlink_metadata().is_ok() {
+            if crate::organize::same_file(&p.path, &to)? {
+                continue;
+            }
+            return Err(Error::Cleanup(format!(
+                "{} is there already and differs from {}",
+                to.display(),
+                p.path.display()
+            )));
         }
         let folder = to.parent().unwrap_or(dir);
         if !folder.exists() {
@@ -262,13 +273,12 @@ pub(super) fn write_set(conn: &Connection, batch: i64, item: &Item) -> Result<()
                     to.display()
                 )));
             }
-            Ok(())
+            super::write::place(&part, &to)
         })();
         if let Err(e) = r {
             let _ = std::fs::remove_file(&part);
             return Err(e);
         }
-        std::fs::rename(&part, &to)?;
         journal_output(conn, batch, &to, "file")?;
     }
     Ok(())

@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::params;
 
 use crate::Error;
-use crate::organize::move_file;
+use crate::organize::{move_file, rename_noreplace};
 
 use crate::layout::{DATABASES_DIR, DB_FILE, GAMES_DIR, HOME_DIR as DIR, HOME_MARKER as MARKER, MEDIA_DIR};
 
@@ -41,12 +41,7 @@ impl Home {
     /// already), created with its subfolders. An existing folder named
     /// RomForge without the marker is used only when empty.
     pub fn create(parent: &Path) -> Result<Home, Error> {
-        let parent = std::path::absolute(parent)?;
-        let root = if parent.file_name().is_some_and(|n| n == DIR) {
-            parent
-        } else {
-            parent.join(DIR)
-        };
+        let root = root_in(parent)?;
         if root.exists() && !root.join(MARKER).exists() && std::fs::read_dir(&root)?.next().is_some() {
             return Err(Error::Settings(format!(
                 "{} exists and isn't a RomForge folder; pick another place or empty it",
@@ -72,6 +67,12 @@ impl Home {
     /// `dir` if it is a RomForge folder (has the marker).
     pub fn at(dir: &Path) -> Option<Home> {
         dir.join(MARKER).is_file().then(|| Home { root: dir.to_owned() })
+    }
+
+    /// The RomForge folder [`Home::create`] makes for `parent`, if it is
+    /// there.
+    pub fn in_parent(parent: &Path) -> Option<Home> {
+        Home::at(&root_in(parent).ok()?)
     }
 
     /// The folder holding the database at `db`, if that is a RomForge folder.
@@ -128,6 +129,17 @@ impl Home {
     }
 }
 
+/// The RomForge folder for a parent the owner picked: `parent/RomForge`, or
+/// `parent` itself when it is named RomForge.
+fn root_in(parent: &Path) -> Result<PathBuf, Error> {
+    let parent = std::path::absolute(parent)?;
+    Ok(if parent.file_name().is_some_and(|n| n == DIR) {
+        parent
+    } else {
+        parent.join(DIR)
+    })
+}
+
 /// `$XDG_CONFIG_HOME/romforge/location`, else `~/.config/romforge/location`.
 fn pointer_file() -> Option<PathBuf> {
     Some(crate::layout::xdg("XDG_CONFIG_HOME", ".config")?.join(crate::layout::POINTER_FILE))
@@ -150,6 +162,8 @@ const PATH_COLUMNS: &[(&str, &str)] = &[
     ("organize_batches", "dest"),
     ("organize_moves", "src"),
     ("organize_moves", "dst"),
+    ("patch_files", "path"),
+    ("wikidata_pictures", "path"),
     ("settings", "value"),
 ];
 
@@ -190,16 +204,12 @@ pub(crate) fn heal(conn: &mut rusqlite::Connection, root: &Path) -> Result<bool,
 
 /// Move the whole folder into `new_parent` (as `new_parent/RomForge`),
 /// with no connection open on its database: one rename on the same drive,
-/// else file by file, each copy checked before its original goes. Nothing
-/// is ever replaced. The caller records the new place ([`Home::remember`]);
-/// the database fixes its stored paths the next time it opens ([`heal`]).
+/// else copied whole beside its new place, checked, renamed into place, and
+/// only then removed from the old one ([`move_tree`]). Nothing is ever
+/// replaced. The caller records the new place ([`Home::remember`]); the
+/// database fixes its stored paths the next time it opens ([`heal`]).
 pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
-    let parent = std::path::absolute(new_parent)?;
-    let to = if parent.file_name().is_some_and(|n| n == DIR) {
-        parent
-    } else {
-        parent.join(DIR)
-    };
+    let to = root_in(new_parent)?;
     if to.starts_with(&home.root) {
         return Err(Error::Settings(
             "the new place is inside the RomForge folder".into(),
@@ -211,11 +221,16 @@ pub fn relocate(home: &Home, new_parent: &Path) -> Result<Home, Error> {
     if let Some(p) = to.parent() {
         std::fs::create_dir_all(p)?;
     }
-    match std::fs::rename(&home.root, &to) {
+    match rename_noreplace(&home.root, &to) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
-            move_tree(&home.root, &to)?;
-            let _ = std::fs::remove_dir(&home.root);
+            // Once the copy is in place the folder has moved, even if some
+            // of the old one couldn't be removed (that is left as it is).
+            if let Err(e) = move_tree(&home.root, &to)
+                && Home::at(&to).is_none()
+            {
+                return Err(e);
+            }
         }
         Err(e) => return Err(e.into()),
     }
@@ -255,11 +270,11 @@ pub fn adopt(home: &Home, old_db: &Path, old_art: &Path) -> Result<Adopted, Erro
         done.database = true;
         let old_ext = crate::extdb::dir_for(old_db);
         if old_ext.is_dir() {
-            done.databases = move_tree(&old_ext, &home.databases())?;
+            done.databases = merge_tree(&old_ext, &home.databases())?;
         }
     }
     if old_art.is_dir() {
-        done.art = move_tree(old_art, &home.media())?;
+        done.art = merge_tree(old_art, &home.media())?;
         if done.database {
             let c = rusqlite::Connection::open(home.db())?;
             let (old, new) = (
@@ -276,28 +291,60 @@ pub fn adopt(home: &Home, old_db: &Path, old_art: &Path) -> Result<Adopted, Erro
     Ok(done)
 }
 
-/// Move every file under `from` to the same place under `to`, then remove
-/// the folders left empty. Returns the number of files moved.
-pub(crate) fn move_tree(from: &Path, to: &Path) -> Result<usize, Error> {
-    let mut n = 0;
-    for e in walkdir::WalkDir::new(from).follow_links(false) {
-        let e = e.map_err(std::io::Error::from)?;
-        if !e.file_type().is_file() {
-            continue;
-        }
-        let rel = e.path().strip_prefix(from).unwrap_or(e.path());
-        move_file(e.path(), &to.join(rel))?;
-        n += 1;
-    }
-    for e in walkdir::WalkDir::new(from).contents_first(true) {
-        if let Ok(e) = e
-            && e.file_type().is_dir()
-        {
-            let _ = std::fs::remove_dir(e.path());
-        }
-    }
-    Ok(n)
+/// What [`create_or_adopt`] did.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Created {
+    /// A RomForge folder with a database already: used as it is.
+    Existing { home: Home },
+    /// A new folder, and the library from before it moved in.
+    Adopted { home: Home, moved: Adopted },
+    /// A new, empty folder.
+    New { home: Home },
 }
+
+impl Created {
+    pub fn home(&self) -> &Home {
+        match self {
+            Created::Existing { home } | Created::Adopted { home, .. } | Created::New { home } => home,
+        }
+    }
+}
+
+/// Make (or find) the RomForge folder in `parent` (the caller then records
+/// it with [`Home::remember`]), moving the library in use into a new one: the
+/// database `old_db` (with no connection open on it) and the art under
+/// `old_art` ([`adopt`]). With a RomForge folder in use already
+/// (`current`), only that one is accepted: another place is refused, as
+/// the folder in use is moved with [`relocate`], never left behind.
+pub fn create_or_adopt(
+    parent: &Path,
+    current: Option<&Home>,
+    old_db: &Path,
+    old_art: &Path,
+) -> Result<Created, Error> {
+    if let Some(h) = current {
+        if root_in(parent)? != h.root {
+            return Err(Error::Settings(format!(
+                "already using the RomForge folder {}; to have it elsewhere, move it (home move)",
+                h.root.display()
+            )));
+        }
+        return Ok(Created::Existing { home: h.clone() });
+    }
+    let home = Home::create(parent)?;
+    Ok(if home.db().exists() {
+        Created::Existing { home }
+    } else if old_db.exists() && std::path::absolute(old_db)? != home.db() {
+        let moved = adopt(&home, old_db, old_art)?;
+        Created::Adopted { home, moved }
+    } else {
+        Created::New { home }
+    })
+}
+
+mod tree;
+pub(crate) use tree::{merge_tree, move_tree};
 
 #[cfg(test)]
 mod tests;

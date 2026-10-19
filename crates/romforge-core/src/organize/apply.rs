@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-use super::fs::move_file;
+use super::fs::{move_file, same_file, source_left};
 use super::{Applied, Batch, Plan, Undone};
 
 /// Carry out a plan, journaling each move so [`undo`] can reverse it. A
@@ -26,6 +26,9 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
         [dest.to_string_lossy()],
     )?;
     let batch_id = conn.last_insert_rowid();
+    // Moves whose journal row stays though they failed (the file is in
+    // both places): the batch stays for undo.
+    let mut kept_rows = 0;
     for (seq, m) in plan.moves.iter().enumerate() {
         // Journaled before it moves: a crash or a database error in between
         // leaves a row undo can act on, never a moved file nothing knows
@@ -54,6 +57,12 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
                 tx.commit()?;
                 applied.moved += 1;
             }
+            // The copy is in place but the original stays: the row stays
+            // too, so undo can remove the copy.
+            Err(e) if source_left(&e) => {
+                kept_rows += 1;
+                applied.failed.push((m.clone(), e.to_string()));
+            }
             Err(e) => {
                 conn.execute(
                     "DELETE FROM organize_moves WHERE batch_id = ?1 AND seq = ?2",
@@ -63,7 +72,7 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
             }
         }
     }
-    if applied.moved == 0 {
+    if applied.moved == 0 && kept_rows == 0 {
         conn.execute("DELETE FROM organize_batches WHERE batch_id = ?1", [batch_id])?;
     } else {
         applied.batch_id = batch_id;
@@ -165,7 +174,11 @@ pub fn undo(conn: &mut Connection, batch_id: Option<i64>) -> Result<Undone, Erro
             continue;
         }
         let now = std::fs::metadata(&dst).map(|m| m.len() as i64);
+        // The move copied but couldn't remove the original (or undo was cut
+        // short): when both are the same file, the copy just goes.
+        let both_same = src.exists() && dst.exists() && same_file(&src, &dst).unwrap_or(false);
         let result = match now {
+            Ok(_) if both_same => std::fs::remove_file(&dst).map_err(|e| format!("{}: {e}", dst.display())),
             Ok(n) if n != size => Err(format!("{} changed size since it was moved", dst.display())),
             Ok(_) => move_file(&dst, &src).map(drop).map_err(|e| e.to_string()),
             Err(e) => Err(format!("{}: {e}", dst.display())),
