@@ -1,58 +1,13 @@
 //! Milestone 2 end to end, always on copies in a temp folder.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use romforge_core::hash::hash_stream;
 use romforge_core::organize::OrganizeOptions;
-use romforge_core::{Library, LibraryFilter, Scope, Status};
+use romforge_core::{LibraryFilter, Scope, Status};
 
-fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
-}
-
-fn copy_tree(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for e in std::fs::read_dir(from).unwrap() {
-        let e = e.unwrap();
-        let ty = e.file_type().unwrap();
-        let dst = to.join(e.file_name());
-        if ty.is_dir() {
-            copy_tree(&e.path(), &dst);
-        } else if ty.is_file() {
-            std::fs::copy(e.path(), dst).unwrap();
-        }
-    }
-}
-
-/// (relative path, size) of every file under `dir`.
-fn listing(dir: &Path) -> Vec<(String, u64)> {
-    fn walk(base: &Path, dir: &Path, out: &mut Vec<(String, u64)>) {
-        for e in std::fs::read_dir(dir).unwrap() {
-            let e = e.unwrap();
-            let p = e.path();
-            if p.is_dir() {
-                walk(base, &p, out);
-            } else {
-                let rel = p.strip_prefix(base).unwrap().to_string_lossy().into_owned();
-                out.push((rel, e.metadata().unwrap().len()));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    if dir.exists() {
-        walk(dir, dir, &mut out);
-    }
-    out.sort();
-    out
-}
-
-fn library_with_fixture_dats() -> Library {
-    let mut lib = Library::open_in_memory().unwrap();
-    for e in std::fs::read_dir(fixtures().join("dats")).unwrap() {
-        lib.import_dat(e.unwrap().path(), None).unwrap();
-    }
-    lib
-}
+mod common;
+use common::fixtures;
+use common::organize::*;
 
 #[test]
 fn plan_apply_rescan_undo() {
@@ -162,150 +117,6 @@ fn never_overwrites() {
     assert!(first.from.exists());
 }
 
-fn digest(d: &[u8]) -> romforge_core::hash::Digest {
-    hash_stream(d, d.len() as u64).unwrap().raw
-}
-
-fn rom(name: &str, d: &[u8]) -> String {
-    let h = digest(d);
-    format!(
-        r#"<rom name="{name}" size="{}" crc="{}" md5="{}" sha1="{}"/>"#,
-        h.size, h.crc32, h.md5, h.sha1
-    )
-}
-
-#[test]
-fn one_game_one_rom_keeps_the_best_version() {
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("roms");
-    std::fs::create_dir(&src).unwrap();
-    let versions = [
-        "Puzzle (Japan)",
-        "Puzzle (USA)",
-        "Puzzle (USA) (Rev 1)",
-        "Puzzle (Europe)",
-        "Puzzle (USA) (Beta)",
-        "Other (Japan)",
-    ];
-    let mut games = String::new();
-    for (i, name) in versions.iter().enumerate() {
-        let data = vec![i as u8 + 1; 2048];
-        games += &format!(
-            r#"<game name="{name}">{}</game>"#,
-            rom(&format!("{name}.gb"), &data)
-        );
-        std::fs::write(src.join(format!("{i}.gb")), &data).unwrap();
-    }
-    let dat = tmp.path().join("gb.dat");
-    std::fs::write(
-        &dat,
-        format!(r#"<datafile><header><name>Nintendo - Game Boy</name></header>{games}</datafile>"#),
-    )
-    .unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-
-    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
-    opts.one_g1r = true;
-    let names = |lib: &Library, opts: &OrganizeOptions| {
-        let mut v: Vec<String> = lib
-            .organize_plan(opts)
-            .unwrap()
-            .moves
-            .into_iter()
-            .map(|m| m.game)
-            .collect();
-        v.sort();
-        v
-    };
-    assert_eq!(names(&lib, &opts), ["Other (Japan)", "Puzzle (USA) (Rev 1)"]);
-    opts.regions = vec!["Europe".into()];
-    assert_eq!(names(&lib, &opts), ["Other (Japan)", "Puzzle (Europe)"]);
-    opts.one_g1r = false;
-    assert_eq!(names(&lib, &opts).len(), versions.len());
-}
-
-#[test]
-fn loose_disc_moves_only_as_a_complete_set() {
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("roms");
-    std::fs::create_dir(&src).unwrap();
-    let track = vec![9u8; 4096];
-    let cue = b"FILE \"Disc (Track 1).bin\" BINARY\n".to_vec();
-    let dat = tmp.path().join("psx.dat");
-    std::fs::write(
-        &dat,
-        format!(
-            r#"<datafile><header><name>Sony - PlayStation</name></header><game name="Disc (USA)">{}{}</game></datafile>"#,
-            rom("Disc (USA).bin", &track),
-            rom("Disc (USA).cue", &cue)
-        ),
-    )
-    .unwrap();
-    std::fs::write(src.join("disc.bin"), &track).unwrap();
-    std::fs::write(src.join("disc.cue"), b"FILE \"disc.bin\" BINARY\r\n").unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let dest = tmp.path().join("sorted");
-    let rel = |plan: &romforge_core::organize::Plan| {
-        let mut v: Vec<String> = plan
-            .moves
-            .iter()
-            .map(|m| m.to.strip_prefix(&dest).unwrap().to_string_lossy().into_owned())
-            .collect();
-        v.sort();
-        v
-    };
-    // The user's own cue (not the DAT's) lists exactly the matched track: the
-    // set moves as is, names kept, so that cue still works.
-    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
-    assert_eq!(
-        rel(&plan),
-        [
-            "PlayStation/Disc (USA)/disc.bin",
-            "PlayStation/Disc (USA)/disc.cue"
-        ]
-    );
-
-    // A cue that also names a file that isn't a matched track: nothing moves.
-    std::fs::write(
-        src.join("disc.cue"),
-        b"FILE \"disc.bin\" BINARY\nFILE \"other.bin\" BINARY\n",
-    )
-    .unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
-    assert!(
-        plan.moves.is_empty(),
-        "renaming the bin would break the user's cue: {plan:?}"
-    );
-    assert!(
-        plan.skipped
-            .iter()
-            .any(|s| s.reason.contains("break the cue sheet"))
-    );
-
-    // With the DAT's own cue sheet, the set moves into a game folder.
-    std::fs::write(src.join("disc.cue"), &cue).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let plan = lib.organize_plan(&OrganizeOptions::new(&src, &dest)).unwrap();
-    let mut to: Vec<String> = plan
-        .moves
-        .iter()
-        .map(|m| m.to.strip_prefix(&dest).unwrap().to_string_lossy().into_owned())
-        .collect();
-    to.sort();
-    assert_eq!(
-        to,
-        [
-            "PlayStation/Disc (USA)/Disc (USA).bin",
-            "PlayStation/Disc (USA)/Disc (USA).cue"
-        ]
-    );
-}
-
 #[test]
 fn bookkeeping_after_moves() {
     let tmp = tempfile::tempdir().unwrap();
@@ -351,47 +162,6 @@ fn bookkeeping_after_moves() {
 }
 
 #[test]
-fn one_g1r_counts_what_is_already_organized() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
-    std::fs::create_dir(&a).unwrap();
-    std::fs::create_dir(&b).unwrap();
-    let usa = vec![1u8; 2048];
-    let jpn = vec![2u8; 2048];
-    std::fs::write(a.join("usa.gb"), &usa).unwrap();
-    std::fs::write(b.join("jpn.gb"), &jpn).unwrap();
-    let dat = tmp.path().join("gb.dat");
-    std::fs::write(
-        &dat,
-        format!(
-            r#"<datafile><header><name>Nintendo - Game Boy</name></header><game name="Puzzle (USA)">{}</game><game name="Puzzle (Japan)">{}</game></datafile>"#,
-            rom("Puzzle (USA).gb", &usa),
-            rom("Puzzle (Japan).gb", &jpn)
-        ),
-    )
-    .unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    let dest = tmp.path().join("sorted");
-    let mut opts = OrganizeOptions::new(tmp.path(), &dest);
-    opts.one_g1r = true;
-
-    lib.scan(&a, Scope::All).unwrap();
-    let plan = lib.organize_plan(&opts).unwrap();
-    lib.organize_apply(&plan, &dest).unwrap();
-    lib.scan(&dest, Scope::All).unwrap();
-    // Later the Japanese version turns up: USA is already there, so it stays.
-    lib.scan(&b, Scope::All).unwrap();
-    let plan = lib.organize_plan(&opts).unwrap();
-    assert!(plan.moves.is_empty(), "{:?}", plan.moves);
-    assert!(
-        plan.skipped
-            .iter()
-            .any(|s| s.reason == "1G1R: keeping Puzzle (USA)")
-    );
-}
-
-#[test]
 fn only_files_under_the_source_folder_move() {
     let tmp = tempfile::tempdir().unwrap();
     let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
@@ -410,64 +180,6 @@ fn only_files_under_the_source_folder_move() {
     assert!(
         lib.organize_plan(&OrganizeOptions::new(tmp.path().join("nope"), tmp.path()))
             .is_err()
-    );
-}
-
-/// A clone list makes titles that are one game under other names one title
-/// for 1G1R ("Aero Fighters" in the USA is "Sonic Wings" in Japan), and its
-/// priority decides between equals.
-#[test]
-fn clone_lists_join_retitled_games_for_1g1r() {
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("roms");
-    std::fs::create_dir(&src).unwrap();
-    let versions = [
-        "Aero Fighters (USA)",
-        "Sonic Wings (Japan)",
-        "Angelique (Japan)",
-        "Angelique - Premium Box (Japan)",
-    ];
-    let mut games = String::new();
-    for (i, name) in versions.iter().enumerate() {
-        let data = vec![i as u8 + 1; 2048];
-        games += &format!(
-            r#"<game name="{name}">{}</game>"#,
-            rom(&format!("{name}.sfc"), &data)
-        );
-        std::fs::write(src.join(format!("{i}.sfc")), &data).unwrap();
-    }
-    let dat = tmp.path().join("snes.dat");
-    std::fs::write(
-        &dat,
-        format!(r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>{games}</datafile>"#),
-    )
-    .unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
-    opts.one_g1r = true;
-    let names = |lib: &Library| {
-        let mut v: Vec<String> = lib
-            .organize_plan(&opts)
-            .unwrap()
-            .moves
-            .into_iter()
-            .map(|m| m.game)
-            .collect();
-        v.sort();
-        v
-    };
-    assert_eq!(names(&lib).len(), 4, "different names: four titles");
-    let list = br#"{"description": {"name": "x"}, "variants": [
-        {"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]},
-        {"group": "Angelique - Premium Box", "titles": [{"searchTerm": "Angelique - Premium Box"}, {"searchTerm": "Angelique", "priority": 3}]}
-    ]}"#;
-    assert_eq!(lib.store_clone_list("SNES", "test (No-Intro)", list).unwrap(), 4);
-    assert_eq!(
-        names(&lib),
-        ["Aero Fighters (USA)", "Angelique - Premium Box (Japan)"],
-        "one per group: the best region, then the lower priority"
     );
 }
 
@@ -497,64 +209,6 @@ fn failed_moves_leave_no_journal_rows() {
     assert!(err.contains("nothing to undo"), "{err}");
 }
 
-/// A clone list replaces its own earlier rows (old titles go), and a title
-/// another group already claimed keeps that group.
-#[test]
-fn clone_lists_replace_their_rows_and_keep_first_groups() {
-    let mut lib = Library::open_in_memory().unwrap();
-    let a = br#"{"variants": [
-        {"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]},
-        {"group": "Gone Game", "titles": [{"searchTerm": "Gone Game"}]}
-    ]}"#;
-    assert_eq!(lib.store_clone_list("SNES", "A (No-Intro)", a).unwrap(), 3);
-    // Another list claiming "Sonic Wings" for another group: it stays.
-    let b = br#"{"variants": [{"group": "Sonic Wings Special", "titles": [{"searchTerm": "Sonic Wings"}, {"searchTerm": "Sonic Wings Special"}]}]}"#;
-    assert_eq!(
-        lib.store_clone_list("SNES", "B (Redump)", b).unwrap(),
-        1,
-        "only the new title"
-    );
-    // A new version of list A without "Gone Game".
-    let a2 = br#"{"variants": [{"group": "Aero Fighters", "titles": [{"searchTerm": "Aero Fighters"}, {"searchTerm": "Sonic Wings"}]}]}"#;
-    assert_eq!(lib.store_clone_list("SNES", "A (No-Intro)", a2).unwrap(), 2);
-    // Back to plain names for 1G1R: "Gone Game" is in no group now.
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("roms");
-    std::fs::create_dir(&src).unwrap();
-    let mut games = String::new();
-    for (i, name) in [
-        "Gone Game (USA)",
-        "Gone Game (Japan)",
-        "Aero Fighters (USA)",
-        "Sonic Wings (Japan)",
-    ]
-    .iter()
-    .enumerate()
-    {
-        let data = vec![i as u8 + 1; 2048];
-        games += &format!(
-            r#"<game name="{name}">{}</game>"#,
-            rom(&format!("{name}.sfc"), &data)
-        );
-        std::fs::write(src.join(format!("{i}.sfc")), &data).unwrap();
-    }
-    let dat = tmp.path().join("snes.dat");
-    std::fs::write(&dat, format!(r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>{games}</datafile>"#)).unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let mut opts = OrganizeOptions::new(&src, tmp.path().join("sorted"));
-    opts.one_g1r = true;
-    let mut names: Vec<String> = lib
-        .organize_plan(&opts)
-        .unwrap()
-        .moves
-        .into_iter()
-        .map(|m| m.game)
-        .collect();
-    names.sort();
-    assert_eq!(names, ["Aero Fighters (USA)", "Gone Game (USA)"]);
-}
-
 /// A symlinked ROM is scanned and matched, but never moved: moving the
 /// link would leave the file it points to behind.
 #[cfg(unix)]
@@ -577,42 +231,5 @@ fn symlinked_files_stay() {
         plan.skipped.iter().any(|s| s.reason == "a symbolic link"),
         "{:?}",
         plan.skipped
-    );
-}
-
-/// A GDI disc set is held back like a cue one: its tracks never move
-/// without their sheet.
-#[test]
-fn loose_gdi_tracks_wait_for_their_sheet() {
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("roms");
-    std::fs::create_dir(&src).unwrap();
-    let track = vec![7u8; 4096];
-    let gdi = b"1\n1 0 4 2352 \"Disc (Track 1).bin\" 0\n".to_vec();
-    let dat = tmp.path().join("dc.dat");
-    std::fs::write(
-        &dat,
-        format!(
-            r#"<datafile><header><name>Sega - Dreamcast</name></header><game name="Disc (USA)">{}{}</game></datafile>"#,
-            rom("Disc (USA) (Track 1).bin", &track),
-            rom("Disc (USA).gdi", &gdi)
-        ),
-    )
-    .unwrap();
-    std::fs::write(src.join("track01.bin"), &track).unwrap();
-    std::fs::write(
-        src.join("disc.gdi"),
-        b"2\n1 0 4 2352 track01.bin 0\n2 600 0 2352 track02.raw 0\n",
-    )
-    .unwrap();
-    let mut lib = Library::open_in_memory().unwrap();
-    lib.import_dat(&dat, None).unwrap();
-    lib.scan(&src, Scope::All).unwrap();
-    let plan = lib
-        .organize_plan(&OrganizeOptions::new(&src, tmp.path().join("sorted")))
-        .unwrap();
-    assert!(
-        plan.moves.is_empty(),
-        "renaming the track breaks the sheet: {plan:?}"
     );
 }
