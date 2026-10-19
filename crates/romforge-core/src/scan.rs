@@ -323,11 +323,32 @@ fn hash_file(path: &Path) -> std::io::Result<Hashes> {
 fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Result<(), Error> {
     let mut archive = zip::ZipArchive::new(BufReader::new(File::open(path)?))?;
     for i in 0..archive.len() {
-        let mut member = archive.by_index(i)?;
+        // One member that can't be opened (encrypted, an unsupported
+        // method) is that member's error; the rest are still read.
+        let name = match archive.name_for_index(i) {
+            Some(Ok(n)) => n.into_owned(),
+            _ => format!("#{i}"),
+        };
+        let mut member = match archive.by_index(i) {
+            Ok(m) => m,
+            Err(e) => {
+                let path = path.to_path_buf();
+                each(match wanted_member(&name, opts) {
+                    true => Visit::Hashed(Entry {
+                        stamp: None,
+                        path,
+                        member: name,
+                        hashes: Err(e.to_string()),
+                    }),
+                    false => Visit::Skipped { path, member: name },
+                });
+                continue;
+            }
+        };
         if member.is_dir() {
             continue;
         }
-        let name = member.name()?.into_owned();
+        let name = member.name().map_or(name, |n| n.into_owned());
         if !wanted_member(&name, opts) {
             each(Visit::Skipped {
                 path: path.to_path_buf(),

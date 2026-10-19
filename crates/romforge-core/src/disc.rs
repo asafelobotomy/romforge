@@ -182,6 +182,16 @@ pub enum ChdOut<'a> {
     End(String, Option<&'a Track>),
 }
 
+/// A CHD track's Redump `.bin` name: `stem (Track n).bin`, or `stem.bin`
+/// for a single-track disc.
+fn track_name(stem: &str, many: bool, number: u32) -> String {
+    if many {
+        format!("{stem} (Track {number}).bin")
+    } else {
+        format!("{stem}.bin")
+    }
+}
+
 /// Read a CHD's tracks in order, as their Redump `.bin`s (subcode dropped,
 /// padding skipped, audio byte order restored, an unstored pregap as
 /// silence), or a DVD's image as one `.iso`.
@@ -269,12 +279,7 @@ pub fn read_chd(path: &Path, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>) 
             // Finish tracks (and their padding) that have no frames left.
             while data_left == 0 && pad_left == 0 {
                 let t = &tracks[current];
-                let name = if many {
-                    format!("{stem} (Track {}).bin", t.number)
-                } else {
-                    format!("{stem}.bin")
-                };
-                sink(ChdOut::End(name, Some(t)))?;
+                sink(ChdOut::End(track_name(&stem, many, t.number), Some(t)))?;
                 current += 1;
                 if current == tracks.len() {
                     break 'hunks;
@@ -308,12 +313,7 @@ pub fn read_chd(path: &Path, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>) 
     // padding past the last hunk.
     if current < tracks.len() && data_left == 0 {
         let t = &tracks[current];
-        let name = if many {
-            format!("{stem} (Track {}).bin", t.number)
-        } else {
-            format!("{stem}.bin")
-        };
-        sink(ChdOut::End(name, Some(t)))?;
+        sink(ChdOut::End(track_name(&stem, many, t.number), Some(t)))?;
         current += 1;
     }
     if current < tracks.len() {

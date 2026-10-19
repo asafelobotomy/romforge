@@ -130,7 +130,7 @@ impl Library {
                     }
                 }
                 if failed.is_empty() {
-                    if forget_older_tosec(&lib.conn, &url, name)? > 0 {
+                    if forget_older_tosec(&mut lib.conn, &url, name)? > 0 {
                         lib.batch_dirty = true;
                     }
                     Ok(imported)
@@ -211,18 +211,47 @@ fn tosec_paths(url: &str, name: &str) -> (String, String) {
 }
 
 /// Remove `name`'s DATs from TOSEC releases other than `url`'s: once a
-/// release is fully in, what it dropped or renamed goes too.
-fn forget_older_tosec(conn: &Connection, url: &str, name: &str) -> Result<usize, Error> {
+/// release is fully in, what it dropped or renamed goes too. A folder
+/// scoped to one of those DATs follows the new release's DAT of the same
+/// name, else keeps that DAT's system as its scope (never widening to
+/// all DATs). All in one transaction, with identify marked as due.
+fn forget_older_tosec(conn: &mut Connection, url: &str, name: &str) -> Result<usize, Error> {
     let (prefix, part) = tosec_paths(url, name);
-    let gone = conn.execute(
-        "DELETE FROM dats WHERE substr(source_path, 1, length(?2)) = ?2
-           AND instr(source_path, ?3) > 0 AND substr(source_path, 1, length(?1)) <> ?1",
-        params![prefix, fetch::TOSEC_BASE, part],
-    )?;
-    if gone > 0 {
-        forget_stale_serials(conn)?;
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let old: Vec<(i64, String, Option<i64>)> = tx
+        .prepare(
+            "SELECT dat_id, name, system_id FROM dats WHERE substr(source_path, 1, length(?2)) = ?2
+               AND instr(source_path, ?3) > 0 AND substr(source_path, 1, length(?1)) <> ?1",
+        )?
+        .query_map(params![prefix, fetch::TOSEC_BASE, part], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<_, _>>()?;
+    for (old_id, old_name, old_system) in &old {
+        let new_id: Option<i64> = tx.query_row(
+            "SELECT max(dat_id) FROM dats WHERE name = ?1 AND substr(source_path, 1, length(?2)) = ?2",
+            params![old_name, prefix],
+            |r| r.get(0),
+        )?;
+        match new_id {
+            Some(new_id) => tx.execute(
+                "UPDATE scan_roots SET dat_id = ?1 WHERE dat_id = ?2",
+                [new_id, *old_id],
+            )?,
+            None => tx.execute(
+                "UPDATE scan_roots SET dat_id = NULL, system_id = coalesce(system_id, ?2)
+                 WHERE dat_id = ?1",
+                params![old_id, old_system],
+            )?,
+        };
+        tx.execute("DELETE FROM dats WHERE dat_id = ?1", [old_id])?;
     }
-    Ok(gone)
+    if !old.is_empty() {
+        forget_stale_serials(&tx)?;
+        super::open::mark_needs_identify(&tx)?;
+    }
+    tx.commit()?;
+    Ok(old.len())
 }
 
 #[cfg(test)]
@@ -283,12 +312,20 @@ mod tests {
         let old = "https://www.tosecdev.org/downloads/category/58?download=1";
         let new = "https://www.tosecdev.org/downloads/category/59?download=2";
         let gb = |kind: &str| dat(&format!("Nintendo Game Boy - {kind}"), &[(kind, "DMG-EEEE")]);
-        lib.import_dat_bytes(
-            gb("Demos").as_bytes(),
-            &format!("{old}#TOSEC/Nintendo Game Boy - Demos (TOSEC-v1).dat"),
-            Some("Game Boy"),
-        )
-        .unwrap();
+        let demos = lib
+            .import_dat_bytes(
+                gb("Demos").as_bytes(),
+                &format!("{old}#TOSEC/Nintendo Game Boy - Demos (TOSEC-v1).dat"),
+                Some("Game Boy"),
+            )
+            .unwrap();
+        // A folder scoped to the DAT that goes.
+        lib.conn
+            .execute(
+                "INSERT INTO scan_roots (path, dat_id, scanned_at) VALUES ('/demos', ?1, 'now')",
+                [demos.dat_id],
+            )
+            .unwrap();
         lib.import_dat_bytes(
             gb("Games").as_bytes(),
             &format!("{new}#TOSEC/Nintendo Game Boy - Games (TOSEC-v2).dat"),
@@ -303,12 +340,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            forget_older_tosec(&lib.conn, new, "Nintendo Game Boy").unwrap(),
+            forget_older_tosec(&mut lib.conn, new, "Nintendo Game Boy").unwrap(),
             1
         );
         let names: Vec<String> = lib.summary().unwrap().dats.into_iter().map(|d| d.name).collect();
         assert_eq!(names.len(), 2, "{names:?}");
         assert!(!names.iter().any(|n| n.ends_with("Demos")), "{names:?}");
         assert!(serials(&lib).iter().all(|(t, _)| t != "Demos"));
+        // Its folder keeps the DAT's system as its scope, not all DATs.
+        let scope: (Option<i64>, Option<i64>) = lib
+            .conn
+            .query_row(
+                "SELECT system_id, dat_id FROM scan_roots WHERE path = '/demos'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(scope, (Some(systems::by_key("Game Boy").unwrap().id), None));
     }
 }

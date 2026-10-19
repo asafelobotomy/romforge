@@ -6,7 +6,6 @@ use rusqlite::{Connection, params};
 use crate::Error;
 use crate::systems::SYSTEMS;
 
-/// Schema changes after version 1, in order. Entry `i` upgrades to version `i + 2`.
 /// The current time in UTC as SQL (`2026-10-18T22:14:54Z`), for
 /// `concat!` into a query: every timestamp romforge stores looks the same.
 macro_rules! now {
@@ -19,6 +18,7 @@ pub(crate) use now;
 mod migrations_20_35;
 mod migrations_2_19;
 
+/// Schema changes after version 1, in order. Entry `i` upgrades to version `i + 2`.
 const MIGRATIONS: &[&str] =
     &concat::<{ migrations_2_19::MIGRATIONS_2_19.len() + migrations_20_35::MIGRATIONS_20_35.len() }>(&[
         migrations_2_19::MIGRATIONS_2_19,

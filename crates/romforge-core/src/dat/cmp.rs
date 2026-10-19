@@ -93,7 +93,18 @@ impl<'a> Iterator for Tokens<'a> {
     }
 }
 
-fn cmp_block<'a>(tokens: &mut std::iter::Peekable<Tokens<'a>>, top: bool) -> Result<Cmp<'a>, Error> {
+/// How deep `( ... )` blocks may nest. Real DATs nest two or three deep;
+/// a limit keeps a malformed or hostile file from overflowing the stack.
+const MAX_DEPTH: usize = 32;
+
+/// One block's items; `depth` 0 is the whole file.
+fn cmp_block<'a>(tokens: &mut std::iter::Peekable<Tokens<'a>>, depth: usize) -> Result<Cmp<'a>, Error> {
+    if depth > MAX_DEPTH {
+        return Err(Error::Dat(format!(
+            "clrmamepro: blocks nested over {MAX_DEPTH} deep"
+        )));
+    }
+    let top = depth == 0;
     let mut items = Vec::new();
     loop {
         let Some(key) = tokens.next() else {
@@ -111,7 +122,7 @@ fn cmp_block<'a>(tokens: &mut std::iter::Peekable<Tokens<'a>>, top: bool) -> Res
             };
         }
         let value = match tokens.next() {
-            Some("(") => cmp_block(tokens, false)?,
+            Some("(") => cmp_block(tokens, depth + 1)?,
             Some(")") | None => return Err(Error::Dat(format!("clrmamepro: {key:?} has no value"))),
             Some(v) => Cmp::Atom(v),
         };
@@ -121,7 +132,7 @@ fn cmp_block<'a>(tokens: &mut std::iter::Peekable<Tokens<'a>>, top: bool) -> Res
 
 /// Parse a clrmamepro text DAT.
 pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
-    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), 0)?;
     let header = root
         .blocks("clrmamepro")
         .next()
@@ -196,7 +207,7 @@ fn list_value(a: &str) -> String {
 
 /// Parse a clrmamepro metadata file into [`Record`]s.
 pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
-    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), 0)?;
     let mut out = Vec::new();
     for g in root.blocks("game") {
         let Cmp::Block(items) = g else { continue };
@@ -248,7 +259,7 @@ impl CmpRom {
 /// Every `game` block of a clrmamepro-style file, whatever its header
 /// (ScummVM's detection list has its own).
 pub(crate) fn cmp_games(text: &str) -> Result<Vec<CmpGame>, Error> {
-    let root = cmp_block(&mut Tokens { s: text }.peekable(), true)?;
+    let root = cmp_block(&mut Tokens { s: text }.peekable(), 0)?;
     let pairs = |b: &Cmp| -> Vec<(String, String)> {
         match b {
             Cmp::Block(items) => items

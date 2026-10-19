@@ -186,3 +186,16 @@ fn serial_keys_meet() {
 fn xml_still_detected() {
     assert_eq!(parse_any(DAT.as_bytes()).unwrap().games.len(), 2);
 }
+
+/// Deeply nested blocks are refused, not followed until the stack runs out.
+#[test]
+fn refuses_deep_nesting() {
+    let text = format!("clrmamepro ( name x )\n{}", "game ( ".repeat(100_000));
+    match parse_cmp(&text) {
+        Err(Error::Dat(e)) => assert!(e.contains("nested"), "{e}"),
+        other => panic!("{:?}", other.map(|d| d.name)),
+    }
+    // A few levels are fine.
+    let ok = "clrmamepro ( name x )\ngame ( name g rom ( name r size 1 crc 00000001 ) )";
+    assert_eq!(parse_cmp(ok).unwrap().games.len(), 1);
+}
