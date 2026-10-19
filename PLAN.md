@@ -950,8 +950,8 @@ Flags are filled in only once checked; so far on the dev machine's
 installs: RetroArch 1.22.2 (`-f`, `--config`), ScummVM 2026.3.0 (`-f`,
 `--config=`), MAME 0.289 (`-nowindow`, `-inipath`), DOSBox Staging 0.83
 (`--fullscreen`, `--noprimaryconf --conf`), DOSBox-X 2026.10.01
-(`-fullscreen`, `-conf`). Find order: the path set in Settings
-(`emulator_paths`, CLI `emulator path NAME [PROGRAM]`), `PATH`,
+(`-fullscreen`, `-conf`). Find order: the program set in Emulator
+Settings (milestone 21), `PATH`,
 Flatpak, then `~/Applications` and `RomForge/Emulators/` (a program by
 name or `<name>*.AppImage`, any case, newest name first);
 `RomForge/Emulators/cores/` is searched before the system's cores.
@@ -1511,8 +1511,19 @@ romforge, is never touched. Milestone 20 uses this to set BIOS paths.
   the settings romforge offers: BIOS and save folders, video (renderer,
   resolution scale, fullscreen), input, per-core options
   (`retroarch-core-options.cfg`), each with its type and allowed values.
-- *An Emulators page* (or a tab per emulator in Settings) to view and
-  change them; CLI `emulator config <id> [get|set KEY VALUE]`.
+- *Emulator Settings* (toolbar, next to Settings) to view and change
+  them: a Global tab for every emulator at once, then a tab per installed
+  emulator, each taking the global value unless it sets its own.
+  *(Built 2026-10-19, first part.)* `emusettings.rs` holds the one table
+  of settings (`SETTINGS`: key, label, kind, whether it can be global,
+  default), stored as `emu.<global|emulator>.<key>` in `settings`. The
+  dialog draws whatever the table holds. Today's rows are the ones
+  romforge applies at launch: Fullscreen (global, overridable), Program
+  (replaces 1.1's `emulator_paths`) and Extra arguments (per emulator).
+  MAME's machine entries share MAME's tab (`shares`). CLI: `emulator
+  settings`, `emulator set <global|emulator> KEY [VALUE]`. Not yet seen
+  in the running app (checked by build and tests only). The settings
+  written into romforge's config copies come with 1.3, as more rows.
 - *Writing safely:* a new copy starts from the emulator's defaults
   (or, if the user asks, from a one-time read of their existing config).
   The file is parsed and rewritten keeping keys and comments romforge

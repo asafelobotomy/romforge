@@ -9,6 +9,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KnownEmulator {
     pub name: &'static str,
+    /// As its makers write it, for the app.
+    pub label: &'static str,
+    /// Another entry whose settings it uses (MAME's machines are MAME).
+    pub shares: Option<&'static str>,
     /// Executable names to look for on `PATH` and in emulator folders.
     pub programs: &'static [&'static str],
     pub flatpak: Option<&'static str>,
@@ -30,6 +34,7 @@ pub struct KnownEmulator {
 
 const fn emu(
     name: &'static str,
+    label: &'static str,
     programs: &'static [&'static str],
     flatpak: &'static str,
     args: &'static [&'static str],
@@ -37,6 +42,8 @@ const fn emu(
 ) -> KnownEmulator {
     KnownEmulator {
         name,
+        label,
+        shares: None,
         programs,
         flatpak: Some(flatpak),
         appimage: None,
@@ -60,6 +67,15 @@ impl KnownEmulator {
         self.appimage = Some(prefix);
         self
     }
+    const fn shares(mut self, name: &'static str) -> Self {
+        self.shares = Some(name);
+        self
+    }
+    /// The entry whose settings apply to it: [`KnownEmulator::shares`],
+    /// else itself.
+    pub fn settings_name(&self) -> &'static str {
+        self.shares.unwrap_or(self.name)
+    }
 }
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
@@ -68,6 +84,7 @@ pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
 /// Checked with `retroarch --help` (1.22.2).
 pub const RETROARCH: KnownEmulator = emu(
     "retroarch",
+    "RetroArch",
     &["retroarch"],
     RETROARCH_FLATPAK,
     &["-L", "{core}", "{rom}"],
@@ -85,6 +102,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // game ends; no data-folder flag (`portable.txt`).
     emu(
         "duckstation",
+        "DuckStation",
         &["duckstation-qt", "duckstation"],
         "org.duckstation.DuckStation",
         &["--", "{rom}"],
@@ -95,6 +113,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // the folder given.
     emu(
         "pcsx2",
+        "PCSX2",
         &["pcsx2-qt", "pcsx2"],
         "net.pcsx2.PCSX2",
         &["--", "{rom}"],
@@ -106,6 +125,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // instead. `-u` is ignored under Flatpak, which always uses XDG.
     emu(
         "dolphin",
+        "Dolphin",
         &["dolphin-emu"],
         "org.DolphinEmu.dolphin-emu",
         &["-b", "-e", "{rom}"],
@@ -117,6 +137,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // so archives stay off.
     emu(
         "ppsspp",
+        "PPSSPP",
         &["PPSSPPSDL", "ppsspp"],
         "org.ppsspp.PPSSPP",
         &["{rom}"],
@@ -124,19 +145,50 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .fullscreen(&["--fullscreen", "--escape-exit"]),
     // v2.7 (cfg/cl.cpp).
-    emu("flycast", &["flycast"], "org.flycast.Flycast", &["{rom}"], false)
-        .fullscreen(&["-config", "window:fullscreen=yes"]),
+    emu(
+        "flycast",
+        "Flycast",
+        &["flycast"],
+        "org.flycast.Flycast",
+        &["{rom}"],
+        false,
+    )
+    .fullscreen(&["-config", "window:fullscreen=yes"]),
     // 0.10.5 (commandline.c).
-    emu("mgba", &["mgba-qt", "mgba"], "io.mgba.mGBA", &["{rom}"], true).fullscreen(&["-f"]),
+    emu(
+        "mgba",
+        "mGBA",
+        &["mgba-qt", "mgba"],
+        "io.mgba.mGBA",
+        &["{rom}"],
+        true,
+    )
+    .fullscreen(&["-f"]),
     // 1.1 (CLI.cpp); archives need a build with archive support.
-    emu("melonds", &["melonDS"], "net.kuribo64.melonDS", &["{rom}"], true).fullscreen(&["-f"]),
+    emu(
+        "melonds",
+        "melonDS",
+        &["melonDS"],
+        "net.kuribo64.melonDS",
+        &["{rom}"],
+        true,
+    )
+    .fullscreen(&["-f"]),
     // v0.8.137 (vl.c, xemu.c).
-    emu("xemu", &["xemu"], "app.xemu.xemu", &["-dvd_path", "{rom}"], false)
-        .fullscreen(&["-full-screen"])
-        .config(&["-config_path", "{config}/xemu.toml"]),
+    emu(
+        "xemu",
+        "xemu",
+        &["xemu"],
+        "app.xemu.xemu",
+        &["-dvd_path", "{rom}"],
+        false,
+    )
+    .fullscreen(&["-full-screen"])
+    .config(&["-config_path", "{config}/xemu.toml"]),
     // v0.0.43 (rpcs3.cpp): `--fullscreen` works only with `--no-gui`.
     emu(
         "rpcs3",
+        "RPCS3",
         &["rpcs3"],
         "net.rpcs3.RPCS3",
         &["--no-gui", "{rom}"],
@@ -145,10 +197,19 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     .fullscreen(&["--fullscreen"])
     .config(&["--config", "{config}/config.yml"]),
     // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`.
-    emu("mednafen", &["mednafen"], "com.github.mednafen", &["{rom}"], true).fullscreen(&["-video.fs", "1"]),
+    emu(
+        "mednafen",
+        "Mednafen",
+        &["mednafen"],
+        "com.github.mednafen",
+        &["{rom}"],
+        true,
+    )
+    .fullscreen(&["-video.fs", "1"]),
     // v2.6 (LaunchSettings.cpp); `-m` moves only the MLC folder.
     emu(
         "cemu",
+        "Cemu",
         &["cemu", "Cemu"],
         "info.cemu.Cemu",
         &["-g", "{rom}"],
@@ -159,6 +220,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // and archives need the core. Checked with `--help` (0.83).
     emu(
         "dosbox-staging",
+        "DOSBox Staging",
         &["dosbox-staging", "dosbox"],
         "io.github.dosbox-staging",
         &["{rom}"],
@@ -169,6 +231,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // Checked with `-help` (2026.10.01).
     emu(
         "dosbox-x",
+        "DOSBox-X",
         &["dosbox-x"],
         "com.dosbox_x.DOSBox-X",
         &["{rom}"],
@@ -180,6 +243,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // (2026.3.0).
     emu(
         "scummvm",
+        "ScummVM",
         &["scummvm"],
         "org.scummvm.ScummVM",
         &["--path={rom}", "--auto-detect"],
@@ -192,6 +256,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // an ini that says otherwise. Checked with `-showconfig` (0.289).
     emu(
         "mame",
+        "MAME",
         &["mame"],
         "org.mamedev.MAME",
         &["-rompath", "{dir}", "{set}"],
@@ -202,22 +267,26 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // MAME needs the machine's own ROMs in its rompath.
     emu(
         "mame-fm7",
+        "MAME: FM-7",
         &["mame"],
         "org.mamedev.MAME",
         &["fm7", "-flop1", "{rom}"],
         false,
     )
     .appimage("mame")
+    .shares("mame")
     .fullscreen(&["-nowindow"])
     .config(&["-inipath", "{config}"]),
     emu(
         "mame-fmtowns",
+        "MAME: FM Towns",
         &["mame"],
         "org.mamedev.MAME",
         &["fmtowns", "-cdrom", "{rom}"],
         false,
     )
     .appimage("mame")
+    .shares("mame")
     .fullscreen(&["-nowindow"])
     .config(&["-inipath", "{config}"]),
 ];

@@ -82,8 +82,21 @@ pub struct Env {
     pub flatpak_dirs: Vec<PathBuf>,
     /// `~/Applications`, then `RomForge/Emulators`.
     pub emulator_dirs: Vec<PathBuf>,
-    /// Settings' path per emulator name.
+    /// The program set in Emulator Settings, by settings name
+    /// ([`KnownEmulator::settings_name`]).
     pub user_paths: BTreeMap<String, PathBuf>,
+    /// The rest of Emulator Settings, by settings name; missing: the
+    /// defaults (fullscreen, no extra arguments).
+    pub options: BTreeMap<String, LaunchOptions>,
+}
+
+/// How an emulator is started, as set in Emulator Settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchOptions {
+    /// Without its fullscreen flags.
+    pub windowed: bool,
+    /// Put after the fullscreen flags, before the game's arguments.
+    pub args: Vec<String>,
 }
 
 impl Env {
@@ -114,7 +127,7 @@ impl Env {
             core_dirs,
             flatpak_dirs,
             emulator_dirs: home.iter().map(|h| h.join("Applications")).collect(),
-            user_paths: BTreeMap::new(),
+            ..Env::default()
         }
     }
 
@@ -153,7 +166,10 @@ impl Env {
     }
 
     fn known(&self, e: &KnownEmulator) -> Option<Runner> {
-        let user = self.user_paths.get(e.name).filter(|p| is_executable(p));
+        let user = self
+            .user_paths
+            .get(e.settings_name())
+            .filter(|p| is_executable(p));
         user.cloned()
             .or_else(|| e.programs.iter().find_map(|p| self.which(p)))
             .map(Runner::Program)
@@ -239,14 +255,28 @@ fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
         .collect()
 }
 
-/// A known emulator's whole command line: its fullscreen flags, then its
-/// arguments for the game.
-fn known_args(e: &KnownEmulator, v: &Vars) -> Vec<String> {
-    e.fullscreen
+/// A known emulator's whole command line: its fullscreen flags (unless set
+/// windowed), the extra arguments set for it, then its arguments for the
+/// game.
+fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
+    let fullscreen = if o.windowed { &[][..] } else { e.fullscreen };
+    fullscreen
         .iter()
         .map(|f| (*f).to_owned())
+        .chain(o.args.iter().cloned())
         .chain(fill(e.args, v))
         .collect()
+}
+
+impl Env {
+    /// How `e` would be started, if it is installed.
+    pub fn find(&self, e: &KnownEmulator) -> Option<String> {
+        self.known(e).map(|r| describe(&r))
+    }
+
+    fn options(&self, e: &KnownEmulator) -> LaunchOptions {
+        self.options.get(e.settings_name()).cloned().unwrap_or_default()
+    }
 }
 
 #[cfg(test)]

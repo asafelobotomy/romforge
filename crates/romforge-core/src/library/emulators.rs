@@ -1,17 +1,30 @@
 //! Emulators and launching.
 
-use crate::{Error, Library, launch};
+use crate::{Error, Library, emusettings, launch};
 
 impl Library {
-    /// Where to look for emulators: the real environment, the RomForge
-    /// folder's `Emulators/`, and the paths set in Settings.
+    /// Where to look for emulators and how to start them: the real
+    /// environment, the RomForge folder's `Emulators/`, and Emulator
+    /// Settings.
     pub fn env(&self) -> Result<launch::Env, Error> {
         let mut env = launch::Env::detect();
         if let Some(h) = &self.home {
             env = env.with_emulators_dir(&h.emulators());
         }
-        env.user_paths = self.settings()?.emulator_paths;
+        emusettings::apply(&emusettings::load(&self.conn)?, &mut env);
         Ok(env)
+    }
+
+    /// What the Emulator Settings dialog shows.
+    pub fn emulator_settings(&self) -> Result<emusettings::EmulatorSettingsView, Error> {
+        emusettings::view(&self.conn, &self.env()?)
+    }
+
+    pub fn save_emulator_settings(
+        &mut self,
+        s: &emusettings::EmulatorSettings,
+    ) -> Result<emusettings::EmulatorSettings, Error> {
+        emusettings::save(&mut self.conn, s)
     }
 
     /// Every emulator romforge could use, and whether it is installed.

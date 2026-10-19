@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { artSrc } from "./lib.js";
   import SettingsDialog from "./SettingsDialog.svelte";
+  import EmulatorSettingsDialog from "./EmulatorSettingsDialog.svelte";
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
   import PatchDialog from "./PatchDialog.svelte";
@@ -74,6 +75,8 @@
   // keys) and the organize screen's undo prompt (reset on every screen
   // change).
   let settings = $state(null);
+  let emulators = $state(null);
+  let emuOpen = $state(false);
   let cleanup = $state(null);
   let search = $state(null);
   let patcher = $state(null);
@@ -237,7 +240,7 @@
 
   // Up/Down move through the list when no text field has focus.
   function listKeys(e) {
-    const dialog = settingsOpen || cleanOpen || searchOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
+    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
     if (view !== "library" || dialog || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     e.preventDefault();
@@ -269,6 +272,7 @@
   onkeydown={(e) => {
     if (e.key === "Escape" && ui.viewer) ui.viewer = null;
     else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
+    else if (e.key === "Escape" && emuOpen) emuOpen = false;
     else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
     else if (e.key === "Escape" && patchOpen) patchOpen = false;
@@ -278,9 +282,10 @@
 />
 
 <div class="app">
-  <Toolbar {logo} {busy} {canRefresh} {homeRoot} {row} {settings} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {logo} {busy} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
+  <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
 
   <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {homeRoot} {call} {load} />
 

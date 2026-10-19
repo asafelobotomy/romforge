@@ -59,9 +59,18 @@ fn flatpak_commands() {
     };
     assert_eq!(fill(&["-e", "{rom}"], &vars), ["-e", "/r/a b.iso"]);
     assert_eq!(
-        known_args(&RETROARCH, &vars),
+        known_args(&RETROARCH, &vars, &LaunchOptions::default()),
         ["-f", "-L", "/c/x_libretro.so", "/r/a b.iso"],
         "fullscreen first"
+    );
+    let set = LaunchOptions {
+        windowed: true,
+        args: vec!["--verbose".into()],
+    };
+    assert_eq!(
+        known_args(&RETROARCH, &vars, &set),
+        ["--verbose", "-L", "/c/x_libretro.so", "/r/a b.iso"],
+        "windowed, extra arguments before the game's"
     );
 }
 

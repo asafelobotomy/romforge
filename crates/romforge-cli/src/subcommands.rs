@@ -198,11 +198,17 @@ pub enum EmulatorCommand {
         #[arg(long)]
         archives: bool,
     },
-    /// Start a known emulator (e.g. retroarch, duckstation) from this
-    /// program instead of the copy romforge finds; no program: find it again
-    Path {
-        name: String,
-        program: Option<std::path::PathBuf>,
+    /// Emulator Settings: what is set for every emulator and for each one
+    Settings,
+    /// Set one of Emulator Settings (e.g. `set global fullscreen false`,
+    /// `set duckstation program /opt/DuckStation.AppImage`); no value: unset
+    Set {
+        /// `global`, or an emulator (retroarch, duckstation, ...)
+        emulator: String,
+        /// fullscreen, program or args
+        key: String,
+        #[arg(allow_hyphen_values = true)]
+        value: Option<String>,
     },
     /// Remove an emulator you added
     Remove { name: String },

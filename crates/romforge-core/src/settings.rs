@@ -13,7 +13,6 @@
 //!
 //! Stored in the database, so the CLI and the app share them.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -57,10 +56,6 @@ pub struct Settings {
     /// Which romforge logo the app shows ([`LOGOS`]). Empty: "synthwave".
     #[serde(default)]
     pub logo: String,
-    /// The program to start for an emulator (by its name in
-    /// [`crate::launch::known`]), found before any other copy.
-    #[serde(default)]
-    pub emulator_paths: BTreeMap<String, PathBuf>,
 }
 
 /// The app's logos (its artwork in `app/src/assets/logos/`).
@@ -204,28 +199,7 @@ impl Settings {
                 .map(|r| r.trim().to_owned())
                 .filter(|r| !r.is_empty())
                 .collect(),
-            emulator_paths: self.emulator_paths()?,
         })
-    }
-
-    /// [`Settings::emulator_paths`] checked: known emulators, existing
-    /// programs, absolute paths. An empty path drops the entry.
-    fn emulator_paths(&self) -> Result<BTreeMap<String, PathBuf>, Error> {
-        let mut out = BTreeMap::new();
-        for (name, path) in &self.emulator_paths {
-            if path.as_os_str().is_empty() {
-                continue;
-            }
-            let e = crate::launch::known(name.trim())
-                .ok_or_else(|| Error::Settings(format!("no emulator named {name:?}")))?;
-            let p = std::fs::canonicalize(path)
-                .map_err(|err| Error::Settings(format!("{} program {}: {err}", e.name, path.display())))?;
-            if !p.is_file() {
-                return Err(Error::Settings(format!("{} is not a program", p.display())));
-            }
-            out.insert(e.name.to_owned(), p);
-        }
-        Ok(out)
     }
 }
 

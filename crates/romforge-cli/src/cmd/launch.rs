@@ -2,7 +2,7 @@
 
 use anyhow::{Result, bail};
 
-use romforge_core::{Library, launch};
+use romforge_core::{Library, emusettings, launch};
 
 use crate::args::Command;
 use crate::subcommands::EmulatorCommand;
@@ -61,20 +61,40 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             })?;
             println!("added {name}");
         }
-        Command::Emulator(EmulatorCommand::Path { name, program }) => {
-            let mut s = lib.settings()?;
-            match program {
-                Some(p) => s.emulator_paths.insert(name.clone(), p),
-                None => s.emulator_paths.remove(&name),
+        Command::Emulator(EmulatorCommand::Settings) => {
+            let v = lib.emulator_settings()?;
+            let show = |scope: &str, values: &emusettings::Values| {
+                for (k, val) in values {
+                    println!("{scope:<16} {k:<12} {val}");
+                }
             };
-            let saved = lib.save_settings(&s)?;
-            match saved
-                .emulator_paths
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(&name))
-            {
-                Some((n, p)) => println!("{n}: {}", p.display()),
-                None => println!("{name}: found on its own again"),
+            show("global", &v.values.global);
+            for (name, values) in &v.values.emulators {
+                show(name, values);
+            }
+            for tab in &v.installed {
+                println!(
+                    "installed: {} ({})",
+                    tab.label,
+                    tab.found.as_deref().unwrap_or("-")
+                );
+            }
+        }
+        Command::Emulator(EmulatorCommand::Set { emulator, key, value }) => {
+            let mut s = lib.emulator_settings()?.values;
+            let values = if emulator.eq_ignore_ascii_case("global") {
+                &mut s.global
+            } else {
+                s.emulators.entry(emulator.to_ascii_lowercase()).or_default()
+            };
+            match &value {
+                Some(v) => values.insert(key.clone(), v.clone()),
+                None => values.remove(&key),
+            };
+            lib.save_emulator_settings(&s)?;
+            match value {
+                Some(v) => println!("{emulator} {key} = {v}"),
+                None => println!("{emulator} {key} unset"),
             }
         }
         Command::Emulator(EmulatorCommand::Remove { name }) => {

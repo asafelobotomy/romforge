@@ -123,7 +123,8 @@ pub(super) fn start(
                         set: &set,
                         core: Some(&c),
                     };
-                    return Ok(spec(name, &ra, known_args(&RETROARCH, &vars)));
+                    let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
+                    return Ok(spec(name, &ra, args));
                 }
                 None => why_not.push(format!("{name}: core not installed")),
             }
@@ -149,7 +150,7 @@ pub(super) fn start(
                     set: &set,
                     core: None,
                 };
-                return Ok(spec(e.name.to_owned(), &r, known_args(e, &vars)));
+                return Ok(spec(e.name.to_owned(), &r, known_args(e, &vars, &env.options(e))));
             }
             None => why_not.push(format!("{} not installed", e.name)),
         }

@@ -10,6 +10,7 @@ pub mod cleanup;
 pub mod dat;
 mod db;
 pub mod disc;
+pub mod emusettings;
 pub mod enrich;
 pub mod extdb;
 pub mod fetch;

@@ -10,6 +10,7 @@ mod art;
 mod cleanup;
 mod dats;
 mod db;
+mod emulators;
 mod enrich;
 mod home;
 mod images;
@@ -89,6 +90,8 @@ fn main() {
             library::library_view,
             library::game_detail,
             scan::refresh,
+            emulators::get_emulator_settings,
+            emulators::save_emulator_settings,
             settings::get_settings,
             settings::save_settings,
             settings::settings_info,
