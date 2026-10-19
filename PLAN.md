@@ -1478,9 +1478,18 @@ Milestone 20 uses it to set BIOS paths.
   says so.
 - *Per game* where the emulator supports it (RetroArch per-game
   overrides, DuckStation game settings), from the game's detail panel.
-- Open: which emulators first (RetroArch, then DuckStation and PCSX2 is
-  the guess), and checking each config format against the emulator's
-  source rather than memory.
+- *Order* (decided 2026-10-19): RetroArch first (`retroarch.cfg`, core
+  options, per-game overrides), then every mature, current emulator.
+  "Mature and current" means a stable release, used for its system, and
+  a release or steady commits in the last 12 months; checked when each
+  one is started, and an emulator that stops qualifying keeps working
+  but gets no new settings. Starting with the standalone emulators
+  romforge already launches (milestones 5, 14, 17: DuckStation, PCSX2,
+  Dolphin, PPSSPP, Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu,
+  DOSBox Staging, DOSBox-X, ScummVM, MAME), then any other emulator that
+  qualifies, added to the launch table and the config table together.
+- Each config format and key is checked against the emulator's source
+  (pinned to a release), never written from memory.
 
 ## Code review follow-ups (2026-10-18)
 
