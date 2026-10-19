@@ -1921,6 +1921,78 @@ table, no DATs). It gets:
 - *Compression:* WUA from decrypted folders, and from WUD / WUX with
   the user's keys (milestone 23, 4).
 
+## Manuals (milestone 26; researched and decided 2026-10-19, not built)
+
+A game's manual, read in a Manual tab next to Details or in a window of
+its own. Neither downloaded database has manuals (LaunchBox's 33 image
+types have none; OpenVGDB only links GameFAQs). Manuals are copyrighted
+scans, so they are treated like rule 10's unlicensed data: fetched or
+added by the user, never shipped, never in git or fixtures.
+
+Sources, in this order:
+
+1. *Your own files.* A PDF dropped on the Manual tab belongs to that
+   game (like BIOS import). "Import my existing setup" also reads ES-DE's
+   `downloaded_media/<system>/manuals/<ROM name>.pdf` and LaunchBox's
+   `Manuals/<Platform>/`, matched to games the way their art is.
+2. *Vimm's Lair Manual Project* (about 6,200 manuals, 28 systems), found
+   through Hasheous: `GET hasheous.org/api/v1/Lookup/ByHash/sha1/<sha1>`
+   needs no key or account (tried: Super Mario World (USA) gives the
+   attribute `VIMMManualId` 4770). The match is by hash, so house rule 8
+   holds. The id is stored per game; Enrich asks once per game, requests
+   1 s apart.
+   - **Download, only on a click.** The tab's "Download manual (Vimm's
+     Lair)" button fetches `https://dl.vimm.net/?manualId=<id>&category=pdf&destDPI=<dpi>`
+     (the fields of the page's own form), DPI picked in the tab (default
+     300; the page allows 50–640). One manual per click, never in bulk or
+     from Enrich: `dl.vimm.net/robots.txt` disallows automated fetching.
+     A "Visit Vimm's Lair" link beside it credits them. Not yet checked
+     (robots.txt): whether the server also wants a Referer or cookie, and
+     whether the page's script adds fields.
+   - **Fallback: the page in a romforge window.** If the direct download
+     fails or is not a PDF, `vimm.net/manual/<id>` opens in a separate
+     webview (Tauri's `on_navigation` and `on_download`, both in tauri
+     2.12 / wry 0.57 on WebKitGTK). That window has no capability (no
+     romforge commands, no files); it may load only `vimm.net` and
+     `dl.vimm.net`, other links go to the browser; the user clicks the
+     page's own Download pdf. Only downloads from `dl.vimm.net` are kept.
+   - **Either way:** saved into staging, kept only if it starts with
+     `%PDF`, moved to `Media/<System>/manual/<Title>.pdf`, and recorded
+     with source "Vimm's Lair, downloaded by you".
+3. *ScreenScraper* (tier 2, with keys): media type `manuel` (PDF, by
+   region) from the `jeuInfos` call romforge already makes, by ROM hash.
+   Fetched by Enrich only when nothing above gave one, at most one per
+   game (ES-DE scrapes manuals the same way).
+
+Later, maybe: archive.org's manual collections (the complete English
+SNES set, ...). Free and keyless, but matched by title only and each
+collection names its files its own way.
+
+Where it lives:
+
+- `Media/<System>/manual/<Title>.pdf`, with its source in `game_meta`.
+  Cleanup puts it in the archive's `romforge/` folder (rule 7), or the
+  sidecar folder for CHDs.
+- Served by the `art://` scheme (`.pdf` added, same roots check). The CSP
+  gains `connect-src art:` and `worker-src 'self' blob:` for pdf.js.
+
+The reader:
+
+- *pdf.js* (`pdfjs-dist` 6.x, Apache-2.0), drawing pages on a canvas, the
+  same on every system (no reliance on WebKitGTK's own PDF view).
+- *Leafing through:* one page or a two-page spread, arrow keys and
+  Page Up/Down, a strip of page thumbnails, zoom, fit to width or height.
+  Pages render as they are reached, so a 60 MB scan stays quick. Each
+  game remembers its last page.
+- *Pop-out:* a `WebviewWindow` labelled `manual-<id>` opens the same
+  reader alone, so the manual can stay open beside the game. It needs
+  `core:webview:allow-create-webview-window`, and a capability listing
+  the `manual-*` windows (art scheme only, no other commands).
+- *Tab:* "Manual" right after "Details". With no manual: the Vimm button
+  (when Hasheous gave an id) and a drop zone. Components `ManualTab`,
+  `ManualReader` and `PageStrip`, each under 400 lines (rule 11).
+- CLI: `manual show|add|download|remove <game>`, all logic in the core.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
