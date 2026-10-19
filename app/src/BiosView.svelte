@@ -126,7 +126,7 @@
   .emu { border-top: 1px solid var(--line); padding: 0.5rem 0; }
   .emu h3 { font-size: 0.95rem; margin: 0; }
   .emu .hint { margin: 0.15rem 0 0.35rem; }
-  .good, .accepted { color: var(--good, #3a3); }
+  .good, .accepted { color: var(--ok); }
   .bad, .wrong_hash { color: var(--bad); }
   .missing, .none { color: var(--muted); }
   .path { font-size: 0.8rem; word-break: break-all; }

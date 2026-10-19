@@ -23,7 +23,6 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         },
         show_empty_media: get("show_empty_media")?.as_deref() == Some("1"),
         platform_icons: get("platform_icons")?.unwrap_or_default(),
-        logo: get("logo")?.unwrap_or_default(),
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -83,7 +82,8 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 "platform_icons",
                 Some(s.platform_icons.clone()).filter(|t| !t.is_empty()),
             ),
-            ("logo", Some(s.logo.clone()).filter(|l| !l.is_empty())),
+            // The logo picker is gone (2026-10-19): its old value goes.
+            ("logo", None),
         ]
         .into_iter()
         .chain(s.keys.fields())

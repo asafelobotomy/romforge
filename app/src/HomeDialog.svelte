@@ -1,7 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
-  import { logoSrc } from "./logos.js";
+  import Wordmark from "./Wordmark.svelte";
 
   // First run (milestone 13): where the RomForge folder goes. `root` is
   // set once it exists; `load` reloads the library; `open` while it shows.
@@ -47,7 +47,7 @@
 {#if open}
   <div class="scrim" role="presentation">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="home-title">
-      <img class="hero-logo" src={logoSrc("")} alt="romforge" />
+      <div class="hero"><Wordmark height="3.2rem" /></div>
       <h2 id="home-title">Where should romforge keep your games?</h2>
       <p class="hint">
         Everything goes in one folder named RomForge: your games (one file each, named by its DAT), their art, the
@@ -77,5 +77,5 @@
 {/if}
 
 <style>
-  .hero-logo { display: block; max-width: min(100%, 22rem); height: auto; margin: 0 auto 0.75rem; }
+  .hero { display: flex; justify-content: center; margin: 0.25rem 0 1rem; }
 </style>

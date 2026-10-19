@@ -1434,17 +1434,35 @@ all (a rescan finding nothing new, Enrich's bookkeeping), and the whole
   it again 5-19 µs. Old thumbnails of changed pictures stay until the
   cache is cleared.
 
-## Logos and app icon (2026-10-19, built)
+## Wordmark and app icon (2026-10-19, replaced the logos)
 
-From the owner's artwork (pasted as JPEGs with the transparency
-checkerboard painted in): the app icon is the RF monogram traced to
-vector with potrace, dark green on a light rounded tile (letters only at
-32 and 64 px); the five ROMFORGE wordmarks were cut from the sheet with
-the checkerboard flooded away from the edges and reduced to 128 colours
-(20-30 KB each). The synthwave one has no Pac-Man, ghost or invader
-(Bandai Namco's and Taito's): the top two were dropped, and it ends under
-the lettering, so the grid and the sprites on it went. `Settings::logo`
-picks the toolbar's; the first-run screen shows the default.
+The five pasted logo images, the Logo setting (`Settings::logo`, its
+stored key cleared on the next save) and the traced RF icon are gone.
+A modern take (ROMFORGE in Audiowide, an "RF" icon from its outlines) was
+tried first; the owner chose a colourful retro look instead:
+- **Wordmark** (`Wordmark.svelte`, toolbar and first-run screen):
+  original pixel lettering, 7×7 cells a letter with chunky strokes and an
+  L-shaped highlight in each letter's top-left corner (after the owner's
+  reference, which a font identifier matched to Rocabe and Square Byte,
+  both commercial; so it is drawn, not set in a font), each row a stripe
+  from yellow through orange and pink to purple, with a deep purple drop
+  shadow. Drawn as SVG cells: sharp at any size, nothing to license.
+  Recoloured the same day to the UK (PAL) SNES's colours: each letter
+  in a face-button colour in the buttons' order (red, yellow, green,
+  blue, twice), darker at its foot, with a console-grey shadow.
+- **App icon** (`icons/romforge.svg`, rendered to the bundle's PNG
+  sizes): original 32×32 pixel art on a transparent background: "ROM" in
+  the wordmark's letters, R red, O yellow, M green, standing on an anvil
+  in shades of the blue button, sparks flying. (Drafts first had no text:
+  a cartridge, then a SNES-style cart on the anvil; the owner swapped the
+  cart for the word.)
+- **App theme** (`app.css`): the same palette, console greys for
+  backgrounds and panels, the blue button as the accent, green, yellow
+  and red for OK, warning and error (lighter shades in dark mode).
+The font-recommendation and font-identification tools gave the direction
+(squared, blocky, arcade); every font they named was commercial, which is
+why both pieces are hand-drawn. Platform and genre icons are unchanged
+(features, not branding).
 
 ## 400 lines per file (2026-10-19, built)
 

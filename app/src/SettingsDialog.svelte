@@ -3,7 +3,6 @@
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { iconCredits } from "./facts.js";
-  import { LOGOS } from "./logos.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -178,19 +177,6 @@
       </section>
       {:else if stab === "display"}
       <section class="setting">
-        <span class="flabel">Logo</span>
-        <p class="hint">The romforge logo in the toolbar.</p>
-        <div class="logos" role="radiogroup" aria-label="Logo">
-          {#each LOGOS as [k, label, src], i}
-            <label class="logochoice" class:on={(draft.logo || "synthwave") === k} title={label}>
-              <input type="radio" name="logo" checked={(draft.logo || "synthwave") === k} onchange={() => (draft.logo = i === 0 ? "" : k)} />
-              <img {src} alt={label} />
-            </label>
-          {/each}
-        </div>
-      </section>
-
-      <section class="setting">
         <label for="icons">Platform icons</label>
         <p class="hint">The picture beside each platform in the sidebar, fetched once: controllers and systems from RetroArch's own icon sets, logos from Wikidata (Wikimedia Commons).</p>
         {#each [["", "Controller icons"], ["systematic", "System icons"], ["logo", "Platform logos"]] as [v, label]}
@@ -264,8 +250,8 @@
         <p class="hint">
           Studio logos and people's photos come from {@render link("https://commons.wikimedia.org", "Wikimedia Commons")}
           through Wikidata; each picture's own page (linked under it in Development) gives its author and licence.
-          Game facts from libretro, Wikidata and the sources set above. romforge's logos and app icon are its own
-          artwork. romforge is MIT licensed.
+          Game facts from libretro, Wikidata and the sources set above. romforge's pixel wordmark and app icon are its own pixel
+          art. romforge is MIT licensed.
         </p>
       </section>
       {/if}
@@ -286,11 +272,6 @@
   .stabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.7rem; color: var(--muted); background: none; }
   .stabs button.active { color: var(--text); border-bottom-color: var(--accent); }
   .stabs + :global(.setting) { border-top: none; }
-  .logos { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.5rem; margin-top: 0.3rem; }
-  .logochoice { display: grid; place-items: center; height: 4.2rem; padding: 0.3rem; border: 2px solid var(--line); border-radius: 8px; cursor: pointer; background: #0002; }
-  .logochoice.on { border-color: var(--accent); }
-  .logochoice input { position: absolute; opacity: 0; pointer-events: none; }
-  .logochoice img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .credits ul { margin: 0.2rem 0 0.5rem; padding-left: 1.2rem; }
   .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 </style>

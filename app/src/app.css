@@ -1,28 +1,31 @@
-/* App-wide styles: colours, and the rules every screen and dialog shares. */
+/* App-wide styles: colours, and the rules every screen and dialog shares.
+   The colours are the UK (PAL) SNES's: console greys, and its four face
+   buttons for accent (blue X), OK (green Y), warning (yellow B) and error
+   (red A). */
 :root {
-  --bg: #f4f5f7;
-  --panel: #ffffff;
-  --line: #8883;
-  --text: #1d1f23;
-  --muted: #6b7078;
-  --accent: #3b6ea8;
-  --accent-bg: #dce8f5;
-  --ok: #2e7d32;
-  --warn: #a07800;
-  --bad: #c62828;
+  --bg: #dcdce3;
+  --panel: #f1f1f4;
+  --line: #5c5c6a33;
+  --text: #23232b;
+  --muted: #62626f;
+  --accent: #3b5ab0;
+  --accent-bg: #d6ddf1;
+  --ok: #1f8a48;
+  --warn: #a87a08;
+  --bad: #c62a28;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191c;
-    --panel: #1f2226;
-    --line: #fff2;
-    --text: #e4e6ea;
-    --muted: #969ba3;
-    --accent: #6aa0dc;
-    --accent-bg: #2a3a4e;
-    --ok: #6cc070;
-    --warn: #d8b24a;
-    --bad: #ef6b6b;
+    --bg: #222228;
+    --panel: #2c2c33;
+    --line: #ffffff1f;
+    --text: #e4e4ea;
+    --muted: #9a9aa8;
+    --accent: #7f97e3;
+    --accent-bg: #2e3858;
+    --ok: #4cbf78;
+    --warn: #f0b81d;
+    --bad: #ef5a57;
   }
 }
 body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }

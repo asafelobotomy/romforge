@@ -53,13 +53,7 @@ pub struct Settings {
     /// "flatui", the controllers.
     #[serde(default)]
     pub platform_icons: String,
-    /// Which romforge logo the app shows ([`LOGOS`]). Empty: "synthwave".
-    #[serde(default)]
-    pub logo: String,
 }
-
-/// The app's logos (its artwork in `app/src/assets/logos/`).
-pub const LOGOS: &[&str] = &["synthwave", "pastel", "gummy", "space", "sprinkles"];
 
 impl Settings {
     /// The icon theme to use, or `None` for none.
@@ -179,13 +173,6 @@ impl Settings {
             staging_dir: staging,
             keys,
             show_empty_media: self.show_empty_media,
-            logo: {
-                let l = self.logo.trim();
-                if !l.is_empty() && !LOGOS.contains(&l) {
-                    return bad(format!("no logo {l:?}"));
-                }
-                l.to_owned()
-            },
             platform_icons: {
                 let t = self.platform_icons.trim();
                 if !t.is_empty() && t != "none" && !crate::enrich::PLATFORM_ICON_THEMES.contains(&t) {

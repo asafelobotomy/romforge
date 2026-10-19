@@ -258,14 +258,12 @@
   }
 
   load();
-  // The logo Settings picks (and Details' empty boxes): read at start and
-  // whenever Settings closes (the effect at the top).
-  let logo = $state("");
+  // Details' empty boxes: read at start and whenever Settings closes (the
+  // effect at the top).
   function readSettings() {
     call("get_settings", undefined, true).then((s) => {
       if (!s) return;
       showEmpty = s.show_empty_media;
-      logo = s.logo ?? "";
     });
   }
   readSettings();
@@ -285,7 +283,7 @@
 />
 
 <div class="app">
-  <Toolbar {logo} {busy} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {busy} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />

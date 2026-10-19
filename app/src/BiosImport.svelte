@@ -151,7 +151,7 @@
   .item { padding: 0.2rem 0; }
   .src { font-weight: 600; }
   .item ul { margin: 0.1rem 0 0.2rem 1rem; padding: 0; list-style: none; font-size: 0.85rem; }
-  .new { color: var(--good, #3a3); }
+  .new { color: var(--ok); }
   .taken { color: var(--bad); }
   .already_there, .claimed { color: var(--muted); }
 </style>

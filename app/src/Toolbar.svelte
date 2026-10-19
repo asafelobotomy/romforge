@@ -1,14 +1,14 @@
 <script>
   import SplitButton from "./SplitButton.svelte";
-  import { logoSrc } from "./logos.js";
+  import Wordmark from "./Wordmark.svelte";
 
   // The buttons along the top; the jobs themselves are App's, and the
   // dialogs' instances open theirs.
-  let { logo, busy, canRefresh, homeRoot, row, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  let { busy, canRefresh, homeRoot, row, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
 </script>
 
 <header class="toolbar">
-  <img class="brand" src={logoSrc(logo)} alt="romforge" title="romforge" />
+  <span class="brand"><Wordmark height="1.75rem" /></span>
   <button class="tool" onclick={refresh} disabled={!!busy || !canRefresh} title={canRefresh ? "Rescan the Source and Library folders from Settings (and the RomForge folder)" : "Set a Source folder first: Scan folder makes the first folder you scan your Source"}>
     <span class="glyph">⟳</span>Refresh
   </button>
@@ -50,7 +50,7 @@
 </header>
 
 <style>
-  .brand { height: 2.6rem; width: auto; align-self: center; margin-right: 0.5rem; object-fit: contain; }
+  .brand { align-self: center; margin: 0 0.75rem 0 0.25rem; }
   .toolbar { display: flex; gap: 0.25rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel); }
   .tool { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.2rem 0.6rem; font-size: 0.8rem; gap: 0.1rem; }
   .tool:hover:not(:disabled) { background: var(--accent-bg); }
