@@ -16,65 +16,9 @@ use rusqlite::{Connection, params};
 use crate::launch::{self, Env, KNOWN_EMULATORS, KnownEmulator, LaunchOptions, RETROARCH};
 use crate::{Error, systems};
 
-/// What a setting holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Kind {
-    /// `true` or `false`.
-    Bool,
-    /// A program on this computer.
-    Path,
-    /// Command-line arguments, split at spaces.
-    Args,
-}
-
-/// One setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub struct Setting {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub hint: &'static str,
-    pub kind: Kind,
-    /// It can be set for every emulator at once.
-    pub global: bool,
-    /// The value when nothing is set.
-    pub default: &'static str,
-}
-
-pub const SETTINGS: &[Setting] = &[
-    Setting {
-        key: "fullscreen",
-        label: "Fullscreen",
-        hint: "Start games fullscreen, without the emulator's own window and menus.",
-        kind: Kind::Bool,
-        global: true,
-        default: "true",
-    },
-    Setting {
-        key: "program",
-        label: "Program",
-        hint: "Start this program instead of the copy romforge finds.",
-        kind: Kind::Path,
-        global: false,
-        default: "",
-    },
-    Setting {
-        key: "args",
-        label: "Extra arguments",
-        hint: "Added before the game's own arguments, split at spaces (no quoting).",
-        kind: Kind::Args,
-        global: false,
-        default: "",
-    },
-];
-
-/// Whether `s` means anything for `e`.
-fn applies(s: &Setting, e: &KnownEmulator) -> bool {
-    match s.key {
-        "fullscreen" => !e.fullscreen.is_empty(),
-        _ => true,
-    }
-}
+mod table;
+pub use table::*;
+use table::{applies, setting};
 
 /// Setting key → value; a setting not in it isn't set.
 pub type Values = BTreeMap<String, String>;
@@ -115,10 +59,6 @@ pub struct EmulatorSettingsView {
 
 const PREFIX: &str = "emu.";
 const GLOBAL: &str = "global";
-
-fn setting(key: &str) -> Option<&'static Setting> {
-    SETTINGS.iter().find(|s| s.key == key)
-}
 
 /// Emulators with settings of their own (not ones sharing another's).
 fn with_settings() -> impl Iterator<Item = &'static KnownEmulator> {
@@ -207,6 +147,8 @@ fn checked(def: &Setting, value: &str) -> Result<Option<String>, String> {
     match def.kind {
         Kind::Bool if value == "true" || value == "false" => Ok(Some(value.to_owned())),
         Kind::Bool => Err(format!("{}: {value:?} is not true or false", def.label)),
+        Kind::Choice if def.choices.iter().any(|(v, _)| *v == value) => Ok(Some(value.to_owned())),
+        Kind::Choice => Err(format!("{}: {value:?} is not one of its choices", def.label)),
         Kind::Path => {
             let p = std::fs::canonicalize(value).map_err(|e| format!("{} {value}: {e}", def.label))?;
             if !p.is_file() {
@@ -233,14 +175,26 @@ pub fn apply(s: &EmulatorSettings, env: &mut Env) {
         if let Some(p) = value(s, e, "program").filter(|p| !p.is_empty()) {
             env.user_paths.insert(e.name.to_owned(), PathBuf::from(p));
         }
-        let options = LaunchOptions {
+        let mut options = LaunchOptions {
             windowed: value(s, e, "fullscreen") == Some("false"),
             args: value(s, e, "args")
                 .unwrap_or_default()
                 .split_whitespace()
                 .map(str::to_owned)
                 .collect(),
+            ..LaunchOptions::default()
         };
+        // Config keys: set ones written, unset ones taken out (the
+        // emulator's own default then applies).
+        for def in SETTINGS {
+            let v = value(s, e, def.key).filter(|v| !v.is_empty());
+            for (_, key) in def.keys.iter().filter(|(n, _)| *n == e.settings_name()) {
+                match v {
+                    Some(v) => options.config.push(((*key).to_owned(), v.to_owned())),
+                    None => options.unset.push((*key).to_owned()),
+                }
+            }
+        }
         if options != LaunchOptions::default() {
             env.options.insert(e.name.to_owned(), options);
         }

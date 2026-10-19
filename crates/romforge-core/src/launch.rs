@@ -104,6 +104,10 @@ pub struct LaunchOptions {
     pub windowed: bool,
     /// Put after the fullscreen flags, before the game's arguments.
     pub args: Vec<String>,
+    /// Keys set in romforge's copy of its config.
+    pub config: Vec<(String, String)>,
+    /// Keys romforge manages that aren't set: taken out of that copy.
+    pub unset: Vec<String>,
 }
 
 impl Env {

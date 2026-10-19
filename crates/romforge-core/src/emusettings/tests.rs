@@ -57,6 +57,13 @@ fn settings_are_checked_stored_and_read_back() {
     };
     assert!(err(values(&[("program", "/bin/sh")]), &[]).contains("every emulator"));
     assert!(err(values(&[("fullscreen", "yes")]), &[]).contains("not true or false"));
+    let driver = [("retroarch", values(&[("video_driver", "d3d11")]))];
+    assert!(err(Values::new(), &driver).contains("not one of its choices"));
+    let not_its = [("pcsx2", values(&[("vsync", "true")]))];
+    assert!(
+        err(Values::new(), &not_its).contains("PCSX2 has no setting"),
+        "RetroArch's only, for now"
+    );
     assert!(err(Values::new(), &[("nosuch", values(&[("args", "x")]))]).contains("no emulator"));
     let fm7 = [("mame-fm7", values(&[("args", "x")]))];
     assert!(
@@ -79,15 +86,35 @@ fn an_emulator_takes_the_global_value_unless_it_sets_its_own() {
     };
     let mut env = Env::default();
     apply(&s, &mut env);
-    assert!(
-        !env.options.contains_key("retroarch"),
-        "fullscreen, as by default"
-    );
+    assert!(!env.options["retroarch"].windowed, "its own value: fullscreen");
     let mame = &env.options["mame"];
     assert!(mame.windowed, "the global value");
     assert_eq!(mame.args, ["-skip_gameinfo"]);
     assert!(env.options["dolphin"].windowed);
     assert_eq!(env.user_paths["ppsspp"], PathBuf::from("/opt/ppsspp"));
+}
+
+#[test]
+fn config_settings_become_retroarch_keys() {
+    let s = EmulatorSettings {
+        global: values(&[("vsync", "false"), ("auto_state", "true")]),
+        emulators: BTreeMap::from([("retroarch".to_owned(), values(&[("video_driver", "vulkan")]))]),
+    };
+    let mut env = Env::default();
+    apply(&s, &mut env);
+    let ra = &env.options["retroarch"];
+    let set: BTreeMap<&str, &str> = ra.config.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    assert_eq!(
+        set,
+        BTreeMap::from([
+            ("video_driver", "vulkan"),
+            ("video_vsync", "false"),
+            ("savestate_auto_save", "true"),
+            ("savestate_auto_load", "true"),
+        ])
+    );
+    assert!(ra.unset.contains(&"fps_show".to_owned()), "not set: taken out");
+    assert!(!env.options.get("pcsx2").is_some_and(|o| !o.config.is_empty()));
 }
 
 #[test]

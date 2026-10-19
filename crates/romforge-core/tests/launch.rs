@@ -313,4 +313,21 @@ fn retroarch_runs_from_romforge_s_own_config() {
     let text = std::fs::read_to_string(&base).unwrap();
     assert!(text.starts_with("video_driver = \"vulkan\"\n"), "{text}");
     assert!(text.contains("config_save_on_exit = \"false\""));
+
+    // Emulator Settings' keys go in too; ones not set come out.
+    f.env.options.insert(
+        "retroarch".into(),
+        romforge_core::launch::LaunchOptions {
+            config: vec![("video_vsync".into(), "false".into())],
+            unset: vec!["video_driver".into()],
+            ..Default::default()
+        },
+    );
+    let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
+    romforge_core::launch::spawn(&spec).unwrap();
+    let text = std::fs::read_to_string(&base).unwrap();
+    assert!(
+        text.contains("video_vsync = \"false\"") && !text.contains("video_driver"),
+        "{text}"
+    );
 }

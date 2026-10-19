@@ -12,15 +12,16 @@
 
 use std::path::{Path, PathBuf};
 
-use super::KnownEmulator;
+use super::{KnownEmulator, LaunchOptions};
 use crate::home::Home;
 use crate::{Error, systems::System};
 
-/// A config file and the keys romforge sets in it.
+/// A config file, the keys romforge sets in it and the ones it takes out.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ConfigWrite {
     pub path: PathBuf,
     pub keys: Vec<(String, String)>,
+    pub remove: Vec<String>,
 }
 
 /// What has to exist before an emulator starts from romforge's config.
@@ -31,9 +32,15 @@ pub struct Prepare {
 }
 
 /// romforge's config for `e` running a game of `system`: its folder (the
-/// `{config}` of the table's `config` flags) and what to write first.
-/// `None` for an emulator romforge doesn't write a config for yet.
-pub(super) fn owned(e: &KnownEmulator, home: &Home, system: &System) -> Option<(PathBuf, Prepare)> {
+/// `{config}` of the table's `config` flags) and what to write first,
+/// Emulator Settings' keys (`options`) included. `None` for an emulator
+/// romforge doesn't write a config for yet.
+pub(super) fn owned(
+    e: &KnownEmulator,
+    home: &Home,
+    system: &System,
+    options: &LaunchOptions,
+) -> Option<(PathBuf, Prepare)> {
     let dir = home.emulator_config(e.settings_name());
     let s = |p: PathBuf| p.to_string_lossy().into_owned();
     match e.settings_name() {
@@ -63,18 +70,24 @@ pub(super) fn owned(e: &KnownEmulator, home: &Home, system: &System) -> Option<(
                 ("savestate_directory", s(states.clone())),
                 ("screenshot_directory", s(shots.clone())),
             ];
-            let write = |path: PathBuf, keys: &[(&str, String)]| ConfigWrite {
-                path,
-                keys: keys.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect(),
+            let pairs = |keys: &[(&str, String)]| -> Vec<(String, String)> {
+                keys.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
             };
+            let mut keys = pairs(&base);
+            keys.extend(options.config.iter().cloned());
             let prepare = Prepare {
                 dirs: vec![bios, saves, states, shots],
                 writes: vec![
-                    write(dir.join("retroarch.cfg"), &base),
-                    write(
-                        dir.join("systems").join(format!("{}.cfg", system.key)),
-                        &per_system,
-                    ),
+                    ConfigWrite {
+                        path: dir.join("retroarch.cfg"),
+                        keys,
+                        remove: options.unset.clone(),
+                    },
+                    ConfigWrite {
+                        path: dir.join("systems").join(format!("{}.cfg", system.key)),
+                        keys: pairs(&per_system),
+                        remove: Vec::new(),
+                    },
                 ],
             };
             Some((dir, prepare))
@@ -95,7 +108,7 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e.into()),
         };
-        let new = merge_cfg(&old, &w.keys)?;
+        let new = merge_cfg(&old, &w.keys, &w.remove)?;
         if new != old {
             crate::atomic::write(&w.path, new.as_bytes())?;
         }
@@ -103,9 +116,10 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
     Ok(())
 }
 
-/// `text` (RetroArch's `key = "value"` lines) with `keys` set: a line for
-/// a key is replaced where it is, a key with no line is added at the end.
-fn merge_cfg(text: &str, keys: &[(String, String)]) -> Result<String, Error> {
+/// `text` (RetroArch's `key = "value"` lines) with `keys` set and the
+/// lines of `remove` gone: a line for a key is replaced where it is, a key
+/// with no line is added at the end.
+fn merge_cfg(text: &str, keys: &[(String, String)], remove: &[String]) -> Result<String, Error> {
     let line = |k: &str, v: &str| -> Result<String, Error> {
         if v.contains('"') || v.contains('\n') {
             return Err(Error::Launch(format!(
@@ -124,6 +138,7 @@ fn merge_cfg(text: &str, keys: &[(String, String)]) -> Result<String, Error> {
                 out.push_str(&line(&keys[i].0, &keys[i].1)?);
             }
             Some(_) => continue,
+            None if key_of(l).is_some_and(|k| remove.contains(&k)) => continue,
             None => out.push_str(l),
         }
         out.push('\n');
@@ -159,11 +174,20 @@ mod tests {
             ("config_save_on_exit".to_owned(), "false".to_owned()),
         ];
         assert_eq!(
-            merge_cfg(text, &keys).unwrap(),
+            merge_cfg(text, &keys, &[]).unwrap(),
             "# mine\nvideo_driver = \"vulkan\"\nsystem_directory = \"/rf/Bios/RetroArch\"\nconfig_save_on_exit = \"false\"\n"
         );
-        assert_eq!(merge_cfg("", &keys).unwrap().lines().count(), 2);
+        assert_eq!(merge_cfg("", &keys, &[]).unwrap().lines().count(), 2);
         let quoted = vec![("x".to_owned(), "a\"b".to_owned())];
-        assert!(merge_cfg("", &quoted).is_err());
+        assert!(merge_cfg("", &quoted, &[]).is_err());
+        // A setting no longer set goes, so RetroArch's default applies.
+        let unset = ["video_driver".to_owned()];
+        assert_eq!(
+            merge_cfg(text, &[], &unset)
+                .unwrap()
+                .matches("video_driver")
+                .count(),
+            0
+        );
     }
 }

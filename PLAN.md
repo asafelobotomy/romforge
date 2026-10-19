@@ -1052,8 +1052,16 @@ Not yet:
   controller autoconfig and assets still resolve is to check on a real
   start (else seed those paths, or import the user's config once);
 - the other emulators' configs (their data folders are in the table above:
-  environment variables or portable markers);
-- RetroArch's settings as Emulator Settings rows (milestone 21).
+  environment variables or portable markers).
+
+*(Built 2026-10-19, RetroArch's settings.)* Emulator Settings rows with
+config keys (`emusettings/table.rs`, `keys`) are written into romforge's
+`retroarch.cfg` at start: video driver (RetroArch's tab), and as global
+settings VSync, smooth picture, integer scaling, rewind, run-ahead,
+"resume where you left off" (save and load a state) and show FPS. A
+setting not set anywhere is taken out of that copy, so RetroArch's own
+default applies; a key set by hand there for one of these settings is
+therefore replaced. Keys checked in RetroArch 1.22.2's config.
 
 #### 1.4 Get emulators from inside romforge
 
@@ -1555,7 +1563,10 @@ romforge, is never touched. Milestone 20 uses this to set BIOS paths.
   MAME's machine entries share MAME's tab (`shares`). CLI: `emulator
   settings`, `emulator set <global|emulator> KEY [VALUE]`. Not yet seen
   in the running app (checked by build and tests only). The settings
-  written into romforge's config copies come with 1.3, as more rows.
+  written into romforge's config copies come with 1.3, as more rows:
+  RetroArch's are in (see 1.3). A row lists the config keys it is
+  written to per emulator; the global tab shows which installed
+  emulators each one reaches.
 - *Writing safely:* a new copy starts from the emulator's defaults
   (or, if the user asks, from a one-time read of their existing config).
   The file is parsed and rewritten keeping keys and comments romforge

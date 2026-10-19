@@ -61,7 +61,12 @@ pub(super) fn start(
     };
     // romforge's own config for a known emulator, when there is a RomForge
     // folder and romforge writes one for it.
-    let owned = |e: &KnownEmulator| env.home.as_ref().and_then(|h| owned::owned(e, h, system));
+    let owned = |e: &KnownEmulator| {
+        let options = env.options(e);
+        env.home
+            .as_ref()
+            .and_then(|h| owned::owned(e, h, system, &options))
+    };
     // An arcade game is started by its set's name; anything else, by its file.
     let set = if system.arcade {
         game.clone()

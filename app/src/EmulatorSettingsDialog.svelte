@@ -26,9 +26,18 @@
 
   const def = (key) => view.settings.find((s) => s.key === key);
   const globals = () => view.settings.filter((s) => s.global);
-  // The value an emulator gets when it sets none.
-  const globalValue = (key) => draft.global[key] ?? def(key).default;
-  const onOff = (v) => (v === "false" ? "Off" : "On");
+  // The value an emulator gets when it sets none ("" = its own config's).
+  const globalValue = (key) => draft.global[key] || def(key).default;
+  // A value as the dialog shows it.
+  function shown(s, v) {
+    if (!v) return "emulator's own";
+    if (s.kind === "bool") return v === "false" ? "Off" : "On";
+    return s.choices.find(([c]) => c === v)?.[1] ?? v;
+  }
+  // The installed emulators a global setting reaches.
+  const usedBy = (key) => view.installed.filter((e) => e.settings.includes(key)).map((e) => e.label);
+  // A setting's choices for a select: On/Off for a yes-or-no one.
+  const options = (s) => (s.kind === "bool" ? [["true", "On"], ["false", "Off"]] : s.choices);
 
   async function browse(name, key) {
     const file = await pickFile({ multiple: false, directory: false, title: "Program to start" });
@@ -62,14 +71,21 @@
       {#if tab === "global"}
         <p class="hint">For every emulator at once. An emulator's own tab can set something else for it.</p>
         {#each globals() as s}
+          {@const users = usedBy(s.key)}
           <section class="setting">
-            {#if s.kind === "bool"}
+            {#if s.kind === "bool" && s.default}
               <label class="toggle">
                 <input type="checkbox" checked={globalValue(s.key) === "true"} onchange={(ev) => (draft.global[s.key] = ev.currentTarget.checked ? "true" : "false")} />
                 {s.label}
               </label>
+            {:else}
+              <label for="g-{s.key}">{s.label}</label>
+              <select id="g-{s.key}" value={draft.global[s.key] ?? ""} onchange={(ev) => (draft.global[s.key] = ev.currentTarget.value)}>
+                <option value="">Each emulator's own</option>
+                {#each options(s) as [v, label]}<option value={v}>{label}</option>{/each}
+              </select>
             {/if}
-            <p class="hint">{s.hint}</p>
+            <p class="hint">{s.hint} {users.length ? `Used by ${users.join(", ")}.` : "No installed emulator uses it yet."}</p>
           </section>
         {/each}
         {#if view.installed.length === 0}
@@ -84,13 +100,12 @@
         <p class="hint">Started as <code>{e.found}</code>{#if e.systems.length}; runs {e.systems.join(", ")}{/if}.</p>
         {#each e.settings.map(def) as s}
           <section class="setting">
-            {#if s.kind === "bool"}
+            {#if s.kind === "bool" || s.kind === "choice"}
               <label for="emu-{s.key}">{s.label}</label>
               <p class="hint">{s.hint}</p>
               <select id="emu-{s.key}" value={mine[s.key] ?? ""} onchange={(ev) => (mine[s.key] = ev.currentTarget.value)}>
-                <option value="">As Global ({onOff(globalValue(s.key))})</option>
-                <option value="true">On</option>
-                <option value="false">Off</option>
+                <option value="">{s.global ? `As Global (${shown(s, globalValue(s.key))})` : "Emulator's own"}</option>
+                {#each options(s) as [v, label]}<option value={v}>{label}</option>{/each}
               </select>
             {:else if s.kind === "path"}
               <label for="emu-{s.key}">{s.label}</label>

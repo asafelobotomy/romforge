@@ -77,6 +77,7 @@ fn flatpak_commands() {
     let set = LaunchOptions {
         windowed: true,
         args: vec!["--verbose".into()],
+        ..LaunchOptions::default()
     };
     assert_eq!(
         known_args(&RETROARCH, &vars, &set),
