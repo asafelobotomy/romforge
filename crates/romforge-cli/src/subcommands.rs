@@ -245,6 +245,24 @@ pub enum EmulatorCommand {
     },
     /// Remove an emulator you added
     Remove { name: String },
+    /// The RetroArch cores romforge's platforms use, and what the libretro
+    /// buildbot has
+    Cores {
+        /// Fetch the buildbot's list and the core info first
+        #[arg(long)]
+        refresh: bool,
+    },
+    /// Download a core from the buildbot into RomForge/Emulators/cores
+    GetCore {
+        core: String,
+        /// Accept a non-commercial licence
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove a core romforge downloaded
+    RemoveCore { core: String },
+    /// Install an emulator from Flathub (your own Flatpak installation)
+    Install { emulator: String },
     /// Copy an emulator's existing setup (memory cards, saves, controller
     /// mappings, settings) from its usual folders into romforge's
     ImportSetup {

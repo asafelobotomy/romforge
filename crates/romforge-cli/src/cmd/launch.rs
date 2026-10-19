@@ -115,6 +115,50 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             }
         }
+        Command::Emulator(EmulatorCommand::Cores { refresh }) => {
+            if refresh {
+                println!("buildbot: {} cores listed", lib.refresh_emulator_cores()?);
+            }
+            let list = lib.emulator_cores()?;
+            if !list.checked {
+                println!("(the buildbot's list hasn't been fetched: --refresh)");
+            }
+            for c in &list.cores {
+                let state = match (&c.installed, &c.ours, c.update) {
+                    (_, Some(d), true) => {
+                        format!("romforge's {d}, update {}", c.available.as_deref().unwrap_or(""))
+                    }
+                    (_, Some(d), false) => format!("romforge's {d}"),
+                    (Some(p), None, _) => format!("installed: {}", p.display()),
+                    (None, None, _) => "not installed".to_owned(),
+                };
+                let nc = if c.non_commercial { " NON-COMMERCIAL" } else { "" };
+                println!(
+                    "{:<22} {:<40} [{}{nc}] {state}",
+                    c.name, c.display_name, c.license
+                );
+            }
+        }
+        Command::Emulator(EmulatorCommand::GetCore { core, yes }) => {
+            let list = lib.emulator_cores()?;
+            if let Some(c) = list.cores.iter().find(|c| c.name == core) {
+                println!("{}: licence {}", c.display_name, c.license);
+                if c.non_commercial && !yes {
+                    bail!("{core}'s licence forbids commercial use; run again with --yes to accept it");
+                }
+            }
+            let date = lib.download_core(&core)?;
+            println!("{core} ({date}) downloaded into the RomForge folder's Emulators/cores");
+        }
+        Command::Emulator(EmulatorCommand::RemoveCore { core }) => {
+            lib.remove_core(&core)?;
+            println!("{core} removed");
+        }
+        Command::Emulator(EmulatorCommand::Install { emulator }) => {
+            println!("installing {emulator} from Flathub (this takes a while)…");
+            let id = lib.install_emulator(&emulator)?;
+            println!("installed {id}");
+        }
         Command::Emulator(EmulatorCommand::Remove { name }) => {
             let n = lib.remove_emulator(&name)?;
             if n == 0 {

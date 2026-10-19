@@ -322,6 +322,11 @@ impl Env {
         self.core(name).is_some()
     }
 
+    /// Where RetroArch's core `name` is found.
+    pub fn core_path(&self, name: &str) -> Option<PathBuf> {
+        self.core(name)
+    }
+
     fn options(&self, e: &KnownEmulator) -> LaunchOptions {
         self.options.get(e.settings_name()).cloned().unwrap_or_default()
     }

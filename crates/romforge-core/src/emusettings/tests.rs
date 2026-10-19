@@ -138,6 +138,8 @@ fn installed_emulators_get_tabs() {
         ["Arcade (MAME)", "Fujitsu FM Towns", "Fujitsu FM-7 / FM-77"]
     );
     assert_eq!(mame.settings, ["fullscreen", "program", "args"]);
-    assert!(v.not_installed.contains(&"DuckStation"));
-    assert!(!v.not_installed.contains(&"MAME: FM-7"));
+    let missing = |l: &str| v.not_installed.iter().find(|n| n.label == l);
+    assert!(missing("DuckStation").is_some_and(|n| n.flathub));
+    assert!(missing("Mednafen").is_some_and(|n| !n.flathub), "not on Flathub");
+    assert!(missing("MAME: FM-7").is_none());
 }

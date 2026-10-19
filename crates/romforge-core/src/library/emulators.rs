@@ -1,6 +1,6 @@
 //! Emulators and launching.
 
-use crate::{Error, Library, emusettings, firmware, launch};
+use crate::{Error, Library, emusettings, firmware, launch, obtain};
 
 impl Library {
     /// Where to look for emulators and how to start them: the real
@@ -64,6 +64,35 @@ impl Library {
     /// Install the PS3 firmware in `Bios/rpcs3/` into RPCS3.
     pub fn install_ps3_firmware(&self) -> Result<std::path::PathBuf, Error> {
         launch::install_ps3_firmware(&self.env()?)
+    }
+
+    /// The cores romforge's platforms use, and what the buildbot has.
+    pub fn emulator_cores(&self) -> Result<obtain::CoreList, Error> {
+        let (home, dir) = self.firmware_dirs()?;
+        Ok(obtain::cores(&dir, home, &self.env()?))
+    }
+
+    /// Fetch the buildbot's list of cores and libretro's core info.
+    pub fn refresh_emulator_cores(&self) -> Result<usize, Error> {
+        let (_, dir) = self.firmware_dirs()?;
+        obtain::refresh_cores(&dir)
+    }
+
+    /// Download a core into the RomForge folder's `Emulators/cores/`.
+    pub fn download_core(&self, core: &str) -> Result<String, Error> {
+        let (home, dir) = self.firmware_dirs()?;
+        obtain::download_core(&dir, home, core)
+    }
+
+    /// Remove a core romforge downloaded.
+    pub fn remove_core(&self, core: &str) -> Result<(), Error> {
+        let (home, _) = self.firmware_dirs()?;
+        obtain::remove_core(home, core)
+    }
+
+    /// Install an emulator from Flathub into the user's Flatpak installation.
+    pub fn install_emulator(&self, emulator: &str) -> Result<String, Error> {
+        obtain::install_flatpak(&self.env()?, emulator)
     }
 
     /// Take away what the last BIOS import wrote.

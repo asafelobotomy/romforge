@@ -29,3 +29,29 @@ pub async fn import_emulator_setup(
 pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
     with(&db, move |lib| lib.undo_emulator_setup(&emulator)).await
 }
+
+#[tauri::command]
+pub async fn emulator_cores(db: tauri::State<'_, Db>, refresh: bool) -> Res<romforge_core::obtain::CoreList> {
+    read(&db, move |lib| {
+        if refresh {
+            lib.refresh_emulator_cores()?;
+        }
+        lib.emulator_cores()
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn download_core(db: tauri::State<'_, Db>, core: String) -> Res<String> {
+    read(&db, move |lib| lib.download_core(&core)).await
+}
+
+#[tauri::command]
+pub async fn remove_core(db: tauri::State<'_, Db>, core: String) -> Res<()> {
+    read(&db, move |lib| lib.remove_core(&core)).await
+}
+
+#[tauri::command]
+pub async fn install_emulator(db: tauri::State<'_, Db>, emulator: String) -> Res<String> {
+    read(&db, move |lib| lib.install_emulator(&emulator)).await
+}

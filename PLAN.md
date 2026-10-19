@@ -1078,6 +1078,26 @@ Like rule 10's "the user downloads it": never shipped, fetched on request.
   scope) or the project's AppImage, then detect it. romforge itself never
   bundles a GPL emulator, so its MIT licence and rule 9 stay intact.
 
+*(Built 2026-10-19.)* `obtain.rs`:
+- **Cores:** Emulator Settings → RetroArch → Cores, and `emulator cores
+  [--refresh]` / `get-core NAME [--yes]` / `remove-core NAME`. The
+  buildbot's `.index-extended` (date and the CRC32 of the core inside
+  each zip, checked 2026-10-19) and libretro's `info.zip` are kept in
+  `Databases/`; the cores romforge's platforms use are listed with
+  licence, where they're installed and whether the buildbot has a newer
+  build. A download is checked against that CRC32 and written to
+  `Emulators/cores/` (looked in first, 1.1), recorded in
+  `romforge-cores.json`; only those can be updated or removed. A
+  non-commercial core asks first (the app; `--yes` on the CLI). Tried on
+  a scratch folder with Gambatte.
+- **Emulators:** "Install from Flathub" for each emulator not installed
+  (`emulator install NAME`): `flatpak remote-add --user
+  --if-not-exists flathub …` then `flatpak install --user
+  --noninteractive`. Every Flatpak id in the table was checked on Flathub
+  (`api/v2/appstream`); Mednafen isn't on Flathub (its id was wrong and
+  is gone). Not run for real here (it installs software).
+- **Not yet:** AppImages from each project's releases; uninstalling.
+
 #### 1.5 BIOS check
 
 *Replaced 2026-10-19 by milestone 20* (the BIOS page): RetroBIOS's

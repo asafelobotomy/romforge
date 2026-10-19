@@ -57,8 +57,16 @@ pub struct EmulatorSettingsView {
     pub values: EmulatorSettings,
     /// Installed emulators, RetroArch first.
     pub installed: Vec<EmulatorTab>,
-    /// Known emulators not installed (labels).
-    pub not_installed: Vec<&'static str>,
+    /// Known emulators not installed.
+    pub not_installed: Vec<NotInstalled>,
+}
+
+/// A known emulator that isn't installed, and whether Flathub has it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NotInstalled {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub flathub: bool,
 }
 
 const PREFIX: &str = "emu.";
@@ -211,7 +219,11 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
     let (mut installed, mut not_installed) = (Vec::new(), Vec::new());
     for e in with_settings() {
         let Some(found) = env.find(e) else {
-            not_installed.push(e.label);
+            not_installed.push(NotInstalled {
+                name: e.name,
+                label: e.label,
+                flathub: e.flatpak.is_some(),
+            });
             continue;
         };
         let runs = |s: &systems::System| {

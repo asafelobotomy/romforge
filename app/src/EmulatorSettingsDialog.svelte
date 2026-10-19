@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { open as pickFile } from "@tauri-apps/plugin-dialog";
+  import CoresPanel from "./CoresPanel.svelte";
 
   // Emulator Settings: a Global tab for every emulator at once, then one
   // tab per installed emulator. An emulator takes the global value unless
@@ -69,6 +70,23 @@
   }
   const kib = (b) => (b >= 1 << 20 ? `${(b / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(b / 1024)} KB`);
 
+  // Install an emulator from Flathub, then look again.
+  let installing = $state("");
+  async function install(n) {
+    error = "";
+    installing = n.name;
+    try {
+      const id = await invoke("install_emulator", { emulator: n.name });
+      note = `${n.label} installed (${id}).`;
+      const keep = draft;
+      await openEmulatorSettings();
+      draft = { ...keep, emulators: { ...draft.emulators, ...keep.emulators } };
+    } catch (e) {
+      error = String(e).replace(/^(launch|settings): /, "");
+    }
+    installing = "";
+  }
+
   async function save() {
     error = "";
     try {
@@ -117,12 +135,26 @@
           <p class="hint">No emulator is installed yet. romforge finds RetroArch and standalone emulators on your PATH, as Flatpaks, and as AppImages in ~/Applications or RomForge/Emulators.</p>
         {/if}
         {#if view.not_installed.length}
-          <p class="hint">Not installed: {view.not_installed.join(", ")}.</p>
+          <section class="setting">
+            <span class="flabel">Not installed</span>
+            <p class="hint">Installed from Flathub into your own Flatpak installation (no password needed); it shows up here once done.</p>
+            <ul class="missing">
+              {#each view.not_installed as n}
+                <li>
+                  {n.label}
+                  {#if n.flathub}
+                    <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : "Install from Flathub"}</button>
+                  {:else}<span class="hint">· not on Flathub: install it yourself</span>{/if}
+                </li>
+              {/each}
+            </ul>
+          </section>
         {/if}
       {:else}
         {@const e = view.installed.find((x) => x.name === tab)}
         {@const mine = draft.emulators[e.name]}
         <p class="hint">Started as <code>{e.found}</code>{#if e.systems.length}; runs {e.systems.join(", ")}{/if}.</p>
+        {#if e.name === "retroarch"}<CoresPanel bind:note bind:error />{/if}
         {#if e.existing}
           <section class="setting">
             <span class="flabel">Your existing setup</span>
@@ -183,4 +215,6 @@
   .etabs button.active { color: var(--text); border-bottom-color: var(--accent); }
   select { min-width: 12rem; }
   code { font-size: 0.8rem; word-break: break-all; }
+  .missing { list-style: none; padding: 0; margin: 0.3rem 0 0; }
+  .missing li { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; padding: 0.2rem 0; border-top: 1px solid var(--line); }
 </style>

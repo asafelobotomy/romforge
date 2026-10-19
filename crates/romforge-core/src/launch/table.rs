@@ -68,6 +68,10 @@ impl KnownEmulator {
         self.appimage = Some(prefix);
         self
     }
+    const fn no_flatpak(mut self) -> Self {
+        self.flatpak = None;
+        self
+    }
     const fn shares(mut self, name: &'static str) -> Self {
         self.shares = Some(name);
         self
@@ -80,6 +84,9 @@ impl KnownEmulator {
 }
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
+
+// Flatpak ids are checked on Flathub (flathub.org/api/v2/appstream/<id>,
+// 2026-10-19); romforge offers to install them from there (1.4).
 
 /// RetroArch; each system's cores come from its `cores` column.
 /// Checked with `retroarch --help` (1.22.2).
@@ -200,18 +207,12 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--no-gui", "{rom}"],
         false,
     )
-    .fullscreen(&["--fullscreen"])
-    .config(&["--config", "{config}/config.yml"]),
-    // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`.
-    emu(
-        "mednafen",
-        "Mednafen",
-        &["mednafen"],
-        "com.github.mednafen",
-        &["{rom}"],
-        true,
-    )
-    .fullscreen(&["-video.fs", "1"]),
+    .fullscreen(&["--fullscreen"]),
+    // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`. Not on
+    // Flathub (checked 2026-10-19).
+    emu("mednafen", "Mednafen", &["mednafen"], "", &["{rom}"], true)
+        .no_flatpak()
+        .fullscreen(&["-video.fs", "1"]),
     // v2.6 (LaunchSettings.cpp); `-m` moves only the MLC folder.
     emu(
         "cemu",
