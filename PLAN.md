@@ -1488,6 +1488,13 @@ Milestone 20 uses it to set BIOS paths.
   Dolphin, PPSSPP, Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu,
   DOSBox Staging, DOSBox-X, ScummVM, MAME), then any other emulator that
   qualifies, added to the launch table and the config table together.
+- *Exception: discontinued but well known* (decided 2026-10-19). An
+  emulator no longer developed is still supported when it was widely
+  used and the community still has its builds (yuzu, Ryujinx, Citra,
+  ...). Its entries are pinned to its last release, which then never
+  changes. romforge only finds it where the user installed it (on
+  `PATH`, Flatpak, or a path set in Settings), as with every emulator: it
+  never downloads, links or ships emulators.
 - Each config format and key is checked against the emulator's source
   (pinned to a release), never written from memory.
 
@@ -1497,35 +1504,44 @@ Switch is a system already (`nsp`, `xci`, no DATs, no emulator). It gets
 launch, emulator settings (milestone 21) and its keys and firmware
 through the BIOS page (milestone 20).
 
-- *Which emulators.* Yuzu and Ryujinx are gone (2024); their forks
+- *Which emulators.* Yuzu and Ryujinx stopped in 2024; their forks
   change fast, and Nintendo sent a DMCA notice covering about thirteen
   of them in February 2026. Reported 2026-10-19 (weak, conflicting
   sources, to verify on each project's own site): Eden (yuzu fork, tagged
   stable releases, v0.2.2 in September 2026, self-hosted since March)
   looks current; Citron (nightlies into October) and Ryubing (Ryujinx
-  fork, said to be in maintenance since February) are unclear. The
-  milestone 21 rule decides, checked when this starts: every fork that
-  qualifies, at least one. Each fork's config, keys and data folders
-  and command line are read from its own source, pinned to a release.
-  Forks are entries in the launch and config tables like any emulator,
-  so one that disappears is dropped without touching the rest.
-- *Keys and firmware come only from the user.* `prod.keys`,
-  `title.keys` and firmware are the most sensitive files in this plan:
-  decrypting with them is what Nintendo's case against Yuzu was about.
+  fork, said to be in maintenance since February) are unclear. Every
+  fork that meets the milestone 21 rule, checked when this starts, plus
+  yuzu's and Ryujinx's last releases under its discontinued exception.
+  Each one's config, keys and NAND folders and command line are read
+  from its own source, pinned to a release. They are entries in the
+  launch and config tables like any emulator, so one that disappears is
+  dropped without touching the rest.
+- *Keys and firmware: supplied by the user, handled like every BIOS
+  file.* Dropped on the BIOS page with anything else, recognized,
+  shown in the plan and placed where each installed emulator needs them,
+  copied, journaled and undoable as in milestone 20. The limits:
   romforge never downloads, links, ships or derives them, never points
-  to a site that hosts them, and never decrypts anything itself.
-  - **Keys:** dropped on the BIOS page, recognized by their format (lines
-    of `name = hex`), never by a list of key values or key hashes.
-    Placed as "placed by you", never "accepted". Copied to
-    `RomForge/Firmware/switch/` and to each configured fork's keys folder
-    (or its config pointed there), journaled as in milestone 20.
-  - **Firmware:** a dropped folder or zip of `.nca` files, recognized by
-    its shape, not its contents. Each fork installs firmware itself
-    (into its NAND); romforge keeps the user's copy in
-    `RomForge/Firmware/switch/` and runs the fork's own install path if
-    it has a non-interactive one, else shows where to click.
-  - The BIOS page shows Switch as "keys: yes/no, firmware: yes/no" per
-    fork, plus the firmware version when the fork reports it.
+  to a site that hosts them, and never decrypts anything (decryption is
+  what Nintendo's case against yuzu was about). So recognition reads
+  only what is plain:
+  - **Keys** (`prod.keys`, `title.keys`): by format, lines of
+    `name = hex` with the known key names. There is no hash list for
+    them (they are per console in part, and romforge keeps no key
+    values or key hashes), so they show as "Switch keys, recognized by
+    format", not "accepted". Placed in `RomForge/Firmware/switch/keys/`
+    and in each emulator's keys folder (yuzu family: `keys/`; Ryujinx
+    family: `system/`), or the emulator's config pointed there.
+  - **Firmware**: a folder or zip of `.nca` files with 32-hex names,
+    recognized by that shape (an NCA's contents are encrypted).
+    Kept in `RomForge/Firmware/switch/firmware/` and placed as each
+    emulator stores installed firmware in its NAND (yuzu family: the
+    files in `nand/system/Contents/registered/`; Ryujinx family:
+    `bis/system/Contents/registered/<name>.nca/00`), both to confirm
+    against their source. That is copying files, as their own "Install
+    firmware" does, with no decryption.
+  - The BIOS page shows Switch per emulator as keys yes/no and firmware
+    yes/no, with the firmware version when the emulator reports it.
 - *Games.* `nsp` and `xci` are hashed as today; they stay unidentified
   until a free Switch DAT source is found (No-Intro's public mirror and
   Redump: to check). Header ID reading is limited to fields stored
