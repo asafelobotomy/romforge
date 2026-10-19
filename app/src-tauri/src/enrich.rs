@@ -1,0 +1,60 @@
+//! Enrich, the art picker and the platform icons.
+
+use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
+
+use crate::db::{Db, Res, read, with};
+
+/// The sidebar's platform icons (fetched once from retroarch-assets):
+/// system key -> file, shown through `art://`.
+#[tauri::command]
+pub async fn platform_icons(db: tauri::State<'_, Db>) -> Res<romforge_core::PlatformIcons> {
+    read(&db, move |lib| {
+        lib.platform_icons(
+            &default_cache_dir(),
+            romforge_core::enrich::PLATFORM_ICONS_BASE,
+            romforge_core::wikidata::ENDPOINT,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichReport> {
+    let opts = EnrichOptions {
+        system,
+        art: ArtKind::ALL.to_vec(),
+        ..EnrichOptions::new(default_cache_dir())
+    };
+    with(&db, move |lib| lib.enrich(&opts, |_| {})).await
+}
+
+/// The pictures of `kind` the sources have for a row, each preview as a
+/// `data:` URL (Details' art picker).
+#[tauri::command]
+pub async fn art_choices(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    kind: String,
+) -> Res<romforge_core::enrich::ArtChoices> {
+    let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
+    let opts = EnrichOptions::new(default_cache_dir());
+    // Previews stay file paths, shown through `art://`.
+    read(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await
+}
+
+/// Make one of those the row's picture.
+#[tauri::command]
+pub async fn choose_art(
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    kind: String,
+    url: String,
+    source: String,
+) -> Res<()> {
+    let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
+    let opts = EnrichOptions::new(default_cache_dir());
+    with(&db, move |lib| {
+        lib.choose_art(&opts, &row_id, kind, &url, &source)
+    })
+    .await
+}
