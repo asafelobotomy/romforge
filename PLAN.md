@@ -1372,8 +1372,8 @@ served as versioned static files with no account or key
 rule 10, fetched like DATs (1 s per host). The BIOS files themselves (the
 `bios/` tree, release packs, `install.sh`/`install.py`) are third-party
 system software it redistributes without a licence: romforge never
-downloads, links, ships or runs them (rules 7 and 10). It checks the
-user's own dumps against the hashes, nothing more.
+downloads, links, ships or runs them (rules 7 and 10). It checks and
+places the user's own dumps by the hashes, nothing more.
 
 **Two kinds of "good".** RetroBIOS hashes say what an emulator's code
 accepts, not that a file is a verified dump; only 563 of its 5,339 system
@@ -1383,42 +1383,104 @@ counted as DAT-verified. RetroArch only checks that the name exists, so a
 right name with a wrong hash is shown as "present, hash unknown".
 
 In this order:
-1. *Fetch the requirements.* `firmware download` (and DATs view →
-   Firmware) stores, per emulator: its cores, systems, and each file
-   (name, destination, required, size, hashes, archive contents for
-   MAME-style BIOS zips). RetroBIOS system ids (`atari-7800`,
-   `sony-playstation`) map to romforge systems through a new `retrobios`
-   column in `systems/table.rs` (rule 4), checked against
+1. *Fetch the requirements.* `firmware download` (and the BIOS page)
+   stores, per emulator: its cores, systems, and each file (name,
+   destination, required, size, hashes, archive contents for MAME-style
+   BIOS zips). RetroBIOS system ids (`atari-7800`, `sony-playstation`)
+   map to romforge systems through a new `retrobios` column in
+   `systems/table.rs` (rule 4), checked against
    `platforms/_registry.yml`. Profiles carry the `source_commit` they were
    read from; stored with the rows, refreshed when `generated_at` changes.
-2. *Check a firmware folder.* Settings gets a Firmware folder, found by
-   default from RetroArch's `system_directory` in `retroarch.cfg` (native
-   or Flatpak), else `RomForge/Firmware/`. Scanning it hashes every file
-   (zips as members, as today) and matches by size + SHA1/MD5. Read-only.
-3. *Report.* Per system and per core: required files present / missing /
-   wrong hash, optional files the same. Shown on the platform (a badge
-   when the first core lacks a required file) and as `firmware check
-   [--system X] [--core Y]`.
-4. *Launch.* Before starting a core, check its required files. If they're
+2. *A BIOS page,* in the sidebar next to DATs, built like the DATs view:
+   per system and per core, required and optional files with their state
+   (accepted / present, hash unknown / missing / wrong hash), where each
+   one goes, and a badge on the platform when its first core lacks a
+   required file. CLI: `firmware check [--system X] [--core Y]`.
+3. *Import BIOS files by dropping them on the page* (or "Add BIOS…", or
+   `firmware import <path>`). Dropping a folder or an archive starts the
+   process; Tauri's webview drag-drop event gives the paths, and the app
+   only passes them to the core (rule 1).
+   - **Reading:** folders, zip, 7z, a zip inside a zip (packs nest them),
+     several ordinary zips at once (a pack in parts). Read as streams by
+     the readers romforge has (rule 7); BIOS files are small, so nested
+     members are read in memory, never extracted to disk. Slices
+     (`.zip.001`) are refused: none opens on its own.
+   - **Matching** by contents, never by name: size + SHA1/MD5 against
+     step 1 (rule 8), so a pack that renamed everything still works. Each
+     file is *accepted* (romforge knows every system, core and name it
+     serves), *name fits, hash unknown* (not placed unless the user picks
+     it; then "placed by you", never "accepted"), an *arcade BIOS set*
+     (`neogeo.zip`: goes to milestone 17's arcade import, MAME's DATs
+     cover it) or *unknown* (listed, left alone).
+   - **Plan first:** what goes where, which systems and cores become
+     complete, what is still missing, what was skipped. Nothing written
+     until the user confirms (rule 6).
+   - **Apply:** copied, never moved (the dropped pack stays as it was),
+     into `RomForge/Firmware/`:
+     ```
+     RomForge/Firmware/
+       RetroArch/            laid out exactly as RetroArch's system folder
+         scph5501.bin
+         dc/dc_boot.bin
+       duckstation/  pcsx2/  ...   one per standalone emulator whose
+                                   layout differs
+     ```
+     One file needed under several names or folders is stored once and
+     hard-linked (same drive). Each new file is re-hashed, nothing is
+     overwritten, the batch is journaled, and "Undo" removes it.
+4. *Point the emulators at it.* Each emulator's BIOS path is set in its
+   own config through milestone 21, so it works when the emulator is
+   started outside romforge too: RetroArch's `system_directory`,
+   DuckStation's BIOS search folder, PCSX2's BIOS folder, and so on. For
+   an emulator with no BIOS-path setting, symlinks in its own BIOS folder
+   point into `RomForge/Firmware/` (planned, journaled, never replacing a
+   file; undo removes only romforge's links). Windows needs Developer Mode
+   for symlinks, so there the files are copied instead. A Flatpak that
+   can't read `RomForge/` is reported with the access it needs.
+5. *Launch.* Before starting a core, check its required files. If they're
    missing, try the next core in the `cores` column whose files are
-   complete (or that needs none, per its profile), else say which file
-   is missing and where it goes, and start nothing. `--dry-run` shows the
-   check.
-5. *BIOS found among games.* Loose BIOS files in scanned folders show as
+   complete (or that needs none, per its profile: an HLE BIOS), else say
+   which file is missing and that the BIOS page takes it, and start
+   nothing. `--dry-run` shows the check.
+6. *BIOS found among games.* Loose BIOS files in scanned folders show as
    unknown today. Files matching RetroBIOS system files by size +
-   SHA1/MD5 become "firmware for <system>" rows instead (system files
-   only: its arcade sets overlap MAME's DATs and its game-engine data is
-   out of scope). The Redump BIOS DATs keep verifying where they cover.
-6. *Later, after a dry run:* copy (never move) your accepted firmware into
-   the firmware folder under the destination names a core expects,
-   journaled, never overwriting. Not built until steps 1–5 are solid.
+   SHA1/MD5 become "firmware for <system>" rows instead, with "Import to
+   BIOS" (system files only: its arcade sets overlap MAME's DATs and its
+   game-engine data is out of scope). The Redump BIOS DATs keep verifying
+   where they cover.
 
 Not used: the `provenance/` catalog matches (No-Intro / Redump / TOSEC
 already verify those files directly); the per-frontend pack layouts
 other than RetroArch's (romforge launches RetroArch and standalone
-emulators, whose profiles are in `emulators.json`). Standalone emulators
-(DuckStation, PCSX2, Dolphin, ...) keep their BIOS in their own folders:
-those paths come from their profiles in step 2, read-only.
+emulators, whose BIOS folders come from their profiles in
+`emulators.json`).
+
+## Emulator settings (milestone 21; decided 2026-10-19, not built)
+
+romforge has full control of each emulator's config, so users set up
+every emulator inside romforge instead of in each emulator's own menus.
+Milestone 20 uses it to set BIOS paths.
+
+- *One table of emulators' config files* (like `headers.rs`): where each
+  config lives (native and Flatpak paths, per OS), its format (RetroArch
+  `key = "value"` cfg, INI for DuckStation / PCSX2 / Dolphin, ...) and
+  the settings romforge offers: BIOS and save folders, video (renderer,
+  resolution scale, fullscreen), input, per-core options
+  (`retroarch-core-options.cfg`), each with its type and allowed values.
+- *An Emulators page* (or a tab per emulator in Settings) to view and
+  change them; CLI `emulator config <id> [get|set KEY VALUE]`.
+- *Writing safely:* the file is parsed and rewritten keeping the user's
+  other keys, comments and order; the write is atomic (temp file +
+  rename); the original is backed up once into `RomForge/` before
+  romforge first touches it; every change is journaled with its old
+  value, so one change or a whole batch can be undone. Not written while
+  the emulator is running (it would overwrite on exit): romforge waits or
+  says so.
+- *Per game* where the emulator supports it (RetroArch per-game
+  overrides, DuckStation game settings), from the game's detail panel.
+- Open: which emulators first (RetroArch, then DuckStation and PCSX2 is
+  the guess), and checking each config format against the emulator's
+  source rather than memory.
 
 ## Code review follow-ups (2026-10-18)
 
