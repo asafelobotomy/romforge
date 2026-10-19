@@ -81,3 +81,25 @@ fn links_are_search_urls_or_direct() {
     assert!(l[3].url.contains("igdb.com/search"), "no IGDB id: still a search");
     assert_eq!(l.last().unwrap().url, "https://www.wikidata.org/wiki/Q1");
 }
+
+#[test]
+fn one_valued_link_fields_keep_their_commas() {
+    let mut f = BTreeMap::new();
+    f.insert("wikipedia".to_owned(), "Hey You, Pikachu!".to_owned());
+    f.insert("mobygames_id".to_owned(), "123, 456".to_owned());
+    let l = links("Hey You, Pikachu! (USA)", None, &f);
+    assert_eq!(
+        l[0].url, "https://www.mobygames.com/game/123/",
+        "the first of several ids"
+    );
+    assert_eq!(l[2].url, "https://en.wikipedia.org/wiki/Hey_You%2C_Pikachu%21");
+}
+
+#[test]
+fn titles_sort_without_their_accents() {
+    let row = |t: &str| bare_row(t.into(), Some(6), t, RowStatus::Verified);
+    let mut rows = vec![row("Pac-Man"), row("Ōkami"), row("Nights"), row("Outrun")];
+    sort_rows(&mut rows, SortBy::Title, false);
+    let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+    assert_eq!(titles, ["Nights", "Ōkami", "Outrun", "Pac-Man"]);
+}

@@ -173,3 +173,41 @@ fn parses_sparql_json() {
     assert_eq!(rows[0]["g"], "Q123");
     assert_eq!(rows[0]["label"], "Doom");
 }
+
+#[test]
+fn a_failed_picture_is_not_asked_for_every_run() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let hits = std::sync::Arc::new(AtomicUsize::new(0));
+    let seen = hits.clone();
+    std::thread::spawn(move || {
+        for s in listener.incoming() {
+            let Ok(mut s) = s else { continue };
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut line = String::new();
+            while r.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            seen.fetch_add(1, Ordering::SeqCst);
+            let _ = write!(
+                s,
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+        }
+    });
+    let conn = crate::db::open_in_memory().unwrap();
+    conn.execute(
+        "INSERT INTO wikidata_pictures (qid, url, kind, checked_at) VALUES ('Q1', ?1, 'logo', '2026-01-01')",
+        [format!("{base}/Special:FilePath/Gone.svg")],
+    )
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for _ in 0..2 {
+        let mut errors = Vec::new();
+        assert_eq!(fetch_pictures(&conn, dir.path(), &mut errors).unwrap(), 0);
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "asked once, then left alone");
+    assert!(dir.path().join("Q1.failed").exists());
+}

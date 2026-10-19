@@ -104,6 +104,13 @@ pub fn enrich(
     };
 
     let keys = crate::settings::load(conn)?.keys;
+    scrub_art_urls(conn)?;
+    // Players were once kept from libretro's DATs as `maxusers`; they are
+    // `users`, as everywhere else.
+    conn.execute_batch(
+        "UPDATE OR IGNORE game_meta SET field = 'users' WHERE field = 'maxusers';
+         DELETE FROM game_meta WHERE field = 'maxusers';",
+    )?;
     // Databases the user downloaded (milestone 11), if any.
     let ovgdb = opts
         .extdb

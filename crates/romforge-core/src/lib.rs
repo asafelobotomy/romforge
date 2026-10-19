@@ -5,6 +5,7 @@
 //! 10) repacks them, each after a dry run and journaled for undo.
 
 pub mod artsources;
+mod atomic;
 pub mod cleanup;
 pub mod dat;
 mod db;

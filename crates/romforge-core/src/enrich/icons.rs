@@ -19,7 +19,7 @@ pub const PLATFORM_ICON_THEMES: &[&str] = &["flatui", "systematic", "logo"];
 
 /// Where a platform's icon of `theme` is kept, without its extension:
 /// `<cache>/platform-icons/<theme>/<key>`.
-pub fn platform_icon_stem(cache_dir: &Path, theme: &str, system: &systems::System) -> PathBuf {
+fn platform_icon_stem(cache_dir: &Path, theme: &str, system: &systems::System) -> PathBuf {
     cache_dir
         .join("platform-icons")
         .join(theme)
@@ -103,7 +103,7 @@ pub fn platform_icons(
                 continue;
             };
             let sep = if url.contains('?') { '&' } else { '?' };
-            match fetch::get_optional(&format!("{url}{sep}width=256")) {
+            match fetch::get_image(&format!("{url}{sep}width=256")) {
                 Ok(Some(data)) => {
                     if let Err(e) = keep(system, stem, &data) {
                         first_error.get_or_insert(e);
@@ -127,7 +127,7 @@ pub fn platform_icons(
             "{base}/{theme}/png/{}",
             fetch::encode_segment(&format!("{name}.png"))
         );
-        match fetch::get_optional(&url) {
+        match fetch::get_image(&url) {
             Ok(Some(data)) => {
                 if let Err(e) = keep(system, stem, &data) {
                     first_error.get_or_insert(e);

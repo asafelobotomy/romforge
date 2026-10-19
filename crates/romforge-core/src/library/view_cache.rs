@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Error, Library, layout, view};
+use crate::{Error, Library, view};
 
 /// The list view kept on disk beside the database
 /// (`<db>-view.json`), so opening the library doesn't build it again when
@@ -100,11 +100,7 @@ impl Library {
                         inner: v.inner(),
                     };
                     if let Ok(bytes) = serde_json::to_vec(&snap) {
-                        let name = path.file_name().unwrap_or_default().to_string_lossy();
-                        let part = path.with_file_name(layout::part(&name));
-                        if std::fs::write(&part, bytes).is_ok() {
-                            let _ = std::fs::rename(&part, &path);
-                        }
+                        let _ = crate::atomic::write(&path, &bytes);
                     }
                 }
                 v

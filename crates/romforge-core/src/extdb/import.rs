@@ -58,7 +58,8 @@ pub fn download(
         ExtDb::LaunchBox => &bases.launchbox,
     };
     let mut last = 0;
-    fetch::download_to(url, &zip, |done, total| {
+    // LaunchBox's Metadata.zip is about 110 MB; this only stops a runaway.
+    fetch::download_to(url, &zip, 2 << 30, |done, total| {
         if done - last >= 8 << 20 || Some(done) == total {
             last = done;
             progress(&match total {

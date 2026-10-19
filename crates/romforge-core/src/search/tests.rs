@@ -41,5 +41,14 @@ fn tags_and_articles_go_for_wikidata() {
         "Castlevania: Dracula X"
     );
     assert_eq!(strip_tags("Tetris"), "Tetris");
+    assert_eq!(
+        strip_tags("Boy and His Blob, A - Trouble on Blobolonia (USA)"),
+        "A Boy and His Blob: Trouble on Blobolonia"
+    );
+    assert_eq!(
+        strip_tags("Mario, Theodore and Friends (USA)"),
+        "Mario, Theodore and Friends",
+        "only a trailing article moves"
+    );
     assert_eq!(first_year("ca. 12345 and 1991"), Some(1991));
 }

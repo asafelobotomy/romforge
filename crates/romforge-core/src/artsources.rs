@@ -17,6 +17,9 @@ use crate::settings::Keys;
 use crate::systems::System;
 use crate::{Error, wikidata};
 
+mod credentials;
+pub use credentials::{download_url, without_credentials};
+
 /// Where each source lives (changed only in tests).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bases {
@@ -207,14 +210,17 @@ fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<ArtFound>,
         };
         let Some(url) = m["url"].as_str() else { continue };
         let region = m["region"].as_str().unwrap_or("ss");
+        // Its media URLs carry the credentials; they are put back only to
+        // download ([`download_url`]).
+        let url = without_credentials(url);
         let sep = if url.contains('?') { '&' } else { '?' };
         all.push((
             rank(region),
             ArtFound {
                 kind,
-                url: url.to_owned(),
                 // ScreenScraper scales its media on request.
                 thumb: Some(format!("{url}{sep}maxwidth=480")),
+                url,
                 label: Some(region.to_uppercase()),
             },
         ));
@@ -232,7 +238,7 @@ fn steamgriddb(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<ArtFound>, E
         match fetch::request(&Request {
             url: &url,
             headers: auth.clone(),
-            body: None,
+            ..Request::default()
         })? {
             Some(b) => Ok(Some(json(&b)?)),
             None => Ok(None),
@@ -299,6 +305,14 @@ fn igdb(keys: &Keys, bases: &Bases, session: &mut Session, job: &Job) -> Result<
     let (Some(id), Some(secret)) = (&keys.igdb_client_id, &keys.igdb_client_secret) else {
         return Ok(Vec::new());
     };
+    let cache_key = {
+        use sha1::Digest as _;
+        let h = crate::hash::hex(&sha1::Sha1::digest(secret.as_bytes()));
+        format!("{}\t{id}\t{h}", bases.igdb_token)
+    };
+    if session.igdb_token.is_none() {
+        session.igdb_token = credentials::cached_igdb_token(&cache_key, None);
+    }
     if session.igdb_token.is_none() {
         let url = format!(
             "{}?client_id={}&client_secret={}&grant_type=client_credentials",
@@ -308,15 +322,20 @@ fn igdb(keys: &Keys, bases: &Bases, session: &mut Session, job: &Job) -> Result<
         );
         let body = fetch::request(&Request {
             url: &url,
-            headers: Vec::new(),
             body: Some(String::new()),
+            ..Request::default()
         })?
         .ok_or_else(|| Error::Http("IGDB: no token".into()))?;
-        let token = json(&body)?["access_token"]
+        let answer = json(&body)?;
+        let token = answer["access_token"]
             .as_str()
             .ok_or_else(|| Error::Http("IGDB: no token in the answer".into()))?
             .to_owned();
-        session.igdb_token = Some(token);
+        // Twitch says how long it lasts; without that, this run only.
+        session.igdb_token = match answer["expires_in"].as_u64() {
+            Some(secs) => credentials::cached_igdb_token(&cache_key, Some((token, secs))),
+            None => Some(token),
+        };
     }
     let token = session.igdb_token.clone().unwrap_or_default();
     let title = crate::view::search_title(job.title).replace('"', "");
@@ -333,6 +352,7 @@ fn igdb(keys: &Keys, bases: &Bases, session: &mut Session, job: &Job) -> Result<
             ("Authorization", format!("Bearer {token}")),
         ],
         body: Some(query),
+        ..Request::default()
     })?
     else {
         return Ok(Vec::new());

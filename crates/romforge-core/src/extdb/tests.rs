@@ -23,3 +23,21 @@ fn dates_and_regions() {
     );
     assert!(regions_of("Tetris").is_empty());
 }
+
+#[test]
+fn wikipedia_titles_are_decoded_once() {
+    assert_eq!(
+        wikipedia_title("https://en.wikipedia.org/wiki/Pok%C3%A9mon_Red_and_Blue#Plot").as_deref(),
+        Some("Pokémon Red and Blue")
+    );
+    assert_eq!(
+        wikipedia_title("https://en.wikipedia.org/wiki/Hey_You,_Pikachu!").as_deref(),
+        Some("Hey You, Pikachu!")
+    );
+    assert_eq!(wikipedia_title("https://example.org/x"), None);
+    assert_eq!(
+        crate::fetch::decode_segment("100%_a%2"),
+        "100%_a%2",
+        "stray % kept"
+    );
+}

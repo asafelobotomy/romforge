@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use super::{GameRow, LibraryView, Relation};
 use crate::Error;
 
-/// A fingerprint of everything [`listing`] shows: each table it reads
+/// A fingerprint of everything [`listing`](super::listing) shows: each table it reads
 /// (only the columns it uses), counted and summed through `fp()`, so the
 /// list is built again only when this changes (a rescan that finds nothing
 /// new, Enrich's bookkeeping, or an unrelated setting leave it alone). A
@@ -24,6 +24,10 @@ pub fn fingerprint(conn: &Connection) -> Result<u64, Error> {
         "SELECT count(*), total(fp(system_id, title, grp, priority, list)) FROM clone_groups",
         "SELECT count(*), total(fp(dat_id, system_id, name)) FROM dats",
         "SELECT count(*), total(fp(key, value)) FROM settings WHERE key = 'regions'",
+        // Folder games are found under the scanned folders (a nested one
+        // changes which). `games` needs no line: a DAT imported again gets
+        // a new `dat_id`, so `dats` changes with its games.
+        "SELECT count(*), total(fp(path)) FROM scan_roots",
     ];
     let mut text = String::new();
     for q in PARTS {

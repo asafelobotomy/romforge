@@ -43,9 +43,10 @@ pub fn sort_rows(rows: &mut [GameRow], by: SortBy, descending: bool) {
     });
 }
 
-/// Sort "Legend of Zelda, The - ..." under L, ignoring case.
+/// Sort "Legend of Zelda, The - ..." under L, ignoring case and accents
+/// ("Ōkami" with the O's).
 pub(super) fn sort_key(title: &str) -> String {
-    title.to_lowercase()
+    crate::extdb::fold_accents(title).to_lowercase()
 }
 
 /// The title people search for: tags removed, "Zelda, The" as "The Zelda".

@@ -143,7 +143,8 @@ pub fn parse_results(body: &[u8]) -> Result<Vec<HashMap<String, String>>, Error>
         .collect())
 }
 
-pub(super) fn is_qid(s: &str) -> bool {
+/// A Wikidata item id: `Q` and digits.
+pub(crate) fn is_qid(s: &str) -> bool {
     s.len() > 1 && s.starts_with('Q') && s[1..].chars().all(|c| c.is_ascii_digit())
 }
 
