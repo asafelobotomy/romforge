@@ -956,9 +956,10 @@ Flatpak, then `~/Applications` and `RomForge/Emulators/` (a program by
 name or `<name>*.AppImage`, any case, newest name first);
 `RomForge/Emulators/cores/` is searched before the system's cores.
 `Library::env()` builds this for the CLI and the app.
-Not yet: flags for the console emulators (to check against their
-source), the per-emulator quit method (with 1.6), and the path setting
-in the app (the Emulators page, milestone 21).
+The console emulators' flags followed the same day, read from each
+one's source at its release (see 1.3). Not yet: the per-emulator quit
+method (with 1.6), and the path setting in the app (the Emulators page,
+milestone 21).
 
 #### 1.2 RomForge folder grows
 
@@ -994,18 +995,29 @@ settings" per emulator.
   toggle unbound, and `network_cmd_enable = "true"` (UDP 55355). Then
   romforge can send `PAUSE_TOGGLE`, `SAVE_STATE`, `LOAD_STATE`,
   `SCREENSHOT`, `RESET`, `QUIT`, and poll `GET_STATUS`.
-- **Standalone** (flags to check with `--help` on real installs):
+- **Standalone** (read from each one's source at the release named,
+  2026-10-19; fullscreen flags are in `launch/table.rs`). Data folders:
 
-  | Emulator | Start without UI | Owned config dir |
-  |---|---|---|
-  | DuckStation | `-batch -fullscreen -nogui` (checked in source) | `portable.txt` *(unverified)* |
-  | PCSX2 | `-batch -nogui -fullscreen -- <file>` | `-portable` |
-  | Dolphin | `-b -e <file>` | `-u <dir>` |
-  | PPSSPP | `--fullscreen` | *(to check)* |
-  | RPCS3 | `--no-gui` *(unverified)* | *(to check)* |
-  | Cemu | `-g <file> -f` *(unverified)* | *(to check)* |
-  | xemu | `-full-screen -dvd_path` *(unverified)* | *(to check)* |
-  | Flycast | *(to research)* | *(to check)* |
+  | Emulator | Its data folder |
+  |---|---|
+  | DuckStation (rolling, 2026-10-13) | `portable.txt` next to the program or AppImage; no flag |
+  | PCSX2 2.8.2 | `-datapath <dir>` (data in `<dir>/PCSX2`), or `portable.txt` |
+  | Dolphin 2609a | `-u <dir>`; ignored under Flatpak (always XDG) |
+  | PPSSPP 1.20.4 | none on Linux (`$XDG_CONFIG_HOME/ppsspp`) |
+  | Flycast 2.7 | `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME`, `FLYCAST_BIOS_PATH` |
+  | mGBA 0.10.5 | `portable.ini` next to the program |
+  | melonDS 1.1 | a `portable/` folder next to the program |
+  | xemu 0.8.137 | `-config_path <file.toml>` (the TOML only); `xemu.toml` next to the program |
+  | RPCS3 0.0.43 | a `portable/` folder next to the program; `--config <file>` for a boot |
+  | Mednafen 1.32.1 | `MEDNAFEN_HOME` |
+  | Cemu 2.6 | a `portable/` folder next to the program or AppImage |
+
+  So for most, 1.3 sets environment variables (`XDG_CONFIG_HOME`,
+  `XDG_DATA_HOME`, `MEDNAFEN_HOME`) for the child process, or keeps a
+  portable copy of the program in `RomForge/Emulators/`. Clean quit:
+  DuckStation, PCSX2, Dolphin and Mednafen shut down cleanly on
+  SIGINT/SIGTERM; PPSSPP quits on Esc with `--escape-exit`; the rest are
+  unchecked (1.6).
 
   Flatpak emulators keep config under `~/.var/app/<id>/`; they get
   `--filesystem=<RomForge>` and config written there, or a portable dir
@@ -1541,11 +1553,24 @@ through the BIOS page (milestone 20).
 
 - *Which emulators.* Yuzu and Ryujinx stopped in 2024; their forks
   change fast, and Nintendo sent a DMCA notice covering about thirteen
-  of them in February 2026. Reported 2026-10-19 (weak, conflicting
-  sources, to verify on each project's own site): Eden (yuzu fork, tagged
-  stable releases, v0.2.2 in September 2026, self-hosted since March)
-  looks current; Citron (nightlies into October) and Ryubing (Ryujinx
-  fork, said to be in maintenance since February) are unclear. Every
+  of them in February 2026. Checked in their source 2026-10-19:
+  - **Eden** (yuzu fork, git.eden-emu.dev): alive, v0.2.1 (2026-06-01),
+    commits daily; program `eden`, Flatpak `dev.eden_emu.eden`; `eden
+    [-f] [-g] <file>`.
+  - **Citron**: its old host is gone; github.com/citron-neo/emulator
+    carries it on (release 2026-04-27, commits into October); program
+    `citron`, `-f`, `-g <file>`, no Flatpak.
+  - **Ryubing** (Ryujinx fork): its source host didn't answer; its
+    Flathub app was taken down by a Nintendo DMCA notice on 2026-06-30.
+    Command line and folders unverified.
+  - **yuzu** (last: mainline-0-1734, 2024-03-04) and **Ryujinx** (last
+    archived master 2024-09-15): `yuzu -f -g <file>`; `Ryujinx -f
+    <file>`, `-r <dir>` for its data folder.
+  - The yuzu family keeps its data in `./user` of the **working
+    directory** on Linux (else `$XDG_DATA_HOME/<name>`), so romforge
+    starts them in their RomForge data folder.
+
+  Every
   fork that meets the milestone 21 rule, checked when this starts, plus
   yuzu's and Ryujinx's last releases under its discontinued exception.
   Each one's config, keys and NAND folders and command line are read
@@ -1567,16 +1592,16 @@ through the BIOS page (milestone 20).
     values or key hashes), so they show as "Switch keys, recognized by
     format", not "accepted". Placed in `RomForge/Bios/switch/keys/`
     and hard-linked into each emulator's keys folder inside its
-    romforge-owned data folder (yuzu family: `keys/`; Ryujinx family:
-    `system/`).
+    romforge-owned data folder (yuzu family: `keys/prod.keys`; Ryujinx
+    family: `system/prod.keys`; checked in source).
   - **Firmware**: a folder or zip of `.nca` files with 32-hex names,
     recognized by that shape (an NCA's contents are encrypted).
     Kept in `RomForge/Bios/switch/firmware/` and placed as each
     emulator stores installed firmware in its NAND, inside its
     romforge-owned data folder (yuzu family: the
     files in `nand/system/Contents/registered/`; Ryujinx family:
-    `bis/system/Contents/registered/<name>.nca/00`), both to confirm
-    against their source. That is copying files, as their own "Install
+    `bis/system/Contents/registered/`, checked in source; Ryujinx's
+    `<name>.nca/00` nesting still to confirm). That is copying files, as their own "Install
     firmware" does, with no decryption.
   - The BIOS page shows Switch per emulator as keys yes/no and firmware
     yes/no, with the firmware version when the emulator reports it.

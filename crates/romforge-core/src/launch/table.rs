@@ -76,54 +76,85 @@ pub const RETROARCH: KnownEmulator = emu(
 .fullscreen(&["-f"])
 .config(&["--config", "{config}/retroarch.cfg"]);
 
+// The console emulators' flags were read from their source at the
+// release named (2026-10-19). One with no `config` has no flag for a data
+// folder: a portable marker next to the program or an environment
+// variable instead (milestone 18, 1.3).
 pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
+    // Rolling release of 2026-10-13 (qthost.cpp). `-nogui` quits when the
+    // game ends; no data-folder flag (`portable.txt`).
     emu(
         "duckstation",
         &["duckstation-qt", "duckstation"],
         "org.duckstation.DuckStation",
-        &["{rom}"],
+        &["--", "{rom}"],
         false,
-    ),
+    )
+    .fullscreen(&["-fullscreen", "-nogui"]),
+    // v2.8.2 (QtHost.cpp). `-datapath` keeps its data in `PCSX2/` inside
+    // the folder given.
     emu(
         "pcsx2",
         &["pcsx2-qt", "pcsx2"],
         "net.pcsx2.PCSX2",
-        &["{rom}"],
+        &["--", "{rom}"],
         false,
-    ),
+    )
+    .fullscreen(&["-fullscreen", "-nogui"])
+    .config(&["-datapath", "{config}"]),
+    // 2609a (CommandLineParse.cpp): no fullscreen flag, a config override
+    // instead. `-u` is ignored under Flatpak, which always uses XDG.
     emu(
         "dolphin",
         &["dolphin-emu"],
         "org.DolphinEmu.dolphin-emu",
         &["-b", "-e", "{rom}"],
         false,
-    ),
+    )
+    .fullscreen(&["-C", "Dolphin.Display.Fullscreen=True"])
+    .config(&["-u", "{config}"]),
+    // v1.20.4 (NativeApp.cpp). It reads an ISO inside a zip but not a 7z,
+    // so archives stay off.
     emu(
         "ppsspp",
         &["PPSSPPSDL", "ppsspp"],
         "org.ppsspp.PPSSPP",
         &["{rom}"],
         false,
-    ),
-    emu("flycast", &["flycast"], "org.flycast.Flycast", &["{rom}"], false),
-    emu("mgba", &["mgba-qt", "mgba"], "io.mgba.mGBA", &["{rom}"], true),
-    emu("melonds", &["melonDS"], "net.kuribo64.melonDS", &["{rom}"], true),
-    emu("xemu", &["xemu"], "app.xemu.xemu", &["-dvd_path", "{rom}"], false),
+    )
+    .fullscreen(&["--fullscreen", "--escape-exit"]),
+    // v2.7 (cfg/cl.cpp).
+    emu("flycast", &["flycast"], "org.flycast.Flycast", &["{rom}"], false)
+        .fullscreen(&["-config", "window:fullscreen=yes"]),
+    // 0.10.5 (commandline.c).
+    emu("mgba", &["mgba-qt", "mgba"], "io.mgba.mGBA", &["{rom}"], true).fullscreen(&["-f"]),
+    // 1.1 (CLI.cpp); archives need a build with archive support.
+    emu("melonds", &["melonDS"], "net.kuribo64.melonDS", &["{rom}"], true).fullscreen(&["-f"]),
+    // v0.8.137 (vl.c, xemu.c).
+    emu("xemu", &["xemu"], "app.xemu.xemu", &["-dvd_path", "{rom}"], false)
+        .fullscreen(&["-full-screen"])
+        .config(&["-config_path", "{config}/xemu.toml"]),
+    // v0.0.43 (rpcs3.cpp): `--fullscreen` works only with `--no-gui`.
     emu(
         "rpcs3",
         &["rpcs3"],
         "net.rpcs3.RPCS3",
         &["--no-gui", "{rom}"],
         false,
-    ),
-    emu("mednafen", &["mednafen"], "com.github.mednafen", &["{rom}"], true),
+    )
+    .fullscreen(&["--fullscreen"])
+    .config(&["--config", "{config}/config.yml"]),
+    // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`.
+    emu("mednafen", &["mednafen"], "com.github.mednafen", &["{rom}"], true).fullscreen(&["-video.fs", "1"]),
+    // v2.6 (LaunchSettings.cpp); `-m` moves only the MLC folder.
     emu(
         "cemu",
         &["cemu", "Cemu"],
         "info.cemu.Cemu",
         &["-g", "{rom}"],
         false,
-    ),
+    )
+    .fullscreen(&["-f"]),
     // A folder is mounted as C:, a program run from its folder; images
     // and archives need the core. Checked with `--help` (0.83).
     emu(
