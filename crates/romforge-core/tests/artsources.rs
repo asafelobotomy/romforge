@@ -269,4 +269,21 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         .filter(|(p, _)| p.ends_with("-thumb.jpg"))
         .count();
     assert_eq!(previews, 2, "previews kept from the first look");
+
+    // The list's picture views get the files: box art, 3D box, fanart, logo.
+    let row = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.title == "Test GB")
+        .unwrap();
+    for k in ["boxart", "box3d", "hero", "logo"] {
+        let p = row
+            .pictures
+            .get(k)
+            .unwrap_or_else(|| panic!("no {k}: {:?}", row.pictures));
+        assert!(Path::new(p).exists(), "{p}");
+    }
+    assert!(!row.pictures.contains_key("snap"), "only what the views show");
 }

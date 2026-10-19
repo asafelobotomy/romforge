@@ -44,6 +44,15 @@ export function genres(value) {
     });
 }
 
+/// A game-icons.net icon by its key in gameIcons.js (the sidebar's
+/// "library" and "unknown"), as an SVG in the text colour.
+export function iconSvg(key, size = 26) {
+  const icon = GAME_ICONS[key];
+  return icon
+    ? `<svg viewBox="0 0 512 512" width="${size}" height="${size}" fill="currentColor" aria-hidden="true">${icon.svg}</svg>`
+    : "";
+}
+
 /// The icons in use and who made them, for Credits.
 export function iconCredits() {
   const by = {};

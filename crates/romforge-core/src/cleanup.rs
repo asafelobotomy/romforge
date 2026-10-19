@@ -110,6 +110,10 @@ pub struct Item {
 pub struct CleanupPlan {
     pub dest: PathBuf,
     pub keep_originals: bool,
+    /// Each game written in its own folder ("Replace originals", or
+    /// Convert), not into `dest`.
+    #[serde(default)]
+    pub in_place: bool,
     pub items: Vec<Item>,
     /// (row title, why it isn't cleaned)
     pub skipped: Vec<(String, String)>,
@@ -153,8 +157,46 @@ pub fn plan(
     home: Option<&Home>,
     from: Option<&Path>,
 ) -> Result<CleanupPlan, Error> {
+    plan_as(conn, only, home, from, How::Cleanup)
+}
+
+/// What a plan is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum How {
+    /// Rename & Cleanup (or Import): into RomForge or the Library, or in
+    /// place with "Replace originals".
+    Cleanup,
+    /// Convert: disc images into CHD beside themselves, under their own
+    /// names, wherever they are.
+    Convert,
+}
+
+/// Convert's plan: every identified disc game not yet a CHD (CD tracks
+/// with their cue sheet, or one DVD image), written as a CHD in its own
+/// folder under its own name; the originals as Rename & Cleanup's setting
+/// says (kept, or to the trash). Discs CHD can't take (GameCube and Wii's
+/// RVZ, odd track files) are listed as skipped.
+pub fn convert_plan(
+    conn: &Connection,
+    only: Option<&[String]>,
+    home: Option<&Home>,
+) -> Result<CleanupPlan, Error> {
+    plan_as(conn, only, home, None, How::Convert)
+}
+
+fn plan_as(
+    conn: &Connection,
+    only: Option<&[String]>,
+    home: Option<&Home>,
+    from: Option<&Path>,
+    how: How,
+) -> Result<CleanupPlan, Error> {
     let s = settings::load(conn)?;
+    let convert = how == How::Convert;
+    let in_place = convert || s.in_place;
     let (source, dest) = match home {
+        // Convert takes discs wherever they are.
+        _ if convert => (Source::Folder(PathBuf::from("/")), PathBuf::new()),
         Some(h) => {
             let source = match from {
                 Some(f) if h.contains(f) => {
@@ -180,6 +222,7 @@ pub fn plan(
     let mut plan = CleanupPlan {
         dest: dest.clone(),
         keep_originals: s.keep_originals,
+        in_place,
         ..CleanupPlan::default()
     };
     let in_source = |p: &Path| source.contains(p);
@@ -215,6 +258,20 @@ pub fn plan(
         let Some(system) = row.system.as_deref().and_then(systems::by_key) else {
             continue;
         };
+        // Convert is for discs; in place, arcade sets and folder games stay
+        // as they are (they are already named and laid out by their sets).
+        if convert && (!system.is_disc_based || system.arcade || row.folder.is_some()) {
+            continue;
+        }
+        if in_place && (system.arcade || row.folder.is_some()) {
+            if only.is_some() {
+                plan.skipped.push((
+                    row.title.clone(),
+                    "an arcade set or folder game stays where it is".into(),
+                ));
+            }
+            continue;
+        }
         if system.arcade {
             match set_item(conn, &row, system, &dest, &source, games.as_deref(), &mut taken)? {
                 Ok(Some(mut it)) => {
@@ -268,8 +325,16 @@ pub fn plan(
                 .push((row.title.clone(), "no complete set of files to take".into()));
             continue;
         };
+        // Already a CHD: nothing to convert.
+        if convert
+            && parts
+                .iter()
+                .any(|p| p.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("chd")))
+        {
+            continue;
+        }
         // Already in Games/: the copies outside are redundant.
-        if let Some(games) = &games {
+        if let (Some(games), false) = (&games, in_place) {
             let mut there = None;
             for f in row.file_ids() {
                 let p: String = path_of.query_row([f], |r| r.get(0))?;
@@ -309,6 +374,15 @@ pub fn plan(
             continue; // already processed (in the Library) or outside Source
         }
         let disc = system.is_disc_based;
+        // A CHD only for a platform whose emulators read one (the systems
+        // table lists `chd` then): never GameCube, Wii or Xbox.
+        if disc && !system.extensions.contains(&"chd") {
+            plan.skipped.push((
+                row.title.clone(),
+                format!("{} emulators don't read CHD; it stays as it is", system.key),
+            ));
+            continue;
+        }
         let tracks: Vec<&Part> = parts
             .iter()
             .filter(|p| !p.name.to_lowercase().ends_with(".cue"))
@@ -338,8 +412,26 @@ pub fn plan(
             ));
             continue;
         }
-        let name = sanitize(&row.title);
-        let dir = dest.join(sanitize(system.key));
+        // In place: beside the original (a disc's cue or image, or the
+        // archive holding it). Convert keeps the original's own name.
+        let here = parts
+            .iter()
+            .find(|p| p.name.to_lowercase().ends_with(".cue"))
+            .or_else(|| tracks.first().copied())
+            .or(parts.first())
+            .map(|p| p.path.clone())
+            .unwrap_or_default();
+        let name = if convert {
+            here.file_stem()
+                .map_or_else(|| sanitize(&row.title), |s| s.to_string_lossy().into_owned())
+        } else {
+            sanitize(&row.title)
+        };
+        let dir = if in_place {
+            here.parent().map_or_else(PathBuf::new, Path::to_path_buf)
+        } else {
+            dest.join(sanitize(system.key))
+        };
         // A disk of a set, for a core that opens the set's disks itself.
         let set = match (format, system.loose_sets, disk_of(&row.title)) {
             (Format::Zip, Some(_), Some((_, _, base))) if parts.len() == 1 => Some(base),
@@ -355,6 +447,8 @@ pub fn plan(
                 (dir.join(sanitize(base)).join(format!("{name}{ext}")), None)
             }
             (Format::Zip, _) => (dir.join(format!("{name}.zip")), None),
+            // Convert writes the disc alone, no folder of art beside it.
+            _ if convert => (dir.join(format!("{name}.chd")), None),
             _ => (dir.join(format!("{name}.chd")), Some(dir.join(&name))),
         };
         if target.exists() || sidecar.as_ref().is_some_and(|d| d.exists()) {

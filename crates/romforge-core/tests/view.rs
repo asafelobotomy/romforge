@@ -63,9 +63,19 @@ fn one_row_per_game_and_lone_files() {
         gb_platform.games,
         v.rows
             .iter()
-            .filter(|r| r.system.as_deref() == Some("Game Boy") && r.main)
+            .filter(|r| r.system.as_deref() == Some("Game Boy") && r.main && !r.unmatched)
             .count(),
-        "games, not versions"
+        "games, not versions, and only matched ones"
+    );
+    // What isn't matched yet is Unidentified's, whatever its platform: a
+    // CRC32 alone as much as an unknown file.
+    let crc = row("CRC Only");
+    assert!(crc.unmatched && crc.system.as_deref() == Some("Game Boy"));
+    assert!(unknown.unmatched && !gb.unmatched);
+    let unidentified = v.platforms.iter().find(|p| p.system.is_none()).unwrap();
+    assert_eq!(
+        unidentified.games,
+        v.rows.iter().filter(|r| r.main && r.unmatched).count()
     );
 }
 

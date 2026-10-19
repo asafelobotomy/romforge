@@ -10,7 +10,7 @@ crc32fast = "1"
 md-5 = "0.11"
 sha1 = "0.11"
 quick-xml = "0.42"
-rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint", "functions"] }
 serde.workspace = true
 serde_json.workspace = true
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["bzip2", "deflate", "ppmd"] }
@@ -23,6 +23,7 @@ chd = { version = "0.4", default-features = false, features = ["std", "want_raw_
 shiratsu-naming = "1.1"
 strsim = "0.11"
 flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
 oxidelta = { version = "0.1.4", default-features = false, features = ["adler32", "lzma-secondary"] }
 

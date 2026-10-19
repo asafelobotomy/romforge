@@ -229,8 +229,8 @@ romforge-cli settings --regions "USA, Europe, Japan"
 The desktop app asks where to create it on first run. Moving or backing up
 the folder takes the whole library with it; `~/.config/romforge/location`
 says where it is (`ROMFORGE_HOME` overrides). Scanning still only reads:
-**Add folder** scans a folder and then shows its import plan, and only
-**Import** moves anything. Only verified games and games you named move;
+**Scan folder** scans a folder, and only **Rename & Cleanup** (an import
+into `Games/` here) moves anything. Only verified games and games you named move;
 unidentified files stay where they are until Search identifies them.
 Originals go to `RomForge/.romforge-trash/<batch>/` (unless Keep originals)
 until you undo; another copy outside of a game already in `Games/` goes
@@ -425,10 +425,48 @@ A scan lists the files it skipped for their extension, by kind (`.txt 5,
 
 Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
 (`webkit2gtk-4.1`). It uses the same database as the CLI. The layout follows
-tinyMediaManager: a toolbar (Refresh, Add folder, Search, Enrich, Cleanup
-and rename, Play), platforms down the left, one row per game with columns
+tinyMediaManager: a toolbar, platforms down the left, one row per game with columns
 for what has been gathered (identified, metadata, box art, title screen,
-snap), and a detail panel with Details, Development, Series and Links tabs.
+snap), and a detail panel with Details, Development, Series, Versions and
+Links tabs.
+
+The toolbar:
+
+- **Refresh** rescans the folders Settings names (Source and Library) and
+  the RomForge folder's Games, not folders you scanned once; greyed out
+  until there is one.
+- **Scan folder ▾** scans any folder you pick without making it a setting,
+  except the very first folder you scan while no Source is set, which
+  becomes your Source. **Scan folder [dry run]** reads the folder on a
+  throwaway copy of the library and lists what it holds (verified,
+  candidate, unknown; what's new), then scans it for real or not as you
+  say.
+- **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
+  Cleanup, Display, Sources, Credits), **Play**.
+
+**All games** and each platform list only games (verified, named by you,
+translations and hacks, and the like); **Unidentified** collects
+everything not matched yet, whatever its platform: unknown files, CRC32-only
+candidates, files matched on another platform, and patches paired with no
+game. Search works through them.
+
+The sidebar shows each platform's icon (its name under it, wrapped, in
+bold), fetched once into the cache; Settings → Display picks **Controller
+icons** (the default) or **System icons** from RetroArch's own icon sets,
+or **Platform logos** from Wikidata (Wikimedia Commons, on a light tile).
+A platform without one keeps a coloured badge.
+- **Rename & Cleanup ▾** does the whole job at once: every identified game
+  renamed by its DAT, repacked (zip, or CHD for discs) and moved into
+  RomForge (or the Library), or replaced in place, as Settings says.
+  **Rename & Cleanup [dry run]** shows the plan first, with Undo and Empty
+  trash.
+- **Convert** turns identified disc images into CHD where they are, under
+  their own names, for platforms whose emulators read CHD (never GameCube,
+  Wii or Xbox): it shows what it would do first, every CHD is checked
+  against the disc's hashes, and the originals go as Settings says (to the
+  trash, or kept). `romforge-cli convert [--apply]`. **Versions** lists every version of the game in your library
+(other regions, editions, translations, hacks, patch files) under the same
+headings as the list, as a list or as box art, 3D boxes or banners.
 DATs and Organize are at the foot of the platform list.
 
 **Search** (toolbar, or `romforge-cli search queue|find|name|forget|wikidata`)
@@ -452,19 +490,32 @@ then SteamGridDB, then IGDB, each only asked for what's still missing.
 SteamGridDB's grids are never used as box art (they are Steam capsules),
 and IGDB images come at their largest sizes.
 
-**Details** (centred) shows fanart on top (click it to pick another: a
-popup lists every fanart libretro, the LaunchBox database and the keyed
-sources have for the game, previewed small; your pick is kept even when
-Enrich refreshes), the facts (with the logo) on the
-left of the box, the overview, then Media (3D box, title screen, in-game,
-icon). Facts are pictures where they can be: a genre icon each (its name
-on hover), the ESRB rating as a badge, region flags for the edition, the
-community rating as stars, and the developer's and publisher's logos once
-Enrich has fetched them. Every image
-keeps its own aspect ratio and is never blown up; captions give its size in
-pixels and its source, and a click opens it full size (small screenshots
-scaled by whole steps, pixels kept sharp). Kinds with no art are hidden;
-Settings → "Show empty media boxes" shows a box for each.
+**View** (beside the filter): the library as a **List**, or as pictures
+only (no titles; hover for the name) of **Box art**, **3D box** (box art
+where there is no 3D box) or **Banner** (the fanart, every banner the same
+wide shape, the game's logo over it). Every box cell
+is the same size, and each box is drawn at its platform's and region's
+true shape (SNES and Famicom boxes lie down, Genesis and DVD cases stand
+up, PlayStation jewel cases are square; `systems::box_aspect`), all the
+same height on one baseline; a scan of another shape fits inside it
+whole, never cropped. Cards keep the
+list's order, sort (a sort bar above them) and fold-out versions; pictures
+load from disk as they scroll into view. The view is remembered.
+
+**Details** opens with the box art and, under it, the fanart (click the
+fanart to pick another: a popup lists every fanart libretro, the LaunchBox
+database and the keyed sources have for the game, previewed small; your
+pick is kept even when Enrich refreshes). Beside them, like an
+encyclopedia's infobox, a compact card with the logo and one row per
+fact; in a narrow panel it comes under the art. Facts are pictures where
+they can be: a genre icon each (its name on hover), the ESRB rating as a
+badge, region flags for the edition, the community rating as stars, and
+the developer's and publisher's logos once Enrich has fetched them. Then
+the overview and Media (3D box, title screen, in-game, icon). Every image
+keeps its own aspect ratio and is never blown up; hovering gives its size
+in pixels and its source, and a click opens it full size (small
+screenshots scaled by whole steps, pixels kept sharp). Kinds with no art
+are hidden; Settings → "Show empty media boxes" shows a box for each.
 
 **Game databases** (DATs view, or `romforge-cli databases`): OpenVGDB and
 the LaunchBox Games Database are free to download but published without a
@@ -494,10 +545,28 @@ sort. `romforge-cli games --sort year --desc` does the same. **Links** separates
 from plain site searches. libretro's `???` for an unknown value is hidden,
 and "Nintendo ???" shows as "Nintendo (unconfirmed)".
 
+Big libraries stay quick: the list is rebuilt only when something it
+shows changed (a fingerprint of those tables, checked after each write),
+kept on disk beside the database (`romforge.db-view.json`) for the next
+start, and sent to the window only when it changed; pictures load from
+disk as they come into view. The picture views (Box art, 3D box, Banner)
+load thumbnails at the size they draw, made on first view and kept in
+`~/.cache/romforge/thumbs` (JPEG, or PNG for pictures with see-through
+parts; made again when a picture changes, and safe to delete); Details
+shows the full pictures.
+
+The toolbar shows romforge's logo (Settings → Display picks synthwave,
+pastel, gummy, space or sprinkles); the app's icon is the RF monogram
+(`app/src-tauri/icons/romforge.svg`, and `romforge-small.svg` for 32 and
+64 px; render the PNGs with `rsvg-convert`).
+
 **Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
-unprocessed ROMs, an optional **Library** folder that Cleanup and rename
-sorts processed games into, **Keep originals** (Source files stay
-untouched; cleanup only writes new files into the Library), and the
+unprocessed ROMs, an optional **Library** folder that Rename & Cleanup
+sorts processed games into, what Rename & Cleanup does with the
+originals (**Move, then trash originals**, the default; **Move and keep
+originals**, which needs a Library or the RomForge folder; **Replace
+originals**: renamed and repacked where each game is, the original to the
+trash, `--in-place true`), and the
 **staging** folder (default `~/.cache/romforge/staging`). Refresh scans the Source and Library.
 Source and Library can't be inside one another, and staging stays outside
 both.
@@ -536,8 +605,15 @@ MIT (see [LICENSE](LICENSE)). The systems table is adapted from
 FGK decoders in `vcdiff.rs` are ported from
 [xdelta3](https://github.com/jmacd/xdelta) (Copyright Joshua MacDonald,
 [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)). The genre icons
-in Details (`app/src/gameIcons.js`) are from
-[game-icons.net](https://game-icons.net) by Lorc, Delapouite and Skoll,
+in Details and the sidebar's All games and Unidentified icons
+(`app/src/gameIcons.js`) are from
+[game-icons.net](https://game-icons.net) by Lorc, Delapouite, Skoll and Sbed,
 licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), with
 their background removed and recoloured; the app lists them under
-Settings → Credits.
+Settings → Credits. The sidebar's controller and system icons are
+[RetroArch's assets](https://github.com/libretro/retroarch-assets) (the
+libretro team and contributors,
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), and its
+platform logos come from Wikimedia Commons through Wikidata (each under
+its own Commons terms; many are trademarks); all downloaded by the app,
+never shipped.

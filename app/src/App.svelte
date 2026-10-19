@@ -1,18 +1,25 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { size } from "./lib.js";
+  import { size, artSrc } from "./lib.js";
   import SettingsDialog from "./SettingsDialog.svelte";
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
   import PatchDialog from "./PatchDialog.svelte";
   import ArtPicker from "./ArtPicker.svelte";
+  import SplitButton from "./SplitButton.svelte";
+  import { logoSrc } from "./logos.js";
+  import ScanPreview from "./ScanPreview.svelte";
+  import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+  import PictureGrid from "./PictureGrid.svelte";
+  import GameTable from "./GameTable.svelte";
+  import { versionLines } from "./versions.js";
   import DatsView from "./DatsView.svelte";
   import OrganizeView from "./OrganizeView.svelte";
   import HomeDialog from "./HomeDialog.svelte";
   import SortButton from "./SortButton.svelte";
   import { sorted, remembered, remember } from "./sort.js";
-  import { genres, esrb, regionFlags, stars } from "./facts.js";
+  import { genres, esrb, regionFlags, stars, iconSvg } from "./facts.js";
 
   // Which screen: the library (default), DATs, or organize.
   let view = $state("library");
@@ -26,10 +33,31 @@
   let selected = $state(null); // row id
   let detail = $state(null);
   let tab = $state("details");
-  let adding = $state(false);
-  let addDir = $state("");
+  // Refresh needs a folder from Settings (or the RomForge folder).
+  let canRefresh = $state(false);
+  let previewer = $state(null);
+  let previewOpen = $state(false);
+  // Settings may set or clear the Source, or change the icon theme: look
+  // again when it closes.
+  $effect(() => {
+    if (!settingsOpen) {
+      call("can_refresh").then((v) => (canRefresh = v ?? false));
+      loadIcons();
+      readSettings();
+    }
+  });
+  // The sidebar's platform icons (system key -> file), fetched once from
+  // libretro's RetroArch assets; a platform without one keeps its badge.
+  let icons = $state({});
+  let iconStyle = $state("");
+  function loadIcons() {
+    call("platform_icons").then((m) => {
+      icons = m?.icons ?? {};
+      iconStyle = m?.theme ?? "";
+    });
+  }
   // The RomForge folder (milestone 13); null until it exists. With it,
-  // Cleanup and rename is Import, and adding a folder offers its import.
+  // Rename & Cleanup (Import into the RomForge folder when there is one).
   let homeRoot = $state(null);
   let home;
   $effect(() => {
@@ -75,8 +103,17 @@
     return r;
   }
 
+  // The library's generation the page has: the list comes again only when
+  // it changed.
+  let libGeneration = null;
   async function load() {
-    lib = (await call("library_view")) ?? { platforms: [], rows: [] };
+    const got = await call("library_view", { known: libGeneration });
+    if (got?.view) {
+      lib = got.view;
+      libGeneration = got.generation;
+    }
+    canRefresh = (await call("can_refresh")) ?? false;
+    loadIcons();
     if (selected && !lib.rows.some((r) => r.id === selected)) selected = null;
     if (selected) await open(selected);
   }
@@ -93,6 +130,11 @@
   async function open(id) {
     selected = id;
     const d = await call("game_detail", { id });
+    // Pictures come as file paths; the page loads them itself, as shown.
+    if (d) {
+      d.art = Object.fromEntries(Object.entries(d.art ?? {}).map(([k, p]) => [k, artSrc(p)]));
+      for (const c of d.credits ?? []) c.picture = artSrc(c.picture);
+    }
     // Another row was picked while this one loaded: its details win.
     if (selected !== id) return;
     if (d?.row?.id !== detail?.row?.id) dims = {};
@@ -113,21 +155,56 @@
     await load();
   }
 
-  async function addFolder() {
-    const r = await run("Scanning…", "scan", { dir: addDir });
+  // Scan folder: any folder, without making it a setting, except the
+  // first one scanned while no Source is set, which becomes the Source.
+  async function chooseFolder(title) {
+    const f = await pickFolder({ directory: true, multiple: false, title });
+    return typeof f === "string" ? f : null;
+  }
+
+  function scanned(r) {
+    const report = r.report;
+    const problems = [
+      ...report.errors.map(([path, member, e]) => `${member ? `${path}#${member}` : path}: ${e}`),
+      ...report.sheet_problems.map(([path, e]) => `${path}: ${e}`),
+    ];
+    const kinds = report.skipped_kinds.slice(0, 6).map((k) => (k.ext ? `.${k.ext} ${k.count}` : `no extension ${k.count}`)).join(", ");
+    // `became_source`: null (a Source was set already), {Ok: null}, or {Err: why}.
+    const bs = r.became_source;
+    const source = bs && "Ok" in bs
+      ? "; it is now your Source folder (Settings), which Refresh rescans"
+      : bs?.Err
+        ? `; it couldn't become your Source folder: ${bs.Err}`
+        : "";
+    note =
+      `Scanned ${report.hashed} entries in ${report.root}${source}` +
+      (kinds ? `; skipped for their extension: ${kinds}${report.skipped_kinds.length > 6 ? ", …" : ""}` : "") +
+      (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
+    return load();
+  }
+
+  async function scanFolder() {
+    const dir = await chooseFolder("A folder to scan");
+    if (!dir) return;
+    const r = await run(`Scanning ${dir}…`, "scan_folder", { dir });
+    if (r) await scanned(r);
+  }
+
+  async function scanDryRun() {
+    const dir = await chooseFolder("A folder to scan (dry run: nothing is kept until you say so)");
+    if (dir) await previewer.show(dir);
+  }
+
+  // Rename & Cleanup: the whole job (rename, repack, move or replace, as
+  // Settings says) straight away; its dry run shows the plan first.
+  async function renameCleanup() {
+    const r = await run("Renaming and cleaning up…", "cleanup_apply", { only: null, from: null });
     if (r) {
-      const problems = [
-        ...r.errors.map(([path, member, e]) => `${member ? `${path}#${member}` : path}: ${e}`),
-        ...r.sheet_problems.map(([path, e]) => `${path}: ${e}`),
-      ];
-      const kinds = r.skipped_kinds.slice(0, 6).map((k) => (k.ext ? `.${k.ext} ${k.count}` : `no extension ${k.count}`)).join(", ");
-      note = `Scanned ${r.hashed} entries in ${r.root}` + (kinds ? `; skipped for their extension: ${kinds}${r.skipped_kinds.length > 6 ? ", …" : ""}` : "") + (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "");
-      adding = false;
-      addDir = "";
-      await load();
-      // What it holds that is identified, ready to move into RomForge.
-      if (homeRoot) await cleanup.openCleanup(r.root);
-      return;
+      note = r.batch_id
+        ? `Rename & Cleanup batch #${r.batch_id}: ${r.done} games, ${r.trashed} originals to the trash` +
+          (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "") +
+          " (Undo in its dry run)"
+        : "Rename & Cleanup: nothing to do" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
     }
     await load();
   }
@@ -319,16 +396,6 @@
   // under headings (regions, editions, translations, hacks, and patch
   // files apart), each heading folding on its own. A group is listed when
   // any of its versions matches the filter.
-  const CATS = [
-    ["region", "Other regions"],
-    ["edition", "Editions"],
-    ["translation", "Translations"],
-    ["hack", "Hacks"],
-  ];
-  const PATCH_CATS = [
-    ["patch_translation", "Translations"],
-    ["patch_hack", "Hacks"],
-  ];
   let expanded = $state({});
   // The list's sort (games by it, and the versions under each heading).
   const statusOrder = ["verified", "incomplete", "by_you", "derivative", "detected", "candidate", "duplicate", "wrong_system", "missing", "patch", "unknown"];
@@ -339,55 +406,92 @@
     status: (r) => statusOrder.indexOf(r.status),
   };
   let listSort = $state(remembered("games", { key: "title", dir: 1 }));
+  // How the library is shown: a list, or cards of box art, 3D boxes or
+  // banners (kept for next time).
+  const VIEWS = [
+    ["list", "List", "☰"],
+    ["boxart", "Box art", "▯"],
+    ["box3d", "3D box", "◩"],
+    ["banner", "Banner", "▬"],
+  ];
+  let listMode = $state(
+    (() => {
+      try {
+        const v = localStorage.getItem("view:library");
+        return VIEWS.some(([k]) => k === v) ? v : "list";
+      } catch {
+        return "list";
+      }
+    })(),
+  );
+  $effect(() => {
+    try {
+      localStorage.setItem("view:library", listMode);
+    } catch {}
+  });
   $effect(() => remember("games", listSort));
   // Headings start open; groups start closed.
   const isOpen = (key) => expanded[key] ?? key.includes("|");
   function toggle(key) {
     expanded[key] = !isOpen(key);
   }
-  let games = $derived(lib.rows.filter((r) => r.main).length);
+  let games = $derived(lib.rows.filter((r) => r.main && !r.unmatched).length);
   let rows = $derived.by(() => {
     const match = (r) =>
-      (platform === "*" || (platform === "" ? r.system === null : r.system === platform)) &&
+      // All games and each platform: games only; Unidentified: whatever
+      // isn't matched yet (unknown files, CRC-only candidates, other
+      // platforms' matches, patches for no game), whatever its platform.
+      (platform === "*" ? !r.unmatched : platform === "" ? r.unmatched : r.system === platform && !r.unmatched) &&
       (!filter || r.title.toLowerCase().includes(filter.toLowerCase()));
     const all = sorted(lib.rows, listSort, listGetters);
     const members = new Map();
     for (const r of all) if (r.group) members.set(r.group, [...(members.get(r.group) ?? []), r]);
     const out = [];
-    const heading = (parent, cat, label, items, depth) => {
-      if (!items.length) return;
-      const key = `${parent}|${cat}`;
-      out.push({ head: true, id: `h:${key}`, key, label, n: items.length, depth });
-      if (isOpen(key)) for (const m of items) out.push({ ...m, depth: depth + 1 });
-    };
     for (const r of all) {
       if (!r.main) continue;
       const group = r.group ? members.get(r.group) : [r];
       if (!group.some(match)) continue;
       out.push(r);
-      if (!r.group || !isOpen(r.group)) continue;
-      const others = group.filter((m) => !m.main);
-      for (const [c, label] of CATS) heading(r.group, c, label, others.filter((m) => m.category === c), 1);
-      const patches = others.filter((m) => m.category?.startsWith("patch_"));
-      if (patches.length) {
-        const key = `${r.group}|patches`;
-        out.push({ head: true, id: `h:${key}`, key, label: "Patches", n: patches.length, depth: 1 });
-        if (isOpen(key)) for (const [c, label] of PATCH_CATS) heading(key, c, label, patches.filter((m) => m.category === c), 2);
-      }
-      // Anything without a heading (shouldn't happen) still shows.
-      out.push(...others.filter((m) => !m.category).map((m) => ({ ...m, depth: 1 })));
+      if (r.group && isOpen(r.group)) out.push(...versionLines(r.group, group.filter((m) => !m.main), isOpen));
     }
     return out;
   });
+
+  // Details' Versions tab: the shown game's whole group, its original
+  // first, every heading open to start with; its own view (list or
+  // pictures, kept for next time).
+  let vexpanded = $state({});
+  const vIsOpen = (key) => vexpanded[key] ?? true;
+  const vToggle = (key) => (vexpanded[key] = !vIsOpen(key));
+  let versionsMode = $state(
+    (() => {
+      try {
+        const v = localStorage.getItem("view:versions");
+        return VIEWS.some(([k]) => k === v) ? v : "list";
+      } catch {
+        return "list";
+      }
+    })(),
+  );
+  $effect(() => {
+    try {
+      localStorage.setItem("view:versions", versionsMode);
+    } catch {}
+  });
+  function versionRows(r) {
+    if (!r?.group) return r ? [{ ...r, versions: 1 }] : [];
+    const group = sorted(
+      lib.rows.filter((m) => m.group === r.group),
+      listSort,
+      listGetters,
+    );
+    const main = group.find((m) => m.main) ?? r;
+    // The original here never folds the library's group.
+    return [{ ...main, versions: 1, depth: 0 }, ...versionLines(r.group, group.filter((m) => m !== main), vIsOpen)];
+  }
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
 
-  // Virtual list: row height in px must match .tr in the styles.
-  const ROW = 32;
-  let scroller = $state(null);
-  let scrollTop = $state(0);
-  let viewH = $state(600);
-  let first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - 10));
-  let last = $derived(Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW) + 10));
+  let table = $state(null);
 
   // Up/Down move through the list when no text field has focus.
   function listKeys(e) {
@@ -401,17 +505,22 @@
     while (rows[j]?.head && rows[j + step]) j += step;
     if (!rows[j] || rows[j].head) return;
     open(rows[j].id);
-    if (scroller) {
-      const top = j * ROW;
-      const head = 28;
-      if (top < scroller.scrollTop) scroller.scrollTop = top;
-      else if (top + ROW + head > scroller.scrollTop + viewH) scroller.scrollTop = top + ROW + head - viewH;
-    }
+    table?.reveal(j);
   }
   let f = $derived(detail?.fields ?? {});
 
   load();
-  call("get_settings").then((s) => s && (showEmpty = s.show_empty_media));
+  // The logo Settings picks (and Details' empty boxes): read at start and
+  // whenever Settings closes.
+  let logo = $state("");
+  function readSettings() {
+    call("get_settings").then((s) => {
+      if (!s) return;
+      showEmpty = s.show_empty_media;
+      logo = s.logo ?? "";
+    });
+  }
+  readSettings();
 </script>
 
 <svelte:window
@@ -430,27 +539,35 @@
 
 <div class="app">
   <header class="toolbar">
-    <button class="tool" onclick={refresh} disabled={!!busy} title="Rescan every source folder">
+    <img class="brand" src={logoSrc(logo)} alt="romforge" title="romforge" />
+    <button class="tool" onclick={refresh} disabled={!!busy || !canRefresh} title={canRefresh ? "Rescan the Source and Library folders from Settings (and the RomForge folder)" : "Set a Source folder first: Scan folder makes the first folder you scan your Source"}>
       <span class="glyph">⟳</span>Refresh
     </button>
-    <button class="tool" onclick={() => (adding = !adding)} disabled={!!busy} title="Scan a new folder">
-      <span class="glyph">＋</span>Add folder
-    </button>
+    <SplitButton
+      glyph="＋"
+      label="Scan folder"
+      title="Scan any folder (it doesn't become a setting; the very first one becomes your Source)"
+      disabled={!!busy}
+      onclick={scanFolder}
+      items={[{ label: "Scan folder [dry run]", title: "See what a folder holds first, then scan it or not", onclick: scanDryRun }]}
+    />
     <button class="tool" onclick={() => search.openSearch()} disabled={!!busy} title="Identify games one by one: DAT title suggestions or your own title, and settle Wikidata matches">
       <span class="glyph">⌕</span>Search
     </button>
     <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
       <span class="glyph">✦</span>Enrich
     </button>
-    {#if homeRoot}
-      <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Move identified games from your folders into RomForge, one file each, named by the DAT, with art and details inside">
-        <span class="glyph">✎</span>Import
-      </button>
-    {:else}
-      <button class="tool" onclick={() => cleanup.openCleanup()} disabled={!!busy} title="Repack identified games from the Source as one file each, named by the DAT, with art and details inside">
-        <span class="glyph">✎</span>Cleanup and rename
-      </button>
-    {/if}
+    <SplitButton
+      glyph="✎"
+      label="Rename & Cleanup"
+      title="Rename, repack and {homeRoot ? 'import' : 'move'} every identified game now, as Settings says (originals to the trash, kept, or replaced in place); Undo is in the dry run"
+      disabled={!!busy}
+      onclick={renameCleanup}
+      items={[{ label: "Rename & Cleanup [dry run]", title: "See the plan first, then do it or not (Undo and Empty trash are here too)", onclick: () => cleanup.openCleanup() }]}
+    />
+    <button class="tool" onclick={() => cleanup.openCleanup(null, "convert")} disabled={!!busy} title="Turn disc images into CHD where they are (shows what it would do first)">
+      <span class="glyph">⇲</span>Convert
+    </button>
     <span class="spacer"></span>
     <button class="tool" onclick={() => settings.openSettings()} disabled={!!busy} title="Source and Library folders, cleanup options">
       <span class="glyph">⚙</span>Settings
@@ -469,6 +586,7 @@
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 
   <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:busy bind:note {call} {load} />
+  <ScanPreview bind:this={previewer} bind:open={previewOpen} bind:busy {statusLabel} {scanned} />
   <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={() => (viewer = { kind: "hero", src: detail.art.hero })} reload={() => open(row.id)} />
 
   {#if viewer}
@@ -488,13 +606,6 @@
     </div>
   {/if}
 
-  {#if adding}
-    <div class="addbar">
-      <input placeholder="/home/me/roms" bind:value={addDir} onkeydown={(e) => e.key === "Enter" && addDir && addFolder()} />
-      <button onclick={addFolder} disabled={!addDir || !!busy}>Scan folder</button>
-      <button onclick={() => (adding = false)}>Cancel</button>
-    </div>
-  {/if}
 
   <!-- One fixed-height line, so the controls below never move under the cursor. -->
   <p class="status" class:error={!!error && !busy} title={error || busy || note}>{busy || error || note}</p>
@@ -502,7 +613,7 @@
   <div class="body">
     <nav class="platforms" aria-label="Platforms">
       <button class="plat" class:active={view === "library" && platform === "*"} onclick={() => { show("library"); platform = "*"; }}>
-        <span class="icon all">ALL</span><span class="pname">All games</span><span class="count">{games}</span>
+        <span class="icon all">{@html iconSvg("library")}</span><span class="pname">All games</span><span class="count">{games}</span>
       </button>
       {#each lib.platforms as p}
         <button
@@ -511,7 +622,13 @@
           onclick={() => { show("library"); platform = p.system ?? ""; }}
           title={p.name}
         >
-          <span class="icon" data-maker={p.manufacturer ?? "none"}>{p.short}</span>
+          {#if !p.system}
+            <span class="icon unknown">{@html iconSvg("unknown")}</span>
+          {:else if icons[p.system]}
+            <img class="picon" class:logo={iconStyle === "logo"} src={artSrc(icons[p.system])} alt="" onerror={(e) => (icons[p.system] = null)} />
+          {:else}
+            <span class="icon" data-maker={p.manufacturer ?? "none"}>{p.short}</span>
+          {/if}
           <span class="pname">{p.name}</span>
           <span class="count">{p.games}</span>
         </button>
@@ -523,58 +640,34 @@
 
     {#if view === "library"}
       <section class="list">
-        <input class="search" placeholder="Filter by title" bind:value={filter} />
+        <div class="viewbar">
+          <input class="search" placeholder="Filter by title" bind:value={filter} />
+          <div class="views" role="group" aria-label="View">
+            {#each VIEWS as [k, label, icon]}
+              <button class:active={listMode === k} aria-pressed={listMode === k} onclick={() => (listMode = k)} title="View as {label.toLowerCase()}"><span aria-hidden="true">{icon}</span> {label}</button>
+            {/each}
+          </div>
+        </div>
+        {#if listMode !== "list" && lib.rows.length}
+          <p class="sortbar">
+            Sort:
+            <SortButton label="Title" key="title" bind:sort={listSort} />
+            <SortButton label="Platform" key="platform" bind:sort={listSort} />
+            <SortButton label="Year" key="year" bind:sort={listSort} />
+            <SortButton label="Status" key="status" bind:sort={listSort} />
+          </p>
+        {/if}
         {#if lib.rows.length === 0}
           <div class="empty">
             <h2>Add your first folder</h2>
             <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
           </div>
+        {:else if listMode !== "list"}
+          <PictureGrid {rows} mode={listMode} {selected} {isOpen} {open} {toggle} {statusLabel} />
+          <p class="foot">{platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}</p>
         {:else}
-          <div class="table" class:allsys={platform === "*"} bind:this={scroller} bind:clientHeight={viewH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
-            <div class="thead">
-              <span><SortButton label="Title" key="title" bind:sort={listSort} /></span>
-              {#if platform === "*"}<span><SortButton label="Platform" key="platform" bind:sort={listSort} /></span>{/if}
-              <span class="yr"><SortButton label="Year" key="year" bind:sort={listSort} title="Sort by release year (from Enrich)" /></span>
-              <span class="ind"><SortButton label="ID" key="status" bind:sort={listSort} title="Sort by status: verified first" /></span>
-              <span class="ind" title="Metadata">Info</span>
-              <span class="ind" title="Box art">Box</span>
-              <span class="ind" title="Title screen">Title</span>
-              <span class="ind" title="In-game screenshot">Snap</span>
-            </div>
-            <!-- Only the rows in view are drawn (fixed row height), so a list of
-                 tens of thousands stays quick. -->
-            <div style="height: {first * ROW}px"></div>
-            {#each rows.slice(first, last) as r (r.id)}
-              <div class="trow">
-              {#if r.head}
-                <button class="tr cat" style="padding-left: {0.7 + r.depth * 1.1}rem" onclick={() => toggle(r.key)} aria-expanded={isOpen(r.key)}>
-                  <span class="title">{isOpen(r.key) ? "▾" : "▸"} {r.label}<span class="nver"> · {r.n}</span></span>
-                </button>
-              {:else}
-              {#if r.main && r.versions > 1}
-                <button
-                  class="twisty"
-                  onclick={() => toggle(r.group)}
-                  aria-expanded={isOpen(r.group)}
-                  title="{r.versions - 1} more: other regions, editions, translations, hacks and patches"
-                >{isOpen(r.group) ? "▾" : "▸"}</button>
-              {/if}
-              <button class="tr" class:sel={r.id === selected} class:version={!r.main} class:missing={r.status === "missing"} onclick={() => open(r.id)}>
-                <span class="title" style={r.depth ? `padding-left: ${0.7 + r.depth * 1.1}rem` : undefined} title={r.label ? r.title : undefined}>{r.label ?? r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
-                {#if platform === "*"}<span class="sys">{r.system ?? "—"}</span>{/if}
-                <span class="yr">{r.year ?? ""}</span>
-                <span class="ind {r.status}" title={statusLabel[r.status]}>{r.status === "verified" ? "✓" : r.status === "by_you" || r.status === "derivative" ? "✎" : r.status === "detected" ? "◆" : r.status === "unknown" ? "?" : r.status === "missing" ? "○" : r.status === "patch" ? "✚" : "~"}</span>
-                <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
-                {#each ["boxart", "title", "snap"] as k}
-                  <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>
-                {/each}
-              </button>
-              {/if}
-              </div>
-            {/each}
-            <div style="height: {(rows.length - last) * ROW}px"></div>
-          </div>
-          <p class="foot">{rows.filter((r) => r.main).length} of {games} games</p>
+          <GameTable bind:this={table} {rows} {selected} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} bind:sort={listSort} />
+          <p class="foot">{platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}</p>
         {/if}
       </section>
 
@@ -606,7 +699,7 @@
             </p>
           </div>
           <div class="tabs" role="tablist">
-            {#each [["details", "Details"], ["development", "Development"], ["series", "Series"], ["links", "Links"]] as [k, label]}
+            {#each [["details", "Details"], ["development", "Development"], ["series", "Series"], ["versions", "Versions"], ["links", "Links"]] as [k, label]}
               <button role="tab" aria-selected={tab === k} class:active={tab === k} onclick={() => (tab = k)}>{label}</button>
             {/each}
           </div>
@@ -617,84 +710,79 @@
                 <img src={detail.art[kind]} alt="{artLabel[kind]} of {row.title}" onload={(e) => sized(kind, e)} />
               </button>
             {/snippet}
-            {#if detail.art.hero}
-              <figure class="fanart">
-                {#if canPick(row)}
-                  <button class="shot pick" onclick={() => artPicker.openPicker(row, "hero", "Fanart", detail.art.hero)} title="{caption('hero')} — click to choose another fanart">
-                    <img src={detail.art.hero} alt="Fanart of {row.title}" onload={(e) => sized("hero", e)} />
-                    <span class="change" aria-hidden="true">Change fanart</span>
-                  </button>
-                {:else}
-                  {@render shot("hero", "")}
-                {/if}
-                <figcaption>{caption("hero")}</figcaption>
-              </figure>
-            {:else if showEmpty || canPick(row)}
-              <figure class="fanart empty">
-                {#if canPick(row)}
-                  <button class="emptypick" onclick={() => artPicker.openPicker(row, "hero", "Fanart", null)}>No fanart yet: find one…</button>
-                {:else}
-                  <span>No fanart. Keys for SteamGridDB, ScreenScraper or IGDB in Settings can fill it.</span>
-                {/if}
-                <figcaption>Fanart</figcaption>
-              </figure>
-            {/if}
-
-            <div class="overview">
-              {#if detail.art.boxart}
-                <figure class="cover">
-                  {@render shot("boxart", "")}
-                  <figcaption>{caption("boxart")}</figcaption>
-                </figure>
-              {:else if showEmpty}
-                <figure class="cover empty"><span>No box art</span><figcaption>Box art</figcaption></figure>
-              {/if}
-              <div class="about">
+            <!-- The box above the fanart on the left; like an
+                 encyclopedia's infobox, the logo and the facts in a compact
+                 card on the right. Stacked, art first, when narrow. -->
+            <div class="lead">
+              <aside class="infobox" aria-label="Facts">
                 {#if detail.art.logo}
-                  <figure class="logo">
-                    {@render shot("logo", "")}
-                    <figcaption>{caption("logo")}</figcaption>
-                  </figure>
-                {:else if showEmpty}
-                  <figure class="logo empty"><span>No logo</span><figcaption>Logo</figcaption></figure>
+                  <figure class="logo" title={caption("logo")}>{@render shot("logo", "")}</figure>
+                {:else}
+                  <p class="ibtitle">{row.label ?? row.title}</p>
                 {/if}
-                <dl class="facts">
-                  {#if f.releaseyear}<dt>Released</dt><dd>{released(f)}</dd>{/if}
+                <dl class="facts info">
+                  {#if f.releaseyear}<div class="fact"><dt>Released</dt><dd>{released(f)}</dd></div>{/if}
                   {#if f.genre}
                     {@const gs = genres(f.genre)}
-                    <dt>Genre</dt>
-                    <dd class="icons">{#each gs as g}<span class="genre" title={g.name} aria-label={g.name}>{@html g.svg}</span>{/each}{#if gs.length === 1}<span class="gname">{gs[0].name}</span>{/if}</dd>
+                    <div class="fact"><dt>Genre</dt><dd class="icons">{#each gs as g}<span class="genre" title={g.name} aria-label={g.name}>{@html g.svg}</span>{/each}{#if gs.length === 1}<span class="gname">{gs[0].name}</span>{/if}</dd></div>
                   {/if}
-                  {#if f.users}<dt>Players</dt><dd>{f.users}</dd>{/if}
-                  {#if f.game_mode}<dt>Modes</dt><dd>{f.game_mode}</dd>{/if}
+                  {#if f.users}<div class="fact"><dt>Players</dt><dd>{f.users}</dd></div>{/if}
+                  {#if f.game_mode}<div class="fact"><dt>Modes</dt><dd>{f.game_mode}</dd></div>{/if}
                   {#snippet studio(role, text)}
                     {@const logos = (detail.credits ?? []).filter((c) => c.role === role && c.picture && c.kind === "logo")}
                     {#if logos.length}<span class="logos">{#each logos as c}<img class="studio" src={c.picture} alt={c.name} title={c.name} />{/each}</span>{:else}{text}{/if}
                   {/snippet}
-                  {#if f.developer}<dt>Developer</dt><dd>{@render studio("developer", f.developer)}</dd>{/if}
-                  {#if f.publisher}<dt>Publisher</dt><dd>{@render studio("publisher", f.publisher)}</dd>{/if}
+                  {#if f.developer}<div class="fact"><dt>Developer</dt><dd>{@render studio("developer", f.developer)}</dd></div>{/if}
+                  {#if f.publisher}<div class="fact"><dt>Publisher</dt><dd>{@render studio("publisher", f.publisher)}</dd></div>{/if}
                   {#if f.esrb}
                     {@const r = esrb(f.esrb)}
-                    <dt>Rating</dt>
-                    <dd>{#if r}<span class="esrb" title="ESRB: {r.label}" aria-label="ESRB rating {r.label}"><b>{r.code}</b><small>ESRB</small></span>{:else}{f.esrb}{/if}</dd>
+                    <div class="fact"><dt>Rating</dt><dd>{#if r}<span class="esrb" title="ESRB: {r.label}" aria-label="ESRB rating {r.label}"><b>{r.code}</b><small>ESRB</small></span>{:else}{f.esrb}{/if}</dd></div>
                   {/if}
                   {#if f.community_rating}
                     {@const st = stars(f.community_rating)}
-                    <dt>Community</dt>
-                    <dd>{#if st}<span class="stars" title="{st.value} out of {st.max}" aria-label="{st.value} out of {st.max} stars"><span class="on" style="width: {st.pct}%">★★★★★</span>★★★★★</span> <span class="score">{st.value}{st.votes ? ` · ${st.votes.toLocaleString()} votes` : ""}</span>{:else}{f.community_rating}{/if}</dd>
+                    <div class="fact"><dt>Community</dt><dd>{#if st}<span class="stars" title="{st.value} out of {st.max}" aria-label="{st.value} out of {st.max} stars"><span class="on" style="width: {st.pct}%">★★★★★</span>★★★★★</span> <span class="score">{st.value}{st.votes ? ` · ${st.votes.toLocaleString()} votes` : ""}</span>{:else}{f.community_rating}{/if}</dd></div>
                   {/if}
-                  {#if detail.derived}<dt>{detail.derived.relation === "translation" ? "Translation of" : "Hack of"}</dt><dd>{detail.derived.base}{detail.derived.tag ? ` (${detail.derived.tag})` : ""}</dd>{/if}
-                  {#if detail.proof}<dt>Named by</dt><dd title="Not verified: {detail.proof}, beside it, applied to your verified {detail.derived?.base} gives exactly this file">romforge, from {detail.proof}</dd>{/if}
+                  {#if detail.derived}<div class="fact"><dt>{detail.derived.relation === "translation" ? "Translation of" : "Hack of"}</dt><dd>{detail.derived.base}{detail.derived.tag ? ` (${detail.derived.tag})` : ""}</dd></div>{/if}
+                  {#if detail.proof}<div class="fact"><dt>Named by</dt><dd title="Not verified: {detail.proof}, beside it, applied to your verified {detail.derived?.base} gives exactly this file">romforge, from {detail.proof}</dd></div>{/if}
                   {#if regionFlags(detail.name).length || edition(detail.name, true)}
-                    <dt>Edition</dt>
-                    <dd class="icons">
+                    <div class="fact"><dt>Edition</dt><dd class="icons">
                       {#each regionFlags(detail.name) as r}{#if r.flag}<span class="flag" title={r.name} aria-label={r.name}>{r.flag}</span>{:else}<span class="gname">{r.name}</span>{/if}{/each}
                       {#if edition(detail.name, true)}<span class="gname">{edition(detail.name, true)}</span>{/if}
-                    </dd>
+                    </dd></div>
                   {/if}
-                  <dt>Files</dt><dd>{row.files} · {size(row.size)}</dd>
-                  {#if row.folder}<dt>Folder</dt><dd class="fpath" title="The game is this whole folder (or archive): Import and Play take all of it"><bdi>{row.folder}</bdi></dd>{/if}
+                  <div class="fact"><dt>Files</dt><dd>{row.files} · {size(row.size)}</dd></div>
+                  {#if row.folder}<div class="fact"><dt>Folder</dt><dd class="fpath" title="The game is this whole folder (or archive): Import and Play take all of it"><bdi>{row.folder}</bdi></dd></div>{/if}
                 </dl>
+              </aside>
+              <div class="art">
+                {#if detail.art.hero}
+                  <figure class="fanart">
+                    {#if canPick(row)}
+                      <button class="shot pick" onclick={() => artPicker.openPicker(row, "hero", "Fanart", detail.art.hero)} title="{caption('hero')} — click to choose another fanart">
+                        <img src={detail.art.hero} alt="Fanart of {row.title}" onload={(e) => sized("hero", e)} />
+                        <span class="change" aria-hidden="true">Change fanart</span>
+                      </button>
+                    {:else}
+                      {@render shot("hero", "")}
+                    {/if}
+                  </figure>
+                {:else if showEmpty || canPick(row)}
+                  <figure class="fanart empty">
+                    {#if canPick(row)}
+                      <button class="emptypick" onclick={() => artPicker.openPicker(row, "hero", "Fanart", null)}>No fanart yet: find one…</button>
+                    {:else}
+                      <span>No fanart. Keys for SteamGridDB, ScreenScraper or IGDB in Settings can fill it.</span>
+                    {/if}
+                    <figcaption>Fanart</figcaption>
+                  </figure>
+                {/if}
+                {#if detail.art.boxart}
+                  <figure class="cover">
+                    {@render shot("boxart", "")}
+                  </figure>
+                {:else if showEmpty}
+                  <figure class="cover empty"><span>No box art</span><figcaption>Box art</figcaption></figure>
+                {/if}
               </div>
             </div>
 
@@ -771,6 +859,23 @@
             {/each}
             {#if !f.wikidata}
               <p class="hint">Not matched on Wikidata yet, so studios and credits are what libretro knows. Enrich looks it up; Search settles games it can't tell apart.</p>
+            {/if}
+          {:else if tab === "versions"}
+            {@const vrows = versionRows(row)}
+            <div class="views centered" role="group" aria-label="View versions as">
+              {#each VIEWS as [k, label, icon]}
+                <button class:active={versionsMode === k} aria-pressed={versionsMode === k} onclick={() => (versionsMode = k)} title="View as {label.toLowerCase()}"><span aria-hidden="true">{icon}</span> {label}</button>
+              {/each}
+            </div>
+            {#if vrows.length <= 1}
+              <p class="hint">No other version of this game in your library: other regions, editions, translations, hacks and patches show here.</p>
+            {:else}
+              <p class="meta">{vrows.filter((v) => !v.head).length} versions in your library · pick one to show it</p>
+            {/if}
+            {#if versionsMode === "list"}
+              <GameTable rows={vrows} selected={row.id} platformCol={false} isOpen={vIsOpen} toggle={vToggle} {open} {statusLabel} scroll={false} />
+            {:else}
+              <PictureGrid rows={vrows} mode={versionsMode} selected={row.id} isOpen={vIsOpen} {open} toggle={vToggle} {statusLabel} scroll={false} />
             {/if}
           {:else if tab === "series"}
             {#if detail.series.length}
@@ -879,13 +984,12 @@
   :global(.app h2) { font-size: 1rem; margin: 0 0 0.25rem; }
   :global(.app h3) { font-size: 0.9rem; margin: 1rem 0 0.25rem; color: var(--muted); font-weight: 600; }
 
+  .brand { height: 2.6rem; width: auto; align-self: center; margin-right: 0.5rem; object-fit: contain; }
   .toolbar { display: flex; gap: 0.25rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel); }
   .tool { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.2rem 0.6rem; font-size: 0.8rem; gap: 0.1rem; }
   .tool:hover:not(:disabled) { background: var(--accent-bg); }
   .glyph { font-size: 1.25rem; line-height: 1.2rem; }
   :global(.app .spacer) { flex: 1; }
-  .addbar { display: flex; gap: 0.5rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); }
-  .addbar input { flex: 1; }
   .status { margin: 0; padding: 0.2rem 0.75rem; min-height: 1.4em; color: var(--accent); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status.error { color: var(--bad); }
 
@@ -896,6 +1000,9 @@
   .plat.active { background: var(--accent); color: white; }
   .plat.small { font-size: 0.8rem; padding: 0.3rem; }
   .icon { width: 3rem; height: 2.2rem; border-radius: 6px; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; color: white; background: #6b7078; }
+  .picon { width: 3rem; height: 2.4rem; object-fit: contain; }
+  /* Logos are often dark lettering on nothing: on a light tile. */
+  .picon.logo { box-sizing: border-box; padding: 0.2rem 0.25rem; background: #f4f4f4; border-radius: 6px; }
   .icon[data-maker="Nintendo"] { background: #c62828; }
   .icon[data-maker="Sega"] { background: #1e5bb8; }
   .icon[data-maker="Sony"] { background: #3d3d48; }
@@ -905,37 +1012,28 @@
   .icon[data-maker="Microsoft"] { background: #3b8a2e; }
   .icon[data-maker="Commodore"] { background: #4a6a8a; }
   .icon.all { background: var(--accent); }
-  .pname { font-size: 0.72rem; text-align: center; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Files no platform could be found for. */
+  .icon.unknown { background: #6b7078; }
+  /* A platform's whole name, wrapped (never cut short), in bold. */
+  .pname { font-size: 0.72rem; font-weight: 700; text-align: center; line-height: 1.15; white-space: normal; overflow-wrap: anywhere; hyphens: auto; max-width: 100%; }
   .count { font-size: 0.7rem; color: var(--muted); }
   .plat.active .count { color: #fffc; }
 
   .list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-  .search { margin: 0.5rem; }
-  .table { flex: 1; overflow-y: auto; }
-  .thead, .tr { display: grid; grid-template-columns: minmax(0, 1fr) 2.8rem repeat(5, 2.4rem); align-items: center; gap: 0.25rem; padding: 0.3rem 0.6rem; }
-  .allsys .thead, .allsys .tr { grid-template-columns: minmax(0, 1fr) auto 2.8rem repeat(5, 2.4rem); }
-  .yr { color: var(--muted); font-size: 0.8rem; text-align: center; font-variant-numeric: tabular-nums; }
-  .thead { position: sticky; top: 0; background: var(--panel); font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); }
-  .trow { position: relative; }
-  .twisty { position: absolute; left: 0; top: 0; height: 32px; width: 1.2rem; padding: 0; border: none; border-radius: 0; color: var(--muted); z-index: 1; }
-  .tr .title { padding-left: 0.7rem; }
-  .tr.version .title { padding-left: 1.8rem; color: var(--muted); }
-  .tr.cat .title { color: var(--muted); font-size: 0.85rem; font-weight: 600; padding-left: 0; }
-  .tr.missing .title { font-style: italic; color: var(--muted); }
+  .viewbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem; }
+  .viewbar .search { margin: 0; flex: 1; min-width: 8rem; }
+  .views { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .views button { border: none; border-radius: 0; padding: 0.25rem 0.55rem; font-size: 0.8rem; background: none; color: var(--muted); }
+  .views button + button { border-left: 1px solid var(--line); }
+  .views button.active { background: var(--accent); color: #fff; }
+  .views.centered { display: flex; width: max-content; margin: 0 auto 0.6rem; }
+  .list :global(.sortbar) { margin: 0 0.5rem 0.4rem; justify-content: flex-start; }
   .nver { color: var(--muted); font-size: 0.8rem; }
-  .tr { width: 100%; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; }
-  .tr:hover { background: var(--accent-bg); }
-  .tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 var(--accent); }
-  .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   :global(.app .sys) { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
-  .ind { text-align: center; color: var(--muted); }
-  .ind.yes, .ind.verified { color: var(--ok); }
-  .ind.incomplete, .ind.candidate, .ind.duplicate { color: var(--warn); }
-  .ind.unknown, .ind.wrong_system { color: var(--bad); }
   .foot { margin: 0; padding: 0.3rem 0.6rem; font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); }
 
   /* Details: centred, its facts on the left of the cover. */
-  .detail { overflow-y: auto; padding: 0.75rem 1rem 1.5rem; text-align: center; }
+  .detail { overflow-y: auto; padding: 0.75rem 1rem 1.5rem; text-align: center; container-type: inline-size; }
   .detail .tabs { justify-content: center; }
   .dhead .meta { margin: 0.2rem 0 0.5rem; color: var(--muted); }
   .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-bottom: 0.75rem; }
@@ -947,6 +1045,9 @@
   .shot img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   figure { margin: 0; }
   figcaption { font-size: 0.72rem; color: var(--muted); padding: 0.2rem 0.1rem 0; line-height: 1.3; }
+  /* Every picture with words under it sits centred over them. */
+  .detail figure { display: flex; flex-direction: column; align-items: center; }
+  .detail figcaption { text-align: center; }
   figure.empty span { display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); font-size: 0.8rem; border: 1px dashed var(--line); border-radius: 6px; }
   .fanart { margin-bottom: 0.75rem; }
   .fanart .shot { margin: 0 auto; }
@@ -957,16 +1058,41 @@
   .emptypick:hover { color: var(--accent); border-color: var(--accent); }
   .fanart .shot img { max-height: 16rem; border-radius: 6px; }
   .fanart.empty span { height: 5rem; }
-  .overview { display: flex; gap: 1.25rem; align-items: flex-start; justify-content: center; }
-  .overview .about { order: 0; }
-  .overview .cover { order: 1; }
   /* Portrait (most boxes) and landscape (SNES, N64) both fit: the cover
      takes the width its own aspect needs, up to 45% of the panel. */
-  .cover { flex: 0 1 auto; max-width: 45%; }
+  /* The top of Details: the box above the fanart on the left, an
+     infobox (logo and facts) on the right; stacked, art first and the
+     infobox a card of its own width, when narrow. */
+  .lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; text-align: left; }
+  .lead .art { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; min-width: 0; }
+  .lead .infobox { order: 1; width: 100%; max-width: 21rem; justify-self: center; box-sizing: border-box; }
+  @container (min-width: 36rem) {
+    .lead { grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem); }
+    .lead .infobox { justify-self: stretch; }
+  }
+  .infobox { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0.55rem 0.7rem 0.35rem; font-size: 0.85rem; }
+  .infobox .logo { display: flex; justify-content: center; padding: 0.2rem 0 0.55rem; }
+  .infobox .logo .shot img { max-height: 4.5rem; }
+  .ibtitle { margin: 0 0 0.45rem; font-weight: 600; text-align: center; }
+  .facts.info { display: block; margin: 0; }
+  .facts.info .fact { display: grid; grid-template-columns: 5.4rem minmax(0, 1fr); gap: 0.6rem; align-items: center; padding: 0.28rem 0; border-top: 1px solid var(--line); }
+  .detail .facts.info dt { text-align: left; font-weight: 600; font-size: 0.8rem; }
+  .facts.info dd { min-width: 0; overflow-wrap: break-word; line-height: 1.3; }
+  .infobox .genre { width: 1.5rem; height: 1.5rem; }
+  .infobox .genre :global(svg) { width: 16px; height: 16px; }
+  .infobox .esrb { width: 1.55rem; height: 2.05rem; }
+  .infobox .esrb b { font-size: 0.9rem; }
+  .infobox .esrb small { font-size: 0.38rem; }
+  .infobox .stars { font-size: 0.9rem; }
+  .infobox .flag { font-size: 1.1rem; }
+  .infobox .studio { max-height: 1.8rem; }
+  /* The box first, the fanart under it. */
+  .art .cover { order: -1; }
+  .art .fanart { margin: 0; width: 100%; }
+  .art .fanart .shot img { max-height: 12rem; }
+  .cover { flex: 0 1 auto; max-width: 100%; }
   .cover .shot img { border-radius: 4px; max-height: 15rem; margin: 0; }
   .cover.empty span { height: 14rem; }
-  .about { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.6rem; align-items: center; }
-  .logo { align-self: center; }
   .detail .facts { justify-content: center; }
   .detail .facts dt { text-align: right; }
   .detail .facts dd { text-align: left; }
@@ -984,7 +1110,7 @@
   .stars { position: relative; display: inline-block; color: var(--line); letter-spacing: 0.08em; font-size: 1.05rem; line-height: 1; }
   .stars .on { position: absolute; inset: 0 auto 0 0; overflow: hidden; white-space: nowrap; color: #f5b301; }
   .score { color: var(--muted); font-size: 0.85rem; }
-  .logo .shot img { max-height: 4.5rem; max-width: 16rem; margin: 0; }
+  .logo .shot img { max-height: 6rem; max-width: 100%; margin: 0 auto; }
   .logo.empty span { height: 3rem; width: 10rem; }
   :global(.app .facts) { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; align-content: start; font-size: 0.9rem; }
   .facts.wide { max-width: 40rem; margin: 0 auto; }
@@ -1073,5 +1199,5 @@
   :global(.app .search-dialog) { width: min(64rem, calc(100vw - 2rem)); }
   :global(.app .ctitle) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button.link { background: none; border: none; padding: 0 0.3rem; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
-  :global(.app .badge.by_you), .ind.by_you, :global(.app .badge.derivative), .ind.derivative, :global(.app .badge.detected), .ind.detected { color: var(--accent); }
+  :global(.app .badge.by_you), :global(.app .badge.derivative), :global(.app .badge.detected) { color: var(--accent); }
 </style>

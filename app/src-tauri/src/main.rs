@@ -6,7 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
@@ -27,6 +27,96 @@ struct Db {
 }
 
 type Res<T> = Result<T, String>;
+
+/// The folders the `art://` scheme may serve pictures from: the cache
+/// (art, previews) and the RomForge folder's Media/. Changes when the
+/// RomForge folder is made or moved.
+#[derive(Clone)]
+struct ArtRoots(Arc<RwLock<Vec<PathBuf>>>);
+
+impl ArtRoots {
+    fn of(lib: &Library) -> Vec<PathBuf> {
+        let mut roots = vec![default_cache_dir()];
+        roots.extend(lib.home().map(Home::media));
+        // Canonical where they exist already (a folder made later still counts).
+        roots.into_iter().map(|r| r.canonicalize().unwrap_or(r)).collect()
+    }
+
+    fn set(&self, lib: &Library) {
+        *self.0.write().unwrap_or_else(|e| e.into_inner()) = Self::of(lib);
+    }
+}
+
+/// `art://localhost/<file path>`: a picture file under one of the art
+/// roots, so the list's picture views load only what is on screen, from
+/// disk, without passing it through a command as base64. With `?h=<px>`,
+/// a thumbnail that tall (made on first request, kept in the cache), or
+/// the picture itself if that fails.
+fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> tauri::http::Response<Vec<u8>> {
+    let not_found = || {
+        tauri::http::Response::builder()
+            .status(404)
+            .body(Vec::new())
+            .unwrap_or_default()
+    };
+    let mime = |p: &Path| match p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => Some("image/png"),
+        Some("jpg" | "jpeg") => Some("image/jpeg"),
+        Some("webp") => Some("image/webp"),
+        _ => None,
+    };
+    let path = PathBuf::from(percent_decode(uri_path));
+    if mime(&path).is_none() {
+        return not_found();
+    }
+    let Ok(real) = path.canonicalize() else {
+        return not_found();
+    };
+    if !roots.iter().any(|r| real.starts_with(r)) {
+        return not_found();
+    }
+    let height = query
+        .into_iter()
+        .flat_map(|q| q.split('&'))
+        .find_map(|kv| kv.strip_prefix("h=")?.parse::<u32>().ok());
+    let real = height
+        .and_then(|h| romforge_core::thumbs::thumbnail(&real, h, &default_cache_dir()).ok())
+        .unwrap_or(real);
+    let Some(mime) = mime(&real) else {
+        return not_found();
+    };
+    match std::fs::read(&real) {
+        Ok(data) => tauri::http::Response::builder()
+            .header("Content-Type", mime)
+            .header("Cache-Control", "no-cache")
+            .body(data)
+            .unwrap_or_else(|_| not_found()),
+        Err(_) => not_found(),
+    }
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && let Some(v) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
 
 /// Run `f` on a blocking thread with `lib` locked. A panic in an earlier
 /// call doesn't lock everyone out (the poisoned lock is taken anyway).
@@ -72,6 +162,38 @@ async fn dat_games(db: tauri::State<'_, Db>, dat_id: i64) -> Res<Vec<DatGame>> {
 #[tauri::command]
 async fn scan(db: tauri::State<'_, Db>, dir: String) -> Res<ScanReport> {
     with(&db, move |lib| lib.scan(&dir, Scope::All)).await
+}
+
+/// Scan folder: any folder (the first becomes the Source).
+#[tauri::command]
+async fn scan_folder(db: tauri::State<'_, Db>, dir: String) -> Res<romforge_core::FolderScan> {
+    with(&db, move |lib| lib.scan_folder(&dir)).await
+}
+
+/// Scan folder's dry run: what a scan would find; nothing is kept.
+#[tauri::command]
+async fn scan_preview(db: tauri::State<'_, Db>, dir: String) -> Res<romforge_core::ScanPreview> {
+    with(&db, move |lib| lib.scan_preview(&dir)).await
+}
+
+/// The sidebar's platform icons (fetched once from retroarch-assets):
+/// system key -> file, shown through `art://`.
+#[tauri::command]
+async fn platform_icons(db: tauri::State<'_, Db>) -> Res<romforge_core::PlatformIcons> {
+    read(&db, move |lib| {
+        lib.platform_icons(
+            &default_cache_dir(),
+            romforge_core::enrich::PLATFORM_ICONS_BASE,
+            romforge_core::wikidata::ENDPOINT,
+        )
+    })
+    .await
+}
+
+/// Whether Refresh has a folder to rescan.
+#[tauri::command]
+async fn can_refresh(db: tauri::State<'_, Db>) -> Res<bool> {
+    read(&db, move |lib| lib.can_refresh()).await
 }
 
 #[derive(serde::Serialize)]
@@ -210,6 +332,18 @@ async fn cleanup_apply(
     .await
 }
 
+/// Convert's plan: disc images into CHD where they are.
+#[tauri::command]
+async fn convert_plan(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupPlan> {
+    read(&db, move |lib| lib.convert_plan(only.as_deref())).await
+}
+
+/// Convert (planned again here).
+#[tauri::command]
+async fn convert_apply(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupReport> {
+    with(&db, move |lib| lib.convert_apply(only.as_deref(), |_, _| {})).await
+}
+
 #[derive(serde::Serialize)]
 struct HomeInfo {
     /// The RomForge folder, if there is one yet.
@@ -235,8 +369,12 @@ async fn home_info(db: tauri::State<'_, Db>) -> Res<HomeInfo> {
 /// Create the RomForge folder in `parent`, move the current library into
 /// it (database, art, downloaded databases) and use it from now on.
 #[tauri::command]
-async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
-    let (write, read) = (db.write.clone(), db.read.clone());
+async fn home_create(
+    db: tauri::State<'_, Db>,
+    roots: tauri::State<'_, ArtRoots>,
+    parent: String,
+) -> Res<PathBuf> {
+    let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
     tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
         let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
         let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
@@ -267,6 +405,7 @@ async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
             *r = Library::open(home.db())?;
         }
         home.remember()?;
+        roots.set(&w);
         Ok(home.root().to_owned())
     })
     .await
@@ -277,8 +416,12 @@ async fn home_create(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
 /// Move the RomForge folder into `parent`: both connections close, the
 /// folder moves, and the library reopens there (fixing its stored paths).
 #[tauri::command]
-async fn home_move(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
-    let (write, read) = (db.write.clone(), db.read.clone());
+async fn home_move(
+    db: tauri::State<'_, Db>,
+    roots: tauri::State<'_, ArtRoots>,
+    parent: String,
+) -> Res<PathBuf> {
+    let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
     tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
         let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
         let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
@@ -292,6 +435,7 @@ async fn home_move(db: tauri::State<'_, Db>, parent: String) -> Res<PathBuf> {
         let at = moved.as_ref().map_or_else(|_| old.db(), |h| h.db());
         *w = Library::open(&at)?;
         *r = Library::open(&at)?;
+        roots.set(&w);
         Ok(moved?.root().to_owned())
     })
     .await
@@ -395,12 +539,8 @@ async fn art_choices(
 ) -> Res<romforge_core::enrich::ArtChoices> {
     let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
     let opts = EnrichOptions::new(default_cache_dir());
-    let mut found = read(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await?;
-    for c in &mut found.choices {
-        c.preview = image_url(Path::new(&c.preview)).unwrap_or_default();
-    }
-    found.choices.retain(|c| !c.preview.is_empty());
-    Ok(found)
+    // Previews stay file paths, shown through `art://`.
+    read(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await
 }
 
 /// Make one of those the row's picture.
@@ -488,23 +628,29 @@ async fn all_systems() -> Res<Vec<SystemChoice>> {
     Ok(v)
 }
 
+#[derive(serde::Serialize)]
+struct ViewSince {
+    generation: i64,
+    /// `None` when the page's `known` generation is still the current one.
+    view: Option<LibraryView>,
+}
+
+/// The library list, only when it changed since the generation the page
+/// has (`known`): a big library's list is megabytes.
 #[tauri::command]
-async fn library_view(db: tauri::State<'_, Db>) -> Res<LibraryView> {
-    read(&db, move |lib| lib.library_view()).await
+async fn library_view(db: tauri::State<'_, Db>, known: Option<i64>) -> Res<ViewSince> {
+    read(&db, move |lib| {
+        let (generation, view) = lib.library_view_since(known)?;
+        Ok(ViewSince { generation, view })
+    })
+    .await
 }
 
 #[tauri::command]
 async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail> {
-    let mut d = read(&db, move |lib| lib.game_detail(&id)).await?;
-    // Paths become data: URLs the page can show without file access.
-    for path in d.art.values_mut() {
-        *path = image_url(Path::new(&*path)).unwrap_or_default();
-    }
-    d.art.retain(|_, v| !v.is_empty());
-    for c in &mut d.credits {
-        c.picture = c.picture.as_deref().and_then(|p| image_url(Path::new(p)));
-    }
-    Ok(d)
+    // Pictures stay file paths: the page loads them through `art://` as
+    // they're shown, instead of megabytes of base64 in this answer.
+    read(&db, move |lib| lib.game_detail(&id)).await
 }
 
 #[tauri::command]
@@ -578,7 +724,12 @@ struct Refreshed {
 
 #[tauri::command]
 async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
-    let results = with(&db, move |lib| lib.refresh(Default::default(), |_, _| {})).await?;
+    // The toolbar's Refresh: the folders Settings names, not every folder
+    // ever scanned.
+    let results = with(&db, move |lib| {
+        lib.refresh_settings(Default::default(), |_, _| {})
+    })
+    .await?;
     let mut out = Refreshed {
         folders: 0,
         entries: 0,
@@ -662,10 +813,24 @@ fn main() {
         write: Arc::new(Mutex::new(open())),
         read: Arc::new(Mutex::new(open())),
     };
+    let roots = {
+        let lib = db.read.lock().unwrap_or_else(|e| e.into_inner());
+        ArtRoots(Arc::new(RwLock::new(ArtRoots::of(&lib))))
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .register_asynchronous_uri_scheme_protocol("art", {
+            let roots = roots.clone();
+            move |_ctx, request, responder| {
+                let roots = roots.0.read().unwrap_or_else(|e| e.into_inner()).clone();
+                let path = request.uri().path().to_owned();
+                let query = request.uri().query().map(str::to_owned);
+                std::thread::spawn(move || responder.respond(serve_art(&roots, &path, query.as_deref())));
+            }
+        })
         .manage(db)
+        .manage(roots)
         .invoke_handler(tauri::generate_handler![
             summary,
             dat_games,
@@ -689,6 +854,12 @@ fn main() {
             patches_beside,
             art_choices,
             choose_art,
+            scan_folder,
+            scan_preview,
+            platform_icons,
+            can_refresh,
+            convert_plan,
+            convert_apply,
             home_info,
             home_create,
             home_move,

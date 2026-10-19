@@ -505,6 +505,24 @@ fn item_details(
     Ok(out)
 }
 
+/// Each item's logo (P154) on Wikimedia Commons, as its file URL.
+pub(crate) fn logos(endpoint: &str, qids: &[String]) -> Result<HashMap<String, String>, Error> {
+    let values: String = qids.iter().map(|q| format!("wd:{q} ")).collect();
+    let q = format!(
+        "SELECT ?e ?logo WHERE {{
+           VALUES ?e {{ {values} }}
+           ?e wdt:P154 ?logo.
+         }}"
+    );
+    let mut out = HashMap::new();
+    for row in sparql(endpoint, &q)? {
+        if let (Some(e), Some(l)) = (row.get("e"), row.get("logo")) {
+            out.entry(e.clone()).or_insert_with(|| l.clone());
+        }
+    }
+    Ok(out)
+}
+
 /// Each item's picture on Wikimedia Commons: its logo (P154), else its
 /// image (P18, a person's photo), as (file URL, "logo" or "photo").
 fn pictures(endpoint: &str, qids: &[String]) -> Result<HashMap<String, (String, &'static str)>, Error> {

@@ -424,6 +424,41 @@ const MIGRATIONS: &[&str] = &[
     // Enrich, even when refreshing.
     "ALTER TABLE art ADD COLUMN url TEXT;
      ALTER TABLE art ADD COLUMN chosen INTEGER NOT NULL DEFAULT 0;",
+    // 35: nothing for a new library. (A development build briefly kept a
+    // generation counter here with triggers on the list's tables; they
+    // slowed a big scan threefold, so the list is now keyed by a
+    // fingerprint of those tables instead: `view::fingerprint`.)
+    "DROP TRIGGER IF EXISTS view_files_ins;
+     DROP TRIGGER IF EXISTS view_files_del;
+     DROP TRIGGER IF EXISTS view_files_upd;
+     DROP TRIGGER IF EXISTS view_matches_ins;
+     DROP TRIGGER IF EXISTS view_matches_del;
+     DROP TRIGGER IF EXISTS view_matches_upd;
+     DROP TRIGGER IF EXISTS view_manual_ids_ins;
+     DROP TRIGGER IF EXISTS view_manual_ids_del;
+     DROP TRIGGER IF EXISTS view_manual_ids_upd;
+     DROP TRIGGER IF EXISTS view_patch_files_ins;
+     DROP TRIGGER IF EXISTS view_patch_files_del;
+     DROP TRIGGER IF EXISTS view_patch_files_upd;
+     DROP TRIGGER IF EXISTS view_folder_games_ins;
+     DROP TRIGGER IF EXISTS view_folder_games_del;
+     DROP TRIGGER IF EXISTS view_folder_games_upd;
+     DROP TRIGGER IF EXISTS view_art_ins;
+     DROP TRIGGER IF EXISTS view_art_del;
+     DROP TRIGGER IF EXISTS view_art_upd;
+     DROP TRIGGER IF EXISTS view_game_meta_ins;
+     DROP TRIGGER IF EXISTS view_game_meta_del;
+     DROP TRIGGER IF EXISTS view_game_meta_upd;
+     DROP TRIGGER IF EXISTS view_clone_groups_ins;
+     DROP TRIGGER IF EXISTS view_clone_groups_del;
+     DROP TRIGGER IF EXISTS view_clone_groups_upd;
+     DROP TRIGGER IF EXISTS view_dats_ins;
+     DROP TRIGGER IF EXISTS view_dats_del;
+     DROP TRIGGER IF EXISTS view_dats_upd;
+     DROP TRIGGER IF EXISTS view_settings_ins;
+     DROP TRIGGER IF EXISTS view_settings_upd;
+     DROP TRIGGER IF EXISTS view_settings_del;
+     DROP TABLE IF EXISTS view_generation;",
 ];
 
 const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
@@ -534,11 +569,58 @@ pub fn open(path: &std::path::Path) -> Result<Connection, Error> {
     init(Connection::open(path)?)
 }
 
+/// `fp(a, b, ...)`: a 31-bit hash of its arguments (FNV-1a over their
+/// types and values), for [`crate::view::fingerprint`] to `sum()` over a
+/// table without overflowing.
+fn fingerprint_function(conn: &Connection) -> Result<(), Error> {
+    use rusqlite::functions::FunctionFlags;
+    use rusqlite::types::ValueRef;
+    conn.create_scalar_function(
+        "fp",
+        -1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            let mut eat = |bytes: &[u8]| {
+                for b in bytes {
+                    h ^= u64::from(*b);
+                    h = h.wrapping_mul(0x0100_0000_01b3);
+                }
+            };
+            for i in 0..ctx.len() {
+                match ctx.get_raw(i) {
+                    ValueRef::Null => eat(&[0]),
+                    ValueRef::Integer(v) => {
+                        eat(&[1]);
+                        eat(&v.to_le_bytes());
+                    }
+                    ValueRef::Real(v) => {
+                        eat(&[2]);
+                        eat(&v.to_le_bytes());
+                    }
+                    ValueRef::Text(t) => {
+                        eat(&[3]);
+                        eat(t);
+                    }
+                    ValueRef::Blob(b) => {
+                        eat(&[4]);
+                        eat(b);
+                    }
+                }
+                eat(&[0x1f]);
+            }
+            Ok((h >> 33) as i64)
+        },
+    )?;
+    Ok(())
+}
+
 pub fn open_in_memory() -> Result<Connection, Error> {
     init(Connection::open_in_memory()?)
 }
 
 fn init(mut conn: Connection) -> Result<Connection, Error> {
+    fingerprint_function(&conn)?;
     // Another connection (the app keeps one for reads) may be writing:
     // wait for it rather than fail with "database is locked".
     conn.busy_timeout(std::time::Duration::from_secs(10))?;

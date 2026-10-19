@@ -24,6 +24,11 @@ pub struct Settings {
     pub source_dir: Option<PathBuf>,
     pub library_dir: Option<PathBuf>,
     pub keep_originals: bool,
+    /// Rename & Cleanup's "Replace originals": each game is renamed and
+    /// repacked in its own folder (not moved into RomForge or the Library),
+    /// its original to the trash. Never with `keep_originals`.
+    #[serde(default)]
+    pub in_place: bool,
     /// `None` means [`default_staging_dir`].
     pub staging_dir: Option<PathBuf>,
     /// Optional credentials for online sources (house rule 10, tiers 2 and
@@ -38,6 +43,28 @@ pub struct Settings {
     /// first ("USA", "Europe", "Japan"...). Empty: [`crate::organize::DEFAULT_REGIONS`].
     #[serde(default)]
     pub regions: Vec<String>,
+    /// The sidebar's platform icons ([`crate::enrich::PLATFORM_ICON_THEMES`]:
+    /// controllers, consoles or logos), or "none" for plain badges. Empty:
+    /// "flatui", the controllers.
+    #[serde(default)]
+    pub platform_icons: String,
+    /// Which romforge logo the app shows ([`LOGOS`]). Empty: "synthwave".
+    #[serde(default)]
+    pub logo: String,
+}
+
+/// The app's logos (its artwork in `app/src/assets/logos/`).
+pub const LOGOS: &[&str] = &["synthwave", "pastel", "gummy", "space", "sprinkles"];
+
+impl Settings {
+    /// The icon theme to use, or `None` for none.
+    pub fn icon_theme(&self) -> Option<&str> {
+        match self.platform_icons.as_str() {
+            "" => Some("flatui"),
+            "none" => None,
+            t => Some(t),
+        }
+    }
 }
 
 /// Credentials for the online sources that need them. All optional.
@@ -219,6 +246,9 @@ impl Settings {
                 ));
             }
         }
+        if self.in_place && self.keep_originals {
+            return bad("Replace originals puts the originals in the trash; it can't keep them".into());
+        }
         if self.keep_originals && library.is_none() {
             return bad("Keep originals needs a Library folder for the processed copies".into());
         }
@@ -249,9 +279,24 @@ impl Settings {
             source_dir: source,
             library_dir: library,
             keep_originals: self.keep_originals,
+            in_place: self.in_place,
             staging_dir: staging,
             keys,
             show_empty_media: self.show_empty_media,
+            logo: {
+                let l = self.logo.trim();
+                if !l.is_empty() && !LOGOS.contains(&l) {
+                    return bad(format!("no logo {l:?}"));
+                }
+                l.to_owned()
+            },
+            platform_icons: {
+                let t = self.platform_icons.trim();
+                if !t.is_empty() && t != "none" && !crate::enrich::PLATFORM_ICON_THEMES.contains(&t) {
+                    return bad(format!("no platform icon theme {t:?}"));
+                }
+                t.to_owned()
+            },
             regions: self
                 .regions
                 .iter()
@@ -272,6 +317,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         source_dir: get("source_dir")?.map(PathBuf::from),
         library_dir: get("library_dir")?.map(PathBuf::from),
         keep_originals: get("keep_originals")?.as_deref() == Some("1"),
+        in_place: get("in_place")?.as_deref() == Some("1"),
         staging_dir: get("staging_dir")?.map(PathBuf::from),
         keys: Keys {
             screenscraper_dev_id: get("screenscraper_dev_id")?,
@@ -283,6 +329,8 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
             igdb_client_secret: get("igdb_client_secret")?,
         },
         show_empty_media: get("show_empty_media")?.as_deref() == Some("1"),
+        platform_icons: get("platform_icons")?.unwrap_or_default(),
+        logo: get("logo")?.unwrap_or_default(),
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -332,11 +380,17 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 "keep_originals",
                 Some(if s.keep_originals { "1" } else { "0" }.to_owned()),
             ),
+            ("in_place", Some(if s.in_place { "1" } else { "0" }.to_owned())),
             (
                 "show_empty_media",
                 Some(if s.show_empty_media { "1" } else { "0" }.to_owned()),
             ),
             ("regions", Some(s.regions.join(", ")).filter(|r| !r.is_empty())),
+            (
+                "platform_icons",
+                Some(s.platform_icons.clone()).filter(|t| !t.is_empty()),
+            ),
+            ("logo", Some(s.logo.clone()).filter(|l| !l.is_empty())),
         ]
         .into_iter()
         .chain(s.keys.fields())

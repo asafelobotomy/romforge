@@ -1238,6 +1238,113 @@ the running app.
   screenshots can get the same picker.
 - Not tried against the real sources yet (tested with a stand-in).
 
+## Library views (2026-10-19, built)
+
+- List, Box art, 3D box, Banner. Rows carry their picture files
+  (`GameRow::pictures`: box art, 3D box, fanart, logo; translations,
+  hacks, patches and missing originals borrow their game's).
+- The app serves art through its own `art://` scheme (only image files
+  under the cache and the RomForge folder's Media/), so a grid loads only
+  what is on screen, straight from disk. Details, Development's pictures
+  and the fanart picker's previews use it too (2026-10-19): sending a
+  game's art as base64 (6.6 MB for one game here) froze the page for
+  seconds on every pick.
+- `PictureGrid.svelte`: virtualised lines of cards; headings and versions
+  as in the list. Arrow keys move one card at a time.
+- Box shapes (2026-10-19): `systems::box_aspect(system, BoxRegion)`, a
+  short table of known shapes by platform and region (North America,
+  Europe, Japan) and a rule for the rest; `GameRow::box_aspect`. Cards are
+  one size (the widest box in view), boxes one height on a baseline, scans
+  fitted inside (no crop). 3D boxes are drawn 15% wider for the spine.
+- Pictures only (2026-10-19): no card or title behind a picture (the name
+  on hover, a placeholder with the name when there's no picture); banners
+  all 3.2:1, the fanart cropped to fill. Details' facts in two equal
+  columns. A Versions tab after Series: the game's group under the list's
+  headings, in any of the four views (`GameTable.svelte` and
+  `versions.js` shared with the library list).
+
+## Toolbar: Scan folder, Rename & Cleanup, Convert (2026-10-19, built)
+
+- Refresh (`refresh_settings`): only Source, Library and RomForge's Games;
+  `refresh` (CLI, and after a cleanup, undo or convert) still takes every
+  scanned folder. Greyed out until there is a folder (`can_refresh`).
+- Scan folder (`scan_folder`): any folder, not kept as a setting, except
+  the first while no Source is set, which becomes the Source. Its dry run
+  (`scan_preview`) scans a `VACUUM INTO` copy of the library in the temp
+  folder, lists the rows with files in that folder (new or not), and
+  deletes the copy; accepting scans for real (the files are read again).
+- Rename & Cleanup: runs at once; its dry run is the old plan dialog.
+  Settings: move then trash (default), move and keep, or replace in place
+  (`Settings::in_place`: written in the game's own folder, the original to
+  the trash; arcade sets and folder games stay where they are).
+- Convert (`cleanup::convert_plan`): identified disc images, not yet CHD,
+  into a CHD beside themselves under their own names, no sidecar; only
+  platforms whose extensions include `chd`. Cleanup now also skips CHD
+  for the others (it used to write GameCube and Wii ISOs as CHD, which
+  Dolphin can't read).
+
+## Platform icons and Settings tabs (2026-10-19, built)
+
+- `enrich::platform_icons`: controllers (`flatui`, the default) or
+  systems (`systematic`) from RetroArch's menu icons (retroarch-assets,
+  CC BY 4.0, house rule 10 tier 1) by the platform's libretro name, or
+  logos (`logo`) from Wikidata (P154 of the platform's item, a 256 px PNG
+  Commons renders); `Settings::platform_icons`, fetched once into
+  `<cache>/platform-icons/<style>/`; a missing one is remembered.
+  Platform names in the sidebar wrap whole, in bold. Shown through `art://`; a platform without one keeps its
+  coloured badge.
+- Settings in tabs: Folders (the Source now shown with a RomForge folder
+  too), Rename & Cleanup, Display (icons, regions, empty media boxes),
+  Sources (keys, ScummVM), Credits.
+
+## Caching for big libraries (2026-10-19, built)
+
+Measured on a synthetic library of 20,000 verified games (release build):
+building the list view 0.9-1.0 s, and it was rebuilt after any write at
+all (a rescan finding nothing new, Enrich's bookkeeping), and the whole
+7.6 MB view went to the page after every action.
+
+- `view::fingerprint`: a hash of everything the list shows (each table it
+  reads, only the columns it uses, through an `fp()` SQL function), worked
+  out only after a write (a few tens of ms); the list is rebuilt only when
+  it changes. Rescan with nothing new: 0.97 s to 48 ms.
+- A snapshot of the view beside the database (`<db>-view.json`), keyed by
+  the fingerprint, the database's path and the romforge build: opening
+  the library reads it (81 ms) instead of building (1 s).
+- The page asks with the generation it has (`library_view_since`) and gets
+  the view only when it changed.
+- Tried first and dropped: triggers bumping a counter on every write to
+  those tables made a 20,000-file scan 2.0 s to 7.1 s (migration 35 now
+  removes them from databases that got them).
+- Thumbnails for the picture views (`thumbs::thumbnail`, the `image`
+  crate with PNG, JPEG and WebP only): `art://…?h=<px>` serves the
+  picture scaled to the height the grid draws it at (box 170 px, a
+  banner's fanart as tall as a 16:9 picture the row's width; times the
+  screen's density, in 60 px steps), made on first request in the
+  scheme's own thread and kept in `<cache>/thumbs/`, named by the path,
+  size, modification time and height (a changed picture gets a new one).
+  JPEG q85 when opaque, PNG with see-through parts; a picture no taller
+  than asked is served as it is; any error serves the original. Details
+  keeps the full pictures. Measured on 3,000 box scans (512×720), 1,500
+  3D boxes (800×1000, alpha) and 750 fanarts (1920×1080), release build,
+  noisy synthetic pictures: decoding per card 41 → 3.9 ms (box), 28 → 4.8
+  ms (3D, 1.6 MB → 173 kB), 14 → 8.2 ms (fanart at 780 px, little gained
+  on a wide window); making one on first view 32 / 40 / 115 ms; finding
+  it again 5-19 µs. Old thumbnails of changed pictures stay until the
+  cache is cleared.
+
+## Logos and app icon (2026-10-19, built)
+
+From the owner's artwork (pasted as JPEGs with the transparency
+checkerboard painted in): the app icon is the RF monogram traced to
+vector with potrace, dark green on a light rounded tile (letters only at
+32 and 64 px); the five ROMFORGE wordmarks were cut from the sheet with
+the checkerboard flooded away from the edges and reduced to 128 colours
+(20-30 KB each). The synthwave one has no Pac-Man, ghost or invader
+(Bandai Namco's and Taito's): the top two were dropped, and it ends under
+the lettering, so the grid and the sprites on it went. `Settings::logo`
+picks the toolbar's; the first-run screen shows the default.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits

@@ -3,6 +3,7 @@
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { iconCredits } from "./facts.js";
+  import { LOGOS } from "./logos.js";
 
   // `call` is the app's invoke that reports errors on the status line.
   let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call } = $props();
@@ -46,9 +47,24 @@
   }
 
   // Settings panel: a working copy, saved on "Save".
-  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, staging_dir: null, keys: {}, show_empty_media: false });
+  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, in_place: false, staging_dir: null, keys: {}, show_empty_media: false });
+  // Rename & Cleanup's behaviour: the two settings it is made of.
+  const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
+  function setMode(m) {
+    draft.in_place = m === "replace";
+    draft.keep_originals = m === "keep";
+  }
   let defaultStaging = $state("");
   let settingsError = $state("");
+  // Settings in tabs, by what they are about.
+  const TABS = [
+    ["folders", "Folders"],
+    ["cleanup", "Rename & Cleanup"],
+    ["display", "Display"],
+    ["sources", "Sources"],
+    ["credits", "Credits"],
+  ];
+  let stab = $state("folders");
 
   export async function openSettings() {
     settingsError = "";
@@ -84,58 +100,43 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
 
+      <div class="stabs" role="tablist">
+        {#each TABS as [k, label]}
+          <button role="tab" aria-selected={stab === k} class:active={stab === k} onclick={() => (stab = k)}>{label}</button>
+        {/each}
+      </div>
+
+      {#if stab === "folders"}
       {#if homeRoot}
         <section class="setting">
           <span class="flabel">RomForge folder</span>
-          <p class="hint">Everything lives here: Games, Media (art), Databases and the library. Add folder scans a folder and offers to import its games.</p>
+          <p class="hint">Everything lives here: Games, Media (art), Databases and the library. Scan folder scans any folder; Rename &amp; Cleanup imports its games.</p>
           <div class="pick">
             <input value={homeRoot} readonly aria-label="RomForge folder" />
             <button onclick={moveHome} disabled={moving} title="Move the whole folder somewhere else; everything in it comes along">{moving ? "Moving…" : "Move…"}</button>
           </div>
         </section>
-      {:else}
+      {/if}
       <section class="setting">
         <label for="source">Source</label>
-        <p class="hint">Where your unprocessed ROMs are. Refresh scans it.</p>
+        <p class="hint">Where your unprocessed ROMs are. Refresh scans it; the first folder you scan with Scan folder becomes it if none is set.</p>
         <div class="pick">
           <input id="source" bind:value={draft.source_dir} placeholder="Not set" />
           <button onclick={() => browse("source_dir")}>Browse…</button>
           {#if draft.source_dir}<button onclick={() => (draft.source_dir = null)}>Clear</button>{/if}
         </div>
       </section>
-
+      {#if !homeRoot}
       <section class="setting">
         <label for="library">Library <span class="hint">(optional)</span></label>
-        <p class="hint">Where Cleanup and rename puts processed games, sorted by platform. Refresh scans it too, and Play uses what's there.</p>
+        <p class="hint">Where Rename &amp; Cleanup puts processed games, sorted by platform. Refresh scans it too, and Play uses what's there.</p>
         <div class="pick">
           <input id="library" bind:value={draft.library_dir} placeholder="Not set" />
           <button onclick={() => browse("library_dir")}>Browse…</button>
-          {#if draft.library_dir}<button onclick={() => { draft.library_dir = null; draft.keep_originals = false; }}>Clear</button>{/if}
+          {#if draft.library_dir}<button onclick={() => { draft.library_dir = null; if (!homeRoot) draft.keep_originals = false; }}>Clear</button>{/if}
         </div>
       </section>
-      {/if}
 
-      <section class="setting">
-        <label class="toggle">
-          <input type="checkbox" bind:checked={draft.keep_originals} disabled={!homeRoot && !draft.library_dir} />
-          Keep originals
-        </label>
-        <p class="hint">
-          {#if homeRoot}
-            {draft.keep_originals
-              ? "Your files stay where they are. Import writes a copy of each game into RomForge."
-              : "Import moves each game into RomForge; the originals go to the RomForge trash once the new file is verified."}
-          {:else if draft.library_dir}
-            {draft.keep_originals
-              ? "Source files stay untouched. Cleanup writes each repacked game into the Library."
-              : "Cleanup writes each repacked game into the Library; the originals go to .romforge-trash next to them once the new file is verified."}
-          {:else}
-            Needs a Library folder for the processed copies.
-          {/if}
-        </p>
-      </section>
-
-      {#if !homeRoot}
       <section class="setting">
         <label for="staging">Staging folder</label>
         <p class="hint">Scratch space for cleanup (tracks inside 7z archives are unpacked here). Must be outside the Source and Library.</p>
@@ -146,13 +147,56 @@
         </div>
       </section>
       {/if}
+      {:else if stab === "cleanup"}
+      <section class="setting">
+        <span class="flabel">Rename &amp; Cleanup</span>
+        {#each [
+          ["trash", "Move, then trash originals", "Each game is renamed, repacked and moved into " + (homeRoot ? "RomForge" : "the Library") + "; the original goes to the trash once the new file is verified (Undo puts it back)."],
+          ["keep", "Move and keep originals", homeRoot ? "Each game is copied into RomForge; your files stay where they are." : "Each game is copied into the Library; Source files stay untouched."],
+          ["replace", "Replace originals", "Each game is renamed and repacked where it is, not moved; the original goes to the trash once the new file is verified (Undo puts it back)."],
+        ] as [m, label, hint]}
+          {@const needsLibrary = m === "keep" && !homeRoot && !draft.library_dir}
+          <label class="toggle" title={needsLibrary ? "Needs a Library folder for the copies" : hint}>
+            <input type="radio" name="cleanup-mode" checked={modeOf(draft) === m} disabled={needsLibrary} onchange={() => setMode(m)} />
+            {label}
+          </label>
+        {/each}
+        <p class="hint">
+          {#if modeOf(draft) === "replace"}
+            Renamed and repacked where each game is, not moved; originals to the trash once the new file is verified (Undo puts
+            them back). Convert follows this too.
+          {:else if modeOf(draft) === "keep"}
+            {homeRoot ? "Each game is copied into RomForge; your files stay where they are." : "Each game is copied into the Library; Source files stay untouched."}
+            Convert keeps the originals too.
+          {:else}
+            Each game moves into {homeRoot ? "RomForge" : "the Library"}; originals go to the trash once the new file is verified
+            (Undo puts them back). Convert trashes them too.
+          {/if}
+        </p>
+      </section>
+      {:else if stab === "display"}
+      <section class="setting">
+        <span class="flabel">Logo</span>
+        <p class="hint">The romforge logo in the toolbar.</p>
+        <div class="logos" role="radiogroup" aria-label="Logo">
+          {#each LOGOS as [k, label, src], i}
+            <label class="logochoice" class:on={(draft.logo || "synthwave") === k} title={label}>
+              <input type="radio" name="logo" checked={(draft.logo || "synthwave") === k} onchange={() => (draft.logo = i === 0 ? "" : k)} />
+              <img {src} alt={label} />
+            </label>
+          {/each}
+        </div>
+      </section>
 
       <section class="setting">
-        <label class="toggle">
-          <input type="checkbox" bind:checked={draft.show_empty_media} />
-          Show empty media boxes
-        </label>
-        <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
+        <label for="icons">Platform icons</label>
+        <p class="hint">The picture beside each platform in the sidebar, fetched once: controllers and systems from RetroArch's own icon sets, logos from Wikidata (Wikimedia Commons).</p>
+        {#each [["", "Controller icons"], ["systematic", "System icons"], ["logo", "Platform logos"]] as [v, label]}
+          <label class="toggle">
+            <input type="radio" name="platform-icons" checked={(draft.platform_icons || "") === v || (v === "" && draft.platform_icons === "flatui")} onchange={() => (draft.platform_icons = v)} />
+            {label}
+          </label>
+        {/each}
       </section>
 
       <section class="setting">
@@ -162,15 +206,13 @@
       </section>
 
       <section class="setting">
-        <span class="flabel">ScummVM games</span>
-        <p class="hint">ScummVM games are named by ScummVM's own game list, read from the ScummVM installed here (kept on this computer, never shared); ScummVM itself is asked about folders the list can't name (LucasArts, Sierra). Read it again after updating ScummVM or adding games.</p>
-        <div class="pick">
-          <button onclick={() => readScummvm(false)} disabled={readingList}>{readingList ? "Reading…" : "Read ScummVM's list"}</button>
-          <button onclick={() => readScummvm(true)} disabled={readingList} title="A list saved with: scummvm --dump-all-detection-entries">From a file…</button>
-        </div>
-        {#if scummvmNote}<p class="hint" role="status">{scummvmNote}</p>{/if}
+        <label class="toggle">
+          <input type="checkbox" bind:checked={draft.show_empty_media} />
+          Show empty media boxes
+        </label>
+        <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
       </section>
-
+      {:else if stab === "sources"}
       <section class="setting">
         <h3 class="sub">Online sources <span class="hint">(optional)</span></h3>
         <p class="hint">Free sources that need no account are always used first. These fill only what they leave empty.</p>
@@ -191,22 +233,40 @@
         <p class="hint">Stored in romforge's database on this computer.</p>
       </section>
 
-      <details class="setting credits">
-        <summary><h3 class="sub">Credits</h3></summary>
+      <section class="setting">
+        <span class="flabel">ScummVM games</span>
+        <p class="hint">ScummVM games are named by ScummVM's own game list, read from the ScummVM installed here (kept on this computer, never shared); ScummVM itself is asked about folders the list can't name (LucasArts, Sierra). Read it again after updating ScummVM or adding games.</p>
+        <div class="pick">
+          <button onclick={() => readScummvm(false)} disabled={readingList}>{readingList ? "Reading…" : "Read ScummVM's list"}</button>
+          <button onclick={() => readScummvm(true)} disabled={readingList} title="A list saved with: scummvm --dump-all-detection-entries">From a file…</button>
+        </div>
+        {#if scummvmNote}<p class="hint" role="status">{scummvmNote}</p>{/if}
+      </section>
+      {:else}
+      <section class="setting credits">
         {#snippet link(url, text)}<button class="linkish" onclick={() => openUrl(url)}>{text}</button>{/snippet}
         <p class="hint">
-          Genre icons from {@render link("https://game-icons.net", "game-icons.net")}, licensed
+          Genre icons, and the sidebar's All games and Unidentified icons, from
+          {@render link("https://game-icons.net", "game-icons.net")}, licensed
           {@render link("https://creativecommons.org/licenses/by/3.0/", "CC BY 3.0")} (background removed, recoloured):
         </p>
         <ul class="hint">
           {#each iconCredits() as c}<li>{c.author}: {c.names.join(", ")}</li>{/each}
         </ul>
         <p class="hint">
+          Controller and system icons from {@render link("https://github.com/libretro/retroarch-assets", "RetroArch's assets")}
+          by the libretro team and contributors, licensed {@render link("https://creativecommons.org/licenses/by/4.0/", "CC BY 4.0")},
+          downloaded to this computer as they are. Platform logos come from Wikimedia Commons through Wikidata (each logo's
+          Commons page gives its terms; many are trademarks).
+        </p>
+        <p class="hint">
           Studio logos and people's photos come from {@render link("https://commons.wikimedia.org", "Wikimedia Commons")}
           through Wikidata; each picture's own page (linked under it in Development) gives its author and licence.
-          Game facts from libretro, Wikidata and the sources set above. romforge is MIT licensed.
+          Game facts from libretro, Wikidata and the sources set above. romforge's logos and app icon are its own
+          artwork. romforge is MIT licensed.
         </p>
-      </details>
+      </section>
+      {/if}
 
       {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
       <div class="actions">
@@ -220,8 +280,15 @@
 <style>
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   .two input { width: 100%; box-sizing: border-box; }
-  .credits summary { cursor: pointer; }
-  .credits summary h3 { display: inline; }
+  .stabs { display: flex; gap: 0.25rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin: 0.25rem 0 0.25rem; }
+  .stabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.7rem; color: var(--muted); background: none; }
+  .stabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  .stabs + :global(.setting) { border-top: none; }
+  .logos { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.5rem; margin-top: 0.3rem; }
+  .logochoice { display: grid; place-items: center; height: 4.2rem; padding: 0.3rem; border: 2px solid var(--line); border-radius: 8px; cursor: pointer; background: #0002; }
+  .logochoice.on { border-color: var(--accent); }
+  .logochoice input { position: absolute; opacity: 0; pointer-events: none; }
+  .logochoice img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .credits ul { margin: 0.2rem 0 0.5rem; padding-left: 1.2rem; }
   .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 </style>

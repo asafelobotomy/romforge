@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { artSrc } from "./lib.js";
 
   // Details' art picker: every picture of one kind (fanart for now) the
   // sources have for the game, to replace the one shown. The pick is kept
@@ -67,7 +68,7 @@
           <div class="grid">
             {#each found.choices as c (c.url)}
               <button class="choice" class:current={c.current} onclick={() => pick(c)} disabled={!!busy || c.current} title={c.current ? "In use now" : `Use this one (${c.url})`}>
-                <img src={c.preview} alt="{label} from {sourceLabel[c.source] ?? c.source}" />
+                <img src={artSrc(c.preview)} loading="lazy" alt="{label} from {sourceLabel[c.source] ?? c.source}" />
                 <span class="src">{sourceLabel[c.source] ?? c.source}{c.label ? ` · ${c.label}` : ""}{c.current ? " · in use" : ""}</span>
               </button>
             {/each}
@@ -98,7 +99,7 @@
   .now { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; margin-bottom: 0.6rem; }
   .now img { max-height: 9rem; max-width: 100%; border-radius: 6px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem; }
-  .choice { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.35rem; border: 2px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; }
+  .choice { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.35rem; border: 2px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; }
   .choice:hover:not(:disabled) { border-color: var(--accent); }
   .choice.current { border-color: var(--ok); cursor: default; }
   .choice img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: #0003; }

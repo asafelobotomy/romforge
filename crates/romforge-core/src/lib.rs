@@ -30,6 +30,7 @@ pub mod search;
 pub mod settings;
 pub mod suggest;
 pub mod systems;
+pub mod thumbs;
 pub mod titles;
 mod vcdiff;
 pub mod view;
@@ -80,6 +81,8 @@ pub enum Error {
     Search(String),
     #[error("cleanup: {0}")]
     Cleanup(String),
+    #[error("picture: {0}")]
+    Image(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -94,6 +97,38 @@ pub struct ImportedDat {
     pub replaced: Option<i64>,
     /// The exact same file was already imported; nothing changed.
     pub unchanged: bool,
+}
+
+/// The sidebar's icons: the style, and system key -> file.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct PlatformIcons {
+    pub theme: String,
+    pub icons: std::collections::BTreeMap<String, PathBuf>,
+}
+
+/// What Scan folder did: the scan, and whether the folder became the
+/// Source (`Some(Err)`: it couldn't, and why).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FolderScan {
+    pub report: ScanReport,
+    pub became_source: Option<Result<(), String>>,
+}
+
+/// What a scan would find ([`Library::scan_preview`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ScanPreview {
+    pub report: ScanReport,
+    /// The games and files found in the folder, by status then title.
+    pub games: Vec<PreviewGame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PreviewGame {
+    pub title: String,
+    pub system: Option<String>,
+    pub status: view::RowStatus,
+    /// Not in the library before.
+    pub new: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -263,8 +298,21 @@ pub struct Library {
     view_cache: std::sync::Mutex<Option<CachedView>>,
 }
 
-/// ((SQLite data_version, this connection's total changes), the view).
-type CachedView = ((i64, u64), std::sync::Arc<view::LibraryView>);
+/// ((SQLite data_version, this connection's total changes), the view's
+/// fingerprint, the view): nothing written since, or nothing the view
+/// shows changed, and the view stands.
+type CachedView = ((i64, u64), u64, std::sync::Arc<view::LibraryView>);
+
+/// The list view kept on disk beside the database
+/// (`<db>-view.json`), so opening the library doesn't build it again when
+/// nothing changed: `key` says which generation of which database, built
+/// by which romforge.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ViewSnapshot {
+    key: String,
+    view: view::LibraryView,
+    inner: Vec<view::RowInner>,
+}
 
 impl Library {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -1284,6 +1332,93 @@ impl Library {
         Ok(r)
     }
 
+    /// The app's Scan folder: scan `root` (any folder; it isn't kept as a
+    /// setting), except that the first folder scanned while no Source folder
+    /// is set becomes the Source. Returns the report and whether it did.
+    pub fn scan_folder(&mut self, root: impl AsRef<Path>) -> Result<FolderScan, Error> {
+        let root = root.as_ref();
+        let mut became_source = None;
+        let mut s = settings::load(&self.conn)?;
+        if s.source_dir.is_none() {
+            s.source_dir = Some(root.to_owned());
+            let home = self.home.is_some();
+            became_source = Some(match settings::save_in(&mut self.conn, &s, home) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e.to_string()),
+            });
+        }
+        let report = self.scan(root, Scope::All)?;
+        Ok(FolderScan {
+            report,
+            became_source,
+        })
+    }
+
+    /// Scan Folder's dry run: what scanning `root` would find, worked out on
+    /// a copy of the library that is thrown away; the library itself is
+    /// unchanged (scanning never touches ROM files either). The caller
+    /// scans for real if the owner accepts (the files are read again then).
+    pub fn scan_preview(&mut self, root: impl AsRef<Path>) -> Result<ScanPreview, Error> {
+        let root = std::fs::canonicalize(root.as_ref())?;
+        let before: std::collections::HashSet<String> = view::library(&self.conn)?
+            .rows
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        let tmp = std::env::temp_dir().join(format!("romforge-preview-{}.db", std::process::id()));
+        let clear = |p: &Path| {
+            for ext in ["", "-wal", "-shm", "-journal", "-view.json"] {
+                let _ = std::fs::remove_file(format!("{}{ext}", p.display()));
+            }
+        };
+        clear(&tmp);
+        self.conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
+        let result = (|| -> Result<ScanPreview, Error> {
+            let mut copy = Library::open(&tmp)?;
+            let report = copy.scan(&root, Scope::All)?;
+            let under: std::collections::HashSet<i64> = copy
+                .conn
+                .prepare("SELECT file_id, path FROM files")?
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .filter_map(|r| r.ok())
+                .filter(|(_, p)| Path::new(p).starts_with(&root))
+                .map(|(id, _)| id)
+                .collect();
+            let mut games: Vec<PreviewGame> = view::library(&copy.conn)?
+                .rows
+                .into_iter()
+                .filter(|r| r.file_ids().iter().any(|f| under.contains(f)))
+                .map(|r| PreviewGame {
+                    new: !before.contains(&r.id),
+                    title: r.label.clone().unwrap_or(r.title),
+                    system: r.system_name,
+                    status: r.status,
+                })
+                .collect();
+            games.sort_by(|a, b| (a.status, &a.title).cmp(&(b.status, &b.title)));
+            Ok(ScanPreview { report, games })
+        })();
+        clear(&tmp);
+        result
+    }
+
+    /// Convert's plan: disc images into CHD beside themselves (nothing is
+    /// written).
+    pub fn convert_plan(&self, only: Option<&[String]>) -> Result<cleanup::CleanupPlan, Error> {
+        cleanup::convert_plan(&self.conn, only, self.home.as_ref())
+    }
+
+    /// Carry out Convert's plan (journaled like a cleanup, so undo puts the
+    /// originals back), then refresh.
+    pub fn convert_apply(
+        &mut self,
+        only: Option<&[String]>,
+        progress: impl FnMut(usize, &str),
+    ) -> Result<cleanup::CleanupReport, Error> {
+        let plan = self.convert_plan(only)?;
+        self.cleanup_apply(&plan, progress)
+    }
+
     /// Remove a cleanup batch's new files and put its originals back (the
     /// latest batch by default), then refresh.
     pub fn cleanup_undo(&mut self, batch_id: Option<i64>) -> Result<cleanup::CleanupUndone, Error> {
@@ -1477,6 +1612,33 @@ impl Library {
         Ok((system_id, d.row.title, lookup))
     }
 
+    /// The sidebar's icons for the platforms in the library, in the style
+    /// Settings picks (none: empty), fetched into `cache_dir` the first
+    /// time from retroarch-assets (`base`, [`enrich::PLATFORM_ICONS_BASE`])
+    /// or, for logos, Wikidata (`wikidata`, [`wikidata::ENDPOINT`]).
+    /// Offline, only those fetched before.
+    pub fn platform_icons(
+        &self,
+        cache_dir: &Path,
+        base: &str,
+        wikidata: &str,
+    ) -> Result<PlatformIcons, Error> {
+        let s = settings::load(&self.conn)?;
+        let Some(theme) = s.icon_theme() else {
+            return Ok(PlatformIcons::default());
+        };
+        let systems: Vec<&'static systems::System> = self
+            .cached_view()?
+            .platforms
+            .iter()
+            .filter_map(|p| p.system.as_deref().and_then(systems::by_key))
+            .collect();
+        Ok(PlatformIcons {
+            theme: theme.to_owned(),
+            icons: enrich::platform_icons(cache_dir, base, wikidata, theme, &systems).0,
+        })
+    }
+
     /// Metadata and cached art for games whose name contains `query`.
     pub fn game_info(&self, query: &str) -> Result<Vec<enrich::GameInfo>, Error> {
         enrich::info(&self.conn, query)
@@ -1528,19 +1690,117 @@ impl Library {
         view::detail_in(&self.conn, &v, id)
     }
 
-    /// The library view, built again only when the database changed.
-    fn cached_view(&self) -> Result<std::sync::Arc<view::LibraryView>, Error> {
+    /// The list view's generation: it changes only when something the list
+    /// shows does ([`view::fingerprint`]), so an app can keep the view it
+    /// has until then.
+    pub fn view_generation(&self) -> Result<i64, Error> {
+        // 52 bits: a JavaScript number holds it exactly.
+        Ok((self.view_key()?.1 & ((1 << 52) - 1)) as i64)
+    }
+
+    /// (what SQLite says about writes, the view's fingerprint): the
+    /// fingerprint is worked out again only after a write.
+    fn view_key(&self) -> Result<((i64, u64), u64), Error> {
         let version: i64 = self.conn.pragma_query_value(None, "data_version", |r| r.get(0))?;
-        let key = (version, self.conn.total_changes());
-        let mut cache = self.view_cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((k, v)) = cache.as_ref()
-            && *k == key
+        let writes = (version, self.conn.total_changes());
         {
-            return Ok(v.clone());
+            let cache = self.view_cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((w, f, _)) = cache.as_ref()
+                && *w == writes
+            {
+                return Ok((writes, *f));
+            }
         }
-        let v = std::sync::Arc::new(view::listing(&self.conn)?);
-        *cache = Some((key, v.clone()));
+        Ok((writes, view::fingerprint(&self.conn)?))
+    }
+
+    /// The library view if its generation isn't `known` (with the
+    /// generation either way): an app asks again after each action and
+    /// gets the whole view only when it changed.
+    pub fn library_view_since(&self, known: Option<i64>) -> Result<(i64, Option<view::LibraryView>), Error> {
+        let generation = self.view_generation()?;
+        if known == Some(generation) {
+            return Ok((generation, None));
+        }
+        let v = self.cached_view()?;
+        Ok((generation, Some((*v).clone())))
+    }
+
+    /// The library view built afresh, ignoring every cache (to check them).
+    pub fn library_view_fresh(&self) -> Result<view::LibraryView, Error> {
+        view::listing(&self.conn)
+    }
+
+    /// The library view, built again only when its fingerprint changed:
+    /// from memory, else the snapshot beside the database, else built (and
+    /// the snapshot written).
+    fn cached_view(&self) -> Result<std::sync::Arc<view::LibraryView>, Error> {
+        let (writes, fingerprint) = self.view_key()?;
+        let mut cache = self.view_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, f, v)) = cache.as_ref()
+            && *f == fingerprint
+        {
+            let v = v.clone();
+            *cache = Some((writes, fingerprint, v.clone()));
+            return Ok(v);
+        }
+        let key = self.snapshot_key(fingerprint as i64);
+        let stored = self.view_snapshot().and_then(|p| {
+            let snap: ViewSnapshot = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
+            let mut v = snap.view;
+            (Some(&snap.key) == key.as_ref() && v.restore(snap.inner)).then_some(v)
+        });
+        let v = match stored {
+            Some(v) => std::sync::Arc::new(v),
+            None => {
+                let v = std::sync::Arc::new(view::listing(&self.conn)?);
+                if let (Some(path), Some(key)) = (self.view_snapshot(), key) {
+                    // A snapshot that can't be written only costs a rebuild.
+                    let snap = ViewSnapshot {
+                        key,
+                        view: (*v).clone(),
+                        inner: v.inner(),
+                    };
+                    if let Ok(bytes) = serde_json::to_vec(&snap) {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        let part = path.with_file_name(layout::part(&name));
+                        if std::fs::write(&part, bytes).is_ok() {
+                            let _ = std::fs::rename(&part, &path);
+                        }
+                    }
+                }
+                v
+            }
+        };
+        *cache = Some((writes, fingerprint, v.clone()));
         Ok(v)
+    }
+
+    /// Where the view's snapshot lives: `<db>-view.json`. None in memory.
+    fn view_snapshot(&self) -> Option<PathBuf> {
+        let p = self.path.as_ref()?;
+        Some(PathBuf::from(format!("{}-view.json", p.display())))
+    }
+
+    /// What a snapshot must say to be used: the generation, this database,
+    /// and this build of romforge (its program file's time), since a new
+    /// romforge may list things differently.
+    fn snapshot_key(&self, generation: i64) -> Option<String> {
+        let exe = std::env::current_exe().ok()?;
+        let built = exe
+            .metadata()
+            .ok()?
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        Some(format!(
+            "{generation}|{}|{}|{built}|{}",
+            self.path.as_ref()?.display(),
+            exe.display(),
+            env!("CARGO_PKG_VERSION")
+        ))
     }
 
     /// Rescan every folder romforge knows (the Source and Library folders of
@@ -1550,20 +1810,59 @@ impl Library {
     pub fn refresh(
         &mut self,
         opts: ScanOptions,
+        progress: impl FnMut(&Path, ScanProgress),
+    ) -> Result<Vec<RefreshResult>, Error> {
+        self.refresh_roots(true, opts, progress)
+    }
+
+    /// The app's Refresh: rescan only the folders Settings names (Source and
+    /// Library) and the RomForge folder's Games, not folders scanned once
+    /// with Scan folder.
+    pub fn refresh_settings(
+        &mut self,
+        opts: ScanOptions,
+        progress: impl FnMut(&Path, ScanProgress),
+    ) -> Result<Vec<RefreshResult>, Error> {
+        self.refresh_roots(false, opts, progress)
+    }
+
+    /// Whether Refresh has a folder to rescan (a Source or Library folder,
+    /// or the RomForge folder).
+    pub fn can_refresh(&self) -> Result<bool, Error> {
+        let s = settings::load(&self.conn)?;
+        Ok(s.source_dir.is_some() || s.library_dir.is_some() || self.home.is_some())
+    }
+
+    fn refresh_roots(
+        &mut self,
+        all: bool,
+        opts: ScanOptions,
         mut progress: impl FnMut(&Path, ScanProgress),
     ) -> Result<Vec<RefreshResult>, Error> {
-        let roots: Vec<(String, Option<i64>, Option<i64>)> = self
+        let known: Vec<(String, Option<i64>, Option<i64>)> = self
             .conn
             .prepare("SELECT path, system_id, dat_id FROM scan_roots ORDER BY length(path), path")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .collect::<Result<_, _>>()?;
+        let s = settings::load(&self.conn)?;
+        let wanted: Vec<String> = [
+            s.source_dir.clone(),
+            s.library_dir.clone(),
+            self.home.as_ref().map(home::Home::games),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect();
+        // Everything scanned before, or (Settings only) just those folders
+        // with the scope they were scanned with.
+        let mut roots: Vec<(String, Option<i64>, Option<i64>)> = known
+            .into_iter()
+            .filter(|r| all || wanted.contains(&r.0))
+            .collect();
         // The Source and Library folders (and the RomForge folder's Games)
         // are scanned even before their first scan, with no scope.
-        let mut roots = roots;
-        let s = settings::load(&self.conn)?;
-        let games = self.home.as_ref().map(home::Home::games);
-        for dir in [s.source_dir, s.library_dir, games].into_iter().flatten() {
-            let dir = dir.to_string_lossy().into_owned();
+        for dir in wanted {
             if !roots.iter().any(|r| r.0 == dir) {
                 roots.push((dir, None, None));
             }

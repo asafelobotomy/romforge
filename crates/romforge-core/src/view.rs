@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::report::{GAME_HAVE, HAD, IS_HAVE};
 use crate::{Error, fetch, systems};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RowStatus {
     /// Every data ROM matched by hash.
@@ -46,7 +46,7 @@ pub enum RowStatus {
 }
 
 /// Where a version sits under its game's original in [`listing`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
     /// Another region or revision of the game.
@@ -92,6 +92,17 @@ impl Category {
 }
 
 impl RowStatus {
+    /// Files nothing has matched to a game yet: unknown, a CRC32 alone
+    /// (a candidate), or a match on another platform or DAT. Unidentified
+    /// lists them (with patches paired with no game); every other status
+    /// is a game.
+    pub fn unmatched(self) -> bool {
+        matches!(
+            self,
+            RowStatus::Unknown | RowStatus::Candidate | RowStatus::WrongSystem
+        )
+    }
+
     /// Identified (by hash, by you, or by ScummVM's list): it can be
     /// played and imported.
     pub fn identified(self) -> bool {
@@ -109,7 +120,7 @@ fn game_id(system_id: Option<i64>, title: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct GameRow {
     /// `g:<system id>:<title>` for games (`g:-:<title>` from a DAT of no
     /// known system), `m:<system id>:<title>` for games you named,
@@ -155,6 +166,17 @@ pub struct GameRow {
     /// Its release year (a translation, hack or patch: its game's), from
     /// the metadata Enrich gathered.
     pub year: Option<i32>,
+    /// Pictures to show it by in the list's picture views: art kind
+    /// (`boxart`, `box3d`, `hero`, `logo`) -> file. A translation, hack,
+    /// patch or missing original borrows its game's.
+    pub pictures: BTreeMap<String, String>,
+    /// Its box's front, width / height in hundredths, by platform and
+    /// region ([`systems::box_aspect`]): the picture views draw its box art
+    /// so.
+    pub box_aspect: u16,
+    /// Not matched to a game yet ([`RowStatus::unmatched`], or no platform
+    /// found at all): listed under Unidentified, not with the games.
+    pub unmatched: bool,
     #[serde(skip)]
     pub(crate) system_id: Option<i64>,
     #[serde(skip)]
@@ -162,6 +184,62 @@ pub struct GameRow {
     /// A patch row's game, and whether it is a translation or a hack.
     #[serde(skip)]
     patch_of: Option<(String, Relation)>,
+}
+
+/// A fingerprint of everything [`listing`] shows: each table it reads
+/// (only the columns it uses), counted and summed through `fp()`, so the
+/// list is built again only when this changes (a rescan that finds nothing
+/// new, Enrich's bookkeeping, or an unrelated setting leave it alone). A
+/// few milliseconds for tens of thousands of files, against a second or
+/// more to build the list.
+pub fn fingerprint(conn: &Connection) -> Result<u64, Error> {
+    const PARTS: &[&str] = &[
+        "SELECT count(*), total(fp(file_id, path, member, size, sha1, status)) FROM files",
+        "SELECT count(*), total(fp(file_id, rom_id, via, stripped, out_of_scope, owns)) FROM matches",
+        "SELECT count(*), total(fp(sha1, size, system_id, title, base, relation, tag)) FROM manual_ids",
+        "SELECT count(*), total(fp(path, name, size, relation, system_id, title)) FROM patch_files",
+        "SELECT count(*), total(fp(folder_id, path, system_id, title, files, size)) FROM folder_games",
+        "SELECT count(*), total(fp(system_id, title, kind, path)) FROM art",
+        "SELECT count(*), total(fp(system_id, title, field, value)) FROM game_meta",
+        "SELECT count(*), total(fp(system_id, title, grp, priority, list)) FROM clone_groups",
+        "SELECT count(*), total(fp(dat_id, system_id, name)) FROM dats",
+        "SELECT count(*), total(fp(key, value)) FROM settings WHERE key = 'regions'",
+    ];
+    let mut text = String::new();
+    for q in PARTS {
+        let (n, sum): (i64, f64) = conn.query_row(q, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        text += &format!("{n}:{sum};");
+    }
+    // FNV-1a of the parts.
+    Ok(text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    }))
+}
+
+/// What a row keeps for the core alone (not sent to the app): its system
+/// id, files and patch's game, for [`LibraryView`] snapshots.
+pub(crate) type RowInner = (Option<i64>, Vec<i64>, Option<(String, Relation)>);
+
+impl LibraryView {
+    pub(crate) fn inner(&self) -> Vec<RowInner> {
+        self.rows
+            .iter()
+            .map(|r| (r.system_id, r.file_ids.clone(), r.patch_of.clone()))
+            .collect()
+    }
+
+    /// Put back what [`LibraryView::inner`] took; `false` when it doesn't fit.
+    pub(crate) fn restore(&mut self, inner: Vec<RowInner>) -> bool {
+        if inner.len() != self.rows.len() {
+            return false;
+        }
+        for (r, (s, f, p)) in self.rows.iter_mut().zip(inner) {
+            r.system_id = s;
+            r.file_ids = f;
+            r.patch_of = p;
+        }
+        true
+    }
 }
 
 impl GameRow {
@@ -226,7 +304,7 @@ impl Derived {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Platform {
     /// `None` for files no system could be found for.
     pub system: Option<String>,
@@ -237,7 +315,7 @@ pub struct Platform {
     pub games: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct LibraryView {
     pub platforms: Vec<Platform>,
     pub rows: Vec<GameRow>,
@@ -410,6 +488,9 @@ fn bare_row(id: String, system_id: Option<i64>, title: &str, status: RowStatus) 
         label: None,
         category: None,
         year: None,
+        pictures: BTreeMap::new(),
+        box_aspect: 72,
+        unmatched: false,
         base_id: None,
         system_id,
         file_ids: Vec::new(),
@@ -625,6 +706,9 @@ fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
             label: None,
             category: None,
             year: None,
+            pictures: BTreeMap::new(),
+            box_aspect: 72,
+            unmatched: false,
             base_id: None,
             system_id,
             file_ids: Vec::new(),
@@ -718,6 +802,9 @@ fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
                 label: None,
                 category: None,
                 year: None,
+                pictures: BTreeMap::new(),
+                box_aspect: 72,
+                unmatched: false,
                 base_id: None,
                 system_id,
                 file_ids: Vec::new(),
@@ -777,14 +864,21 @@ fn finish(conn: &Connection, mut rows: Vec<GameRow>, listing: bool) -> Result<Li
     rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
     group_versions(conn, &mut rows, listing)?;
     release_years(conn, &mut rows)?;
+    pictures(conn, &mut rows)?;
     if listing {
         // Originals added for missing games go in their place.
         rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
     }
-    // Games, not versions.
+    // Games, not versions; whatever isn't matched yet counts under
+    // Unidentified whatever its platform.
+    for r in &mut rows {
+        r.unmatched = r.status.unmatched() || r.system_id.is_none();
+    }
     let mut counts: BTreeMap<Option<i64>, usize> = BTreeMap::new();
     for r in rows.iter().filter(|r| r.main) {
-        *counts.entry(r.system_id).or_default() += 1;
+        *counts
+            .entry(if r.unmatched { None } else { r.system_id })
+            .or_default() += 1;
     }
     let mut platforms: Vec<Platform> = counts
         .into_iter()
@@ -1078,6 +1172,56 @@ fn group_versions(conn: &Connection, rows: &mut Vec<GameRow>, listing: bool) -> 
         for (r, id) in rows.iter_mut().zip(ids) {
             r.base_id = id;
         }
+    }
+    Ok(())
+}
+
+/// The art kinds the list's picture views show.
+const LIST_PICTURES: [&str; 4] = ["boxart", "box3d", "hero", "logo"];
+
+/// Each row's pictures for the list: its own, else its game's.
+fn pictures(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> {
+    let mut by: HashMap<(i64, String), BTreeMap<String, String>> = HashMap::new();
+    for r in conn
+        .prepare("SELECT system_id, title, kind, path FROM art WHERE path IS NOT NULL")?
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?
+    {
+        let (s, t, k, p) = r?;
+        if LIST_PICTURES.contains(&k.as_str()) {
+            by.entry((s, t)).or_default().insert(k, p);
+        }
+    }
+    let bases: HashMap<(i64, String), String> = conn
+        .prepare("SELECT system_id, title, base FROM manual_ids WHERE base IS NOT NULL")?
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?), r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    for r in rows {
+        let Some(sid) = r.system_id else { continue };
+        if let Some(sys) = systems::by_id(sid) {
+            // A patch row's name says nothing of a region: its game's does.
+            let named = r.patch_of.as_ref().map_or(r.title.as_str(), |(t, _)| t.as_str());
+            let region = systems::BoxRegion::of(&crate::names::parse(named).region_codes);
+            r.box_aspect = (systems::box_aspect(sys, region) * 100.0).round() as u16;
+        }
+        let mut own = by.get(&(sid, r.title.clone())).cloned().unwrap_or_default();
+        let base = r
+            .patch_of
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .or_else(|| bases.get(&(sid, r.title.clone())).cloned());
+        if let Some(b) = base.and_then(|b| by.get(&(sid, b))) {
+            for (k, p) in b {
+                own.entry(k.clone()).or_insert_with(|| p.clone());
+            }
+        }
+        r.pictures = own;
     }
     Ok(())
 }

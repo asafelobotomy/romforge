@@ -106,6 +106,17 @@ enum Command {
     /// go to .romforge-trash next to them, for `cleanup undo`.
     #[command(subcommand)]
     Cleanup(CleanupCommand),
+    /// Turn identified disc images into CHD where they are, under their own
+    /// names (platforms whose emulators read CHD); the originals as the
+    /// cleanup setting says. Shows what it would do unless --apply
+    Convert {
+        /// Write it
+        #[arg(long)]
+        apply: bool,
+        /// Also list what is skipped and why
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Third-party game databases you download yourself (milestone 11):
     /// OpenVGDB and the LaunchBox Games Database. Free, but published
     /// without a licence, so romforge doesn't ship them; Enrich uses them to
@@ -157,6 +168,10 @@ enum Command {
         /// Keep the Source files (cleanup writes new copies into the Library)
         #[arg(long)]
         keep_originals: Option<bool>,
+        /// Replace originals: rename and repack each game where it is (the
+        /// original to the trash) instead of moving it
+        #[arg(long)]
+        in_place: Option<bool>,
         /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
         #[arg(long)]
         staging: Option<String>,
@@ -947,6 +962,40 @@ fn main() -> Result<()> {
                 bail!("{} games failed", r.failed.len());
             }
         }
+        Command::Convert { apply, verbose } => {
+            let plan = lib.convert_plan(None)?;
+            print_cleanup(&plan, verbose);
+            if !apply {
+                println!(
+                    "{} to convert, {} skipped; nothing changed (run with --apply)",
+                    plan.items.len(),
+                    plan.skipped.len()
+                );
+                return Ok(());
+            }
+            if plan.items.is_empty() {
+                println!("nothing to convert ({} skipped)", plan.skipped.len());
+                return Ok(());
+            }
+            let total = plan.items.len();
+            let r = lib.cleanup_apply(&plan, |n, title| {
+                eprintln!("[{}/{total}] {title}", n + 1);
+            })?;
+            for (t, e) in &r.failed {
+                eprintln!("error: {t}: {e}");
+            }
+            println!(
+                "batch #{}: converted {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
+                r.batch_id,
+                r.done,
+                r.trashed,
+                r.failed.len(),
+                r.batch_id
+            );
+            if !r.failed.is_empty() {
+                bail!("{} discs failed", r.failed.len());
+            }
+        }
         Command::Cleanup(CleanupCommand::Plan { verbose }) => {
             let plan = lib.cleanup_plan(None)?;
             print_cleanup(&plan, verbose);
@@ -1204,6 +1253,7 @@ fn main() -> Result<()> {
             source,
             library,
             keep_originals,
+            in_place,
             staging,
             regions,
             steamgriddb_key,
@@ -1218,6 +1268,7 @@ fn main() -> Result<()> {
             let mut changed = source.is_some()
                 || library.is_some()
                 || keep_originals.is_some()
+                || in_place.is_some()
                 || staging.is_some()
                 || regions.is_some();
             for (given, slot) in [
@@ -1244,6 +1295,9 @@ fn main() -> Result<()> {
             if let Some(k) = keep_originals {
                 s.keep_originals = k;
             }
+            if let Some(k) = in_place {
+                s.in_place = k;
+            }
             if let Some(p) = staging {
                 s.staging_dir = set(p);
             }
@@ -1261,6 +1315,14 @@ fn main() -> Result<()> {
             println!("source          {}", shown(&s.source_dir));
             println!("library         {}", shown(&s.library_dir));
             println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
+            println!(
+                "in place        {}",
+                if s.in_place {
+                    "yes (replace originals)"
+                } else {
+                    "no"
+                }
+            );
             println!("staging         {}", s.staging().display());
             println!("regions         {}", s.region_order().join(", "));
             let key = |v: &Option<String>| v.as_deref().map_or("-".to_owned(), settings::mask);
