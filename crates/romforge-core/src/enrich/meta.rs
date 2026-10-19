@@ -96,8 +96,6 @@ pub(super) fn libretro_meta(
     Ok(())
 }
 
-/// Whether some game's metadata was never looked up (it may be newly
-/// scanned).
 /// Fields found per game: (field, value).
 type FoundMeta<'g> = HashMap<&'g String, Vec<(String, String)>>;
 
@@ -171,9 +169,11 @@ pub(super) fn dat_metadata<'g>(
             let Some(rec) = rec else { continue };
             let f = found.entry(*game).or_default();
             for (k, v) in &rec.fields {
-                let k = if k == "users" { "maxusers" } else { k.as_str() };
-                if FIELDS.contains(&k) || (overview && k == "description") {
-                    f.push((k.to_owned(), v.clone()));
+                // Players come as `users`, as in libretro's `maxusers` files,
+                // and are kept so (the field the app and Cleanup read).
+                let file = if k == "users" { "maxusers" } else { k.as_str() };
+                if FIELDS.contains(&file) || (overview && k == "description") {
+                    f.push((k.clone(), v.clone()));
                 }
             }
             if let Some(t) = rec.title.as_deref().filter(|t| *t != game.as_str()) {
@@ -184,6 +184,8 @@ pub(super) fn dat_metadata<'g>(
     Ok(found)
 }
 
+/// Whether some game's metadata was never looked up (it may be newly
+/// scanned).
 pub(super) fn games_without_meta(
     conn: &Connection,
     system_id: i64,
@@ -202,7 +204,7 @@ pub(super) fn games_without_meta(
 /// The name libretro files a game's thumbnails under: its own name for
 /// it, an arcade set's DAT description ("Street Fighter II - The World
 /// Warrior ..."), else the DAT name.
-pub(super) fn libretro_game(
+pub(crate) fn libretro_game(
     conn: &Connection,
     system: &systems::System,
     system_id: i64,

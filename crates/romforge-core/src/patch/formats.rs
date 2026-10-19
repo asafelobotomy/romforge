@@ -201,13 +201,13 @@ pub(super) fn apply_ups(patch: &[u8], source: &[u8]) -> Option<Vec<u8>> {
             let x = *patch.get(at)?;
             at += 1;
             if x == 0 {
-                pos += 1;
+                pos = pos.checked_add(1)?;
                 break;
             }
             if let Some(b) = out.get_mut(pos) {
                 *b ^= x;
             }
-            pos += 1;
+            pos = pos.checked_add(1)?;
         }
     }
     Some(out)

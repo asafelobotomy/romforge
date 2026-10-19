@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use romforge_core::enrich::{ArtKind, EnrichOptions, default_cache_dir};
 use romforge_core::search::{Chosen, Found, Preview, QueueItem, Scraper};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, blocking, read, read_net, with};
 use crate::images::image_url;
 
 #[tauri::command]
@@ -26,7 +26,7 @@ pub async fn search_find(
     text: Option<String>,
     system: Option<String>,
 ) -> Res<Vec<Found>> {
-    read(&db, move |lib| {
+    read_net(&db, move |lib| {
         lib.search_find(
             &row_id,
             scraper,
@@ -41,7 +41,7 @@ pub async fn search_find(
 /// The preview with its picture as a data: URL (in `image`).
 #[tauri::command]
 pub async fn search_preview(db: tauri::State<'_, Db>, row_id: String, found: Found) -> Res<Preview> {
-    let mut p = read(&db, move |lib| {
+    let mut p = read_net(&db, move |lib| {
         lib.search_preview(
             &row_id,
             &found,
@@ -50,8 +50,12 @@ pub async fn search_preview(db: tauri::State<'_, Db>, row_id: String, found: Fou
         )
     })
     .await?;
-    p.image = p.image.and_then(|path| image_url(&path)).map(PathBuf::from);
-    Ok(p)
+    // Reading and encoding the picture is blocking work too.
+    blocking(move || {
+        p.image = p.image.and_then(|path| image_url(&path)).map(PathBuf::from);
+        Ok(p)
+    })
+    .await
 }
 
 /// Take a result, then fetch `art` kinds (and Wikidata) for that game;

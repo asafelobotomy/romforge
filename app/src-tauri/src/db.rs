@@ -30,6 +30,17 @@ pub async fn on<T: Send + 'static>(
     .map_err(|e| e.to_string())?
 }
 
+/// Run `f` (file or network work that needs no connection) on a blocking
+/// thread.
+pub async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 /// For commands that change the library.
 pub async fn with<T: Send + 'static>(
     db: &tauri::State<'_, Db>,
@@ -44,6 +55,21 @@ pub async fn read<T: Send + 'static>(
     f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
 ) -> Res<T> {
     on(&db.read, f).await
+}
+
+/// For reads that wait on the network (searches, previews, art choices,
+/// platform icons): their own short-lived connection, so `read` stays
+/// free for every other command meanwhile. It opens where `read` is (the
+/// RomForge folder's database, else [`db_path`]), looked up under `read`'s
+/// lock so a move of the RomForge folder is never half seen.
+pub async fn read_net<T: Send + 'static>(
+    db: &tauri::State<'_, Db>,
+    f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    let at = read(db, |lib| Ok(lib.home().map(Home::db)))
+        .await?
+        .unwrap_or_else(db_path);
+    blocking(move || f(&mut Library::open(&at)?)).await
 }
 
 /// `$ROMFORGE_DB`, else the RomForge folder's database, else the old

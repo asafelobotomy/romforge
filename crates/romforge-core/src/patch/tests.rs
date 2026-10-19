@@ -194,3 +194,43 @@ fn ups_xor() {
     footer(&mut p, &source, &target);
     assert_eq!(apply(&p, &source).unwrap(), target);
 }
+
+/// Numbers in a patch are untrusted: one too big for 64 bits is refused,
+/// never wrapped or a panic (in debug builds).
+#[test]
+fn hostile_numbers_are_refused() {
+    let mut max = Vec::new();
+    num(u64::MAX, &mut max);
+    assert_eq!(number(&max, &mut 0), Some(u64::MAX));
+    let too_big = [2, 2, 2, 2, 2, 2, 2, 2, 2, 0x82];
+    assert_eq!(number(&too_big, &mut 0), None);
+    let mut longer = vec![0x7f; 12];
+    longer.push(0x80);
+    assert_eq!(number(&longer, &mut 0), None);
+    // A UPS whose first skip lands at the very end of memory.
+    let mut p = b"UPS1".to_vec();
+    num(1, &mut p);
+    num(1, &mut p);
+    num(usize::MAX as u64, &mut p);
+    p.extend_from_slice(&[1, 0]);
+    p.extend_from_slice(&[0u8; 12]);
+    assert_eq!(apply_ups(&p, &[0]), None);
+}
+
+/// `apply_file` never replaces `out`, and leaves nothing there when the
+/// patch doesn't fit.
+#[test]
+fn apply_file_never_overwrites() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, out) = (dir.path().join("a.gb"), dir.path().join("b.gb"));
+    std::fs::write(&source, vec![0u8; 32]).unwrap();
+    std::fs::write(&out, b"mine").unwrap();
+    assert!(apply_file(&ips(0, b"HI"), &source, &out).is_err());
+    assert_eq!(std::fs::read(&out).unwrap(), b"mine");
+    std::fs::remove_file(&out).unwrap();
+    let other = bps(&[1u8; 32], b"x");
+    assert!(apply_file(&other, &source, &out).is_err());
+    assert!(!out.exists(), "nothing left behind");
+    apply_file(&ips(0, b"HI"), &source, &out).unwrap();
+    assert_eq!(&std::fs::read(&out).unwrap()[..2], b"HI");
+}

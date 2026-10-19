@@ -88,14 +88,17 @@ pub fn art_choices(
             |r| r.get(0),
         )
         .optional()?
-        .flatten();
+        .flatten()
+        .map(|u: String| crate::artsources::without_credentials(&u));
     let dir = opts.cache_dir.join(CHOICES_DIR);
     let mut halted = std::collections::HashSet::new();
     let mut seen = std::collections::HashSet::new();
-    for (source, f) in found {
+    for (source, mut f) in found {
         if out.choices.len() >= limit {
             break;
         }
+        // Credentials never reach the app; they are put back to download.
+        f.url = crate::artsources::without_credentials(&f.url);
         if !seen.insert(f.url.clone()) {
             continue;
         }
@@ -111,7 +114,10 @@ pub fn art_choices(
             .find(|p| p.exists());
         let preview = match cached {
             Some(p) => p,
-            None => match get_halting(show, &mut halted) {
+            None => match get_image_halting(
+                &crate::artsources::download_url(&source, show, &keys, &opts.sources),
+                &mut halted,
+            ) {
                 Ok(Some(data)) => match image_ext(&data) {
                     Some(ext) => {
                         let p = dir.join(format!("{stem}.{ext}"));
@@ -152,9 +158,15 @@ pub fn choose_art(
     source: &str,
 ) -> Result<(), Error> {
     let system = systems::by_id(system_id).ok_or_else(|| Error::UnknownSystem(system_id.to_string()))?;
-    let data = fetch::get(url)?;
+    let keys = crate::settings::load(conn)?.keys;
+    let get = crate::artsources::download_url(source, url, &keys, &opts.sources);
+    let data =
+        fetch::get_image(&get)?.ok_or_else(|| Error::Http(format!("{}: HTTP 404", fetch::short(url))))?;
     if image_ext(&data).is_none() {
-        return Err(Error::Http(format!("{url}: not an image romforge shows")));
+        return Err(Error::Http(format!(
+            "{}: not an image romforge shows",
+            fetch::short(url)
+        )));
     }
     let old: Option<String> = conn
         .query_row(

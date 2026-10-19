@@ -66,8 +66,21 @@ impl Library {
 
         let scummvm_list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
         let arcade_sets = arcade_sets(&self.conn)?;
-        let tx = self.conn.transaction()?;
-        let root_str = root.to_string_lossy().into_owned();
+        // Paths are keys: one that isn't UTF-8 can't be stored as itself.
+        let root_str = root
+            .to_str()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{}: path is not valid UTF-8", root.display()),
+                )
+            })?
+            .to_owned();
+        // Immediate: this reads, then writes; a deferred transaction could
+        // fail on the write if another connection wrote in between.
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         // What is already known under the folder (from any scan made with the
         // same choice of files: `all_files` hashes members a plain scan
         // skips): files whose size and modification time haven't changed
@@ -108,6 +121,22 @@ impl Library {
             params![root_str, system_id, dat_id, opts.all_files],
             |r| r.get(0),
         )?;
+        // Folders scanned on their own inside this one, deepest first: a
+        // file belongs to the deepest scanned folder holding it, so each
+        // keeps its scope when the outer folder is rescanned.
+        let mut nested: Vec<(PathBuf, i64)> = tx
+            .prepare("SELECT path, root_id FROM scan_roots WHERE substr(path, 1, length(?1)) = ?1")?
+            .query_map([&prefix], |r| {
+                Ok((PathBuf::from(r.get::<_, String>(0)?), r.get(1)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        nested.sort_by_key(|(p, _)| std::cmp::Reverse(p.as_os_str().len()));
+        let owner = |p: &Path| {
+            nested
+                .iter()
+                .find(|(r, _)| p.starts_with(r))
+                .map_or(root_id, |(_, id)| *id)
+        };
         // Paths seen in this scan; rows of this folder for anything else are
         // files that went away. `cleared`: paths whose old rows were dropped
         // before the new ones went in (an archive may have lost members).
@@ -147,7 +176,7 @@ impl Library {
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
             let unchanged =
-                |path: &Path, stamp: scan::Stamp| known.get(path.to_string_lossy().as_ref()) == Some(&stamp);
+                |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
             scan::walk(&root, &skip, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
                     return;
@@ -163,7 +192,7 @@ impl Library {
                         } else {
                             member.clone()
                         };
-                        if patch::is_patch_name(&name) {
+                        if patch::is_patch_name(&name) && path.to_str().is_some() {
                             patch_files.insert(path.clone());
                         }
                         if !layout::is_extra(&member) && !layout::is_extra(&name) {
@@ -193,8 +222,10 @@ impl Library {
                     Visit::Unchanged(path) => {
                         // Kept, but scanned as part of this folder now (and
                         // so with its scope), as a re-hashed file would be.
-                        let p = path.to_string_lossy().into_owned();
-                        if let Err(e) = adopt.execute(params![root_id, p]) {
+                        let Some(p) = path.to_str().map(str::to_owned) else {
+                            return;
+                        };
+                        if let Err(e) = adopt.execute(params![owner(&path), p]) {
                             result = Err(e);
                         }
                         seen.insert(p);
@@ -202,7 +233,15 @@ impl Library {
                         return;
                     }
                 };
-                let path_str = entry.path.to_string_lossy().into_owned();
+                let Some(path_str) = entry.path.to_str().map(str::to_owned) else {
+                    // Not stored under a mangled name: reported instead.
+                    report.errors.push((
+                        entry.path,
+                        entry.member,
+                        "path is not valid UTF-8; not stored".into(),
+                    ));
+                    return;
+                };
                 seen.insert(path_str.clone());
                 // A plain file that couldn't be read keeps its old row (a
                 // flaky disk shouldn't forget it); it is read again next time.
@@ -234,8 +273,8 @@ impl Library {
                         result = upsert
                             .query_row(
                                 params![
-                                    root_id,
-                                    entry.path.to_string_lossy(),
+                                    owner(&entry.path),
+                                    path_str,
                                     entry.member,
                                     h.raw.size,
                                     h.raw.crc32,
@@ -293,22 +332,25 @@ impl Library {
         // A path with an error (an unreadable file, an archive member that
         // failed) isn't stamped, so the next scan reads it again instead of
         // calling it unchanged.
-        for (path, _, _) in &report.errors {
-            tx.execute(
-                "UPDATE files SET mtime = NULL WHERE path = ?1",
-                [path.to_string_lossy()],
-            )?;
+        for path in report.errors.iter().filter_map(|(p, _, _)| p.to_str()) {
+            tx.execute("UPDATE files SET mtime = NULL WHERE path = ?1", [path])?;
         }
-        // Rows of this folder for files that are gone (or now skipped).
-        let ours: Vec<String> = tx
-            .prepare("SELECT DISTINCT path FROM files WHERE root_id = ?1")?
-            .query_map([root_id], |r| r.get(0))?
-            .collect::<Result<_, _>>()?;
-        for path in ours.iter().filter(|p| !seen.contains(*p)) {
-            tx.execute(
-                "DELETE FROM files WHERE path = ?1 AND root_id = ?2",
-                params![path, root_id],
-            )?;
+        // Rows of this folder (and the folders inside it, walked too) for
+        // files that are gone (or now skipped).
+        let ids: std::collections::BTreeSet<i64> = std::iter::once(root_id)
+            .chain(nested.iter().map(|(_, id)| *id))
+            .collect();
+        for id in ids {
+            let ours: Vec<String> = tx
+                .prepare("SELECT DISTINCT path FROM files WHERE root_id = ?1")?
+                .query_map([id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            for path in ours.iter().filter(|p| !seen.contains(*p)) {
+                tx.execute(
+                    "DELETE FROM files WHERE path = ?1 AND root_id = ?2",
+                    params![path, id],
+                )?;
+            }
         }
         identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
         patcher::record(&tx, root_id, &patch_files, &seen)?;

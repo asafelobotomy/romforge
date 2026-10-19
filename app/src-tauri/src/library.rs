@@ -4,7 +4,7 @@ use romforge_core::launch::Env;
 use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{DatGame, Summary};
 
-use crate::db::{Db, Res, read};
+use crate::db::{Db, Res, blocking, read};
 
 #[tauri::command]
 pub async fn summary(db: tauri::State<'_, Db>) -> Res<Summary> {
@@ -65,6 +65,9 @@ pub async fn game_detail(db: tauri::State<'_, Db>, id: String) -> Res<GameDetail
 /// Start one library row (exactly its files).
 pub async fn launch(db: tauri::State<'_, Db>, row_id: String) -> Res<String> {
     let spec = read(&db, move |lib| lib.launch_row(&Env::detect(), &row_id, None)).await?;
-    romforge_core::launch::spawn(&spec).map_err(|e| e.to_string())?;
-    Ok(format!("{} started with {}", spec.game, spec.emulator))
+    blocking(move || {
+        romforge_core::launch::spawn(&spec)?;
+        Ok(format!("{} started with {}", spec.game, spec.emulator))
+    })
+    .await
 }

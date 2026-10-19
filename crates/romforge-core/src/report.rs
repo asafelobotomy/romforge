@@ -69,8 +69,6 @@ pub(crate) const IS_HAVE: &str = "
     (CASE WHEN gh.data_total > 0 THEN gh.data_have = gh.data_total
           ELSE gh.sheet_total > 0 AND gh.sheet_have = gh.sheet_total END)";
 
-/// The matches that explain a file's status: in-scope hits, or for
-/// `wrong_system` the out-of-scope SHA1/MD5 hits.
 /// The matches that say what a file is, by its status: SHA1/MD5 hits in
 /// scope for a matched or duplicate file, its CRC32 hits for a candidate,
 /// out-of-scope SHA1/MD5 hits for `wrong_system`, the sheet match for a

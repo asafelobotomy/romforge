@@ -24,13 +24,40 @@ pub fn get(url: &str) -> Result<Vec<u8>, Error> {
 }
 
 /// An HTTP request beyond a plain GET (API keys in headers, POSTed queries).
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Request<'a> {
     pub url: &'a str,
     pub headers: Vec<(&'a str, String)>,
     /// `Some` makes it a POST with this body.
     pub body: Option<String>,
+    /// The most the body may be; `None`: a DAT pack's limit.
+    pub max_body: Option<u64>,
+    /// A deadline for the whole request, body included; `None`: the
+    /// agent's (a slow link may take hours over a DAT pack).
+    pub timeout: Option<Duration>,
 }
+
+/// Header values and the query (which may hold keys) never show.
+impl std::fmt::Debug for Request<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: Vec<(&str, &str)> = self.headers.iter().map(|(k, _)| (*k, "<redacted>")).collect();
+        f.debug_struct("Request")
+            .field("url", &short(self.url))
+            .field("headers", &headers)
+            .field(
+                "body",
+                &self.body.as_ref().map(|b| format!("<{} bytes>", b.len())),
+            )
+            .field("max_body", &self.max_body)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
+}
+
+/// The most a picture may be: no cover or fanart is near this.
+pub const MAX_IMAGE: u64 = 32 << 20;
+/// A picture's deadline, body included.
+pub const IMAGE_TIMEOUT: Duration = Duration::from_secs(90);
 
 impl<'a> Request<'a> {
     pub fn get(url: &'a str) -> Self {
@@ -39,16 +66,37 @@ impl<'a> Request<'a> {
             ..Request::default()
         }
     }
+
+    /// A GET for a picture: [`MAX_IMAGE`] and [`IMAGE_TIMEOUT`].
+    pub fn image(url: &'a str) -> Self {
+        Request {
+            max_body: Some(MAX_IMAGE),
+            timeout: Some(IMAGE_TIMEOUT),
+            ..Request::get(url)
+        }
+    }
+}
+
+/// [`get_optional`] for a picture ([`Request::image`]'s limits).
+pub fn get_image(url: &str) -> Result<Option<Vec<u8>>, Error> {
+    request(&Request::image(url))
 }
 
 /// The URL without its query (which may be long, or hold credentials).
-fn short(url: &str) -> &str {
+pub(crate) fn short(url: &str) -> &str {
     url.split('?').next().unwrap_or(url)
+}
+
+/// The host (and port) of a URL: "a.org:8080" of "https://a.org:8080/x?y".
+pub(crate) fn host_of(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
 /// Send a request; `Ok(None)` for 404. A busy server (429, 503) is asked
 /// again after the wait it gives in Retry-After, twice at most; one that
 /// asks for more than 30 s is not, and the error says how long it wants.
+/// A used-up quota (ScreenScraper's 430 and 431) is not asked again.
 pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
     let Some(mut response) = respond(req)? else {
         return Ok(None);
@@ -56,18 +104,20 @@ pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
     response
         .body_mut()
         .with_config()
-        .limit(MAX_BODY)
+        .limit(req.max_body.unwrap_or(MAX_BODY))
         .read_to_vec()
         .map(Some)
         .map_err(|e| Error::Http(format!("{}: {e}", short(req.url))))
 }
 
 /// GET `url` straight into the file `to` (written as `<to>.part`, renamed
-/// when complete), for downloads too big to hold in memory. `progress`
-/// gets (bytes so far, total if the server said). Returns the size.
+/// when complete), for downloads too big to hold in memory, `max` bytes at
+/// most. `progress` gets (bytes so far, total if the server said). Returns
+/// the size.
 pub fn download_to(
     url: &str,
     to: &std::path::Path,
+    max: u64,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<u64, Error> {
     let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
@@ -76,6 +126,9 @@ pub fn download_to(
         .headers()
         .get("content-length")
         .and_then(|v| v.to_str().ok()?.parse().ok());
+    if let Some(t) = total.filter(|t| *t > max) {
+        return Err(err(format!("{t} bytes, more than the {max} allowed")));
+    }
     let part = to.with_extension(format!(
         "{}.part",
         to.extension()
@@ -99,8 +152,13 @@ pub fn download_to(
                 return Err(err(e.to_string()));
             }
         };
-        std::io::Write::write_all(&mut out, &buf[..n])?;
         done += n as u64;
+        if done > max {
+            drop(out);
+            let _ = std::fs::remove_file(&part);
+            return Err(err(format!("more than the {max} bytes allowed")));
+        }
+        std::io::Write::write_all(&mut out, &buf[..n])?;
         progress(done, total);
     }
     std::io::Write::flush(&mut out)?;
@@ -150,6 +208,9 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
         let result = match &req.body {
             Some(body) => {
                 let mut r = agent.post(url);
+                if req.timeout.is_some() {
+                    r = r.config().timeout_global(req.timeout).build();
+                }
                 for (k, v) in &req.headers {
                     r = r.header(*k, v);
                 }
@@ -157,6 +218,9 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
             }
             None => {
                 let mut r = agent.get(url);
+                if req.timeout.is_some() {
+                    r = r.config().timeout_global(req.timeout).build();
+                }
                 for (k, v) in &req.headers {
                     r = r.header(*k, v);
                 }
@@ -186,6 +250,13 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
             std::thread::sleep(Duration::from_secs(wait));
             continue;
         }
+        // ScreenScraper's daily quota (430) and its limit on unknown ROMs
+        // (431): nothing more today.
+        if status == 430 || status == 431 {
+            return Err(err(format!(
+                "HTTP {status}: the server is rate limiting; its quota for today is used up"
+            )));
+        }
         if status == 404 {
             return Ok(None);
         }
@@ -207,16 +278,45 @@ pub fn encode_segment(s: &str) -> String {
     percent_encode(s)
 }
 
-fn wait_for_host(url: &str) {
-    static LAST: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
-    let host = url.split('/').nth(2).unwrap_or(url).to_owned();
-    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
-    let last = last.get_or_insert_with(HashMap::new);
-    if let Some(t) = last.get(&host) {
-        let (since, delay) = (t.elapsed(), delay_for(&host));
-        if since < delay {
-            std::thread::sleep(delay - since);
+/// Undo percent-encoding ("Pok%C3%A9mon" -> "Pokémon"); a `%` not followed
+/// by two hex digits stays as it is.
+pub fn decode_segment(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16);
+        if b[i] == b'%'
+            && let (Some(h), Some(l)) = (
+                b.get(i + 1).and_then(|c| hex(*c)),
+                b.get(i + 2).and_then(|c| hex(*c)),
+            )
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
         }
     }
-    last.insert(host, Instant::now());
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Wait until `url`'s host may be asked again. The slot is taken under the
+/// lock and waited for outside it, so one slow host never holds up others.
+pub(super) fn wait_for_host(url: &str) {
+    static NEXT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+    let host = host_of(url).to_owned();
+    let at = {
+        let mut next = NEXT.lock().unwrap_or_else(|e| e.into_inner());
+        let next = next.get_or_insert_with(HashMap::new);
+        let now = Instant::now();
+        let at = next.get(&host).map_or(now, |t| (*t).max(now));
+        next.insert(host.clone(), at + delay_for(&host));
+        at
+    };
+    let now = Instant::now();
+    if at > now {
+        std::thread::sleep(at - now);
+    }
 }

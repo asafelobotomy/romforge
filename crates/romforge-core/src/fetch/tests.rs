@@ -126,3 +126,89 @@ fn plain_dat_is_passed_through() {
         (None, &b"<datafile/>"[..])
     );
 }
+
+/// Answers every request with `head` (status line and headers) and `body`;
+/// counts the requests.
+fn answer(head: &'static str, body: Vec<u8>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = hits.clone();
+    std::thread::spawn(move || {
+        for s in listener.incoming() {
+            let Ok(mut s) = s else { continue };
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut line = String::new();
+            while r.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = write!(
+                s,
+                "{head}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = s.write_all(&body);
+        }
+    });
+    (base, hits)
+}
+
+#[test]
+fn a_used_up_quota_halts_at_once() {
+    for head in ["HTTP/1.1 430 Quota", "HTTP/1.1 431 Too Many Unknown"] {
+        let (base, hits) = answer(head, Vec::new());
+        let e = get(&format!("{base}/api2/jeuInfos.php?ssid=me&sspassword=secret")).unwrap_err();
+        assert!(is_rate_limited(&e), "{e}");
+        assert!(!e.to_string().contains("secret"), "{e}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1, "asked once");
+    }
+}
+
+#[test]
+fn bodies_and_downloads_have_a_cap() {
+    let (base, _) = answer("HTTP/1.1 200 OK", vec![7u8; 100]);
+    let url = format!("{base}/big.png");
+    let small = Request {
+        max_body: Some(10),
+        ..Request::get(&url)
+    };
+    assert!(request(&small).is_err(), "over the body limit");
+    assert_eq!(request(&Request::image(&url)).unwrap().unwrap().len(), 100);
+
+    let dir = tempfile::tempdir().unwrap();
+    let to = dir.path().join("x.zip");
+    let e = download_to(&url, &to, 10, |_, _| {}).unwrap_err();
+    assert!(e.to_string().contains("more than the 10"), "{e}");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nothing left");
+    assert_eq!(download_to(&url, &to, 1000, |_, _| {}).unwrap(), 100);
+}
+
+#[test]
+fn a_waiting_host_never_holds_up_another() {
+    // Two requests to one host a second apart (no request is made).
+    let first = std::thread::spawn(|| {
+        wait_for_host("https://slow.example.invalid/a");
+        wait_for_host("https://slow.example.invalid/b");
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    let started = Instant::now();
+    wait_for_host("https://other.example.invalid/");
+    assert!(started.elapsed() < Duration::from_millis(500));
+    first.join().unwrap();
+}
+
+#[test]
+fn requests_never_print_their_secrets() {
+    let r = Request {
+        headers: vec![("Authorization", "Bearer s3cret".into())],
+        body: Some("client_secret=s3cret".into()),
+        ..Request::get("https://x.example/token?client_secret=s3cret")
+    };
+    let shown = format!("{r:?}");
+    assert!(!shown.contains("s3cret"), "{shown}");
+    assert!(shown.contains("Authorization"), "{shown}");
+    assert_eq!(host_of("https://a.org:8080/x?y"), "a.org:8080");
+    assert_eq!(host_of("http://a.org?q=1"), "a.org");
+}

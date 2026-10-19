@@ -2,7 +2,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{default_text, similarity, wikidata_candidates};
+use super::{candidates_for, default_text, similarity};
 use crate::Error;
 use crate::view;
 
@@ -45,17 +45,19 @@ pub struct Found {
     pub derived: Option<view::Derived>,
 }
 
-/// Search one scraper for a row. `text`: what the owner typed (the row's
-/// title or file name when empty); `system`: limit to this platform key.
+/// Search one scraper for a row of `v` (the library's list). `text`: what
+/// the owner typed (the row's title or file name when empty); `system`:
+/// limit to this platform key.
 pub fn find(
     conn: &Connection,
+    v: &view::LibraryView,
     row_id: &str,
     scraper: Scraper,
     text: Option<&str>,
     system: Option<&str>,
     api: &str,
 ) -> Result<Vec<Found>, Error> {
-    let d = view::detail(conn, row_id)?;
+    let d = view::detail_in(conn, v, row_id)?;
     match scraper {
         Scraper::Dat => {
             let mut year = conn.prepare_cached(
@@ -99,7 +101,7 @@ pub fn find(
             let system = system.map(str::to_owned).or(d.row.system.clone());
             let mut out = parse_entity_search(&body, &text, system.as_deref())?;
             // The candidates Enrich found equally good come too.
-            for c in wikidata_candidates(conn, row_id)? {
+            for c in candidates_for(conn, &d)? {
                 if !out.iter().any(|f| f.id == c.qid) {
                     out.push(Found {
                         scraper,
@@ -125,18 +127,11 @@ pub fn find(
     }
 }
 
-/// A DAT name as Wikidata would label it: no tags ("Super Mario World
-/// (USA) (Rev 1)" -> "Super Mario World"), and No-Intro's " - " back to the
-/// colon it stands for.
+/// A DAT name as Wikidata would label it: [`view::search_title`] (no tags,
+/// "Legend of Zelda, The" as "The Legend of Zelda"), and No-Intro's " - "
+/// back to the colon it stands for.
 pub(super) fn strip_tags(title: &str) -> String {
-    let cut = [title.find(" ("), title.find(" [")].into_iter().flatten().min();
-    let t = &title[..cut.unwrap_or(title.len())];
-    // "Legend of Zelda, The - …" -> "The Legend of Zelda - …"
-    let t = match t.split_once(", The") {
-        Some((a, b)) => format!("The {a}{b}"),
-        None => t.to_owned(),
-    };
-    t.replacen(" - ", ": ", 1)
+    view::search_title(title).replacen(" - ", ": ", 1)
 }
 
 /// The answer of `wbsearchentities`.

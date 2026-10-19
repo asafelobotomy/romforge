@@ -7,6 +7,27 @@ use crate::{
     identify, patcher, report, settings,
 };
 
+/// The settings key marking that DATs changed in a batch and the library
+/// still has to be identified again (kept in the database, so a failed
+/// batch or a crash doesn't leave stale matches).
+const NEEDS_IDENTIFY: &str = "needs_identify";
+
+/// Record, in `conn`'s current transaction, that identify must run again.
+pub(super) fn mark_needs_identify(conn: &rusqlite::Connection) -> Result<(), Error> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [NEEDS_IDENTIFY],
+    )?;
+    Ok(())
+}
+
+fn needs_identify(conn: &rusqlite::Connection) -> Result<bool, Error> {
+    Ok(conn
+        .prepare("SELECT 1 FROM settings WHERE key = ?1")?
+        .exists([NEEDS_IDENTIFY])?)
+}
+
 impl Library {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
@@ -15,14 +36,20 @@ impl Library {
         if let Some(h) = &home {
             home::heal(&mut conn, h.root())?;
         }
-        Ok(Self {
+        let mut lib = Self {
             conn,
             home,
             path: Some(std::path::absolute(path)?),
             batch_depth: 0,
             batch_dirty: false,
             view_cache: Default::default(),
-        })
+        };
+        // A batch of DAT imports that never got to identify (it failed,
+        // or the program stopped): do it now.
+        if needs_identify(&lib.conn)? {
+            lib.identify()?;
+        }
+        Ok(lib)
     }
 
     pub fn open_in_memory() -> Result<Self, Error> {
@@ -48,7 +75,8 @@ impl Library {
         if self.batch_depth == 0 {
             // A TOSEC pack is shared within one batch only.
             fetch::forget_tosec_pack();
-            if std::mem::take(&mut self.batch_dirty) {
+            // The marker stays in the database until identify succeeds.
+            if std::mem::take(&mut self.batch_dirty) || needs_identify(&self.conn)? {
                 self.identify()?;
             }
         }
@@ -57,9 +85,12 @@ impl Library {
 
     /// Recompute all matches, e.g. after removing a DAT.
     pub fn identify(&mut self) -> Result<(), Error> {
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         identify::identify_all(&tx)?;
         patcher::refresh(&tx)?;
+        tx.execute("DELETE FROM settings WHERE key = ?1", [NEEDS_IDENTIFY])?;
         tx.commit()?;
         Ok(())
     }

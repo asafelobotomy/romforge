@@ -96,3 +96,38 @@ fn percent_decode(s: &str) -> String {
     }
     String::from_utf8_lossy(&out).into_owned()
 }
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// A few worker threads for `art://` requests: a grid asks for hundreds
+/// of thumbnails at once, and each may decode a big picture, so they wait
+/// their turn instead of each getting a thread.
+#[derive(Clone)]
+pub struct ArtPool(std::sync::mpsc::Sender<Job>);
+
+impl ArtPool {
+    pub fn new() -> Self {
+        let n = std::thread::available_parallelism().map_or(2, |n| n.get().clamp(2, 8));
+        let (tx, rx) = std::sync::mpsc::channel::<Job>();
+        let rx = Arc::new(std::sync::Mutex::new(rx));
+        for _ in 0..n {
+            let rx = rx.clone();
+            std::thread::spawn(move || {
+                loop {
+                    // The lock is held only to take the next job.
+                    let job = rx.lock().unwrap_or_else(|e| e.into_inner()).recv();
+                    match job {
+                        Ok(job) => job(),
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+        Self(tx)
+    }
+
+    pub fn run(&self, job: impl FnOnce() + Send + 'static) {
+        // The workers live as long as the app, so this can't fail.
+        let _ = self.0.send(Box::new(job));
+    }
+}

@@ -44,9 +44,46 @@ pub(super) fn pictures(
     Ok(out)
 }
 
+/// How long a picture that failed to download is left alone: one Commons
+/// doesn't have (or that isn't a picture romforge shows) for a month, one
+/// that failed otherwise (offline, a server error) for a day.
+const GONE_RETRY: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
+const FAILED_RETRY: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// The marker of a failed download: `<dir>/<qid>.failed`, written when it
+/// failed (its modification time) and holding how long to wait, in seconds.
+/// A file beside the pictures, like the platform icons' `.missing`, so the
+/// database needs no column for it.
+fn failed_marker(dir: &std::path::Path, qid: &str) -> std::path::PathBuf {
+    dir.join(format!("{qid}.failed"))
+}
+
+/// Whether `qid`'s picture failed to download too recently to ask again.
+fn backing_off(dir: &std::path::Path, qid: &str) -> bool {
+    let marker = failed_marker(dir, qid);
+    let Ok(meta) = std::fs::metadata(&marker) else {
+        return false;
+    };
+    let wait = std::fs::read_to_string(&marker)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .map_or(FAILED_RETRY, std::time::Duration::from_secs);
+    meta.modified()
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|since| since < wait)
+}
+
+fn mark_failed(dir: &std::path::Path, qid: &str, wait: std::time::Duration) {
+    // A marker that can't be written only costs asking again.
+    let _ = crate::atomic::write(&failed_marker(dir, qid), wait.as_secs().to_string().as_bytes());
+}
+
 /// Download the pictures not cached yet into `dir` (`<qid>.<ext>`), a
 /// small thumbnail each (Commons scales SVG logos to PNG). Returns how many
-/// it fetched; errors are listed, the rest goes on.
+/// it fetched; errors are listed, the rest goes on. One that failed is
+/// marked and left alone for a while (a month, or a day),
+/// unless the server asked to slow down.
 pub fn fetch_pictures(
     conn: &Connection,
     dir: &std::path::Path,
@@ -58,25 +95,35 @@ pub fn fetch_pictures(
         .collect::<Result<_, _>>()?;
     let mut n = 0;
     for (qid, url) in todo {
+        if backing_off(dir, &qid) {
+            continue;
+        }
         let sep = if url.contains('?') { '&' } else { '?' };
-        let body = match fetch::get(&format!("{url}{sep}width=240")) {
-            Ok(b) => b,
+        let body = match fetch::get_image(&format!("{url}{sep}width=240")) {
+            Ok(Some(b)) => b,
+            Ok(None) => {
+                errors.push(format!("picture of {qid}: not on Commons (HTTP 404)"));
+                mark_failed(dir, &qid, GONE_RETRY);
+                continue;
+            }
             Err(e) => {
                 let limited = fetch::is_rate_limited(&e);
                 errors.push(format!("picture of {qid}: {e}"));
                 if limited {
                     break;
                 }
+                mark_failed(dir, &qid, FAILED_RETRY);
                 continue;
             }
         };
         let Some(ext) = crate::enrich::image_ext(&body) else {
             errors.push(format!("picture of {qid}: not an image romforge shows"));
+            mark_failed(dir, &qid, GONE_RETRY);
             continue;
         };
-        std::fs::create_dir_all(dir)?;
         let path = dir.join(format!("{qid}.{ext}"));
-        std::fs::write(&path, &body)?;
+        crate::atomic::write(&path, &body)?;
+        let _ = std::fs::remove_file(failed_marker(dir, &qid));
         conn.execute(
             "UPDATE wikidata_pictures SET path = ?2 WHERE qid = ?1",
             params![qid, path.to_string_lossy()],

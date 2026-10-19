@@ -109,8 +109,7 @@ pub(crate) fn verified_parts(
     Ok(None)
 }
 
-/// The files of a game you named, under their own names.
-/// The files of a game you named: one per content (other copies of it in
+/// The files of a game you named, under their own names: one per content (other copies of it in
 /// Source are `copies`, the one in Source first), tracks in natural order
 /// ("Track 2" before "Track 10") as there is no DAT to give it.
 pub(crate) fn named_parts(

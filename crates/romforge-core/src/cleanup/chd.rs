@@ -23,11 +23,18 @@ pub(super) fn track_type(first_sector: &[u8]) -> &'static str {
 }
 
 /// Pregap frames per track from a cue sheet (INDEX 00 to INDEX 01 within a
-/// track's FILE), by track order.
-pub(super) fn cue_pregaps(cue: &str) -> Vec<u64> {
+/// track's FILE), by track order. `None` for an INDEX it can't read (a
+/// sheet is untrusted: a time too big is an error, never a wrap).
+pub(super) fn cue_pregaps(cue: &str) -> Option<Vec<u64>> {
     let msf = |s: &str| -> Option<u64> {
-        let v: Vec<u64> = s.split(':').filter_map(|x| x.parse().ok()).collect();
-        (v.len() == 3).then(|| (v[0] * 60 + v[1]) * 75 + v[2])
+        let v: Vec<u64> = s.split(':').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+        if v.len() != 3 {
+            return None;
+        }
+        v[0].checked_mul(60)?
+            .checked_add(v[1])?
+            .checked_mul(75)?
+            .checked_add(v[2])
     };
     let mut out: Vec<u64> = Vec::new();
     let mut idx0: Option<u64> = None;
@@ -38,16 +45,17 @@ pub(super) fn cue_pregaps(cue: &str) -> Vec<u64> {
                 out.push(0);
                 idx0 = None;
             }
-            ["INDEX", "00", t] => idx0 = msf(t),
+            ["INDEX", "00", t] => idx0 = Some(msf(t)?),
             ["INDEX", "01", t] => {
-                if let (Some(a), Some(b), Some(last)) = (idx0, msf(t), out.last_mut()) {
+                let b = msf(t)?;
+                if let (Some(a), Some(last)) = (idx0, out.last_mut()) {
                     *last = b.saturating_sub(a);
                 }
             }
             _ => {}
         }
     }
-    out
+    Some(out)
 }
 
 /// Whether [`Item::sheet`] was taken into the CHD.
@@ -83,7 +91,16 @@ pub(crate) fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool,
                 tracks.len()
             )));
         }
-        let pregaps = cue.map(|c| cue_pregaps(&c)).unwrap_or_default();
+        let pregaps = match cue.as_deref().map(cue_pregaps) {
+            None => Vec::new(),
+            Some(Some(p)) => p,
+            Some(None) => {
+                return Err(Error::Cleanup(format!(
+                    "{}: its cue sheet has an INDEX time romforge can't read",
+                    item.title
+                )));
+            }
+        };
         let mut w = ChdWriter::new(file, ChdWriteOptions::cd()).map_err(cerr)?;
         let mut meta = Vec::new();
         for (i, p) in tracks.iter().enumerate() {

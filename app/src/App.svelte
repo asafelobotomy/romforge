@@ -38,10 +38,13 @@
   let previewer = $state(null);
   let previewOpen = $state(false);
   // Settings may set or clear the Source, or change the icon theme: look
-  // again when it closes.
+  // again when it closes (at start, load() and readSettings() below do).
+  let settingsWasOpen = false;
   $effect(() => {
-    if (!settingsOpen) {
-      call("can_refresh").then((v) => (canRefresh = v ?? false));
+    if (settingsOpen) settingsWasOpen = true;
+    else if (settingsWasOpen) {
+      settingsWasOpen = false;
+      call("can_refresh", undefined, true).then((v) => (canRefresh = v ?? false));
       loadIcons();
       readSettings();
     }
@@ -51,7 +54,7 @@
   let icons = $state({});
   let iconStyle = $state("");
   function loadIcons() {
-    call("platform_icons").then((m) => {
+    call("platform_icons", undefined, true).then((m) => {
       icons = m?.icons ?? {};
       iconStyle = m?.theme ?? "";
     });
@@ -60,6 +63,7 @@
   // Rename & Cleanup (Import into the RomForge folder when there is one).
   let homeRoot = $state(null);
   let home;
+  let homeOpen = $state(false);
   $effect(() => {
     home?.check();
   });
@@ -82,9 +86,11 @@
   let searchOpen = $state(false);
   let confirmUndo = $state(false);
 
-  async function call(cmd, args) {
+  // `quiet`: a reload after an action, which keeps the action's error on
+  // the status line (it still shows its own).
+  async function call(cmd, args, quiet = false) {
     try {
-      error = "";
+      if (!quiet) error = "";
       return await invoke(cmd, args);
     } catch (e) {
       error = String(e);
@@ -104,15 +110,15 @@
   // it changed.
   let libGeneration = null;
   async function load() {
-    const got = await call("library_view", { known: libGeneration });
+    const got = await call("library_view", { known: libGeneration }, true);
     if (got?.view) {
       lib = got.view;
       libGeneration = got.generation;
     }
-    canRefresh = (await call("can_refresh")) ?? false;
+    canRefresh = (await call("can_refresh", undefined, true)) ?? false;
     loadIcons();
     if (selected && !lib.rows.some((r) => r.id === selected)) selected = null;
-    if (selected) await open(selected);
+    if (selected) await open(selected, true);
   }
 
   // A patch row's Apply: the patch dialog for the game it is for, with
@@ -124,9 +130,9 @@
     if (d) await patcher.openPatch(base, d, { path: p.path, relation: p.relation });
   }
 
-  async function open(id) {
+  async function open(id, quiet = false) {
     selected = id;
-    const d = await call("game_detail", { id });
+    const d = await call("game_detail", { id }, quiet);
     // Pictures come as file paths; the page loads them itself, as shown.
     if (d) {
       d.art = Object.fromEntries(Object.entries(d.art ?? {}).map(([k, p]) => [k, artSrc(p)]));
@@ -231,7 +237,8 @@
 
   // Up/Down move through the list when no text field has focus.
   function listKeys(e) {
-    if (view !== "library" || settingsOpen || searchOpen || patchOpen || pickerOpen || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+    const dialog = settingsOpen || cleanOpen || searchOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
+    if (view !== "library" || dialog || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     e.preventDefault();
     const i = rows.findIndex((r) => r.id === selected);
@@ -246,10 +253,10 @@
 
   load();
   // The logo Settings picks (and Details' empty boxes): read at start and
-  // whenever Settings closes.
+  // whenever Settings closes (the effect at the top).
   let logo = $state("");
   function readSettings() {
-    call("get_settings").then((s) => {
+    call("get_settings", undefined, true).then((s) => {
       if (!s) return;
       showEmpty = s.show_empty_media;
       logo = s.logo ?? "";
@@ -273,17 +280,17 @@
 <div class="app">
   <Toolbar {logo} {busy} {canRefresh} {homeRoot} {row} {settings} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
-  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} />
+  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
 
   <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {homeRoot} {call} {load} />
 
-  <HomeDialog bind:this={home} bind:root={homeRoot} bind:note {load} />
+  <HomeDialog bind:this={home} bind:open={homeOpen} bind:root={homeRoot} bind:note {load} />
 
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 
   <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:busy bind:note {call} {load} />
   <ScanPreview bind:this={previewer} bind:open={previewOpen} bind:busy {statusLabel} {scanned} />
-  <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={() => (ui.viewer = { kind: "hero", src: detail.art.hero })} reload={() => open(row.id)} />
+  <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={() => (ui.viewer = { kind: "hero", src: detail.art.hero })} reload={(id) => open(id)} />
 
   <ImageViewer {detail} {row} />
 
@@ -292,7 +299,7 @@
   <p class="status" class:error={!!error && !busy} title={error || busy || note}>{busy || error || note}</p>
 
   <div class="body">
-    <Sidebar {lib} {games} {view} bind:platform bind:icons {iconStyle} {show} />
+    <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} />
 
     {#if view === "library"}
       <LibraryPane {lib} {rows} {games} {platform} {selected} {isOpen} {toggle} {open} bind:filter bind:listMode bind:listSort bind:table />

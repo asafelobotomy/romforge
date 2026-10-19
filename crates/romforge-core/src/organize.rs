@@ -115,7 +115,7 @@ mod plan;
 mod tests;
 
 pub use apply::{apply, batches, undo};
-pub(crate) use fs::move_file;
+pub(crate) use fs::{copy_checked, move_file, rename_noreplace, same_file, sync_dir};
 pub use names::base_title;
 pub(crate) use names::{clone_groups, rank, sanitize};
 pub use plan::plan;

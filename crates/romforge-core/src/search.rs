@@ -20,7 +20,7 @@ mod preview;
 mod tests;
 
 pub use find::{Found, Scraper, WIKIDATA_API, find, parse_entity_search};
-pub use preview::{Chosen, Preview, choose, preview};
+pub use preview::{Chosen, Preview, Taken, choose, preview, row_in};
 
 /// What a queue item needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -46,9 +46,14 @@ pub struct QueueItem {
     pub suggestion: Option<crate::suggest::Suggestion>,
 }
 
-/// Rows that need the owner, in list order. `only`: limit to these row ids.
-pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem>, Error> {
-    let v = view::library(conn)?;
+/// Rows of `v` (the library's list, [`view::listing`]) that need the owner,
+/// in list order. `only`: limit to these row ids. Patch files and missing
+/// originals are listed only, never queued.
+pub fn queue(
+    conn: &Connection,
+    v: &view::LibraryView,
+    only: Option<&[String]>,
+) -> Result<Vec<QueueItem>, Error> {
     let mut wd: BTreeMap<(String, String), String> = BTreeMap::new();
     for r in conn
         .prepare(
@@ -69,12 +74,14 @@ pub fn queue(conn: &Connection, only: Option<&[String]>) -> Result<Vec<QueueItem
     let mut out = Vec::new();
     let mut suggester = crate::suggest::Suggester::default();
     for r in &v.rows {
-        if only.is_some_and(|ids| !ids.contains(&r.id)) {
+        if only.is_some_and(|ids| !ids.contains(&r.id))
+            || matches!(r.status, RowStatus::Patch | RowStatus::Missing)
+        {
             continue;
         }
         let identified = r.status.identified();
         if !identified && r.status != RowStatus::Duplicate {
-            let d = view::detail_in(conn, &v, &r.id)?;
+            let d = view::detail_in(conn, v, &r.id)?;
             let suggestion = suggester.suggest(conn, &d, None, None, 1)?.into_iter().next();
             out.push(QueueItem {
                 row_id: r.id.clone(),
@@ -122,12 +129,42 @@ pub fn default_text(d: &view::GameDetail) -> String {
         .map_or(t.to_owned(), |s| s.to_string_lossy().into_owned())
 }
 
-/// Name every file of a row: `title` on `system` (a key), as a translation
-/// or hack of a DAT game when `derived` says so. Re-identifies the library
-/// so the files show as "identified by you" (or "translation of X").
+/// A row of the list that has no files of its own to name: a patch file,
+/// or the original of versions you have.
+fn has_own_files(d: &view::GameDetail) -> Result<(), Error> {
+    match d.row.status {
+        RowStatus::Patch => Err(Error::Search(format!(
+            "{} is a patch file: apply it to its game instead",
+            d.row.title
+        ))),
+        RowStatus::Missing => Err(Error::Search(format!(
+            "you don't have {}: name the files of a version you have",
+            d.row.title
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Name every file of a row of `v` (the library's list): `title` on
+/// `system` (a key), as a translation or hack of a DAT game when `derived`
+/// says so. Re-identifies the library so the files show as "identified by
+/// you" (or "translation of X").
 pub fn identify(
     conn: &mut Connection,
+    v: &view::LibraryView,
     row_id: &str,
+    system: &str,
+    title: &str,
+    derived: Option<&view::Derived>,
+) -> Result<(), Error> {
+    let d = view::detail_in(conn, v, row_id)?;
+    identify_detail(conn, &d, system, title, derived)
+}
+
+/// [`identify`] for a row already looked up.
+fn identify_detail(
+    conn: &mut Connection,
+    d: &view::GameDetail,
     system: &str,
     title: &str,
     derived: Option<&view::Derived>,
@@ -137,7 +174,7 @@ pub fn identify(
         return Err(Error::Search("a title is needed".into()));
     }
     let sys = systems::by_key(system).ok_or_else(|| Error::UnknownSystem(system.to_owned()))?;
-    let d = view::detail(conn, row_id)?;
+    has_own_files(d)?;
     // Files matched by hash in their folder's scope stay matched: a pick
     // would have no effect, so say so (an incomplete game's files too).
     if matches!(d.row.status, RowStatus::Verified)
@@ -179,8 +216,9 @@ pub fn identify(
 }
 
 /// Undo [`identify`] for a row's files.
-pub fn forget(conn: &mut Connection, row_id: &str) -> Result<(), Error> {
-    let d = view::detail(conn, row_id)?;
+pub fn forget(conn: &mut Connection, v: &view::LibraryView, row_id: &str) -> Result<(), Error> {
+    let d = view::detail_in(conn, v, row_id)?;
+    has_own_files(&d)?;
     let tx = conn.transaction()?;
     for f in &d.files {
         // A name romforge gave from a patch's proof isn't given again.
@@ -200,8 +238,16 @@ pub fn forget(conn: &mut Connection, row_id: &str) -> Result<(), Error> {
 }
 
 /// The Wikidata candidates kept for an ambiguous row.
-pub fn wikidata_candidates(conn: &Connection, row_id: &str) -> Result<Vec<wikidata::Candidate>, Error> {
-    let d = view::detail(conn, row_id)?;
+pub fn wikidata_candidates(
+    conn: &Connection,
+    v: &view::LibraryView,
+    row_id: &str,
+) -> Result<Vec<wikidata::Candidate>, Error> {
+    candidates_for(conn, &view::detail_in(conn, v, row_id)?)
+}
+
+/// [`wikidata_candidates`] for a row already looked up.
+fn candidates_for(conn: &Connection, d: &view::GameDetail) -> Result<Vec<wikidata::Candidate>, Error> {
     let Some(sys) = d.row.system.as_deref().and_then(systems::by_key) else {
         return Ok(Vec::new());
     };
@@ -219,20 +265,43 @@ pub fn wikidata_candidates(conn: &Connection, row_id: &str) -> Result<Vec<wikida
 
 /// Settle a row's Wikidata item by hand (`qid`, e.g. "Q12345"), then fetch
 /// its details and series like any match.
-pub fn settle_wikidata(conn: &mut Connection, endpoint: &str, row_id: &str, qid: &str) -> Result<(), Error> {
-    let qid = qid.trim();
-    if !(qid.starts_with('Q') && qid.len() > 1 && qid[1..].chars().all(|c| c.is_ascii_digit())) {
+pub fn settle_wikidata(
+    conn: &mut Connection,
+    v: &view::LibraryView,
+    endpoint: &str,
+    row_id: &str,
+    qid: &str,
+) -> Result<(), Error> {
+    let d = view::detail_in(conn, v, row_id)?;
+    if d.row.status == RowStatus::Patch {
         return Err(Error::Search(format!(
-            "{qid:?} is not a Wikidata item id (like Q12345)"
+            "{} is a patch file: settle its game instead",
+            d.row.title
         )));
     }
-    let d = view::detail(conn, row_id)?;
     let sys = d
         .row
         .system
         .as_deref()
         .and_then(systems::by_key)
         .ok_or_else(|| Error::Search("identify the game first".into()))?;
+    settle_for(conn, endpoint, sys, &d.row.title, qid)
+}
+
+/// [`settle_wikidata`] for the game `title` on `sys`.
+fn settle_for(
+    conn: &mut Connection,
+    endpoint: &str,
+    sys: &systems::System,
+    title: &str,
+    qid: &str,
+) -> Result<(), Error> {
+    let qid = qid.trim();
+    if !wikidata::is_qid(qid) {
+        return Err(Error::Search(format!(
+            "{qid:?} is not a Wikidata item id (like Q12345)"
+        )));
+    }
     conn.execute(
         concat!(
             "INSERT INTO wikidata_match (system_id, title, qid, status, candidates, checked_at)
@@ -242,10 +311,10 @@ pub fn settle_wikidata(conn: &mut Connection, endpoint: &str, row_id: &str, qid:
          ON CONFLICT(system_id, title) DO UPDATE SET qid = excluded.qid, status = 'by_you',
            checked_at = excluded.checked_at"
         ),
-        params![sys.id, d.row.title, qid],
+        params![sys.id, title, qid],
     )?;
     let mut one = BTreeMap::new();
-    one.insert((sys.id, d.row.title.clone()), Vec::new());
+    one.insert((sys.id, title.to_owned()), Vec::new());
     let r = wikidata::enrich(conn, endpoint, &one, false, |_| {})?;
     if let Some(e) = r.errors.first() {
         return Err(Error::Search(format!(

@@ -108,7 +108,7 @@ fn item_details(
             },
         };
         // An unlabelled item comes back as its Q id; skip those.
-        if value.is_empty() || (value.starts_with('Q') && value[1..].chars().all(|c| c.is_ascii_digit())) {
+        if value.is_empty() || is_qid(&value) {
             continue;
         }
         out.entry(g.clone())

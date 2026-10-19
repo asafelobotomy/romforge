@@ -195,7 +195,7 @@ pub struct GameRow {
     /// patch or missing original borrows its game's.
     pub pictures: BTreeMap<String, String>,
     /// Its box's front, width / height in hundredths, by platform and
-    /// region ([`systems::box_aspect`]): the picture views draw its box art
+    /// region ([`crate::systems::box_aspect`]): the picture views draw its box art
     /// so.
     pub box_aspect: u16,
     /// Not matched to a game yet ([`RowStatus::unmatched`], or no platform

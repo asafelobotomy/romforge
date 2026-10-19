@@ -1,7 +1,8 @@
 //! Tauri shell over romforge-core. Every command is a call into the core.
 //! Each runs on a blocking thread (never the main thread or an async
 //! worker), and commands that only read use a second connection: SQLite's
-//! WAL lets them go on while a scan, Enrich or a download writes.
+//! WAL lets them go on while a scan, Enrich or a download writes. Reads
+//! that wait on the network open their own (`db::read_net`).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -22,7 +23,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use romforge_core::Library;
 
-use crate::art::{ArtRoots, serve_art};
+use crate::art::{ArtPool, ArtRoots, serve_art};
 use crate::db::{Db, db_path};
 
 fn main() {
@@ -41,11 +42,12 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol("art", {
             let roots = roots.clone();
+            let pool = ArtPool::new();
             move |_ctx, request, responder| {
                 let roots = roots.0.read().unwrap_or_else(|e| e.into_inner()).clone();
                 let path = request.uri().path().to_owned();
                 let query = request.uri().query().map(str::to_owned);
-                std::thread::spawn(move || responder.respond(serve_art(&roots, &path, query.as_deref())));
+                pool.run(move || responder.respond(serve_art(&roots, &path, query.as_deref())));
             }
         })
         .manage(db)

@@ -2,13 +2,13 @@
 // and Details' Versions tab show them: other regions, editions,
 // translations, hacks, and patch files apart (as translations and hacks).
 
-export const CATS = [
+const CATS = [
   ["region", "Other regions"],
   ["edition", "Editions"],
   ["translation", "Translations"],
   ["hack", "Hacks"],
 ];
-export const PATCH_CATS = [
+const PATCH_CATS = [
   ["patch_translation", "Translations"],
   ["patch_hack", "Hacks"],
 ];

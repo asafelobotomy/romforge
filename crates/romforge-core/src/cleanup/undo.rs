@@ -4,6 +4,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{Error, layout};
 
+use crate::organize::same_file;
+
 use super::write::move_path;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -19,7 +21,22 @@ pub struct CleanupUndone {
 /// reported.
 pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, Error> {
     let batch_id: i64 = match batch {
-        Some(b) => b,
+        Some(b) => {
+            let undone: Option<Option<String>> = conn
+                .query_row(
+                    "SELECT undone_at FROM cleanup_batches WHERE batch_id = ?1",
+                    [b],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            match undone {
+                None => return Err(Error::Cleanup(format!("there is no batch #{b}"))),
+                Some(Some(when)) => {
+                    return Err(Error::Cleanup(format!("batch #{b} was undone already ({when})")));
+                }
+                Some(None) => b,
+            }
+        }
         None => conn
             .query_row(
                 "SELECT max(batch_id) FROM cleanup_batches WHERE undone_at IS NULL AND emptied_at IS NULL",
@@ -58,7 +75,7 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
             )?;
             continue;
         }
-        match move_path(Path::new(&at), Path::new(&original)) {
+        match restore(Path::new(&at), Path::new(&original)) {
             Ok(_) => {
                 conn.execute(
                     "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
@@ -94,7 +111,10 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
     for (path, kind) in outputs {
         let p = Path::new(&path);
         let r = if kind == "dir" {
-            std::fs::remove_dir_all(p)
+            // A folder journaled whole, without its files (an older batch):
+            // what is in it now may not all be this batch's, so it goes to
+            // the trash beside it rather than being deleted.
+            set_aside(p, batch_id)
         } else if kind == "setdir" {
             // A folder this batch made for a set: gone once it is empty;
             // anything put in it since stays.
@@ -133,6 +153,34 @@ pub fn undo(conn: &mut Connection, batch: Option<i64>) -> Result<CleanupUndone, 
         )?;
     }
     Ok(u)
+}
+
+/// Put a trashed original back. A move cut short (the copy back in place,
+/// some of the trashed one left) is finished: what is left in the trash
+/// goes where the same file is back, or moves where nothing is; anything
+/// that differs stays and is reported.
+fn restore(at: &Path, original: &Path) -> Result<(), Error> {
+    match (at.symlink_metadata(), original.symlink_metadata()) {
+        (Ok(a), Ok(o)) if a.is_dir() && o.is_dir() => crate::home::merge_tree(at, original).map(drop),
+        (Ok(a), Ok(o)) if a.is_file() && o.is_file() && same_file(at, original)? => {
+            Ok(std::fs::remove_file(at)?)
+        }
+        _ => Ok(move_path(at, original)?),
+    }
+}
+
+/// `path` moved to `<its folder>/.romforge-trash/undo-<batch>/`.
+fn set_aside(path: &Path, batch: i64) -> std::io::Result<()> {
+    if path.symlink_metadata().is_err() {
+        return Err(std::io::ErrorKind::NotFound.into());
+    }
+    let to = path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(layout::TRASH_DIR)
+        .join(format!("undo-{batch}"))
+        .join(path.file_name().unwrap_or_default());
+    move_path(path, &to)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

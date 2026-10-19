@@ -74,16 +74,25 @@ pub(super) fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
                 .query_map([game], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
                 .collect::<Result<_, _>>()?;
             let tracks: Vec<&(i64, String, bool)> = roms.iter().filter(|r| !r.2).collect();
-            let fits = tracks.len() == names.len()
+            let mut fits = tracks.len() == names.len()
                 && tracks
                     .iter()
                     .zip(&names)
-                    .all(|(t, n)| t.1.eq_ignore_ascii_case(n))
-                && tracks.iter().all(|t| {
-                    beside
-                        .iter()
-                        .any(|f| matched_by.exists(params![t.0, f]).unwrap_or(false))
-                });
+                    .all(|(t, n)| t.1.eq_ignore_ascii_case(n));
+            // Every track matched by a file beside the sheet.
+            for t in &tracks {
+                if !fits {
+                    break;
+                }
+                let mut found = false;
+                for f in &beside {
+                    if matched_by.exists(params![t.0, f])? {
+                        found = true;
+                        break;
+                    }
+                }
+                fits = found;
+            }
             if !fits {
                 continue;
             }

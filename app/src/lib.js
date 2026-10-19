@@ -4,6 +4,9 @@ export function size(n) {
   return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MiB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${n} B`;
 }
 
+// The last part of a path, Windows' or anyone else's.
+export const basename = (p) => p.split(/[\\/]/).pop();
+
 // A picture file as the page loads it: through the app's `art://` scheme
 // (only romforge's art folders are served), so a grid of covers loads just
 // what is on screen, straight from disk.

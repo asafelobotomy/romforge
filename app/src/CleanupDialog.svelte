@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
   import { sorted, remembered, remember } from "./sort.js";
+  import { basename } from "./lib.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library.
@@ -16,6 +17,9 @@
 
   // Cleanup and rename dialog: a plan first, applied on confirmation.
   let cleanOnly = $state(false); // just the selected game
+  // The game "Only the selected game" planned for, which is what applies
+  // even if the selection changes behind the dialog.
+  let planned = null;
   let cleanPlan = $state(null);
   let cleanBatches = $state([]);
   let cleanError = $state("");
@@ -54,7 +58,8 @@
   async function planCleanup() {
     cleanError = "";
     try {
-      const only = cleanOnly && selected ? [selected] : null;
+      planned = cleanOnly && selected ? selected : null;
+      const only = planned ? [planned] : null;
       cleanPlan = converting ? await invoke("convert_plan", { only }) : await invoke("cleanup_plan", { only, from });
     } catch (e) {
       cleanPlan = null;
@@ -67,7 +72,7 @@
     cleanError = "";
     busy = converting ? `Converting ${cleanPlan.items.length} discs…` : `Renaming and cleaning up ${cleanPlan.items.length} games…`;
     try {
-      const only = cleanOnly && selected ? [selected] : null;
+      const only = planned ? [planned] : null;
       const r = converting ? await invoke("convert_apply", { only }) : await invoke("cleanup_apply", { only, from });
       const trashed = homeRoot ? "to the RomForge trash" : "to .romforge-trash";
       note = r.batch_id
@@ -97,10 +102,9 @@
     await load();
   }
 
-  const base = (p) => p.split("/").pop();
   let itemSort = $state(remembered("import", { key: "name", dir: 1 }));
   $effect(() => remember("import", itemSort));
-  const itemGetters = { name: (it) => base(it.target), platform: (it) => it.system, files: (it) => it.parts.length };
+  const itemGetters = { name: (it) => basename(it.target), platform: (it) => it.system, files: (it) => it.parts.length };
 </script>
 
 {#if open}
@@ -161,7 +165,7 @@
           <ul class="choices">
             {#each sorted(cleanPlan.items, itemSort, itemGetters) as it}
               <li title={it.parts.map((p) => p.name).join("\n")}>
-                <span class="ctitle">{base(it.target)}</span>
+                <span class="ctitle">{basename(it.target)}</span>
                 {#if it.existing}
                   <span class="sys">{it.system} · already in RomForge · {it.trash.length} cop{it.trash.length === 1 ? "y" : "ies"} to the trash</span>
                 {:else}

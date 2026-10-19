@@ -4,10 +4,9 @@
   import { logoSrc } from "./logos.js";
 
   // First run (milestone 13): where the RomForge folder goes. `root` is
-  // set once it exists; `load` reloads the library.
-  let { root = $bindable(null), note = $bindable(""), load } = $props();
+  // set once it exists; `load` reloads the library; `open` while it shows.
+  let { open = $bindable(false), root = $bindable(null), note = $bindable(""), load } = $props();
 
-  let open = $state(false);
   let parent = $state("");
   let existing = $state(false);
   let creating = $state(false);

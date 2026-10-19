@@ -6,8 +6,6 @@ use super::Link;
 use super::sort::search_title;
 use crate::fetch;
 
-/// Links for a game: its own pages where Wikidata gave an ID (in
-/// `fields`), plain searches otherwise (house rule 10, tier 1).
 /// A metadata value as shown. libretro writes `???` for what it doesn't
 /// know: alone it means nothing is known; next to a name ("Nintendo ???")
 /// the name is a guess, and says so. Wikidata replaces such values when it
@@ -45,6 +43,8 @@ pub fn patch_links(title: &str) -> Vec<Link> {
     .collect()
 }
 
+/// Links for a game: its own pages where Wikidata gave an ID (in
+/// `fields`), plain searches otherwise (house rule 10, tier 1).
 pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, String>) -> Vec<Link> {
     let q = search_title(title);
     let enc = |s: &str| fetch::encode_segment(s);
@@ -52,12 +52,16 @@ pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, S
         Some(_) => format!("{q} video game"),
         None => q.clone(),
     };
+    // An ID field may hold several, joined by ", " (the first is linked);
+    // a Wikipedia title or a slug is one value, commas and all ("Hey You,
+    // Pikachu!").
     let first = |k: &str| {
         fields
             .get(k)
             .and_then(|v| v.split(", ").next())
             .map(str::to_owned)
     };
+    let whole = |k: &str| fields.get(k).filter(|v| !v.trim().is_empty()).cloned();
     let link = |label: &str, direct: Option<String>, search: String| match direct {
         Some(url) => Link {
             label: label.into(),
@@ -76,7 +80,7 @@ pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, S
             first("mobygames_id")
                 .map(|id| format!("https://www.mobygames.com/game/{}/", enc(&id)))
                 .or_else(|| {
-                    first("mobygames_slug").map(|s| format!("https://www.mobygames.com/game/{}", enc(&s)))
+                    whole("mobygames_slug").map(|s| format!("https://www.mobygames.com/game/{}", enc(&s)))
                 }),
             format!("https://www.mobygames.com/search/?q={}", enc(&q)),
         ),
@@ -88,13 +92,13 @@ pub fn links(title: &str, system_name: Option<&str>, fields: &BTreeMap<String, S
         ),
         link(
             "Wikipedia",
-            first("wikipedia")
+            whole("wikipedia")
                 .map(|a| format!("https://en.wikipedia.org/wiki/{}", enc(&a.replace(' ', "_")))),
             format!("https://en.wikipedia.org/w/index.php?search={}", enc(&wiki_q)),
         ),
         link(
             "IGDB",
-            first("igdb_slug").map(|s| format!("https://www.igdb.com/games/{}", enc(&s))),
+            whole("igdb_slug").map(|s| format!("https://www.igdb.com/games/{}", enc(&s))),
             format!("https://www.igdb.com/search?q={}", enc(&q)),
         ),
         link(

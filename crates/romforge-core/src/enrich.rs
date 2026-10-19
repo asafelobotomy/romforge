@@ -34,6 +34,7 @@ pub use art::*;
 pub use choices::*;
 pub use icons::*;
 pub use info::*;
+pub(crate) use meta::libretro_game;
 use meta::*;
 pub use run::*;
 pub use types::*;

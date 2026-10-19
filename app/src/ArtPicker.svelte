@@ -5,7 +5,7 @@
   // Details' art picker: every picture of one kind (fanart for now) the
   // sources have for the game, to replace the one shown. The pick is kept
   // even when Enrich refreshes. `view` opens the current one full size;
-  // `reload` shows the game again after a pick.
+  // `reload(id)` shows the game it was opened for again after a pick.
   let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), view, reload } = $props();
 
   const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB", launchbox: "LaunchBox" };
@@ -42,7 +42,7 @@
       await invoke("choose_art", { rowId: row.id, kind, url: c.url, source: c.source });
       note = `${label} for ${row.label ?? row.title}: ${sourceLabel[c.source] ?? c.source}${c.label ? ` (${c.label})` : ""}; Enrich keeps it`;
       open = false;
-      await reload();
+      await reload(row.id);
     } catch (e) {
       failure = String(e);
     }

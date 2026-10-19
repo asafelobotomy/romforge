@@ -30,9 +30,17 @@ impl Library {
         {
             dat.name = s.key.to_owned();
         }
+        // Without a system either, it is named after its file, so two
+        // different nameless DATs don't replace each other.
+        if dat.name.is_empty() {
+            dat.name = source_stem(source);
+        }
 
         let defer = self.batch_depth > 0;
-        let tx = self.conn.transaction()?;
+        // Immediate: this reads, then writes (see `scan_with`).
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         // The same file again is a no-op; a new version of a DAT (same name,
         // and same source family: see `fetch::source_family`) replaces the
         // old one, and folders scoped to it follow along. No-Intro and Redump both name a DAT
@@ -172,6 +180,8 @@ impl Library {
             }
         }
         if defer {
+            // Kept with the DAT, so it survives a failed batch or a crash.
+            super::open::mark_needs_identify(&tx)?;
             self.batch_dirty = true;
         } else {
             identify::identify_all(&tx)?;
@@ -190,6 +200,18 @@ impl Library {
             unchanged: false,
         })
     }
+}
+
+/// The file name without its extension of a DAT's `source` (a path,
+/// `zip#member` or URL): `TOSEC/x.dat` of `a.zip#TOSEC/x.dat` gives `x`.
+fn source_stem(source: &str) -> String {
+    let name = source.rsplit('#').next().unwrap_or(source);
+    let name = name.split('?').next().unwrap_or(name);
+    let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    Path::new(name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.to_owned())
 }
 
 /// DAT serials whose game no DAT of its system has any more (the DAT was

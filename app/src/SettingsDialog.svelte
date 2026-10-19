@@ -5,8 +5,9 @@
   import { iconCredits } from "./facts.js";
   import { LOGOS } from "./logos.js";
 
-  // `call` is the app's invoke that reports errors on the status line.
-  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call } = $props();
+  // `call` is the app's invoke that reports errors on the status line;
+  // `load` reloads the library (its Media/ paths change with a move).
+  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call, load } = $props();
   let moving = $state(false);
   let regionsText = $state("");
   let scummvmNote = $state("");
@@ -40,6 +41,7 @@
     try {
       homeRoot = await invoke("home_move", { parent: dir });
       note = `RomForge moved to ${homeRoot}`;
+      await load();
     } catch (e) {
       settingsError = String(e).replace(/^settings: /, "");
     }

@@ -14,7 +14,7 @@
 //!   the pack is fetched at most once per batch and not at all when its
 //!   DATs for a system are already imported.
 //! - `hacks`, `homebrew`: libretro-database's own small DATs, fetched only
-//!   when asked for ([`sources`] with `extras`).
+//!   when asked for ([`sources()`] with `extras`).
 //! - serials: libretro-database's `metadat/serial` lists (title, serial,
 //!   CRC32) for cartridge systems, beside their No-Intro DATs. Discs get
 //!   theirs from Redump.

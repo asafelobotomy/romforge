@@ -137,11 +137,12 @@ fn number(data: &[u8], at: &mut usize) -> Option<u64> {
     loop {
         let b = *data.get(*at)?;
         *at += 1;
-        value = value.checked_add((b & 0x7f) as u64 * shift)?;
+        value = value.checked_add(((b & 0x7f) as u64).checked_mul(shift)?)?;
         if b & 0x80 != 0 {
             return Some(value);
         }
-        shift = shift.checked_shl(7)?;
+        // `checked_shl` only checks the shift amount, not lost bits.
+        shift = shift.checked_mul(128)?;
         value = value.checked_add(shift)?;
     }
 }

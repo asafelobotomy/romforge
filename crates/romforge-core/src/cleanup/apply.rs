@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 
 use crate::home::Home;
-use crate::organize::sanitize;
+use crate::organize::{rename_noreplace, sanitize};
 use crate::{Error, layout, settings, systems};
 
 use super::chd::write_chd;
 use super::items::write_set;
 use super::parts::extras;
-use super::write::{copy_folder, move_path, write_folder_zip, write_loose, write_zip};
+use super::write::{copy_folder, move_path, place, write_folder_zip, write_loose, write_zip};
 use super::{CleanupPlan, CleanupReport, Format, Item};
 
 /// Carry out a plan. Each game is written next to its target, read back
@@ -94,15 +94,11 @@ pub fn apply(
                     let _ = std::fs::remove_dir_all(&part);
                     return Err(e);
                 }
-                if item.target.exists() {
+                if let Err(e) = place(&part, &item.target) {
                     let _ = std::fs::remove_dir_all(&part);
-                    return Err(Error::Cleanup(format!(
-                        "{} already exists",
-                        item.target.display()
-                    )));
+                    return Err(e);
                 }
-                std::fs::rename(&part, &item.target)?;
-                journal_output(conn, batch_id, &item.target, "dir")?;
+                journal_tree(conn, batch_id, &item.target)?;
                 return Ok(false);
             }
             let name = item
@@ -130,26 +126,27 @@ pub fn apply(
             if let Some(side) = &item.sidecar {
                 let tmp = dir.join(layout::side(&name));
                 let _ = std::fs::remove_dir_all(&tmp);
-                std::fs::create_dir_all(&tmp)?;
-                for (f, data) in &extras {
-                    std::fs::write(tmp.join(f), data)?;
-                }
-                if side.exists() {
+                let wrote = std::fs::create_dir_all(&tmp).and_then(|()| {
+                    extras
+                        .iter()
+                        .try_for_each(|(f, data)| std::fs::write(tmp.join(f), data))
+                });
+                if let Err(e) = wrote {
                     let _ = std::fs::remove_dir_all(&tmp);
                     let _ = std::fs::remove_file(&part);
-                    return Err(Error::Cleanup(format!("{} already exists", side.display())));
+                    return Err(e.into());
                 }
-                std::fs::rename(&tmp, side)?;
-                journal_output(conn, batch_id, side, "dir")?;
+                if let Err(e) = place(&tmp, side) {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    let _ = std::fs::remove_file(&part);
+                    return Err(e);
+                }
+                journal_tree(conn, batch_id, side)?;
             }
-            if item.target.exists() {
+            if let Err(e) = place(&part, &item.target) {
                 let _ = std::fs::remove_file(&part);
-                return Err(Error::Cleanup(format!(
-                    "{} already exists",
-                    item.target.display()
-                )));
+                return Err(e);
             }
-            std::fs::rename(&part, &item.target)?;
             journal_output(conn, batch_id, &item.target, "file")?;
             Ok(took_sheet)
         })();
@@ -298,15 +295,42 @@ pub(super) fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) 
         };
         let tmp = dir.join(layout::part(&sanitize(&base)));
         std::fs::write(&tmp, body)?;
-        if list.exists() {
-            let _ = std::fs::remove_file(&tmp);
-            continue;
+        match rename_noreplace(&tmp, &list) {
+            Ok(()) => {}
+            // One appeared meanwhile: it stays.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = std::fs::remove_file(&tmp);
+                continue;
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e.into());
+            }
         }
-        std::fs::rename(&tmp, &list)?;
         journal_output(conn, batch, &list, "file")?;
         n += 1;
     }
     Ok(n)
+}
+
+/// A folder this batch wrote, journaled with what is in it: the folders
+/// first (so undo, last first, empties them before removing them), then
+/// each file. Undo removes just these; anything put there since stays.
+fn journal_tree(conn: &Connection, batch: i64, dir: &Path) -> Result<(), Error> {
+    journal_output(conn, batch, dir, "setdir")?;
+    let mut files = Vec::new();
+    for e in walkdir::WalkDir::new(dir).min_depth(1).sort_by_file_name() {
+        let e = e.map_err(std::io::Error::from)?;
+        if e.file_type().is_dir() {
+            journal_output(conn, batch, e.path(), "setdir")?;
+        } else {
+            files.push(e.into_path());
+        }
+    }
+    for f in files {
+        journal_output(conn, batch, &f, "file")?;
+    }
+    Ok(())
 }
 
 pub(crate) fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &str) -> Result<(), Error> {
@@ -347,6 +371,11 @@ pub(super) fn trash(
         params![batch, original.to_string_lossy(), to.to_string_lossy()],
     )?;
     if let Err(e) = move_path(original, &to) {
+        // Something is in the trash already (a move cut short after the
+        // copy was in place): the row stays, so undo can put it back.
+        if to.symlink_metadata().is_ok() {
+            return Err(e.into());
+        }
         conn.execute(
             "DELETE FROM cleanup_trash WHERE batch_id = ?1 AND trashed = ?2",
             params![batch, to.to_string_lossy()],

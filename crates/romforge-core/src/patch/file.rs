@@ -6,9 +6,25 @@ use super::{Kind, apply, info, ppf_records};
 /// exist), without holding a disc image in memory: a PPF is copied then
 /// changed in place, an xdelta decoded window by window reading the source
 /// where it points. The others (cartridge formats) go through [`apply`].
+/// On failure nothing is left at `out`.
 pub fn apply_file(patch: &[u8], source: &Path, out: &Path) -> Result<(), crate::Error> {
+    let mut made = false;
+    let r = write(patch, source, out, &mut made);
+    if r.is_err() && made {
+        let _ = std::fs::remove_file(out);
+    }
+    r
+}
+
+/// [`apply_file`]; `made` says whether `out` was created.
+fn write(patch: &[u8], source: &Path, out: &Path, made: &mut bool) -> Result<(), crate::Error> {
     use std::io::{Seek, SeekFrom, Write};
     let bad = |m: &str| crate::Error::Dat(format!("patch: {m}"));
+    let create = |made: &mut bool| -> std::io::Result<std::fs::File> {
+        let f = std::fs::File::create_new(out)?;
+        *made = true;
+        Ok(f)
+    };
     let i = info(patch).ok_or_else(|| bad("not a patch romforge reads"))?;
     match i.kind {
         Kind::Ppf => {
@@ -30,7 +46,7 @@ pub fn apply_file(patch: &[u8], source: &Path, out: &Path) -> Result<(), crate::
                 return Err(bad("this PPF was made for an image of another size"));
             }
             drop(f);
-            let mut w = std::fs::File::create_new(out)?;
+            let mut w = create(made)?;
             std::io::copy(&mut std::fs::File::open(source)?, &mut w)?;
             for (at, data) in &ppf.records {
                 w.seek(SeekFrom::Start(*at))?;
@@ -42,7 +58,7 @@ pub fn apply_file(patch: &[u8], source: &Path, out: &Path) -> Result<(), crate::
         Kind::Xdelta => {
             let mut src = FileSource(std::fs::File::open(source)?, std::fs::metadata(source)?.len());
             let plain = crate::vcdiff::plain(patch).map_err(|e| bad(&format!("xdelta: {e}")))?;
-            let mut w = std::io::BufWriter::new(std::fs::File::create_new(out)?);
+            let mut w = std::io::BufWriter::new(create(made)?);
             oxidelta::compress::DeltaDecoder::new(&plain[..])
                 .decode_to(&mut src, &mut w)
                 .map_err(|e| bad(&format!("xdelta: {e}")))?;
@@ -52,7 +68,9 @@ pub fn apply_file(patch: &[u8], source: &Path, out: &Path) -> Result<(), crate::
         _ => {
             let data = std::fs::read(source)?;
             let patched = apply(patch, &data).ok_or_else(|| bad("it doesn't fit this file"))?;
-            std::fs::write(out, patched)?;
+            let mut w = create(made)?;
+            w.write_all(&patched)?;
+            w.sync_all()?;
             Ok(())
         }
     }

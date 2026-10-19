@@ -40,7 +40,6 @@ pub fn apply(conn: &mut Connection, plan: &PatchPlan, staging_root: &Path) -> Re
     )?;
     let batch = conn.last_insert_rowid();
     let staging = staging_root.join(format!("patch-{batch}"));
-    std::fs::create_dir_all(&staging)?;
     let name = plan
         .target
         .file_name()
@@ -49,11 +48,17 @@ pub fn apply(conn: &mut Connection, plan: &PatchPlan, staging_root: &Path) -> Re
         .into_owned();
     let part = dir.join(layout::part(&name));
     let _ = std::fs::remove_file(&part);
-    let made = if plan.disc {
-        write_disc(plan, &p, &staging, &part)
-    } else {
-        write_cartridge(plan, &p, &staging, &part)
-    };
+    let made = std::fs::create_dir_all(&staging)
+        .map_err(Error::from)
+        .and_then(|()| {
+            if plan.disc {
+                write_disc(plan, &p, &staging, &part)
+            } else {
+                write_cartridge(plan, &p, &staging, &part)
+            }
+        })
+        // Never over a file that appeared meanwhile.
+        .and_then(|made| cleanup::place(&part, &plan.target).map(|()| made));
     let _ = std::fs::remove_dir_all(&staging);
     let (sha1, size) = match made {
         Ok(x) => x,
@@ -63,15 +68,6 @@ pub fn apply(conn: &mut Connection, plan: &PatchPlan, staging_root: &Path) -> Re
             return Err(e);
         }
     };
-    if plan.target.exists() {
-        let _ = std::fs::remove_file(&part);
-        conn.execute("DELETE FROM cleanup_batches WHERE batch_id = ?1", [batch])?;
-        return Err(Error::Cleanup(format!(
-            "{} already exists",
-            plan.target.display()
-        )));
-    }
-    std::fs::rename(&part, &plan.target)?;
     cleanup::journal_output(conn, batch, &plan.target, "file")?;
     let tx = conn.transaction()?;
     tx.execute(

@@ -278,12 +278,7 @@ pub fn launchbox_lookup(
     ) {
         put("community_rating", Some(format!("{r:.1} / 5 ({n} votes)")));
     }
-    put(
-        "wikipedia",
-        wiki.as_deref()
-            .and_then(|u| u.split("/wiki/").nth(1))
-            .map(|a| a.replace('_', " ")),
-    );
+    put("wikipedia", wiki.as_deref().and_then(wikipedia_title));
     put("video", video);
 
     // Images: per kind, the game's own region first, then worldwide, then
@@ -326,6 +321,15 @@ pub fn launchbox_lookup(
         }
     }
     Ok(Some(f))
+}
+
+/// The article title of an English Wikipedia URL, decoded
+/// ("…/wiki/Pok%C3%A9mon_Red_and_Blue#x" -> "Pokémon Red and Blue"), so a
+/// link made from it is encoded once.
+pub(super) fn wikipedia_title(url: &str) -> Option<String> {
+    let path = url.split("/wiki/").nth(1)?;
+    let path = path.split(['#', '?']).next().unwrap_or(path);
+    Some(fetch::decode_segment(path).replace('_', " "))
 }
 
 /// LaunchBox regions for a DAT name's region tag.

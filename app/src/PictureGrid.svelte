@@ -24,6 +24,7 @@
   let width = $state(600);
   let height = $state(600);
   let scrollTop = $state(0);
+  let scroller = $state(null);
 
   const aspect = (r) => ((r.box_aspect || 72) / 100) * (mode === "box3d" ? SPINE : 1);
   const widest = $derived(Math.min(1.6, Math.max(0.55, ...rows.filter((r) => !r.head).map(aspect))));
@@ -59,6 +60,15 @@
     }
     return { lines: out, total: top + GAP };
   });
+  /// Scroll the line holding `rows[j]` into view (keyboard moves).
+  export function reveal(j) {
+    const id = rows[j]?.id;
+    const l = id != null && lines.lines.find((l) => (l.head ? l.head.id === id : l.items.some((r) => r.id === id)));
+    if (!scroller || !scroll || !l) return;
+    if (l.top < scroller.scrollTop) scroller.scrollTop = l.top;
+    else if (l.top + l.h + GAP > scroller.scrollTop + height) scroller.scrollTop = l.top + l.h + GAP - height;
+  }
+
   const visible = $derived(
     scroll ? lines.lines.filter((l) => l.top + l.h >= scrollTop - 400 && l.top <= scrollTop + height + 400) : lines.lines,
   );
@@ -80,6 +90,7 @@
 <div
   class="grid {mode}"
   class:scroll
+  bind:this={scroller}
   bind:clientWidth={width}
   bind:clientHeight={height}
   onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}

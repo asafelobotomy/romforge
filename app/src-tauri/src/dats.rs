@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, blocking, read, with};
 
 #[derive(serde::Serialize)]
 pub struct Downloaded {
@@ -25,21 +25,21 @@ fn extdb_named(name: &str) -> Res<ExtDb> {
 
 #[tauri::command]
 pub async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
-    Ok(romforge_core::extdb::list(&extdb_dir(&db).await?))
+    let dir = extdb_dir(&db).await?;
+    blocking(move || Ok(romforge_core::extdb::list(&dir))).await
 }
 
 /// Downloads without holding the library, so the window stays usable.
 #[tauri::command]
 pub async fn extdb_download(db: tauri::State<'_, Db>, name: String) -> Res<ExtDbInfo> {
-    let dir = extdb_dir(&db).await?;
-    romforge_core::extdb::download(extdb_named(&name)?, &dir, &Default::default(), |_| {})
-        .map_err(|e| e.to_string())
+    let (dir, which) = (extdb_dir(&db).await?, extdb_named(&name)?);
+    blocking(move || romforge_core::extdb::download(which, &dir, &Default::default(), |_| {})).await
 }
 
 #[tauri::command]
 pub async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
-    let dir = extdb_dir(&db).await?;
-    romforge_core::extdb::remove(extdb_named(&name)?, &dir).map_err(|e| e.to_string())
+    let (dir, which) = (extdb_dir(&db).await?, extdb_named(&name)?);
+    blocking(move || romforge_core::extdb::remove(which, &dir)).await
 }
 
 /// The installed MAME's own list as the Arcade DAT (`mame -listxml`).

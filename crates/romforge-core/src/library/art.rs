@@ -95,7 +95,7 @@ impl Library {
     /// The sidebar's icons for the platforms in the library, in the style
     /// Settings picks (none: empty), fetched into `cache_dir` the first
     /// time from retroarch-assets (`base`, [`enrich::PLATFORM_ICONS_BASE`])
-    /// or, for logos, Wikidata (`wikidata`, [`wikidata::ENDPOINT`]).
+    /// or, for logos, Wikidata (`wikidata`, [`crate::wikidata::ENDPOINT`]).
     /// Offline, only those fetched before.
     pub fn platform_icons(
         &self,

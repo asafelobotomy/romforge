@@ -5,7 +5,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Found, Scraper, identify, settle_wikidata};
+use super::{Found, Scraper, identify_detail, settle_for};
 use crate::view;
 use crate::{Error, systems, wikidata};
 
@@ -26,15 +26,17 @@ pub struct Preview {
 /// (DAT, ROM name, size, CRC32, whether the CRC32 is all it has)
 type DatRom = (String, String, Option<u64>, Option<String>, bool);
 
-/// The preview of a result for a row. Never fails over a missing picture.
+/// The preview of a result for a row of `v` (the library's list). Never
+/// fails over a missing picture.
 pub fn preview(
     conn: &Connection,
+    v: &view::LibraryView,
     row_id: &str,
     found: &Found,
     cache_dir: &Path,
     thumbnails_base: &str,
 ) -> Result<Preview, Error> {
-    let d = view::detail(conn, row_id)?;
+    let d = view::detail_in(conn, v, row_id)?;
     let system = found.system.as_deref().and_then(systems::by_key);
     let mut p = Preview {
         title: found.title.clone(),
@@ -143,15 +145,26 @@ fn preview_image(
     if file.exists() {
         return Some(file);
     }
-    let url = thumbnail_url(base, libretro_name(sys)?, ArtKind::Boxart, title)?;
-    let data = crate::fetch::request(&crate::fetch::Request::get(&url)).ok()??;
+    // By libretro's name for the game, as Enrich fetches it.
+    let lr_game = crate::enrich::libretro_game(conn, sys, sys.id, title).ok()?;
+    let url = thumbnail_url(base, libretro_name(sys)?, ArtKind::Boxart, &lr_game)?;
+    let data = crate::fetch::get_image(&url).ok()??;
     crate::enrich::image_ext(&data)?;
-    std::fs::create_dir_all(&dir).ok()?;
-    std::fs::write(&file, data).ok()?;
+    crate::atomic::write(&file, &data).ok()?;
     Some(file)
 }
 
-/// What [`choose`] did.
+/// What [`choose`] did: the game the row is now, and what Enrich fetched
+/// for it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Taken {
+    /// Its platform key.
+    pub system: String,
+    pub title: String,
+    pub enrich: crate::enrich::EnrichReport,
+}
+
+/// What taking a result did, for the app.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Chosen {
     /// The row's id now (naming a file gives it a new one).
@@ -159,18 +172,21 @@ pub struct Chosen {
     pub enrich: crate::enrich::EnrichReport,
 }
 
-/// Take a result for a row: a DAT title names its files ("identified by
-/// you"); a Wikidata item settles the match (naming an unidentified row by
-/// the item's label on `system` first). Then fetches for that one game what
-/// `opts` asks for (art kinds, Wikidata, `refresh` to overwrite).
+/// Take a result for a row of `v` (the library's list): a DAT title names
+/// its files ("identified by you"); a Wikidata item settles the match
+/// (naming an unidentified row by the item's label on `system` first). Then
+/// fetches for that one game what `opts` asks for (art kinds, Wikidata,
+/// `refresh` to overwrite). Its row in the list built afterwards:
+/// [`row_in`].
 pub fn choose(
     conn: &mut Connection,
+    v: &view::LibraryView,
     row_id: &str,
     found: &Found,
     system: Option<&str>,
     opts: &crate::enrich::EnrichOptions,
-) -> Result<Chosen, Error> {
-    let d = view::detail(conn, row_id)?;
+) -> Result<Taken, Error> {
+    let d = view::detail_in(conn, v, row_id)?;
     let identified = d.row.status.identified();
     let need_system = || {
         system
@@ -185,7 +201,7 @@ pub fn choose(
                 .derived
                 .as_ref()
                 .map_or_else(|| found.title.clone(), view::Derived::title);
-            identify(conn, row_id, key, &title, found.derived.as_ref())?;
+            identify_detail(conn, &d, key, &title, found.derived.as_ref())?;
             (key.to_owned(), title)
         }
         Scraper::Wikidata => {
@@ -193,32 +209,36 @@ pub fn choose(
                 (d.row.system.clone().unwrap_or_default(), d.row.title.clone())
             } else {
                 let key = need_system()?;
-                identify(conn, row_id, key, &found.title, None)?;
+                identify_detail(conn, &d, key, &found.title, None)?;
                 (key.to_owned(), found.title.clone())
             };
-            let row = row_for(conn, &key, &title)?;
+            let sys = systems::by_key(&key).ok_or_else(|| Error::Search("identify the game first".into()))?;
             let endpoint = opts.wikidata.as_deref().unwrap_or(wikidata::ENDPOINT);
-            settle_wikidata(conn, endpoint, &row, &found.id)?;
+            settle_for(conn, endpoint, sys, &title, &found.id)?;
             (key, title)
         }
     };
-    let row_id = row_for(conn, &key, &title)?;
     let mut one = opts.clone();
-    one.system = Some(key);
-    one.title = Some(title);
+    one.system = Some(key.clone());
+    one.title = Some(title.clone());
     if found.scraper == Scraper::Wikidata {
         one.wikidata = None; // settled and fetched just now
     }
     let enrich = crate::enrich::enrich(conn, &one, |_| {})?;
-    Ok(Chosen { row_id, enrich })
+    Ok(Taken {
+        system: key,
+        title,
+        enrich,
+    })
 }
 
-/// The library row of a game.
-fn row_for(conn: &Connection, system: &str, title: &str) -> Result<String, Error> {
-    view::library(conn)?
-        .rows
-        .into_iter()
-        .find(|r| r.system.as_deref() == Some(system) && r.title == title)
-        .map(|r| r.id)
+/// The row of the game `title` on `system` (a key) in `v`.
+pub fn row_in(v: &view::LibraryView, system: &str, title: &str) -> Result<String, Error> {
+    v.rows
+        .iter()
+        .find(|r| {
+            r.system.as_deref() == Some(system) && r.title == title && r.status != view::RowStatus::Missing
+        })
+        .map(|r| r.id.clone())
         .ok_or_else(|| Error::Search(format!("{title} [{system}] is not in the library")))
 }

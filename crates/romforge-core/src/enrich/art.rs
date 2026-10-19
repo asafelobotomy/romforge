@@ -104,7 +104,7 @@ pub(super) fn system_art(
                 game: (*game).clone(),
                 kind,
             });
-            match get_halting(&url, halted_hosts) {
+            match get_image_halting(&url, halted_hosts) {
                 Ok(Some(data)) if image_ext(&data).is_some() => {
                     match keep(
                         conn, opts, system, *system_id, game, kind, &data, "libretro", &url,
@@ -136,7 +136,7 @@ pub(super) fn system_art(
                             game: (*game).clone(),
                             kind,
                         });
-                        match get_halting(&url, halted_hosts) {
+                        match get_image_halting(&url, halted_hosts) {
                             Ok(Some(data)) if image_ext(&data).is_some() => {
                                 match keep(
                                     conn,
@@ -199,7 +199,8 @@ pub(super) fn system_art(
                             game: (*game).clone(),
                             kind,
                         });
-                        match get_halting(&url, halted_hosts) {
+                        let get = crate::artsources::download_url(provider.name(), &url, keys, &opts.sources);
+                        match get_image_halting(&get, halted_hosts) {
                             Ok(Some(data)) if image_ext(&data).is_some() => {
                                 match keep(
                                     conn,
@@ -249,18 +250,28 @@ pub(super) fn get_halting(
     url: &str,
     halted: &mut std::collections::HashSet<String>,
 ) -> Result<Option<Vec<u8>>, Error> {
-    let host = url
-        .split("://")
-        .nth(1)
-        .and_then(|r| r.split('/').next())
-        .unwrap_or("")
-        .to_owned();
+    halting(&fetch::Request::get(url), halted)
+}
+
+/// [`get_halting`] for a picture ([`fetch::Request::image`]'s limits).
+pub(super) fn get_image_halting(
+    url: &str,
+    halted: &mut std::collections::HashSet<String>,
+) -> Result<Option<Vec<u8>>, Error> {
+    halting(&fetch::Request::image(url), halted)
+}
+
+fn halting(
+    req: &fetch::Request,
+    halted: &mut std::collections::HashSet<String>,
+) -> Result<Option<Vec<u8>>, Error> {
+    let host = fetch::host_of(req.url).to_owned();
     if halted.contains(&host) {
         return Err(Error::Http(format!(
             "{host}: rate limiting, not asked again this run"
         )));
     }
-    let r = fetch::get_optional(url);
+    let r = fetch::request(req);
     if let Err(e) = &r
         && fetch::is_rate_limited(e)
     {
@@ -294,7 +305,12 @@ pub(super) fn keep(
     record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)?;
     conn.execute(
         "UPDATE art SET url = ?4, chosen = 0 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
-        params![system_id, game, kind.as_str(), url],
+        params![
+            system_id,
+            game,
+            kind.as_str(),
+            crate::artsources::without_credentials(url)
+        ],
     )?;
     Ok(())
 }
@@ -326,13 +342,33 @@ fn record(
     Ok(())
 }
 
-/// Write `data` to `path` via a temporary file, so a crash never leaves half
-/// an image under the real name.
+/// Write `data` to `path` via a temporary file of its own, so a crash never
+/// leaves half an image under the real name.
 pub(super) fn save(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+    crate::atomic::write(path, data)
+}
+
+/// Art URLs kept before credentials were left out of them (ScreenScraper's
+/// media URLs carry the owner's): kept without them now.
+pub(super) fn scrub_art_urls(conn: &Connection) -> Result<(), Error> {
+    let rows: Vec<(i64, String, String, String)> = conn
+        .prepare(
+            "SELECT system_id, title, kind, url FROM art
+             WHERE url LIKE '%devpassword=%' OR url LIKE '%sspassword=%'
+                OR url LIKE '%devid=%' OR url LIKE '%ssid=%'",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<Result<_, _>>()?;
+    for (system_id, title, kind, url) in rows {
+        conn.execute(
+            "UPDATE art SET url = ?4 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+            params![
+                system_id,
+                title,
+                kind,
+                crate::artsources::without_credentials(&url)
+            ],
+        )?;
     }
-    let tmp = path.with_extension("part");
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(&tmp, path)
+    Ok(())
 }

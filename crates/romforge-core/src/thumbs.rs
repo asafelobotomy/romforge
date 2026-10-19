@@ -9,13 +9,13 @@
 
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 
 use image::{DynamicImage, ImageFormat};
 use sha2::{Digest as _, Sha256};
 
 use crate::Error;
+use crate::atomic::write_new;
 
 const JPEG_QUALITY: u8 = 85;
 /// Heights outside this are served as they are (nothing to gain, or a
@@ -96,23 +96,4 @@ pub fn thumbnail(src: &Path, height: u32, cache: &Path) -> Result<PathBuf, Error
 /// No pixel lets anything through.
 fn opaque(img: &DynamicImage) -> bool {
     !img.color().has_alpha() || img.to_rgba8().pixels().all(|p| p.0[3] == 255)
-}
-
-/// Write `path` through a temporary file beside it, so a request made at
-/// the same time never sees half a picture.
-fn write_new(path: &Path, fill: impl FnOnce(&std::fs::File) -> Result<(), Error>) -> Result<(), Error> {
-    static N: AtomicU64 = AtomicU64::new(0);
-    let tmp = path.with_extension(format!(
-        "tmp{}-{}",
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = std::fs::File::create(&tmp)
-        .map_err(Error::from)
-        .and_then(|f| fill(&f))
-        .and_then(|()| std::fs::rename(&tmp, path).map_err(Error::from));
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result
 }
