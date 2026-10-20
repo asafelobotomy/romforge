@@ -26,6 +26,7 @@
   import { ui } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
   import { padAction } from "./padnav.js";
+  import { click, key as selectKey, targets } from "./selection.js";
 
   // Which screen: the library (default), DATs, BIOS, or organize.
   let view = $state("library");
@@ -36,7 +37,10 @@
   let lib = $state({ platforms: [], rows: [] });
   let platform = $state("*"); // "*" all, "" unidentified, else system key
   let filter = $state("");
-  let selected = $state(null); // row id
+  let selected = $state(null); // row id: the one Details shows
+  // The rows picked for the toolbar's jobs, and where a Shift run starts.
+  let picked = $state.raw(new Set());
+  let anchor = null;
   let detail = $state(null);
   // Refresh needs a folder from Settings (or the RomForge folder).
   let canRefresh = $state(false);
@@ -128,6 +132,8 @@
     canRefresh = (await call("can_refresh", undefined, true)) ?? false;
     loadIcons();
     if (selected && !lib.rows.some((r) => r.id === selected)) selected = null;
+    const ids = new Set(lib.rows.map((r) => r.id));
+    if ([...picked].some((id) => !ids.has(id))) picked = new Set([...picked].filter((id) => ids.has(id)));
     if (selected) await open(selected, true);
   }
 
@@ -196,14 +202,13 @@
   // Rename & Cleanup: the whole job (rename, repack, move or replace, as
   // Settings says) straight away; its dry run shows the plan first.
   async function renameCleanup() {
-    const r = await run("Renaming and cleaning up…", "cleanup_apply", { only: null, from: null });
+    const r = await run(`Renaming and cleaning up ${chosen.length} games…`, "cleanup_apply", { only: chosen, from: null });
     if (r) note = cleanupNote(r);
     await load();
   }
 
   async function enrich() {
-    const system = platform === "*" || platform === "" ? null : platform;
-    const r = await run(`Fetching metadata and art${system ? ` for ${system}` : ""}…`, "enrich", { system });
+    const r = await run(`Fetching metadata and art for ${chosen.length} games…`, "enrich", { system: null, only: chosen });
     if (r) note = enrichNote(r);
     await load();
   }
@@ -245,23 +250,35 @@
   let games = $derived(lib.rows.filter((r) => r.main && !r.unmatched).length);
   let rows = $derived(libraryRows(lib.rows, platform, filter, listSort, isOpen));
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
+  // What the toolbar's jobs act on.
+  let chosen = $derived(targets(picked, rows, lib.rows, isOpen));
+
+  // A new selection (from a click or a key): Details follows its focus.
+  function select(s) {
+    picked = s.picked;
+    anchor = s.anchor;
+    if (s.focus != null && s.focus !== selected) open(s.focus);
+    const j = rows.findIndex((r) => r.id === s.focus);
+    if (j >= 0) table?.reveal(j);
+  }
+  // A version picked from Details unfolds its game, so the list shows it.
+  function pick(id, e) {
+    const r = lib.rows.find((x) => x.id === id);
+    if (r?.group && !r.main && !isOpen(r.group)) expanded[r.group] = true;
+    select(click({ picked, anchor, focus: selected }, rows, id, e));
+  }
 
   let table = $state(null);
 
-  // Up/Down move through the list when no text field has focus.
+  // The selection keys (selection.js) when no text field has focus.
   function listKeys(e) {
     const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
-    if (view !== "library" || dialog || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+    if (view !== "library" || dialog) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    const s = selectKey({ picked, anchor, focus: selected }, rows, e);
+    if (!s) return;
     e.preventDefault();
-    const i = rows.findIndex((r) => r.id === selected);
-    let j = Math.max(0, Math.min(rows.length - 1, e.key === "ArrowDown" ? i + 1 : i < 0 ? 0 : i - 1));
-    // Headings are passed over.
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    while (rows[j]?.head && rows[j + step]) j += step;
-    if (!rows[j] || rows[j].head) return;
-    open(rows[j].id);
-    table?.reveal(j);
+    select(s);
   }
 
   // Game pads: the library moves with the d-pad, A plays, the shoulders
@@ -278,9 +295,7 @@
       const i = Math.max(0, all.indexOf(platform));
       platform = all[(i + (action === "page_down" ? 1 : all.length - 1)) % all.length];
     } else if ((action === "first" || action === "last") && games.length) {
-      const g = action === "first" ? games[0] : games[games.length - 1];
-      open(g.id);
-      table?.reveal(rows.indexOf(g));
+      pick((action === "first" ? games[0] : games[games.length - 1]).id);
     } else if (action === "menu") settings.openSettings();
     else if (action === "context") emulators.openEmulatorSettings();
   }
@@ -317,12 +332,12 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
 
-  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {selected} {homeRoot} {call} {load} />
+  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {homeRoot} {call} {load} />
 
   <HomeDialog bind:this={home} bind:open={homeOpen} bind:root={homeRoot} bind:note {load} />
 
@@ -344,9 +359,9 @@
     <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} />
 
     {#if view === "library"}
-      <LibraryPane {lib} {rows} {games} {platform} {selected} {isOpen} {toggle} {open} bind:filter bind:listMode bind:listSort bind:table />
+      <LibraryPane {lib} {rows} {games} {platform} {selected} {picked} chosen={chosen.length} {isOpen} {toggle} open={pick} bind:filter bind:listMode bind:listSort bind:table />
 
-      <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} {open} {forget} {applyPatchRow} {patcher} {artPicker} bind:error />
+      <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} open={pick} {forget} {applyPatchRow} {patcher} {artPicker} bind:error />
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
     <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} />

@@ -88,6 +88,9 @@ pub struct EnrichOptions {
     /// Only the game with this title (with `system`, one game: Search
     /// fetches what you asked for right after you pick a result).
     pub title: Option<String>,
+    /// Only these games, as (system key, title) (the app's selection; see
+    /// [`crate::Library::enrich_rows`]).
+    pub games: Option<Vec<(String, String)>>,
     /// Fetch again what was fetched (or found missing) before.
     pub refresh: bool,
     /// libretro-database's `metadat` URL ([`fetch::LIBRETRO_BASE`]).
@@ -121,6 +124,7 @@ impl EnrichOptions {
             art: vec![ArtKind::Boxart],
             system: None,
             title: None,
+            games: None,
             refresh: false,
             metadata_base: fetch::LIBRETRO_BASE.to_owned(),
             dats_base: fetch::LIBRETRO_DAT_BASE.to_owned(),

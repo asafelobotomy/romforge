@@ -3,8 +3,13 @@
   import Wordmark from "./Wordmark.svelte";
 
   // The buttons along the top; the jobs themselves are App's, and the
-  // dialogs' instances open theirs.
-  let { busy, playing, canRefresh, homeRoot, row, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  // dialogs' instances open theirs. Search, Enrich, Rename & Cleanup and
+  // Convert take only the games selected in the list (`chosen`, row ids);
+  // Refresh and Scan folder work on folders.
+  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  const n = $derived(chosen.length);
+  const games = $derived(n === 1 ? "the selected game" : `the ${n} selected games`);
+  const pickFirst = "Select games in the list first (Ctrl+A selects everything listed)";
 </script>
 
 <header class="toolbar">
@@ -20,21 +25,21 @@
     onclick={scanFolder}
     items={[{ label: "Scan folder [dry run]", title: "See what a folder holds first, then scan it or not", onclick: scanDryRun }]}
   />
-  <button class="tool" onclick={() => search.openSearch()} disabled={!!busy} title="Identify games one by one: DAT title suggestions or your own title, and settle Wikidata matches">
+  <button class="tool" onclick={() => search.openSearch(chosen)} disabled={!!busy || !n} title={n ? `Identify ${games} one by one: DAT title suggestions or your own title, and settle Wikidata matches` : pickFirst}>
     <span class="glyph">⌕</span>Search
   </button>
-  <button class="tool" onclick={enrich} disabled={!!busy} title="Fetch metadata and art for the games you have on this platform">
+  <button class="tool" onclick={enrich} disabled={!!busy || !n} title={n ? `Fetch metadata and art for ${games}` : pickFirst}>
     <span class="glyph">✦</span>Enrich
   </button>
   <SplitButton
     glyph="✎"
     label="Rename & Cleanup"
-    title="Rename, repack and {homeRoot ? 'import' : 'move'} every identified game now, as Settings says (originals to the trash, kept, or replaced in place); Undo is in the dry run"
-    disabled={!!busy}
+    title={n ? `Rename, repack and ${homeRoot ? "import" : "move"} ${games} now (those identified), as Settings says (originals to the trash, kept, or replaced in place); Undo is in the dry run` : pickFirst}
+    disabled={!!busy || !n}
     onclick={renameCleanup}
-    items={[{ label: "Rename & Cleanup [dry run]", title: "See the plan first, then do it or not (Undo and Empty trash are here too)", onclick: () => cleanup.openCleanup() }]}
+    items={[{ label: "Rename & Cleanup [dry run]", title: "See the plan first, then do it or not (Undo and Empty trash are here too)", onclick: () => cleanup.openCleanup(null, "cleanup", chosen) }]}
   />
-  <button class="tool" onclick={() => cleanup.openCleanup(null, "convert")} disabled={!!busy} title="Turn disc images into CHD where they are (shows what it would do first)">
+  <button class="tool" onclick={() => cleanup.openCleanup(null, "convert", chosen)} disabled={!!busy || !n} title={n ? `Turn the disc images of ${games} into CHD where they are (shows what it would do first)` : pickFirst}>
     <span class="glyph">⇲</span>Convert
   </button>
   <span class="spacer"></span>

@@ -1,6 +1,6 @@
 //! The app's toolbar: Scan folder (the first one becomes the Source), its
-//! dry run (the library unchanged), and Refresh (only Settings' folders).
-//! Always on copies in temp folders.
+//! dry run (the library unchanged), Refresh (only Settings' folders), and
+//! Enrich on the selected games only. Always on copies in temp folders.
 
 use std::path::{Path, PathBuf};
 
@@ -203,4 +203,34 @@ fn platform_icons_are_fetched_once() {
         lib.save_settings(&s).is_err(),
         "controllers, systems or logos only"
     );
+}
+
+#[test]
+fn enrich_takes_only_the_selected_games() {
+    use romforge_core::enrich::EnrichOptions;
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.import_dat(fixtures().join("dats/nes.dat"), None).unwrap();
+    lib.scan(fixtures().join("roms/gb"), romforge_core::Scope::All)
+        .unwrap();
+    lib.scan(fixtures().join("roms/nes"), romforge_core::Scope::All)
+        .unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let gb = rows.iter().find(|r| r.title == "Test GB").unwrap().id.clone();
+
+    // Nothing answers: only which games were taken matters here.
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    let nowhere = "http://127.0.0.1:9".to_owned();
+    opts.metadata_base = nowhere.clone();
+    opts.dats_base = nowhere.clone();
+    opts.thumbnails_base = nowhere;
+    opts.wikidata = None;
+    let all = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(all.games > 1, "{all:?}");
+    let one = lib.enrich_rows(&opts, &[gb], |_| {}).unwrap();
+    assert_eq!((one.systems, one.games), (1, 1), "{one:?}");
+    // A row that isn't in the list takes nothing.
+    let none = lib.enrich_rows(&opts, &["no such row".into()], |_| {}).unwrap();
+    assert_eq!(none.games, 0);
 }

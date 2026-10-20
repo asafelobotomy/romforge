@@ -8,7 +8,7 @@
   // `load` reloads the library.
   // With `homeRoot` (the RomForge folder) this is Import: games move into
   // its Games/, from `from` (a folder just added) or everywhere outside it.
-  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), selected, homeRoot = null, call, load } = $props();
+  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), homeRoot = null, call, load } = $props();
   let from = $state(null);
   // "cleanup": Rename & Cleanup's dry run (or Import); "convert": disc
   // images into CHD where they are.
@@ -16,10 +16,10 @@
   const converting = $derived(mode === "convert");
 
   // Cleanup and rename dialog: a plan first, applied on confirmation.
-  let cleanOnly = $state(false); // just the selected game
-  // The game "Only the selected game" planned for, which is what applies
-  // even if the selection changes behind the dialog.
-  let planned = null;
+  // `only`: the games selected when it opened (row ids), which is what
+  // applies even if the selection changes behind the dialog; null for
+  // everything (Import from the organize screen).
+  let only = $state(null);
   let cleanPlan = $state(null);
   let cleanBatches = $state([]);
   let cleanError = $state("");
@@ -46,10 +46,10 @@
 
   const mib = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GiB` : `${(n / (1 << 20)).toFixed(1)} MiB`);
 
-  export async function openCleanup(folder = null, how = "cleanup") {
+  export async function openCleanup(folder = null, how = "cleanup", ids = null) {
     from = folder;
     mode = how;
-    cleanOnly = false;
+    only = ids ? [...ids] : null;
     confirmCleanUndo = false;
     open = true;
     await planCleanup();
@@ -58,8 +58,6 @@
   async function planCleanup() {
     cleanError = "";
     try {
-      planned = cleanOnly && selected ? selected : null;
-      const only = planned ? [planned] : null;
       cleanPlan = converting ? await invoke("convert_plan", { only }) : await invoke("cleanup_plan", { only, from });
     } catch (e) {
       cleanPlan = null;
@@ -72,7 +70,6 @@
     cleanError = "";
     busy = converting ? `Converting ${cleanPlan.items.length} discs…` : `Renaming and cleaning up ${cleanPlan.items.length} games…`;
     try {
-      const only = planned ? [planned] : null;
       const r = converting ? await invoke("convert_apply", { only }) : await invoke("cleanup_apply", { only, from });
       const trashed = homeRoot ? "to the RomForge trash" : "to .romforge-trash";
       note = r.batch_id
@@ -140,11 +137,8 @@
           else happens. Nothing is ever overwritten.
         </p>
       {/if}
-      {#if !from}
-        <label class="toggle">
-          <input type="checkbox" bind:checked={cleanOnly} disabled={!selected} onchange={planCleanup} />
-          Only the selected game
-        </label>
+      {#if only}
+        <p class="meta">For {only.length === 1 ? "the selected game" : `the ${only.length} selected games`}</p>
       {/if}
       {#if cleanPlan}
         <p class="meta">

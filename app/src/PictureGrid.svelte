@@ -6,7 +6,9 @@
   // with the same fold-out versions and headings as the list. With
   // `scroll` (the library) only the lines in view are drawn, so thousands
   // stay quick; without it (Details' Versions) it is as tall as it needs.
-  let { rows, mode, selected, isOpen, open, toggle, statusLabel, scroll = true } = $props();
+  // `picked`: the selected cards (else just `selected`, which has the
+  // focus).
+  let { rows, mode, selected, picked = null, isOpen, open, toggle, statusLabel, scroll = true } = $props();
 
   // Boxes: every box the same height (BOX px) on one baseline, each at its
   // platform's and region's shape (`box_aspect`, width / height in
@@ -109,10 +111,10 @@
             <div class="cell">
               <button
                 class="pic"
-                class:sel={r.id === selected}
+                class:sel={picked ? picked.has(r.id) : r.id === selected} class:focus={r.id === selected}
                 class:missing={r.status === "missing"}
                 style={mode === "banner" ? "" : `height: ${BOX}px; width: ${Math.round(BOX * aspect(r))}px`}
-                onclick={() => open(r.id)}
+                onclick={(e) => open(r.id, e)}
                 title={tip(r)}
                 aria-label={tip(r)}
               >
@@ -144,9 +146,10 @@
   .cell { position: relative; min-width: 0; display: flex; align-items: flex-end; justify-content: center; }
 
   /* Nothing but the picture: no card behind it, no title under it. */
-  .pic { position: relative; display: block; padding: 0; border: none; border-radius: 3px; background: none; cursor: pointer; overflow: hidden; box-shadow: 0 2px 8px #0005; transition: transform 0.12s, box-shadow 0.12s; }
+  .pic { position: relative; display: block; padding: 0; border: none; border-radius: 3px; background: none; cursor: pointer; user-select: none; overflow: hidden; box-shadow: 0 2px 8px #0005; transition: transform 0.12s, box-shadow 0.12s; }
   .pic:hover { transform: translateY(-2px); box-shadow: 0 6px 14px #0006; }
   .pic.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .pic.focus:not(.sel) { outline: 2px dashed var(--accent); outline-offset: 2px; }
   .pic.missing { opacity: 0.5; }
   .placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 0.5rem; font-size: 0.75rem; line-height: 1.25; color: var(--muted); text-align: center; background: repeating-linear-gradient(45deg, #0001 0 10px, #0002 10px 20px); overflow: hidden; }
   .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }

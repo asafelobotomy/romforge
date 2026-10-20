@@ -5,9 +5,11 @@
   // been gathered; versions fold out under headings. With `scroll` (the
   // library) only the rows in view are drawn; without it (Details'
   // Versions) every row is. `sort` is bindable (its headings sort).
+  // `picked`: the selected rows (else just `selected`, which has the focus).
   let {
     rows,
     selected,
+    picked = null,
     platformCol = true,
     isOpen,
     toggle,
@@ -65,7 +67,7 @@
             title="{r.versions - 1} more: other regions, editions, translations, hacks and patches"
           >{isOpen(r.group) ? "▾" : "▸"}</button>
         {/if}
-        <button class="tr" class:sel={r.id === selected} class:version={!r.main} class:missing={r.status === "missing"} onclick={() => open(r.id)}>
+        <button class="tr" class:sel={picked ? picked.has(r.id) : r.id === selected} class:focus={r.id === selected} class:version={!r.main} class:missing={r.status === "missing"} onclick={(e) => open(r.id, e)}>
           <span class="title" style={r.depth ? `padding-left: ${0.7 + r.depth * 1.1}rem` : undefined} title={r.label ? r.title : undefined}>{r.label ?? r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
           {#if platformCol}<span class="sys">{r.system ?? "—"}</span>{/if}
           <span class="yr">{r.year ?? ""}</span>
@@ -89,9 +91,10 @@
   .thead { position: sticky; top: 0; background: var(--panel); font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); text-align: left; z-index: 2; }
   .trow { position: relative; text-align: left; }
   .twisty { position: absolute; left: 0; top: 0; height: 32px; width: 1.2rem; padding: 0; border: none; border-radius: 0; color: var(--muted); z-index: 1; background: none; }
-  .tr { width: 100%; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; background: none; }
+  .tr { width: 100%; height: 32px; box-sizing: border-box; padding-top: 0; padding-bottom: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; background: none; user-select: none; }
   .tr:hover { background: var(--accent-bg); }
   .tr.sel { background: var(--accent-bg); box-shadow: inset 3px 0 var(--accent); }
+  .tr.focus { outline: 1px dotted var(--accent); outline-offset: -1px; }
   .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tr .title { padding-left: 0.7rem; }
   .tr.version .title { padding-left: 1.8rem; color: var(--muted); }

@@ -8,13 +8,16 @@
   // The library's games: the filter, the view switch, the sort (for the
   // picture views; the list sorts by its headings) and the games as a list
   // or pictures. `table` is the view's instance (list or pictures), for
-  // keyboard moves.
+  // keyboard moves. `picked`: the selected rows; `chosen`: how many games
+  // the toolbar's jobs would take.
   let {
     lib,
     rows,
     games,
     platform,
     selected,
+    picked,
+    chosen,
     isOpen,
     toggle,
     open,
@@ -45,12 +48,15 @@
       <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
     </div>
   {:else if listMode !== "list"}
-    <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {isOpen} {open} {toggle} {statusLabel} />
+    <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {picked} {isOpen} {open} {toggle} {statusLabel} />
   {:else}
-    <GameTable bind:this={table} {rows} {selected} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} bind:sort={listSort} />
+    <GameTable bind:this={table} {rows} {selected} {picked} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} bind:sort={listSort} />
   {/if}
   {#if lib.rows.length}
-    <p class="foot">{platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}</p>
+    <p class="foot">
+      {platform === "" ? `${rows.filter((r) => r.main).length} not matched yet: Search can identify them` : `${rows.filter((r) => r.main).length} of ${games} games`}
+      <span class="picked" title="Ctrl+click or Shift+click to pick more; Ctrl+A picks everything listed, Ctrl+Shift+A nothing, Ctrl+I the others">{chosen ? ` · ${chosen} selected` : " · none selected"}</span>
+    </p>
   {/if}
 </section>
 
@@ -60,5 +66,6 @@
   .viewbar .search { margin: 0; flex: 1; min-width: 8rem; }
   .list :global(.sortbar) { margin: 0 0.5rem 0.4rem; justify-content: flex-start; }
   .foot { margin: 0; padding: 0.3rem 0.6rem; font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); }
+  .picked { color: var(--accent); }
   .empty h2 { color: var(--text); }
 </style>

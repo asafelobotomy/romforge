@@ -32,14 +32,24 @@ pub async fn platform_logo(db: tauri::State<'_, Db>, system: String) -> Res<Opti
     .await
 }
 
+/// `only`: these library rows (the selection), else every game of
+/// `system` (or of every platform).
 #[tauri::command]
-pub async fn enrich(db: tauri::State<'_, Db>, system: Option<String>) -> Res<EnrichReport> {
+pub async fn enrich(
+    db: tauri::State<'_, Db>,
+    system: Option<String>,
+    only: Option<Vec<String>>,
+) -> Res<EnrichReport> {
     let opts = EnrichOptions {
         system,
         art: ArtKind::ALL.to_vec(),
         ..EnrichOptions::new(default_cache_dir())
     };
-    with(&db, move |lib| lib.enrich(&opts, |_| {})).await
+    with(&db, move |lib| match &only {
+        Some(ids) => lib.enrich_rows(&opts, ids, |_| {}),
+        None => lib.enrich(&opts, |_| {}),
+    })
+    .await
 }
 
 /// The pictures of `kind` the sources have for a row, each preview as a

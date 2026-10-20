@@ -9,8 +9,8 @@ use crate::db::{Db, Res, blocking, read, read_net, with};
 use crate::images::image_url;
 
 #[tauri::command]
-pub async fn search_queue(db: tauri::State<'_, Db>) -> Res<Vec<QueueItem>> {
-    read(&db, move |lib| lib.search_queue(None)).await
+pub async fn search_queue(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<Vec<QueueItem>> {
+    read(&db, move |lib| lib.search_queue(only.as_deref())).await
 }
 
 #[tauri::command]

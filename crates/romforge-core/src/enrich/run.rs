@@ -93,6 +93,11 @@ pub fn enrich(
             .collect::<Result<_, _>>()?;
         have.retain(|(_, game), _| game == t || bases.contains(game));
     }
+    if let Some(games) = &opts.games {
+        have.retain(|(system, game), _| {
+            systems::by_id(*system).is_some_and(|s| games.iter().any(|(k, g)| k == s.key && g == game))
+        });
+    }
     let mut by_system: BTreeMap<i64, Vec<(&String, &Vec<String>)>> = BTreeMap::new();
     for ((system, game), crcs) in &have {
         by_system.entry(*system).or_default().push((game, crcs));

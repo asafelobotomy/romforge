@@ -80,7 +80,9 @@ pub(super) fn plan_as(
             continue;
         }
         if !row.status.identified() {
-            if only.is_some() {
+            // A game you don't have (listed for its translations) has
+            // nothing to clean up, picked or not.
+            if only.is_some() && row.status != RowStatus::Missing {
                 plan.skipped
                     .push((row.title.clone(), "identify it first (Search)".into()));
             }

@@ -39,11 +39,12 @@
   let noOverwrite = $state(true);
   let searchSeq = 0;
 
-  export async function openSearch() {
+  // `only`: the games selected in the list.
+  export async function openSearch(only) {
     qError = "";
-    queue = (await call("search_queue")) ?? [];
+    queue = (await call("search_queue", { only })) ?? [];
     if (!queue.length) {
-      note = "Nothing needs identifying: every game is matched by hash or named by you, and Wikidata is settled.";
+      note = "Nothing selected needs identifying: each is matched by hash or named by you, and Wikidata is settled.";
       return;
     }
     if (!allSystems.length) allSystems = (await call("all_systems")) ?? [];

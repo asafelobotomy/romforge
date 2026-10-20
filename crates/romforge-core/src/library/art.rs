@@ -22,6 +22,34 @@ impl Library {
         enrich::enrich(&mut self.conn, &opts, progress)
     }
 
+    /// Enrich only these library rows (the app's selection): each row's
+    /// game, and the base game of a translation or hack, whose metadata and
+    /// art it shows. Rows that aren't a game of a platform are passed over.
+    pub fn enrich_rows(
+        &mut self,
+        opts: &enrich::EnrichOptions,
+        ids: &[String],
+        progress: impl FnMut(enrich::EnrichEvent),
+    ) -> Result<enrich::EnrichReport, Error> {
+        let v = self.cached_view()?;
+        let by_id: std::collections::HashMap<&str, &crate::view::GameRow> =
+            v.rows.iter().map(|r| (r.id.as_str(), r)).collect();
+        let mut games = Vec::new();
+        for id in ids {
+            let Some(row) = by_id.get(id.as_str()) else {
+                continue;
+            };
+            for r in std::iter::once(*row).chain(row.base_id.as_deref().and_then(|b| by_id.get(b).copied())) {
+                if let Some(system) = &r.system {
+                    games.push((system.clone(), r.title.clone()));
+                }
+            }
+        }
+        let mut opts = opts.clone();
+        opts.games = Some(games);
+        self.enrich(&opts, progress)
+    }
+
     /// Enrich options using this library's downloaded databases unless the
     /// caller named a folder.
     pub(super) fn with_extdb(&self, opts: &enrich::EnrichOptions) -> enrich::EnrichOptions {

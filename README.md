@@ -444,6 +444,16 @@ The toolbar:
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
   Cleanup, Display, Sources, Credits), **Play**.
 
+Search, Enrich, Rename & Cleanup and Convert work on the games selected
+in the list, never on the whole library (Refresh and Scan folder work on
+folders). Click picks one game, Ctrl+click adds or drops one, Shift+click
+picks a run; Shift with the arrows, Home, End, Page Up or Page Down
+extends it, and Ctrl with them moves without picking (Ctrl+Space then
+adds or drops). **Ctrl+A** selects everything listed (the platform and
+filter in view), **Ctrl+Shift+A** nothing, **Ctrl+I** the others. A game
+whose versions are folded takes them along. The foot of the list says how
+many are selected.
+
 **All games** and each platform list only games (verified, named by you,
 translations and hacks, and the like); **Unidentified** collects
 everything not matched yet, whatever its platform: unknown files, CRC32-only

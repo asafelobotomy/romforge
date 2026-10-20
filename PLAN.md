@@ -1516,6 +1516,20 @@ the running app.
   for the others (it used to write GameCube and Wii ISOs as CHD, which
   Dolphin can't read).
 
+## Selection: the toolbar acts on what is picked (2026-10-20, built)
+
+- The list and picture views pick several games (`selection.js`: click,
+  Ctrl/Shift+click, Shift/Ctrl with the arrows, Home, End and Page keys,
+  Ctrl+A, Ctrl+Shift+A, Ctrl+I, Ctrl+Space). Details shows the focus.
+- Search (`search_queue` `only`), Enrich (`Library::enrich_rows`: each
+  row's game and a translation's or hack's base), Rename & Cleanup and its
+  dry run, and Convert (`only`) take the picked rows still listed; a
+  folded game brings its versions. Nothing picked: they are greyed out.
+  The dialog's "Only the selected game" box is gone. A scoped cleanup
+  plan passes over games you don't have instead of listing them.
+- Refresh and Scan folder stay folder jobs; Organize's Import still
+  takes everything outside RomForge.
+
 ## Platform icons and Settings tabs (2026-10-19, built)
 
 - `enrich::platform_icons`: controllers (`flatui`, the default) or
