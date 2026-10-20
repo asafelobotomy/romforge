@@ -56,7 +56,7 @@ jobs:
           url="https://github.com/asafelobotomy/romforge"
           license=('MIT')
           depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'libsoup3' 'cairo' 'gdk-pixbuf2' 'dbus'
-                   'hicolor-icon-theme' 'glibc' 'libgcc')
+                   'hicolor-icon-theme' 'glibc' 'libgcc' 'systemd-libs')
           optdepends=('retroarch: play games (with its cores)'
                       'libretro-scummvm: ScummVM games in RetroArch'
                       'scummvm: ScummVM games, and naming them'
