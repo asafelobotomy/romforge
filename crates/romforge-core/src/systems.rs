@@ -63,6 +63,9 @@ pub struct System {
     /// list ties to one of these, or to none, is listed for it (milestone
     /// 20). Empty for arcade systems, whose BIOS sets MAME's DATs cover.
     pub retrobios: &'static [&'static str],
+    /// The system's folders in retrokit-manuals on archive.org (manual
+    /// scans named by No-Intro title; milestone 26).
+    pub manuals: &'static [&'static str],
     /// ScreenScraper's system id (unverified until checked with a key).
     pub screenscraper: Option<u32>,
     /// IGDB platform ids (unverified until checked with a key).
@@ -144,6 +147,7 @@ const fn s(
         emulators: &[],
         wikidata: &[],
         retrobios: &[],
+        manuals: &[],
         screenscraper: None,
         igdb: &[],
         launchbox: &[],
@@ -201,6 +205,11 @@ impl System {
 
     const fn retrobios(mut self, ids: &'static [&'static str]) -> Self {
         self.retrobios = ids;
+        self
+    }
+
+    const fn manuals(mut self, folders: &'static [&'static str]) -> Self {
+        self.manuals = folders;
         self
     }
 

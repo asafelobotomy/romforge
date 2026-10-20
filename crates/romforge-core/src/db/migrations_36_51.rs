@@ -53,4 +53,32 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         last_page  INTEGER NOT NULL DEFAULT 1,
         PRIMARY KEY (system, game)
     );",
+    // 40: a manual's marks (milestone 26): highlighted text and notes on an
+    // area of a page, placed as fractions of the page (so they hold at any
+    // zoom), by system key and title like the manual itself.
+    "CREATE TABLE manual_marks (
+        mark_id    INTEGER PRIMARY KEY,
+        system     TEXT NOT NULL,
+        game       TEXT NOT NULL,
+        page       INTEGER NOT NULL,
+        kind       TEXT NOT NULL CHECK (kind IN ('highlight', 'area')),
+        text       TEXT NOT NULL DEFAULT '',
+        rects      TEXT NOT NULL,
+        color      TEXT NOT NULL,
+        note       TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX manual_marks_game ON manual_marks (system, game, page);",
+    // 41: OCR of a manual's scanned pages (milestone 26): the words
+    // recognised on a page in a language, each with its box as fractions
+    // of the page, so a scan can be searched and highlighted.
+    "CREATE TABLE manual_ocr (
+        system     TEXT NOT NULL,
+        game       TEXT NOT NULL,
+        page       INTEGER NOT NULL,
+        lang       TEXT NOT NULL,
+        words      TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (system, game, page, lang)
+    );",
 ];

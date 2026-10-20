@@ -2071,7 +2071,7 @@ table, no DATs). It gets:
 - *Compression:* WUA from decrypted folders, and from WUD / WUX with
   the user's keys (milestone 23, 4).
 
-## Manuals (milestone 26; researched and decided 2026-10-19; first part built 2026-10-20)
+## Manuals (milestone 26; researched and decided 2026-10-19; built 2026-10-20)
 
 A game's manual, read in a Manual tab next to Details or in a window of
 its own. Neither downloaded database has manuals (LaunchBox's 33 image
@@ -2114,9 +2114,21 @@ Sources, in this order:
    Fetched by Enrich only when nothing above gave one, at most one per
    game (ES-DE scrapes manuals the same way).
 
-Later, maybe: archive.org's manual collections (the complete English
-SNES set, ...). Free and keyless, but matched by title only and each
-collection names its files its own way.
+*Revised 2026-10-20 (owner: "investigate these resources instead of
+Vimm"):* archive.org comes first now, Vimm third. Looked at:
+- **retrokit-manuals** (archive.org): 46 systems, one zip per system,
+  each PDF named `<No-Intro parent title> (<languages>).pdf`, already
+  OCR'd. archive.org lists a zip's members as a page and serves one
+  member alone, so no whole zip is downloaded.
+- **Kirkland's Manual Labor** (videogamemanual.com, mirrored on
+  archive.org): one item per manual, titled with the exact No-Intro name;
+  archive.org's search API (made for programs) finds it by that name.
+  videogamemanual.com's own pages are hand-made per system, so they're
+  not read; a link opens the site.
+- **GamesDatabase.org:** its terms forbid automated access, so only a
+  link. **Scraping-Manual-Assistant** (MIT, last changed 2019) only
+  drives a real browser (Selenium) over GamesDatabase.org, so neither
+  its approach nor its code is used (rule 7, and that site's terms).
 
 Where it lives:
 
@@ -2167,6 +2179,55 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   remembered. `art://` serves `.pdf`; the CSP gained `connect-src art:`
   and `worker-src 'self' blob:`. Tried in a dev preview with a generated
   PDF.
+- **Reader tools** (owner's request, built 2026-10-20): a page box; search
+  (`manualSearch.js`: each page's text from pdf.js, kept per document;
+  the pages with a match listed with a snippet, ↑/↓ between them, the
+  matching text marked on the page); highlights (pdf.js's text layer over
+  each page, `PageView.svelte`: select text, pick one of four colours,
+  add a note if wanted); area notes ("Area" mode: drag a box over a
+  picture or part of a page, write a note); and the collection
+  (`ReaderSide.svelte`: every highlight and note by page, jump, edit the
+  note or colour, delete). Marks in `manual_marks` (migration 40), placed
+  as fractions of the page so they hold at any zoom. A scan with no text
+  layer can't be searched or highlighted (the panel says so); area notes
+  work on any page. Tried in a dev preview with a hand-made PDF with text: search,
+  a highlight with a note, an area note and the collection all worked;
+  a drag that starts in blank space beside the text doesn't select there
+  (it does from the text), to check in the app's WebKitGTK.
+- **OCR** (owner's request, built 2026-10-20): tesseract.js 7.0.0 and
+  tesseract.js-core 7.0.0 (Apache-2.0; their dependencies MIT / Apache)
+  recognise a scanned page in the app (`ocr.js`): the page drawn
+  unrotated at about 2000 px, Tesseract's own page layout, words below
+  55% confidence left out. The words, with their boxes as fractions of
+  the page, go into `manual_ocr` (migration 41, by page and language;
+  cleared when the manual is replaced or removed), so a page is read once.
+  They become a pdf.js text layer, so selecting, highlighting and search
+  work as on a PDF with text. The OCR button appears when a shown page
+  has no text; with it on, each page is read as it's shown. Search lists
+  the scanned pages not read yet and offers to read them all, one at a
+  time, with Stop. Language files come from tessdata_fast (Apache-2.0),
+  13 languages offered, downloaded when first used into the cache's
+  `ocr/` folder, served by `art://`; the worker and engine are the app's
+  own files, never a CDN. The CSP gained `script-src 'self'
+  'wasm-unsafe-eval'`. Tried in a dev preview on a noisy, skewed scan:
+  every word right, the text layer on the printed words, search,
+  highlight. Not yet tried in the app's WebKitGTK.
+- **archive.org manuals** (built 2026-10-20, `manual/sources.rs`): the
+  Manual tab looks up the game by name when it has no manual and lists
+  what it finds, best first: retrokit-manuals in the game's language,
+  Kirkland's scan, retrokit's other languages. Each has a Download button,
+  and only `archive.org/download/` URLs are fetched. A system's retrokit
+  folders are in the systems table (`manuals`); a folder's listing is
+  cached for a month. Matching is by the name without tags (letters and
+  digits only), or the DAT parent's name when the DAT has one. Kirkland's
+  scan is matched by the name cut after its region. Vimm's Lair stays as
+  the third way. With nothing found, links open archive.org's search,
+  VideoGameManual.com and GamesDatabase.org. CLI: `manual find|get`. Tried
+  live: Donkey Kong Country (USA) (Rev 2) and A Link to the Past (USA)
+  found on both; Dragon Quest III (Japan) found the Japanese one;
+  Castlevania - Bloodlines (USA) found nothing. retrokit files it under
+  its European parent, and libretro's No-Intro DATs carry no parent
+  names (0 of the library's 1,087,131 games).
 - **Not yet:** the pop-out window, ScreenScraper manuals, reading ES-DE's
   and LaunchBox's manual folders in "Import my existing setup", Cleanup
   putting the manual in the archive's `romforge/` folder, pad control of

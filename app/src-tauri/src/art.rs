@@ -49,6 +49,8 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
         Some("webp") => Some("image/webp"),
         // Manuals (milestone 26), read with pdf.js.
         Some("pdf") => Some("application/pdf"),
+        // Tesseract's language files, read by the OCR worker.
+        Some("traineddata") => Some("application/octet-stream"),
         _ => None,
     };
     let path = PathBuf::from(percent_decode(uri_path));

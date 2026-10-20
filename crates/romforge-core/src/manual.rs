@@ -105,6 +105,7 @@ pub fn add_manual(
             Ok(())
         })?;
     }
+    clear_ocr(conn, system, game)?;
     conn.execute(
         "INSERT INTO manuals (system, game, path, source) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(system, game) DO UPDATE SET path = excluded.path, source = excluded.source, last_page = 1",
@@ -119,6 +120,7 @@ pub fn remove_manual(conn: &Connection, media: &Path, system: &str, game: &str) 
     if let Some(p) = info.path.filter(|p| p.starts_with(media)) {
         std::fs::remove_file(p)?;
     }
+    clear_ocr(conn, system, game)?;
     conn.execute(
         "UPDATE manuals SET path = NULL, source = NULL, last_page = 1 WHERE system = ?1 AND game = ?2",
         params![system, game],
@@ -209,6 +211,13 @@ pub fn download_vimm(
     let _ = std::fs::remove_file(&tmp);
     kept
 }
+
+mod marks;
+pub use marks::*;
+mod ocr;
+pub use ocr::*;
+mod sources;
+pub use sources::*;
 
 #[cfg(test)]
 mod tests;

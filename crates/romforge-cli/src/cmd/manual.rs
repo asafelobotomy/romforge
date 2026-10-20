@@ -35,6 +35,32 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 (None, None) => println!("{}: no manual, and Hasheous knows none on Vimm's Lair", row.title),
             }
         }
+        ManualCommand::Find { game } => {
+            let row = lib.find_row(&game)?;
+            let offers = lib.manual_offers(&row.id)?;
+            if offers.is_empty() {
+                println!("{}: archive.org has no manual under this name", row.title);
+            }
+            for (i, o) in offers.iter().enumerate() {
+                let size = o
+                    .size
+                    .map(|s| format!(", {:.1} MB", s as f64 / 1e6))
+                    .unwrap_or_default();
+                println!("{}. {} ({}{size})", i + 1, o.name, o.source);
+            }
+        }
+        ManualCommand::Get { game, pick } => {
+            let row = lib.find_row(&game)?;
+            let offers = lib.manual_offers(&row.id)?;
+            let o = offers
+                .get(pick.saturating_sub(1))
+                .ok_or_else(|| anyhow::anyhow!("{}: no manual {pick} (see `manual find`)", row.title))?;
+            println!(
+                "{}: downloaded to {}",
+                row.title,
+                lib.download_manual_offer(&row.id, o)?.display()
+            );
+        }
         ManualCommand::Add { game, pdf } => {
             let row = lib.find_row(&game)?;
             println!("{}: {}", row.title, lib.add_manual(&row.id, &pdf)?.display());

@@ -133,7 +133,7 @@ pub(crate) fn source_family(source_path: &str) -> &str {
     }
 }
 
-pub(super) fn percent_encode(s: &str) -> String {
+pub(crate) fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.~()".contains(&b) {

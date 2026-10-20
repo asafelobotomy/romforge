@@ -162,7 +162,7 @@ pub enum Command {
     /// BIOS files: what each system's emulators need, and what you have
     #[command(subcommand)]
     Firmware(FirmwareCommand),
-    /// A game's manual (a PDF): yours, or Vimm's Lair's scan
+    /// A game's manual (a PDF): yours, archive.org's or Vimm's Lair's scan
     #[command(subcommand)]
     Manual(ManualCommand),
     /// Show or change your Source / Library folders and cleanup options

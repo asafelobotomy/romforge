@@ -8,13 +8,15 @@
   const reader = () => import("./ManualReader.svelte");
 
   // Details' Manual tab (milestone 26): the game's manual, or ways to get
-  // one: the user's own PDF (picked or dropped here), or Vimm's Lair's
-  // scan, found through Hasheous by the game's hash and downloaded only
-  // when clicked (Vimm asks for no automated fetching). Manuals are
+  // one: the scans archive.org holds under the game's name
+  // (retrokit-manuals, Kirkland's Manual Labor), Vimm's Lair's scan found
+  // through Hasheous by the game's hash, or the user's own PDF (picked or
+  // dropped here). Each is downloaded only when clicked. Manuals are
   // copyrighted scans: romforge never ships any.
   let { row, note = $bindable(""), error = $bindable("") } = $props();
 
   let info = $state(null);
+  let offers = $state(null);
   let busy = $state("");
   let dpi = $state(300);
   let over = $state(false);
@@ -26,10 +28,15 @@
 
   async function load(id) {
     info = null;
+    offers = null;
     try {
       let i = await invoke("manual_info", { rowId: id });
       if (id !== row.id) return;
       info = i;
+      if (!i.path)
+        invoke("manual_offers", { rowId: id })
+          .catch(() => [])
+          .then((o) => id === row.id && (offers = o));
       if (!i.path && !i.checked) {
         busy = "lookup";
         await invoke("manual_lookup", { rowId: id }).catch(() => null);
@@ -64,6 +71,18 @@
     try {
       await invoke("download_manual", { rowId: row.id, dpi });
       note = "Manual downloaded from Vimm's Lair.";
+      await load(row.id);
+    } catch (e) {
+      error = String(e).replace(/^(launch|settings): /, "");
+    }
+    busy = "";
+  }
+
+  async function take(offer) {
+    busy = offer.url;
+    try {
+      await invoke("download_manual_offer", { rowId: row.id, offer });
+      note = `Manual downloaded (${offer.source}).`;
       await load(row.id);
     } catch (e) {
       error = String(e).replace(/^(launch|settings): /, "");
@@ -110,6 +129,13 @@
   });
 
   const vimmPage = (id) => `https://vimm.net/manual/${id}`;
+  const mb = (n) => (n ? ` · ${(n / 1e6).toFixed(1)} MB` : "");
+  const name = $derived(row.title.split(" (")[0]);
+  const elsewhere = $derived([
+    ["archive.org", `https://archive.org/search?query=${encodeURIComponent(`"${name}" manual`)}`],
+    ["VideoGameManual.com", "https://www.videogamemanual.com/"],
+    ["GamesDatabase.org", "https://www.gamesdatabase.org/all_manuals"],
+  ]);
 </script>
 
 <section class="manual" class:over>
@@ -117,7 +143,7 @@
     <p class="hint">Looking…</p>
   {:else if info.path}
     {#await reader() then { default: ManualReader }}
-      <ManualReader src={artSrc(info.path)} start={info.last_page} {onpage} />
+      <ManualReader src={artSrc(info.path)} start={info.last_page} rowId={row.id} {onpage} bind:error />
     {/await}
     <p class="hint foot">
       {info.source ?? "Your manual"}
@@ -131,20 +157,40 @@
       <div class="pick">
         <button onclick={choose} disabled={!!busy}>Add a PDF…</button>
       </div>
+      {#if offers === null}
+        <p class="hint">Looking for this game's manual on archive.org…</p>
+      {:else if offers.length}
+        <p>Found on archive.org:</p>
+        <ul class="offers">
+          {#each offers as o (o.url)}
+            <li>
+              <button class:primary={o === offers[0]} onclick={() => take(o)} disabled={!!busy}>{busy === o.url ? "Downloading…" : "Download"}</button>
+              <span>{o.name}</span>
+              <span class="hint">{o.source}{mb(o.size)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       {#if busy === "lookup"}
         <p class="hint">Asking Hasheous whether Vimm's Lair has this game's manual…</p>
       {:else if info.vimm_id}
-        <p>Vimm's Lair has a scan of this manual.</p>
+        <p>Vimm's Lair has a scan of this manual{offers?.length ? " too" : ""}.</p>
         <div class="pick">
-          <button class="primary" onclick={download} disabled={!!busy}>{busy === "download" ? "Downloading…" : "Download manual (Vimm's Lair)"}</button>
+          <button class:primary={!offers?.length} onclick={download} disabled={!!busy}>{busy === "download" ? "Downloading…" : "Download manual (Vimm's Lair)"}</button>
           <select bind:value={dpi} aria-label="Scan resolution" title="The scan's resolution: higher is sharper and bigger">
             {#each [150, 300, 600] as d}<option value={d}>{d} dpi</option>{/each}
           </select>
           <button class="linkish" onclick={() => openUrl(vimmPage(info.vimm_id))}>Visit Vimm's Lair</button>
         </div>
         <p class="hint">One manual per click, as Vimm's Lair asks. If it won't download, get it from their page and drop it here.</p>
-      {:else if info.checked}
-        <p class="hint">Hasheous knows no Vimm's Lair manual for this game.</p>
+      {:else if info.checked && offers?.length === 0}
+        <p class="hint">Neither archive.org (by name) nor Vimm's Lair (by hash) has this game's manual.</p>
+      {/if}
+      {#if offers?.length === 0}
+        <p class="hint">
+          Search for it yourself, then drop the PDF here:
+          {#each elsewhere as [label, url], i}{i ? " · " : ""}<button class="linkish" onclick={() => openUrl(url)}>{label}</button>{/each}
+        </p>
       {/if}
     </div>
   {/if}
@@ -156,5 +202,7 @@
   .empty { padding: 1rem 0.5rem; display: grid; gap: 0.6rem; justify-items: start; }
   .empty p { margin: 0; }
   .foot { margin: 0.3rem 0 0; }
+  .offers { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+  .offers li { display: flex; align-items: center; gap: 0.6rem; }
   .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 </style>

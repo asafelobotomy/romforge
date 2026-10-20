@@ -72,13 +72,53 @@ impl Library {
         )
     }
 
+    fn manual_staging(&self) -> Result<PathBuf, Error> {
+        Ok(match &self.home {
+            Some(h) => h.staging(),
+            None => settings::load(&self.conn)?.staging(),
+        })
+    }
+
+    /// The manuals archive.org has for the game, best first.
+    pub fn manual_offers(&self, row_id: &str) -> Result<Vec<manual::ManualOffer>, Error> {
+        let g = self.manual_game(row_id)?;
+        // The game's DAT parent (one name: a game's name is unique in its
+        // system's DATs).
+        let parents: Vec<String> = self
+            .conn
+            .prepare_cached(
+                "SELECT DISTINCT g.cloneof FROM games g JOIN dats d ON d.dat_id = g.dat_id
+                 JOIN systems s ON s.system_id = d.system_id
+                 WHERE s.key = ?1 AND g.name = ?2 AND g.cloneof IS NOT NULL",
+            )?
+            .query_map([&g.system, &g.title], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        let parent = (parents.len() == 1).then(|| parents[0].as_str());
+        manual::find_manuals(&crate::enrich::default_cache_dir(), &g.system, &g.title, parent)
+    }
+
+    /// Download the manual the user picked from [`Self::manual_offers`].
+    pub fn download_manual_offer(
+        &mut self,
+        row_id: &str,
+        offer: &manual::ManualOffer,
+    ) -> Result<PathBuf, Error> {
+        let g = self.manual_game(row_id)?;
+        let staging = self.manual_staging()?;
+        manual::download_offer(
+            &self.conn,
+            &self.manual_media(),
+            &staging,
+            &g.system,
+            &g.title,
+            offer,
+        )
+    }
+
     /// Download the game's manual from Vimm's Lair (on the user's click).
     pub fn download_manual(&mut self, row_id: &str, dpi: u32) -> Result<PathBuf, Error> {
         let g = self.manual_game(row_id)?;
-        let staging = match &self.home {
-            Some(h) => h.staging(),
-            None => settings::load(&self.conn)?.staging(),
-        };
+        let staging = self.manual_staging()?;
         manual::download_vimm(
             &self.conn,
             &self.manual_media(),
@@ -92,6 +132,53 @@ impl Library {
     pub fn remove_manual(&mut self, row_id: &str) -> Result<(), Error> {
         let g = self.manual_game(row_id)?;
         manual::remove_manual(&self.conn, &self.manual_media(), &g.system, &g.title)
+    }
+
+    /// The highlights and notes in the game's manual.
+    pub fn manual_marks(&self, row_id: &str) -> Result<Vec<manual::Mark>, Error> {
+        let g = self.manual_game(row_id)?;
+        manual::marks(&self.conn, &g.system, &g.title)
+    }
+
+    pub fn add_manual_mark(&mut self, row_id: &str, mark: &manual::NewMark) -> Result<i64, Error> {
+        let g = self.manual_game(row_id)?;
+        manual::add_mark(&self.conn, &g.system, &g.title, mark)
+    }
+
+    pub fn edit_manual_mark(&mut self, id: i64, note: &str, color: &str) -> Result<(), Error> {
+        manual::edit_mark(&self.conn, id, note, color)
+    }
+
+    pub fn remove_manual_mark(&mut self, id: i64) -> Result<(), Error> {
+        manual::remove_mark(&self.conn, id)
+    }
+
+    /// The words recognised on a page of the game's manual, if it has been.
+    pub fn manual_ocr(
+        &self,
+        row_id: &str,
+        page: u32,
+        lang: &str,
+    ) -> Result<Option<Vec<manual::OcrWord>>, Error> {
+        let g = self.manual_game(row_id)?;
+        manual::ocr_page(&self.conn, &g.system, &g.title, page, lang)
+    }
+
+    pub fn save_manual_ocr(
+        &mut self,
+        row_id: &str,
+        page: u32,
+        lang: &str,
+        words: &[manual::OcrWord],
+    ) -> Result<(), Error> {
+        let g = self.manual_game(row_id)?;
+        manual::save_ocr(&self.conn, &g.system, &g.title, page, lang, words)
+    }
+
+    /// The recognised text of every page done so far (for search).
+    pub fn manual_ocr_texts(&self, row_id: &str, lang: &str) -> Result<Vec<(u32, String)>, Error> {
+        let g = self.manual_game(row_id)?;
+        manual::ocr_texts(&self.conn, &g.system, &g.title, lang)
     }
 
     pub fn set_manual_page(&mut self, row_id: &str, page: u32) -> Result<(), Error> {

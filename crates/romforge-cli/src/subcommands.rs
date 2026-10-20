@@ -179,6 +179,15 @@ pub enum ManualCommand {
     /// Where the game's manual is, or whether Vimm's Lair has one (asks
     /// Hasheous once, by the game's hash)
     Show { game: String },
+    /// The manuals archive.org has for the game (retrokit-manuals,
+    /// Kirkland's Manual Labor), numbered for `manual get`
+    Find { game: String },
+    /// Download one of `manual find`'s manuals (the first by default)
+    Get {
+        game: String,
+        #[arg(long, default_value_t = 1)]
+        pick: usize,
+    },
     /// Keep this PDF as the game's manual (a copy)
     Add { game: String, pdf: std::path::PathBuf },
     /// Download the game's manual from Vimm's Lair (one at a time)
