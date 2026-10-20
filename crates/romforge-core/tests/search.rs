@@ -289,6 +289,6 @@ fn naming_selected_rows_as_suggested() {
         .unwrap_or_else(|| panic!("{rows:?}"));
     assert!(row.title.starts_with("Live A Live (Japan)"), "{row:?}");
     // Named once: asking again leaves it as it is.
-    let again = lib.search_accept(&[row.id.clone()]).unwrap();
+    let again = lib.search_accept(std::slice::from_ref(&row.id)).unwrap();
     assert_eq!(again[0].why_not.as_deref(), Some("already identified"));
 }

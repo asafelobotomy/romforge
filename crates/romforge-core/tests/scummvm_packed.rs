@@ -73,7 +73,10 @@ fn seven_z(path: &Path, files: &[(&str, Vec<u8>)]) {
     sz.finish().unwrap();
 }
 
-fn round_trip(name: &str, write: fn(&Path, &[(&str, Vec<u8>)])) {
+/// Writes an archive of (name, data).
+type Writer = fn(&Path, &[(&str, Vec<u8>)]);
+
+fn round_trip(name: &str, write: Writer) {
     let tmp = tempfile::tempdir().unwrap();
     let home = Home::create(tmp.path()).unwrap();
     let incoming = tmp.path().join("incoming");
