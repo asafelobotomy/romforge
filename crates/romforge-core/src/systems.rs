@@ -281,6 +281,17 @@ pub fn is_rom_extension(ext: &str) -> bool {
         .any(|s| s.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)))
 }
 
+/// The one system using this extension (case-insensitive, no dot); `None`
+/// when none or several do (`.bin`). A hint about an unknown file, never
+/// a match (house rule 8).
+pub fn by_extension(ext: &str) -> Option<&'static System> {
+    let mut it = SYSTEMS
+        .iter()
+        .filter(|s| s.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)));
+    let one = it.next()?;
+    it.next().is_none().then_some(one)
+}
+
 pub fn by_id(id: i64) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.id == id)
 }

@@ -31,7 +31,7 @@ pub(super) fn archive_names(path: &Path) -> Result<Vec<String>, Error> {
 }
 
 /// Every file in a zip or 7z archive, with its size.
-pub(super) fn archive_entries(path: &Path) -> Result<Vec<(String, u64)>, Error> {
+pub(crate) fn archive_entries(path: &Path) -> Result<Vec<(String, u64)>, Error> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
     match ext.as_deref() {
         Some("zip") => {
@@ -61,10 +61,21 @@ pub(super) fn archive_entries(path: &Path) -> Result<Vec<(String, u64)>, Error> 
     }
 }
 
+/// The one folder every member is in (`"Game/"`), if there is one.
+fn one_folder(entries: &[(String, u64)]) -> Option<String> {
+    let (first, _) = entries.first()?;
+    let top = format!("{}/", first.split_once('/')?.0);
+    entries
+        .iter()
+        .all(|(n, _)| n.starts_with(&top) && n.len() > top.len())
+        .then_some(top)
+}
+
 /// The import of a game that is a folder: every file in it (or in the
 /// archive holding it) under its own path. `Ok(Err(why))` when it can't
 /// go; `Ok(Ok(None))` when it is in RomForge already or outside what is
-/// imported.
+/// imported. `in_place`: a packed ScummVM game unpacks beside its archive.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn folder_item(
     conn: &Connection,
     row: &view::GameRow,
@@ -73,6 +84,7 @@ pub(super) fn folder_item(
     dest: &Path,
     source: &Source,
     games: Option<&Path>,
+    in_place: bool,
 ) -> Result<Result<Option<Item>, String>, Error> {
     if games.is_some_and(|g| place.starts_with(g)) || !source.contains(place) {
         return Ok(Ok(None));
@@ -97,9 +109,19 @@ pub(super) fn folder_item(
             });
         }
     } else {
-        for (name, size) in archive_entries(place)? {
+        let entries = archive_entries(place)?;
+        // A ScummVM game unpacks as its folder: an archive holding just one
+        // folder ("Game/...") gives what is in it.
+        let top = match system.folders {
+            systems::Folders::Kept => one_folder(&entries),
+            _ => None,
+        };
+        for (name, size) in entries {
             parts.push(Part {
-                name: name.clone(),
+                name: top
+                    .as_ref()
+                    .map_or(name.as_str(), |t| &name[t.len()..])
+                    .to_owned(),
                 path: place.to_owned(),
                 member: name,
                 size,
@@ -117,12 +139,13 @@ pub(super) fn folder_item(
         )));
     }
     let name = sanitize(&row.title);
-    let dir = dest.join(sanitize(system.key));
+    let dir = match place.parent() {
+        Some(beside) if in_place => beside.to_owned(),
+        _ => dest.join(sanitize(system.key)),
+    };
     let (format, target) = match system.folders {
-        systems::Folders::Kept if place.is_dir() => (Format::Dir, dir.join(&name)),
-        systems::Folders::Kept => {
-            return Ok(Err("ScummVM games are imported as folders, not archives".into()));
-        }
+        // ScummVM games are folders: one still in its archive is unpacked.
+        systems::Folders::Kept => (Format::Dir, dir.join(&name)),
         _ => (Format::Folder, dir.join(format!("{name}.zip"))),
     };
     let code = match row.id.strip_prefix("d:").and_then(|id| id.parse::<i64>().ok()) {

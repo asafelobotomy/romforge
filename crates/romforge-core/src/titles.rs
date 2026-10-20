@@ -101,7 +101,12 @@ pub fn key(title: &str) -> TitleKey {
         Some((m, s)) => (m, s),
         None => (t.as_str(), ""),
     };
-    let main = words(main);
+    let mut main = words(main);
+    // A first game is often named without its "1" ("Shin Megami Tensei 1"
+    // is the DAT's "Shin Megami Tensei").
+    if main.len() > 1 && main.last().is_some_and(|w| w == "1") {
+        main.pop();
+    }
     let sub = words(sub);
     let hard = main.iter().chain(&sub).filter(|w| is_hard(w)).cloned().collect();
     TitleKey { main, sub, hard }

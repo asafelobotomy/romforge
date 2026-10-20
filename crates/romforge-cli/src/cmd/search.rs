@@ -94,6 +94,14 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 (None, None) => bail!("give --title, --translation-of or --hack-of"),
             }
         }
+        Command::Search(SearchCommand::Accept { rows }) => {
+            for a in lib.search_accept(&rows)? {
+                match (&a.named, &a.why_not) {
+                    (Some(n), _) => println!("{}: named {n}", a.file),
+                    (None, why) => println!("{}: left ({})", a.file, why.as_deref().unwrap_or("?")),
+                }
+            }
+        }
         Command::Search(SearchCommand::Forget { row }) => {
             lib.forget_identity(&row)?;
             println!("forgotten");

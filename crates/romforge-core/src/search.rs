@@ -14,11 +14,13 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::view::{self, RowStatus};
 use crate::{Error, systems, wikidata};
 
+mod accept;
 mod find;
 mod preview;
 #[cfg(test)]
 mod tests;
 
+pub use accept::{Accepted, accept};
 pub use find::{Found, Scraper, WIKIDATA_API, find, parse_entity_search};
 pub use preview::{Chosen, Preview, Taken, choose, preview, row_in};
 
@@ -49,10 +51,13 @@ pub struct QueueItem {
 /// Rows of `v` (the library's list, [`view::listing`]) that need the owner,
 /// in list order. `only`: limit to these row ids. Patch files and missing
 /// originals are listed only, never queued.
+/// `databases`: the downloaded databases' folder (LaunchBox's names help
+/// the suggestions).
 pub fn queue(
     conn: &Connection,
     v: &view::LibraryView,
     only: Option<&[String]>,
+    databases: Option<&std::path::Path>,
 ) -> Result<Vec<QueueItem>, Error> {
     let mut wd: BTreeMap<(String, String), String> = BTreeMap::new();
     for r in conn
@@ -72,7 +77,7 @@ pub fn queue(
         wd.insert((s, t), st);
     }
     let mut out = Vec::new();
-    let mut suggester = crate::suggest::Suggester::default();
+    let mut suggester = crate::suggest::Suggester::new(databases);
     for r in &v.rows {
         if only.is_some_and(|ids| !ids.contains(&r.id))
             || matches!(r.status, RowStatus::Patch | RowStatus::Missing)

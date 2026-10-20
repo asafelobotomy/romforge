@@ -1516,6 +1516,30 @@ the running app.
   for the others (it used to write GameCube and Wii ISOs as CHD, which
   Dolphin can't read).
 
+## Unknown files: ScummVM archives and translations (2026-10-20, built)
+
+Found on the owner's folder: two ScummVM games in zips listed as ~210
+unknown files, and ~25 fan translations unknown.
+
+- `scummvm::packed`: the detection list matched inside zip and 7z (index
+  names and sizes; only the members a fitting entry names are read for
+  their MD5s, cached by the archive's size and time). The archive is the
+  game's place, so its members join the row. `GameRow::packed`: not
+  playable; cleanup unpacks it (`cleanup::unpack`, stream to file, read
+  back) into `Games/ScummVM/<Title>/` or, in place, beside it; the archive
+  to the trash. Tried: the owner's Darkseed and Discworld zips detected;
+  Darkseed unpacked on a copy, ScummVM's `--detect` names the folder.
+- Suggestions: a bare "English v2.00" or "(English)" is a translation tag;
+  a trailing "1" is the first game; a translation's size only backs a same
+  title (patches expand ROMs); LaunchBox's alternate names lead to DAT
+  titles when nothing else is alike (`suggest::aliases`, house rule 10).
+- `search::accept` (Search ▾ Name as suggested, `search accept`): each
+  selected row's suggestion when a name match or better.
+- Unknown cue sheets join the tracks they name; `GameRow::likely_system`
+  by extension (`systems::by_extension`), a hint only.
+- **Open:** "(Addendum v1.03)" alone isn't read as a translation (it names
+  a group, not a language); such a file is named as the game itself.
+
 ## Selection: the toolbar acts on what is picked (2026-10-20, built)
 
 - The list and picture views pick several games (`selection.js`: click,

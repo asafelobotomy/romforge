@@ -16,6 +16,10 @@
 //! --recursive`, once per scanned folder, when you read its list). What it
 //! names is kept with a fingerprint of the folder's files, so the name
 //! follows the folder when import copies it or undo brings it back.
+//!
+//! A game still in its zip or 7z is found by the list too (`packed`): the
+//! archive stands for its folder until cleanup unpacks it. ScummVM's own
+//! --detect only looks at folders.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
@@ -30,6 +34,8 @@ use crate::{Error, systems};
 
 mod detect;
 pub use detect::*;
+mod packed;
+pub use packed::is_archive;
 mod store;
 pub(crate) use store::*;
 

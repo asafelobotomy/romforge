@@ -92,11 +92,11 @@ pub(super) fn plan_as(
             continue;
         };
         // Convert is for discs; in place, arcade sets and folder games stay
-        // as they are (they are already named and laid out by their sets).
+        // put (laid out by their sets), but a packed ScummVM game unpacks.
         if convert && (!system.is_disc_based || system.arcade || row.folder.is_some()) {
             continue;
         }
-        if in_place && (system.arcade || row.folder.is_some()) {
+        if in_place && (system.arcade || (row.folder.is_some() && !row.packed)) {
             if only.is_some() {
                 plan.skipped.push((
                     row.title.clone(),
@@ -127,6 +127,7 @@ pub(super) fn plan_as(
                 &dest,
                 &source,
                 games.as_deref(),
+                in_place,
             )? {
                 Ok(None) => {}
                 Ok(Some(mut it)) => {

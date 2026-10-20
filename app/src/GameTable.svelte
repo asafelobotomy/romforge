@@ -69,7 +69,7 @@
         {/if}
         <button class="tr" class:sel={picked ? picked.has(r.id) : r.id === selected} class:focus={r.id === selected} class:version={!r.main} class:missing={r.status === "missing"} onclick={(e) => open(r.id, e)}>
           <span class="title" style={r.depth ? `padding-left: ${0.7 + r.depth * 1.1}rem` : undefined} title={r.label ? r.title : undefined}>{r.label ?? r.title}{#if r.main && r.versions > 1}<span class="nver"> · {r.versions}</span>{/if}</span>
-          {#if platformCol}<span class="sys">{r.system ?? "—"}</span>{/if}
+          {#if platformCol}<span class="sys" class:likely={!r.system && r.likely_system} title={!r.system && r.likely_system ? "By its file extension only" : undefined}>{r.system ?? (r.likely_system ? `${r.likely_system}?` : "—")}</span>{/if}
           <span class="yr">{r.year ?? ""}</span>
           <span class="ind {r.status}" title={statusLabel[r.status]}>{mark(r.status)}</span>
           <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
@@ -100,6 +100,7 @@
   .tr.version .title { padding-left: 1.8rem; color: var(--muted); }
   .tr.cat .title { color: var(--muted); font-size: 0.85rem; font-weight: 600; padding-left: 0; }
   .tr.missing .title { font-style: italic; color: var(--muted); }
+  .sys.likely { color: var(--muted); font-style: italic; }
   .nver { color: var(--muted); font-size: 0.8rem; }
   .ind { text-align: center; color: var(--muted); }
   .ind.yes, .ind.verified { color: var(--ok); }

@@ -187,12 +187,13 @@ mod plan;
 mod tests;
 mod trash;
 mod undo;
+mod unpack;
 mod write;
 
 pub(crate) use apply::journal_output;
 pub use apply::{apply, disk_of};
 pub(crate) use chd::write_chd;
-pub(crate) use items::safe_member_name;
+pub(crate) use items::{archive_entries, safe_member_name};
 pub use parts::details_md;
 pub(crate) use parts::{named_parts, open_part, verified_parts};
 use plan::plan_as;

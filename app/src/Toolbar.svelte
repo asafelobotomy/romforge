@@ -6,7 +6,7 @@
   // dialogs' instances open theirs. Search, Enrich, Rename & Cleanup and
   // Convert take only the games selected in the list (`chosen`, row ids);
   // Refresh and Scan folder work on folders.
-  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, naming, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
   const n = $derived(chosen.length);
   const games = $derived(n === 1 ? "the selected game" : `the ${n} selected games`);
   const pickFirst = "Select games in the list first (Ctrl+A selects everything listed)";
@@ -25,9 +25,14 @@
     onclick={scanFolder}
     items={[{ label: "Scan folder [dry run]", title: "See what a folder holds first, then scan it or not", onclick: scanDryRun }]}
   />
-  <button class="tool" onclick={() => search.openSearch(chosen)} disabled={!!busy || !n} title={n ? `Identify ${games} one by one: DAT title suggestions or your own title, and settle Wikidata matches` : pickFirst}>
-    <span class="glyph">⌕</span>Search
-  </button>
+  <SplitButton
+    glyph="⌕"
+    label="Search"
+    title={n ? `Identify ${games} one by one: DAT title suggestions or your own title, and settle Wikidata matches` : pickFirst}
+    disabled={!!busy || !n}
+    onclick={() => search.openSearch(chosen)}
+    items={[{ label: "Name as suggested…", title: "Name the selected files by their suggestions at once (translations as translations); you see the list first", onclick: () => naming.openNaming(chosen) }]}
+  />
   <button class="tool" onclick={enrich} disabled={!!busy || !n} title={n ? `Fetch metadata and art for ${games}` : pickFirst}>
     <span class="glyph">✦</span>Enrich
   </button>

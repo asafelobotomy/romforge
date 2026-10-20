@@ -34,7 +34,8 @@ pub struct Found {
 /// Every folder under `roots` that is one of `entries`: all its listed
 /// files there, by name (any case), size and partial MD5. Of several
 /// entries that fit, the one listing the most files wins (as in ScummVM).
-/// A folder inside a detected one isn't looked at again.
+/// A folder inside a detected one isn't looked at again. A zip or 7z is
+/// looked into as a folder ([`super::packed`]).
 pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
     // Last name component -> (entry, file) listing it.
     let mut by_name: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -46,6 +47,7 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
     }
     // Folder -> its files (relative path in lower case -> path).
     let mut dirs: BTreeMap<PathBuf, BTreeMap<String, PathBuf>> = BTreeMap::new();
+    let mut archives: Vec<PathBuf> = Vec::new();
     for root in roots {
         let walker = walkdir::WalkDir::new(root)
             .follow_links(false)
@@ -54,6 +56,9 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
         for e in walker.filter_map(Result::ok) {
             if !e.file_type().is_file() {
                 continue;
+            }
+            if super::is_archive(e.path()) {
+                archives.push(e.path().to_owned());
             }
             // Files are filed under their folder and the one above it, for
             // entries naming a file in a subfolder ("data/x.dat").
@@ -120,6 +125,12 @@ pub fn detect(entries: &[Entry], roots: &[PathBuf]) -> Vec<Found> {
                 size,
             });
         }
+    }
+    for a in archives {
+        if out.iter().any(|f| a.starts_with(&f.dir)) {
+            continue;
+        }
+        out.extend(super::packed::found_in(entries, &by_name, &a));
     }
     out
 }

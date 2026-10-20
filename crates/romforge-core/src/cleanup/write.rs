@@ -276,13 +276,18 @@ fn unchanged(item: &Item, src: &Path, now: &BTreeSet<String>) -> Result<(), Erro
 }
 
 /// A folder game copied as a folder into `out` (which must not exist),
-/// each file read back and checked; its art and details go in
-/// `romforge/`, and a ScummVM game gets its `<id>.scummvm`.
+/// or unpacked there from its archive, each file read back and checked;
+/// its art and details go in `romforge/`, and a ScummVM game gets its
+/// `<id>.scummvm`.
 pub(super) fn copy_folder(item: &Item, extras: &[(String, Vec<u8>)], out: &Path) -> Result<(), Error> {
     let src = item.folder.as_deref().unwrap_or(Path::new(""));
-    unchanged(item, src, &files_in(src))?;
-    std::fs::create_dir(out)?;
-    for p in &item.parts {
+    if !src.is_dir() {
+        super::unpack::unpack(item, src, out)?;
+    } else {
+        unchanged(item, src, &files_in(src))?;
+        std::fs::create_dir(out)?;
+    }
+    for p in item.parts.iter().filter(|_| src.is_dir()) {
         let to = out.join(&p.name);
         if let Some(d) = to.parent() {
             std::fs::create_dir_all(d)?;

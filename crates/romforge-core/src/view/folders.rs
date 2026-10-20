@@ -1,4 +1,5 @@
-//! Games that are whole folders (DOS, ScummVM).
+//! Games that are whole folders (DOS, ScummVM), and unknown disc sheets
+//! with the tracks they name.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -113,6 +114,67 @@ pub(super) fn folder_games(
             o.file_ids.extend(r.file_ids);
         }
         o.folder = Some(place);
+    }
+    Ok(())
+}
+
+/// An unknown cue (or GDI) sheet and the unknown tracks it names beside it
+/// are one row (a patched disc, say), so Search names them together.
+pub(super) fn unknown_sheets(
+    conn: &Connection,
+    files: &[FileRec],
+    rows: &mut BTreeMap<String, GameRow>,
+) -> Result<(), Error> {
+    let place = |f: &FileRec| -> (String, String) {
+        let (path, name) = if f.member.is_empty() {
+            ("", f.path.as_str())
+        } else {
+            (f.path.as_str(), f.member.as_str())
+        };
+        let (dir, base) = name.rsplit_once('/').unwrap_or(("", name));
+        (format!("{path}#{dir}"), base.to_lowercase())
+    };
+    let by_id: HashMap<i64, &FileRec> = files.iter().map(|f| (f.id, f)).collect();
+    let sheets: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT file_id, sheet_files FROM files WHERE status = 'unknown' AND sheet_files IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, listed) in sheets {
+        let (Some(sheet), Ok(listed)) = (by_id.get(&id), serde_json::from_str::<Vec<String>>(&listed)) else {
+            continue;
+        };
+        let (at, _) = place(sheet);
+        let wanted: BTreeSet<String> = listed.iter().map(|n| n.to_lowercase()).collect();
+        let tracks: Vec<String> = rows
+            .iter()
+            .filter(|(rid, r)| {
+                **rid != format!("f:{id}")
+                    && r.status == RowStatus::Unknown
+                    && r.file_ids.len() == 1
+                    && by_id
+                        .get(&r.file_ids[0])
+                        .is_some_and(|f| place(f).0 == at && wanted.contains(&place(f).1))
+            })
+            .map(|(rid, _)| rid.clone())
+            .collect();
+        if tracks.is_empty()
+            || !rows
+                .get(&format!("f:{id}"))
+                .is_some_and(|r| r.status == RowStatus::Unknown)
+        {
+            continue;
+        }
+        for t in tracks {
+            let Some(track) = rows.remove(&t) else { continue };
+            let Some(row) = rows.get_mut(&format!("f:{id}")) else {
+                continue;
+            };
+            row.files += track.files;
+            row.size += track.size;
+            row.file_ids.extend(track.file_ids);
+        }
     }
     Ok(())
 }

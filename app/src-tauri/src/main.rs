@@ -145,6 +145,7 @@ fn main() {
             settings::settings_info,
             dats::scummvm_list,
             search::search_queue,
+            search::search_accept,
             search::search_find,
             search::search_preview,
             search::search_choose,

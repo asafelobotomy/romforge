@@ -9,7 +9,12 @@ use crate::{Error, Library, enrich, search, view, wikidata};
 impl Library {
     /// Games and files that need the owner (milestone 8).
     pub fn search_queue(&self, only: Option<&[String]>) -> Result<Vec<search::QueueItem>, Error> {
-        search::queue(&self.conn, &*self.cached_view()?, only)
+        search::queue(
+            &self.conn,
+            &*self.cached_view()?,
+            only,
+            self.extdb_dir().as_deref(),
+        )
     }
 
     /// Search one scraper for a row (the Search dialog's results table).
@@ -30,6 +35,7 @@ impl Library {
             text,
             system,
             api,
+            self.extdb_dir().as_deref(),
         )
     }
 
@@ -69,6 +75,14 @@ impl Library {
             row_id: search::row_in(&v, &taken.system, &taken.title)?,
             enrich: taken.enrich,
         })
+    }
+
+    /// Name each row by its strongest suggestion, when that is a name
+    /// match or better ([`search::accept`]).
+    pub fn search_accept(&mut self, ids: &[String]) -> Result<Vec<search::Accepted>, Error> {
+        let v = self.cached_view()?;
+        let dbs = self.extdb_dir();
+        search::accept(&mut self.conn, &v, ids, dbs.as_deref())
     }
 
     /// Name a row's files yourself ("identified by you").

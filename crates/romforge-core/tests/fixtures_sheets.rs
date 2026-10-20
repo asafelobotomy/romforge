@@ -207,3 +207,35 @@ fn a_sheet_fits_only_its_own_folder() {
         .collect();
     assert_eq!(cue_status, [Status::Unknown], "its track is in another folder");
 }
+
+/// An unknown cue sheet and the unknown track it names (a patched disc)
+/// are one row, which Search names together; the platform its extension
+/// points to is only a hint.
+#[test]
+fn an_unknown_sheet_and_its_track_are_one_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let disc = dir.path().join("Patched (English)");
+    std::fs::create_dir_all(&disc).unwrap();
+    std::fs::write(disc.join("Patched (English).bin"), vec![3u8; 4096]).unwrap();
+    std::fs::write(
+        disc.join("Patched (English).cue"),
+        "FILE \"Patched (English).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("Lone.sfc"), vec![5u8; 2048]).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.scan(dir.path(), Scope::All).unwrap();
+    let rows = lib.library_view().unwrap().rows;
+    let disc: Vec<_> = rows.iter().filter(|r| r.title.starts_with("Patched")).collect();
+    assert_eq!(disc.len(), 1, "{rows:?}");
+    assert_eq!(
+        (disc[0].title.as_str(), disc[0].files),
+        ("Patched (English).cue", 2)
+    );
+    assert_eq!(disc[0].likely_system, None, ".cue is many platforms'");
+    let lone = rows.iter().find(|r| r.title == "Lone.sfc").unwrap();
+    assert_eq!(
+        (lone.system.as_deref(), lone.likely_system.as_deref()),
+        (None, Some("SNES"))
+    );
+}

@@ -40,17 +40,18 @@ fn mib(n: u64) -> String {
     }
 }
 
-/// Weigh one candidate.
+/// Weigh one candidate (system id, DAT title). `alias`: a name LaunchBox
+/// gives the game, alike the file's ([`super::aliases`]).
 pub(super) fn assess(
     conn: &Connection,
     f: &Facts,
     proofs: &BTreeMap<(i64, String), Proof>,
-    system_id: i64,
-    title: &str,
+    (system_id, title): (i64, &str),
     serial: Option<&str>,
+    alias: Option<&str>,
 ) -> Result<Option<Suggestion>, Error> {
     let mut ev = Vec::new();
-    let score = titles::score(&f.text, title);
+    let mut score = titles::score(&f.text, title);
     let name_text = match score {
         s if s >= 1.0 => "the same title".to_owned(),
         s if s >= 0.9 => "the same title, a subtitle missing".to_owned(),
@@ -63,6 +64,15 @@ pub(super) fn assess(
         agrees: score >= 0.5,
         text: name_text,
     });
+    // Another name of the game, alike the file's, counts as the same title.
+    if let Some(a) = alias {
+        ev.push(Evidence {
+            kind: "alias".into(),
+            agrees: true,
+            text: format!("LaunchBox gives it the name \"{a}\""),
+        });
+        score = score.max(0.9);
+    }
     let header_title = f.ids.iter().find_map(|i| i.title.clone());
     let header_fits = header_title
         .as_deref()
@@ -206,7 +216,12 @@ pub(super) fn assess(
     } else if (compressed && same_size || nkit) && serial.is_some() {
         Band::LikelyCompressed
     } else if patched == Some(Proof::Turns)
-        || (same_size && (score >= 0.9 || serial.is_some() || (score >= 0.85 && header_fits)))
+        || (same_size
+            && (score >= 0.9
+                || serial.is_some()
+                // A translation or hack may be expanded: its size only
+                // backs a title that is the same.
+                || (score >= 0.85 && header_fits && derived.is_none())))
     {
         Band::LikelyModified
     } else if score >= 0.9 || (serial.is_some() && (score >= 0.5 || header_fits)) {

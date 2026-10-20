@@ -32,6 +32,8 @@ pub(super) fn bare_row(id: String, system_id: Option<i64>, title: &str, status: 
         year: None,
         pictures: BTreeMap::new(),
         box_aspect: 72,
+        packed: false,
+        likely_system: None,
         unmatched: false,
         base_id: None,
         system_id,

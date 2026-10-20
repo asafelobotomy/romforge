@@ -5,7 +5,9 @@
 //! or MD5, a game ID read from the file's own header that a DAT game's
 //! serial carries, and titles alike to the file's name or its header
 //! title. Each candidate is then weighed on everything known: name, header
-//! title, size, CRC, serial, region. The band says how strong that is; no
+//! title, size, CRC, serial, region. With no DAT title alike the name, the
+//! other names LaunchBox's database (when downloaded) gives a game lead to
+//! DAT titles too ([`aliases`]). The band says how strong that is; no
 //! band is ever counted or shown as verified (house rule 8). Confirming a
 //! suggestion makes the file "identified by you".
 
@@ -16,6 +18,7 @@ use rusqlite::Connection;
 use crate::ident::GameId;
 use crate::{Error, titles, view};
 
+mod aliases;
 mod assess;
 mod facts;
 #[cfg(test)]
@@ -123,14 +126,16 @@ struct Facts {
 /// Suggestions for a row, strongest first: by band, then how much of the
 /// evidence agrees, then the name. `text`: what the owner typed (the
 /// row's title or file name when empty); `system`: limit to this key.
+/// `databases`: the folder of downloaded databases (LaunchBox's names).
 pub(crate) fn for_detail(
     conn: &Connection,
+    databases: Option<&std::path::Path>,
     d: &view::GameDetail,
     text: Option<&str>,
     system: Option<&str>,
     limit: usize,
 ) -> Result<Vec<Suggestion>, Error> {
-    Suggester::default().suggest(conn, d, text, system, limit)
+    Suggester::new(databases).suggest(conn, d, text, system, limit)
 }
 
 /// DAT names (each with its systems) and their title index.
@@ -142,9 +147,18 @@ pub struct Suggester {
     indexes: BTreeMap<Vec<i64>, Names>,
     /// Folders and archives listed for patches, once each.
     patches: crate::patch::PatchFinder,
+    aliases: Option<aliases::Aliases>,
 }
 
 impl Suggester {
+    /// With LaunchBox's names, when its database is in `databases`.
+    pub fn new(databases: Option<&std::path::Path>) -> Self {
+        Suggester {
+            aliases: databases.and_then(aliases::Aliases::open),
+            ..Suggester::default()
+        }
+    }
+
     pub fn suggest(
         &mut self,
         conn: &Connection,
@@ -160,7 +174,11 @@ impl Suggester {
             self.indexes.insert(f.systems.clone(), (names, index));
         }
         let (names, index) = &self.indexes[&f.systems];
-        suggest_with(conn, &f, names, index, limit)
+        let aliased = match self.aliases.as_mut() {
+            Some(a) => aliases::dat_titles(a, &f.systems, &f.text, names, index)?,
+            None => BTreeMap::new(),
+        };
+        suggest_with(conn, &f, names, index, &aliased, limit)
     }
 }
 
@@ -169,10 +187,12 @@ fn suggest_with(
     f: &Facts,
     names: &BTreeMap<String, Vec<i64>>,
     index: &titles::TitleIndex,
+    aliased: &BTreeMap<(i64, String), String>,
     limit: usize,
 ) -> Result<Vec<Suggestion>, Error> {
     let serials = by_serial(conn, f)?;
     let mut candidates: BTreeSet<(i64, String)> = f.crc.clone();
+    candidates.extend(aliased.keys().cloned());
     candidates.extend(f.patched.keys().cloned());
     candidates.extend(f.nkit.iter().cloned());
     candidates.extend(serials.keys().cloned());
@@ -204,7 +224,8 @@ fn suggest_with(
             continue;
         }
         let serial = serials.get(&(*sid, title.clone())).map(String::as_str);
-        if let Some(s) = assess(conn, f, &proofs, *sid, title, serial)? {
+        let alias = aliased.get(&(*sid, title.clone())).map(String::as_str);
+        if let Some(s) = assess(conn, f, &proofs, (*sid, title), serial, alias)? {
             out.push(s);
         }
     }

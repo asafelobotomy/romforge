@@ -151,12 +151,15 @@ fn is_translation(lower: &str) -> bool {
         || lower.starts_with("t-")
         || lower.starts_with("tr ")
         || lower.contains("translat")
-        || lower.split(|c: char| !c.is_ascii_alphabetic()).any(|w| {
-            matches!(
-                w,
-                "english" | "eng" | "spanish" | "french" | "german" | "italian" | "portuguese"
-            )
-        })
+        || lower.split(|c: char| !c.is_ascii_alphabetic()).any(is_language)
+}
+
+/// A language a translation is named by ("English", "Eng").
+fn is_language(w: &str) -> bool {
+    matches!(
+        w.to_ascii_lowercase().as_str(),
+        "english" | "eng" | "spanish" | "french" | "german" | "italian" | "portuguese"
+    )
 }
 
 /// Anything else: the title is the text before the first bracket; each
@@ -165,6 +168,21 @@ fn loose(name: &str) -> Name {
     let mut out = Name::default();
     let cut = name.find(['(', '[']).unwrap_or(name.len());
     out.title = name[..cut].trim().to_owned();
+    // "Live A Live English v2.00": a translation tag without brackets.
+    let words: Vec<&str> = out.title.split_whitespace().collect();
+    let version = |w: &str| {
+        w.trim_start_matches(['v', 'V'])
+            .starts_with(|c: char| c.is_ascii_digit())
+    };
+    let tag = match words.as_slice() {
+        [.., lang, v] if is_language(lang) && version(v) => 2,
+        [.., lang] if is_language(lang) => 1,
+        _ => 0,
+    };
+    if tag > 0 && words.len() > tag {
+        out.translation = Some(words[words.len() - tag..].join(" "));
+        out.title = words[..words.len() - tag].join(" ");
+    }
     let (mut depth, mut cur, mut groups) = (0, String::new(), Vec::new());
     for c in name[cut..].chars() {
         match c {
@@ -229,6 +247,8 @@ fn is_place(g: &str) -> bool {
         g,
         "Hack" | "Translated" | "Unl" | "Beta" | "Proto" | "Demo" | "Sample"
     )
+        // "(English)": a language is a translation, not a place.
+        && !g.split(' ').any(is_language)
 }
 
 /// "Rev 1", "Rev A", "v1.1", "V1.0".

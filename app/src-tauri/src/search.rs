@@ -13,6 +13,15 @@ pub async fn search_queue(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -
     read(&db, move |lib| lib.search_queue(only.as_deref())).await
 }
 
+/// Name rows by their strongest suggestion (Search's "Name as suggested").
+#[tauri::command]
+pub async fn search_accept(
+    db: tauri::State<'_, Db>,
+    only: Vec<String>,
+) -> Res<Vec<romforge_core::search::Accepted>> {
+    with(&db, move |lib| lib.search_accept(&only)).await
+}
+
 #[tauri::command]
 pub async fn forget_identity(db: tauri::State<'_, Db>, row_id: String) -> Res<()> {
     with(&db, move |lib| lib.forget_identity(&row_id)).await

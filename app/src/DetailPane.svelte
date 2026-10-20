@@ -35,6 +35,8 @@
             <span class="hint">{row.system ? "Add the game it is for to apply it" : "No game found for it"}</span>
           {/if}
         {/if}
+        {#if row.packed}<span class="hint" title="ScummVM can't play a game from an archive">Still zipped: Rename &amp; Cleanup unpacks it into a folder to play</span>{/if}
+        {#if row.likely_system}<span class="hint" title="By its file extension only: Search can name it">Looks like {row.likely_system}</span>{/if}
         {#if row.status === "missing"}<span class="hint">You have only versions of it{detail.patches?.length ? ` (${detail.patches.length} patch${detail.patches.length > 1 ? "es" : ""} found for it)` : ""}</span>{/if}
         {#if detail.patched}<span class="badge" title="romforge made it from {detail.patched.patch} ({detail.patched.kind}) on {detail.patched.created_at}">patched from {detail.patched.patch}</span>{/if}
         {#if row.cue_differs && row.cue_fits}<span class="badge" title="All tracks match; the cue sheet was rewritten but names exactly these tracks">cue rewritten</span>{:else if row.cue_differs}<span class="badge" title="All tracks match; the cue sheet differs from the DAT's">cue differs</span>{/if}

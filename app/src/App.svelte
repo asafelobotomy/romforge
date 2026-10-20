@@ -6,6 +6,7 @@
   import NowPlaying from "./NowPlaying.svelte";
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
+  import NameDialog from "./NameDialog.svelte";
   import PatchDialog from "./PatchDialog.svelte";
   import ArtPicker from "./ArtPicker.svelte";
   import ScanPreview from "./ScanPreview.svelte";
@@ -98,6 +99,8 @@
   let settingsOpen = $state(false);
   let cleanOpen = $state(false);
   let searchOpen = $state(false);
+  let naming = $state(null);
+  let namingOpen = $state(false);
   let confirmUndo = $state(false);
 
   // `quiet`: a reload after an action, which keeps the action's error on
@@ -272,7 +275,7 @@
 
   // The selection keys (selection.js) when no text field has focus.
   function listKeys(e) {
-    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
+    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || namingOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
     if (view !== "library" || dialog) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const s = selectKey({ picked, anchor, focus: selected }, rows, e);
@@ -325,6 +328,7 @@
     else if (e.key === "Escape" && emuOpen) emuOpen = false;
     else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
+    else if (e.key === "Escape" && namingOpen && !busy) namingOpen = false;
     else if (e.key === "Escape" && patchOpen) patchOpen = false;
     else if (e.key === "Escape" && pickerOpen && !busy) pickerOpen = false;
     else listKeys(e);
@@ -332,7 +336,7 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
@@ -341,6 +345,7 @@
 
   <HomeDialog bind:this={home} bind:open={homeOpen} bind:root={homeRoot} bind:note {load} />
 
+  <NameDialog bind:this={naming} bind:open={namingOpen} bind:busy bind:note {call} {load} />
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 
   <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:busy bind:note {call} {load} />

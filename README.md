@@ -294,6 +294,13 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   and publisher. Import copies the folder to `Games/ScummVM/<Title>/` with
   a `<id>.scummvm` file for RetroArch's core; Play uses the `scummvm` core
   or ScummVM itself (`--auto-detect`).
+  A game still in the zip or 7z it came in is found by the list too (only
+  the archive's index and the few bytes the MD5s cover are read, nothing is
+  unpacked) and shows as one game, its files no longer listed as unknown.
+  ScummVM can't play from an archive, so it isn't playable until Rename &
+  Cleanup unpacks it into its folder (each file read back and checked, the
+  archive to the trash for undo; in place, beside the archive). ScummVM's
+  own `--detect` only looks at folders.
 - **Disk sets.** When every disk of a set ("Disk 1 of 4", "Disc 2") is
   imported, a `<Set>.m3u` lists them next to the files, and Play starts
   the playlist so the emulator can swap disks. Undo removes it. The floppy
@@ -488,6 +495,18 @@ Wikidata), search, compare results by year, platform and fit with box art
 and the DAT's ROMs against your file, and choose what to fetch for the game
 once you take one. Titles you
 pick show as "identified by you" and are never counted as verified.
+
+**Search ▾ Name as suggested…** takes the selected files' suggestions at
+once: you see each file with its suggestion and tick which to take (only a
+name match or better can be ticked). A file whose name says it is a
+translation or hack ("(English v1.01)", "English v2.00", "(English)") is
+named as one of its game. `romforge-cli search accept ROW...` does the
+same. Suggestions also follow the other names a game goes by: with the
+LaunchBox database downloaded, "Takeshi's Challenge" leads to the DAT's
+"Takeshi no Chousenjou (Japan)", asked only when no DAT title is alike.
+An unknown cue sheet and the tracks it names are one row, and an unknown
+file shows the platform its extension points to ("SNES?") as a hint, never
+a match.
 
 **Enrich** also asks Wikidata (free, no account) for developer, publisher,
 country, director, composer, the series in order, and IDs that make the

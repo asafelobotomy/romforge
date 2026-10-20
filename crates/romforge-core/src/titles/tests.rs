@@ -32,7 +32,19 @@ fn keys_normalize() {
     );
     assert_eq!(key("Pokémon - Emerald Version").main, ["pokemon"]);
     assert_eq!(key("Ghouls & Ghosts").main, ["ghouls", "and", "ghosts"]);
-    assert_eq!(key("Final Fantasy I").main, ["final", "fantasy", "1"]);
+    // A trailing 1 (or I) is the first game, named without it in DATs.
+    assert_eq!(key("Final Fantasy I").main, ["final", "fantasy"]);
+    assert_eq!(
+        score(
+            "Shin Megami Tensei 1 (English Addendum 1.0)",
+            "Shin Megami Tensei (Japan)"
+        ),
+        1.0
+    );
+    assert_eq!(
+        score("Shin Megami Tensei 1", "Shin Megami Tensei II (Japan)"),
+        0.0
+    );
     assert_eq!(key("I Am Setsuna").main, ["i", "am", "setsuna"]);
 }
 

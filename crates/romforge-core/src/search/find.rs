@@ -48,6 +48,7 @@ pub struct Found {
 /// Search one scraper for a row of `v` (the library's list). `text`: what
 /// the owner typed (the row's title or file name when empty); `system`:
 /// limit to this platform key.
+#[allow(clippy::too_many_arguments)]
 pub fn find(
     conn: &Connection,
     v: &view::LibraryView,
@@ -56,6 +57,7 @@ pub fn find(
     text: Option<&str>,
     system: Option<&str>,
     api: &str,
+    databases: Option<&std::path::Path>,
 ) -> Result<Vec<Found>, Error> {
     let d = view::detail_in(conn, v, row_id)?;
     match scraper {
@@ -64,7 +66,7 @@ pub fn find(
                 "SELECT value FROM game_meta m JOIN systems s ON s.system_id = m.system_id
                  WHERE s.key = ?1 AND m.title = ?2 AND m.field = 'releaseyear'",
             )?;
-            crate::suggest::for_detail(conn, &d, text, system, 30)?
+            crate::suggest::for_detail(conn, databases, &d, text, system, 30)?
                 .into_iter()
                 .map(|t| {
                     let y: Option<String> = year

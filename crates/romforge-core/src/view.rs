@@ -201,6 +201,12 @@ pub struct GameRow {
     /// Not matched to a game yet ([`RowStatus::unmatched`], or no platform
     /// found at all): listed under Unidentified, not with the games.
     pub unmatched: bool,
+    /// A ScummVM game still in its zip or 7z: unplayable until cleanup unpacks it.
+    #[serde(default)]
+    pub packed: bool,
+    /// An unknown file's platform by extension (`.sfc`: SNES): a hint, never a match.
+    #[serde(default)]
+    pub likely_system: Option<String>,
     #[serde(skip)]
     pub(crate) system_id: Option<i64>,
     #[serde(skip)]

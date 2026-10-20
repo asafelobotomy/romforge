@@ -69,6 +69,17 @@ fn loose_names() {
         ("Ancient Chozo", Some("Hack by Albert V."))
     );
 
+    let n = parse("Live A Live English v2.00.sfc");
+    assert_eq!(
+        (n.title.as_str(), n.translation.as_deref()),
+        ("Live A Live", Some("English v2.00"))
+    );
+    let n = parse("Mother 1+2 (English).gba");
+    assert_eq!(
+        (n.title.as_str(), n.translation.as_deref(), n.regions.len()),
+        ("Mother 1+2", Some("English"), 0)
+    );
+
     let n = parse("zelda3.smc");
     assert_eq!(n.title, "zelda3");
     assert_eq!(n.translation, None);

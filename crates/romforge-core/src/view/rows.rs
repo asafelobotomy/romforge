@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::folders::folder_games;
+use super::folders::{folder_games, unknown_sheets};
 use super::{FileRec, GameRow, RowStatus, game_id};
 use crate::report::{GAME_HAVE, HAD, IS_HAVE};
 use crate::{Error, systems};
@@ -184,6 +184,8 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
             year: None,
             pictures: BTreeMap::new(),
             box_aspect: 72,
+            packed: false,
+            likely_system: None,
             unmatched: false,
             base_id: None,
             system_id,
@@ -280,6 +282,8 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
                 year: None,
                 pictures: BTreeMap::new(),
                 box_aspect: 72,
+                packed: false,
+                likely_system: None,
                 unmatched: false,
                 base_id: None,
                 system_id,
@@ -291,6 +295,8 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
         row.size += f.size;
         row.file_ids.push(f.id);
     }
+
+    unknown_sheets(conn, &files, &mut rows)?;
 
     // Folders ScummVM's list names.
     for g in conn
@@ -324,6 +330,24 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
     )?;
     for r in &mut rows {
         r.playable = r.status.identified();
+        // ScummVM can't play a game from an archive: cleanup unpacks it.
+        r.packed = r
+            .system_id
+            .and_then(systems::by_id)
+            .is_some_and(|s| s.folders == systems::Folders::Kept)
+            && r.folder
+                .as_deref()
+                .is_some_and(|f| crate::scummvm::is_archive(std::path::Path::new(f)));
+        if r.packed {
+            r.playable = false;
+        }
+        if r.status == RowStatus::Unknown && r.system_id.is_none() {
+            r.likely_system = r
+                .title
+                .rsplit_once('.')
+                .and_then(|(_, ext)| systems::by_extension(ext))
+                .map(|s| s.key.to_owned());
+        }
         // An arcade set is named by its DAT's description.
         if r.system_id.and_then(systems::by_id).is_some_and(|s| s.arcade) {
             r.label = described

@@ -150,6 +150,9 @@ pub enum SearchCommand {
         #[arg(long)]
         system: Option<String>,
     },
+    /// Name rows by their strongest suggestion, when it is a name match or
+    /// better (a translation or hack as one, when its name says so)
+    Accept { rows: Vec<String> },
     /// Name a row's files yourself ("identified by you"), or as a
     /// translation or hack of a DAT game ("translation of X")
     Name {

@@ -216,3 +216,49 @@ fn nkit_images_by_id_and_original_crc() {
     assert_eq!(s.title, "Super Smash Bros. Melee (USA) (En,Ja)");
     assert!(s.evidence.iter().any(|e| e.kind == "nkit" && e.agrees));
 }
+
+/// A game known by another name: with no DAT title alike the file's, the
+/// LaunchBox database (when downloaded) gives the game's other names, which
+/// lead to the DAT's. Without it, nothing.
+#[test]
+fn launchbox_names_lead_to_the_dat_title() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(
+        tmp.path().join("gb.dat"),
+        r#"<datafile><header><name>Nintendo - Game Boy</name></header>
+  <game name="Takeshi no Chousenjou (Japan)"><rom name="t.gb" size="2048" crc="00000003"/></game>
+</datafile>"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("Takeshi's Challenge (English v1.0).gb"), vec![5u8; 4096]).unwrap();
+    let mut lib = Library::open(tmp.path().join("lib.db")).unwrap();
+    lib.import_dat(tmp.path().join("gb.dat"), None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let suggested = |lib: &Library| {
+        lib.search_queue(None).unwrap()[0]
+            .suggestion
+            .as_ref()
+            .map(|s| (s.title.clone(), s.evidence.iter().any(|e| e.kind == "alias")))
+    };
+    assert_eq!(suggested(&lib), None, "no DAT title is alike");
+
+    let dbs = lib.extdb_dir().unwrap();
+    std::fs::create_dir_all(&dbs).unwrap();
+    let lb = rusqlite::Connection::open(dbs.join("launchbox.sqlite")).unwrap();
+    lb.execute_batch(
+        "CREATE TABLE games (id INTEGER PRIMARY KEY, platform TEXT NOT NULL, name TEXT NOT NULL);
+         CREATE TABLE names (id INTEGER NOT NULL, key TEXT NOT NULL, region TEXT);
+         INSERT INTO games VALUES (1, 'Nintendo Game Boy', 'Takeshi no Chōsenjō');
+         INSERT INTO names VALUES (1, 'takeshi no chousenjou', NULL), (1, 'takeshi s challenge', 'North America');
+         INSERT INTO games VALUES (2, 'Nintendo Entertainment System', 'Takeshi''s Challenge Elsewhere');
+         INSERT INTO names VALUES (2, 'takeshi s challenge', NULL);",
+    )
+    .unwrap();
+    drop(lb);
+    assert_eq!(
+        suggested(&lib),
+        Some(("Takeshi no Chousenjou (Japan)".to_owned(), true))
+    );
+}

@@ -243,3 +243,52 @@ fn picks_outrank_crc_only_hits() {
         .to_string();
     assert!(err.contains("already identified by its hashes"), "{err}");
 }
+
+/// Naming several rows by their suggestions at once: a translation is
+/// named as one (never verified); a file with no good suggestion is left.
+#[test]
+fn naming_selected_rows_as_suggested() {
+    use romforge_core::view::RowStatus;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(
+        tmp.path().join("snes.dat"),
+        r#"<datafile><header><name>Nintendo - Super Nintendo Entertainment System</name></header>
+  <game name="Live A Live (Japan)"><rom name="l.sfc" size="2048" crc="00000004"/></game>
+</datafile>"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("Live A Live English v2.00.sfc"), vec![5u8; 4096]).unwrap();
+    std::fs::write(dir.join("Nothing Like It.sfc"), vec![6u8; 4096]).unwrap();
+    let mut lib = romforge_core::Library::open_in_memory().unwrap();
+    lib.import_dat(tmp.path().join("snes.dat"), None).unwrap();
+    lib.scan(&dir, romforge_core::Scope::All).unwrap();
+    let ids: Vec<String> = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .iter()
+        .map(|r| r.id.clone())
+        .collect();
+    let done = lib.search_accept(&ids).unwrap();
+    let live = done.iter().find(|a| a.file.starts_with("Live")).unwrap();
+    assert!(
+        live.named
+            .as_deref()
+            .is_some_and(|n| n.starts_with("Live A Live (Japan)")),
+        "{done:?}"
+    );
+    let other = done.iter().find(|a| a.file.starts_with("Nothing")).unwrap();
+    assert!(other.named.is_none() && other.why_not.is_some(), "{done:?}");
+    let rows = lib.library_view().unwrap().rows;
+    // Listed under the original you don't have, as its translation.
+    let row = rows
+        .iter()
+        .find(|r| r.status == RowStatus::Derivative)
+        .unwrap_or_else(|| panic!("{rows:?}"));
+    assert!(row.title.starts_with("Live A Live (Japan)"), "{row:?}");
+    // Named once: asking again leaves it as it is.
+    let again = lib.search_accept(&[row.id.clone()]).unwrap();
+    assert_eq!(again[0].why_not.as_deref(), Some("already identified"));
+}
