@@ -211,11 +211,21 @@ fn init(mut conn: Connection) -> Result<Connection, Error> {
     // Another connection (the app keeps one for reads) may be writing:
     // wait for it rather than fail with "database is locked".
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
+    // Every write takes SQLite's write lock when it begins: a transaction
+    // that read first and then found another connection had written since
+    // would fail at once ("database is locked"), with no wait at all. Quick
+    // edits on their own connection beside a long job rely on this.
+    conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     if version > SCHEMA_VERSION {
         return Err(Error::Schema(version));
+    }
+    // Up to date already: no write, so opening never waits for another
+    // connection's long transaction (a scan holds one for its whole run).
+    if version == SCHEMA_VERSION && systems_current(&conn)? {
+        return Ok(conn);
     }
     let tx = conn.transaction()?;
     if version == 0 {
@@ -230,6 +240,51 @@ fn init(mut conn: Connection) -> Result<Connection, Error> {
     seed_systems(&tx)?;
     tx.commit()?;
     Ok(conn)
+}
+
+/// Whether the `systems` table already holds exactly [`SYSTEMS`].
+fn systems_current(conn: &Connection) -> Result<bool, Error> {
+    type Row = (i64, String, String, String, i64, i64, String, bool, bool, String);
+    let stored: Vec<Row> = conn
+        .prepare(
+            "SELECT system_id, key, name, manufacturer, generation, release_year,
+                    preferred_hash, is_disc_based, is_handheld, extensions
+             FROM systems ORDER BY system_id",
+        )?
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+    let mut code: Vec<Row> = SYSTEMS
+        .iter()
+        .map(|s| {
+            (
+                s.id,
+                s.key.to_owned(),
+                s.name.to_owned(),
+                s.manufacturer.to_owned(),
+                s.generation,
+                s.release_year,
+                s.preferred_hash.to_owned(),
+                s.is_disc_based,
+                s.is_handheld,
+                s.extensions.join(" "),
+            )
+        })
+        .collect();
+    code.sort_by_key(|r| r.0);
+    Ok(stored == code)
 }
 
 fn seed_systems(conn: &Connection) -> Result<(), Error> {

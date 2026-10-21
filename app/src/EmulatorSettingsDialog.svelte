@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from "@tauri-apps/api/core";
-  import { open as pickFile } from "@tauri-apps/plugin-dialog";
+  import { edit, run } from "./jobs.svelte.js";
+  import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
   import CoresPanel from "./CoresPanel.svelte";
 
   // Emulator Settings: a Global tab for every emulator at once, then one
@@ -50,21 +50,27 @@
   // romforge's folder for it, or take the last import back.
   let setupBusy = $state(false);
   async function setup(name, undo) {
+    const ok = await ask(
+      undo
+        ? `Take back the last setup import for ${name}?`
+        : `Copy ${name}'s existing setup (saves, memory cards, mappings) into romforge?`,
+      { title: undo ? "Undo setup import" : "Import setup", kind: "warning" },
+    );
+    if (!ok) return;
     error = "";
     setupBusy = true;
-    try {
-      if (undo) {
-        const n = await invoke("undo_emulator_setup", { emulator: name });
-        note = `Setup import taken back: ${n} file${n === 1 ? "" : "s"} removed.`;
-      } else {
-        const r = await invoke("import_emulator_setup", { emulator: name });
-        note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.kept ? `, ${r.kept} already there kept.` : ".");
-      }
+    // Jobs in the queue (footer); their errors go to the status line.
+    if (undo) {
+      const n = await run(`Taking back ${name}'s setup…`, "undo_emulator_setup", { emulator: name });
+      if (n != null) note = `Setup import taken back: ${n} file${n === 1 ? "" : "s"} removed.`;
+    } else {
+      const r = await run(`Copying ${name}'s setup…`, "import_emulator_setup", { emulator: name });
+      if (r) note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.kept ? `, ${r.kept} already there kept.` : ".");
+    }
+    if (open) {
       const keep = draft;
       await openEmulatorSettings();
       draft = keep;
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
     }
     setupBusy = false;
   }
@@ -73,16 +79,19 @@
   // Install an emulator from Flathub, then look again.
   let installing = $state("");
   async function install(n) {
+    const ok = await ask(`Install ${n.label} from Flathub into your Flatpak? This can take a while.`, {
+      title: "Install emulator",
+      kind: "info",
+    });
+    if (!ok) return;
     error = "";
     installing = n.name;
-    try {
-      const id = await invoke("install_emulator", { emulator: n.name });
-      note = `${n.label} installed (${id}).`;
+    const id = await run(`Installing ${n.label} from Flathub…`, "install_emulator", { emulator: n.name }, { key: `install:${n.name}` });
+    if (id) note = `${n.label} installed (${id}).`;
+    if (id && open) {
       const keep = draft;
       await openEmulatorSettings();
       draft = { ...keep, emulators: { ...draft.emulators, ...keep.emulators } };
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
     }
     installing = "";
   }
@@ -90,7 +99,12 @@
   async function save() {
     error = "";
     try {
-      await invoke("save_emulator_settings", { settings: draft });
+      // Behind a scan or the like it waits its turn: the dialog closes.
+      const onWait = (why) => {
+        open = false;
+        note = `Saving emulator settings ${why}`;
+      };
+      await edit("Saving emulator settings…", "save_emulator_settings", { settings: draft }, { onWait });
       open = false;
       note = "Emulator settings saved; they apply from the next game you start.";
     } catch (e) {

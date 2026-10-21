@@ -1,5 +1,7 @@
 use super::*;
 
+mod game;
+
 /// libretro's thumbnail file name: `&*/:`<>?\|"` become `_`.
 pub fn thumbnail_file(game: &str) -> String {
     let name: String = game
@@ -53,7 +55,10 @@ pub fn image_ext(data: &[u8]) -> Option<&'static str> {
 }
 
 /// Art for the games of one system: libretro, then LaunchBox, then the
-/// keyed sources.
+/// keyed sources. Games are fetched on up to four of the Settings
+/// `threads` at once (each host still gets no more than its own pace,
+/// [`fetch`]); each game's sources keep their order, and what was found is
+/// recorded here in game order. `done` counts games for progress.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn system_art(
     conn: &Connection,
@@ -64,184 +69,44 @@ pub(super) fn system_art(
     games: &[(&String, &Vec<String>)],
     keys: &crate::settings::Keys,
     lbdb: &Option<Connection>,
-    session: &mut crate::artsources::Session,
-    halted: &mut Vec<crate::artsources::Provider>,
-    halted_hosts: &mut std::collections::HashSet<String>,
+    halted: &std::sync::Mutex<Vec<crate::artsources::Provider>>,
+    halted_hosts: &std::sync::Mutex<std::collections::HashSet<String>>,
     report: &mut EnrichReport,
+    tally: &mut Tally,
     progress: &mut impl FnMut(EnrichEvent),
 ) -> Result<(), Error> {
-    // Art: libretro first (house rule 10, tier 1); the keyed sources
-    // fill what it doesn't have.
+    let mut inputs = Vec::with_capacity(games.len());
     for (game, _) in games {
-        let lr_game = libretro_game(conn, system, *system_id, game)?;
-        let lr_game = lr_game.as_str();
-        let mut missing: Vec<ArtKind> = Vec::new();
-        for &kind in &opts.art {
-            let (known, chosen): (Option<Option<String>>, bool) = conn
-                .query_row(
-                    "SELECT path, chosen FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
-                    params![system_id, game, kind.as_str()],
-                    |r| Ok((Some(r.get(0)?), r.get(1)?)),
-                )
-                .optional()?
-                .unwrap_or((None, false));
-            let still_there = matches!(&known, Some(Some(p)) if Path::new(p).exists());
-            // One the owner picked stays, even when refreshing.
-            if still_there && (!opts.refresh || chosen) {
-                report.art_cached += 1;
-                continue;
-            }
-            // libretro has no such kind, or didn't have this one before.
-            let Some(url) = lr_name
-                .and_then(|n| thumbnail_url(&opts.thumbnails_base, n, kind, lr_game))
-                .filter(|_| opts.refresh || !matches!(known, Some(None)))
-            else {
-                missing.push(kind);
-                continue;
-            };
-            progress(EnrichEvent::Art {
-                system: system.key,
-                game: (*game).clone(),
-                kind,
-            });
-            match get_image_halting(&url, halted_hosts) {
-                Ok(Some(data)) if image_ext(&data).is_some() => {
-                    match keep(
-                        conn, opts, system, *system_id, game, kind, &data, "libretro", &url,
-                    ) {
-                        Ok(()) => report.art_saved += 1,
-                        Err(e) => report.errors.push(e.to_string()),
-                    }
-                }
-                Ok(_) => {
-                    record(conn, *system_id, game, kind, None, "libretro")?;
-                    missing.push(kind);
-                }
-                Err(e) => report.errors.push(e.to_string()),
-            }
-        }
-        // LaunchBox next (free, no key; downloaded by the user): only
-        // what is still missing.
-        if !missing.is_empty()
-            && let Some(lb) = &lbdb
-        {
-            match crate::extdb::launchbox_lookup(lb, system, game, &opts.launchbox_images) {
-                Ok(Some(found)) => {
-                    for ArtFound { kind, url, .. } in found.images {
-                        if !missing.contains(&kind) {
-                            continue;
-                        }
-                        progress(EnrichEvent::Art {
-                            system: system.key,
-                            game: (*game).clone(),
-                            kind,
-                        });
-                        match get_image_halting(&url, halted_hosts) {
-                            Ok(Some(data)) if image_ext(&data).is_some() => {
-                                match keep(
-                                    conn,
-                                    opts,
-                                    system,
-                                    *system_id,
-                                    game,
-                                    kind,
-                                    &data,
-                                    "launchbox",
-                                    &url,
-                                ) {
-                                    Ok(()) => {
-                                        report.art_saved += 1;
-                                        missing.retain(|k| *k != kind);
-                                    }
-                                    Err(e) => report.errors.push(e.to_string()),
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(e) => report.errors.push(format!("LaunchBox: {e}")),
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => report.errors.push(format!("LaunchBox: {e}")),
-            }
-        }
-        // Keyed sources, each asked once per game unless refreshing.
-        let providers: Vec<_> = crate::artsources::Provider::available(keys, system)
-            .into_iter()
-            .filter(|p| !halted.contains(p))
-            .collect();
-        for provider in providers {
-            if missing.is_empty() {
-                break;
-            }
-            let asked: bool = conn
-                .query_row(
-                    "SELECT EXISTS (SELECT 1 FROM art_lookup WHERE system_id = ?1 AND title = ?2 AND provider = ?3)",
-                    params![system_id, game, provider.name()],
-                    |r| r.get(0),
-                )?;
-            if asked && !opts.refresh {
-                continue;
-            }
-            let job = crate::artsources::Job {
-                system,
-                title: game,
-                rom: crate::artsources::rom_for(conn, *system_id, game)?,
-            };
-            match crate::artsources::lookup(provider, keys, &opts.sources, session, &job) {
-                Ok(found) => {
-                    for ArtFound { kind, url, .. } in found {
-                        if !missing.contains(&kind) {
-                            continue;
-                        }
-                        progress(EnrichEvent::Art {
-                            system: system.key,
-                            game: (*game).clone(),
-                            kind,
-                        });
-                        let get = crate::artsources::download_url(provider.name(), &url, keys, &opts.sources);
-                        match get_image_halting(&get, halted_hosts) {
-                            Ok(Some(data)) if image_ext(&data).is_some() => {
-                                match keep(
-                                    conn,
-                                    opts,
-                                    system,
-                                    *system_id,
-                                    game,
-                                    kind,
-                                    &data,
-                                    provider.name(),
-                                    &url,
-                                ) {
-                                    Ok(()) => {
-                                        report.art_saved += 1;
-                                        missing.retain(|k| *k != kind);
-                                    }
-                                    Err(e) => report.errors.push(e.to_string()),
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(e) => report.errors.push(e.to_string()),
-                        }
-                    }
-                    conn.execute(
-                        concat!("INSERT INTO art_lookup (system_id, title, provider, checked_at)
-                         VALUES (?1, ?2, ?3, ", crate::db::now!(), ")
-                         ON CONFLICT(system_id, title, provider) DO UPDATE SET checked_at = excluded.checked_at"),
-                        params![system_id, game, provider.name()],
-                    )?;
-                }
-                Err(e) => {
-                    if fetch::is_rate_limited(&e) {
-                        halted.push(provider);
-                    }
-                    report.errors.push(format!("{}: {e}", provider.name()));
-                }
-            }
-        }
-        report.art_missing += missing.len();
+        let input = game::prepare(conn, opts, system, *system_id, lr_name, game, keys, lbdb)?;
+        report.art_cached += input.cached;
+        inputs.push(input);
     }
-    Ok(())
+    let shared = game::Shared {
+        opts,
+        system,
+        keys,
+        halted_hosts,
+        halted,
+    };
+    let threads = crate::parallel::threads(opts.threads).min(4);
+    let mut failed = Ok(());
+    let mut each = |out: Option<game::GameOut>| {
+        let Some(out) = out else { return };
+        if failed.is_ok() {
+            failed = game::record_out(conn, *system_id, &out, report);
+        }
+        tally.game(system.key, &out.game, progress);
+    };
+    let fetch = |input| (!opts.cancel.is_set()).then(|| game::fetch(&shared, input));
+    // The first game alone: a host that says "slow down" says it before
+    // the others ask it too.
+    let rest = inputs.split_off(inputs.len().min(1));
+    for input in inputs {
+        each(fetch(input));
+    }
+    crate::parallel::map_ordered(rest, threads, fetch, |_, out| each(out));
+    failed?;
+    opts.cancel.check()
 }
 
 /// [`fetch::get_optional`], unless `url`'s host rate-limited this run; a
@@ -316,7 +181,7 @@ pub(super) fn keep(
 }
 
 /// Note what was found for a game (`path` None: looked for, not found).
-fn record(
+pub(super) fn record(
     conn: &Connection,
     system_id: i64,
     game: &str,

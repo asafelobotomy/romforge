@@ -89,5 +89,5 @@ pub struct Candidate {
 
 /// Wikidata's classes for a game: video game, and video game edition (a
 /// "Director's Cut" or "Greatest Hits" release with an item of its own).
-const GAME: &str = "Q7889";
-const EDITION: &str = "Q60997816";
+pub(crate) const GAME: &str = "Q7889";
+pub(crate) const EDITION: &str = "Q60997816";

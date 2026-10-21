@@ -64,7 +64,7 @@ fn translations_and_hacks() {
         fixed
             .evidence
             .iter()
-            .any(|e| e.kind == "patch" && e.text.contains("turns its ROM into this file"))
+            .any(|e| e.kind == "patch" && e.text.contains("turns the DAT ROM into this file"))
     );
     assert_eq!(fixed.derived.map(|d| d.relation), Some(Relation::Hack));
 
@@ -151,7 +151,7 @@ fn ips_applied_to_your_verified_copy() {
     assert!(
         s.evidence
             .iter()
-            .any(|e| e.kind == "patch" && e.text.contains("gives exactly this file"))
+            .any(|e| e.kind == "patch" && e.text.contains("yields this file"))
     );
     assert_eq!(s.derived.map(|d| d.relation), Some(Relation::Hack));
     assert_eq!(item.need, Need::Identify, "a patch of a game, not that game");

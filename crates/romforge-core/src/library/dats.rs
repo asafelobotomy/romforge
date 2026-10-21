@@ -145,12 +145,18 @@ impl Library {
             });
         }
         let url = source.url().unwrap_or_default();
-        let body = fetch::get(&url)?;
-        let head = String::from_utf8_lossy(&body[..body.len().min(512)]).to_ascii_lowercase();
-        if head.contains("<html") || head.contains("<!doctype html") {
-            return Err(Error::Http(format!("{url}: got a web page, not a DAT")));
-        }
-        let mut dats = fetch::dats_in(&body)?;
+        let body = fetch_one(&url)?;
+        self.import_one(system_key, &url, &body)
+    }
+
+    /// Import a one-DAT source's download ([`fetch_one`]).
+    pub(super) fn import_one(
+        &mut self,
+        system_key: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<Vec<ImportedDat>, Error> {
+        let mut dats = fetch::dats_in(body)?;
         if dats.len() != 1 {
             return Err(Error::Dat(format!(
                 "{url}: expected one DAT, found {}",
@@ -158,7 +164,7 @@ impl Library {
             )));
         }
         let dat = dats.remove(0);
-        Ok(vec![self.import_dat_bytes(&dat.bytes, &url, Some(system_key))?])
+        Ok(vec![self.import_dat_bytes(&dat.bytes, url, Some(system_key))?])
     }
 
     /// Download and import every DAT of a system ([`fetch::sources`]; hacks
@@ -184,25 +190,29 @@ impl Library {
             Ok(())
         })
     }
-
-    /// [`Library::download_dats`] for every system that has a DAT source,
-    /// in one batch. `each` gets the system key too.
-    pub fn download_all(
-        &mut self,
-        extras: bool,
-        mut each: impl FnMut(&'static str, fetch::Source, Result<Vec<ImportedDat>, Error>),
-    ) -> Result<(), Error> {
-        self.batch(|lib| {
-            for s in systems::SYSTEMS
-                .iter()
-                .filter(|s| !fetch::sources(s, extras).is_empty())
-            {
-                lib.download_dats(s.key, extras, |source, r| each(s.key, source, r))?;
-            }
-            Ok(())
-        })
-    }
 }
+
+/// A source that is one DAT file at its URL: downloaded on its own (on any
+/// thread), then imported ([`Library::import_one`]).
+pub(super) fn is_one_file(source: fetch::Source) -> bool {
+    use fetch::Source::*;
+    matches!(
+        source,
+        NoIntro(_) | Redump(_) | Hacks(_) | Homebrew(_) | Libretro(_) | Url(_)
+    )
+}
+
+/// Download a one-DAT source (no database), refusing a web page.
+pub(super) fn fetch_one(url: &str) -> Result<Vec<u8>, Error> {
+    let body = fetch::get(url)?;
+    let head = String::from_utf8_lossy(&body[..body.len().min(512)]).to_ascii_lowercase();
+    if head.contains("<html") || head.contains("<!doctype html") {
+        return Err(Error::Http(format!("{url}: got a web page, not a DAT")));
+    }
+    Ok(body)
+}
+
+mod all;
 
 /// The source paths of a TOSEC release's DATs for `name`, and the part
 /// every release's paths for it share.

@@ -3,12 +3,17 @@
   import SortButton from "./SortButton.svelte";
   import { sorted, remembered, remember } from "./sort.js";
   import { basename } from "./lib.js";
+  import { run } from "./jobs.svelte.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library.
   // With `homeRoot` (the RomForge folder) this is Import: games move into
   // its Games/, from `from` (a folder just added) or everywhere outside it.
-  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), homeRoot = null, call, load } = $props();
+  // Applying, undoing and emptying the trash are long jobs: the dialog
+  // closes and they wait their turn in the queue (footer); `busy` is only
+  // what the dialog itself waits on.
+  let { open = $bindable(false), note = $bindable(""), homeRoot = null, call, load } = $props();
+  let busy = $state("");
   let from = $state(null);
   // "cleanup": Rename & Cleanup's dry run (or Import); "convert": disc
   // images into CHD where they are.
@@ -31,17 +36,10 @@
   }
 
   async function emptyTrash() {
-    cleanError = "";
-    busy = "Emptying the trash…";
-    try {
-      const r = await invoke("empty_trash");
-      note = `Deleted ${r.files} originals (${mib(r.bytes)}) from ${r.batches.length} batches; those can no longer be undone` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
-    } catch (e) {
-      cleanError = String(e);
-    }
     trash = null;
-    busy = "";
-    await planCleanup();
+    open = false;
+    const r = await run("Emptying the trash…", "empty_trash", {}, { key: "empty_trash" });
+    if (r) note = `Deleted ${r.files} originals (${mib(r.bytes)}) from ${r.batches.length} batches; those can no longer be undone` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
   }
 
   const mib = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GiB` : `${(n / (1 << 20)).toFixed(1)} MiB`);
@@ -67,35 +65,29 @@
   }
 
   async function applyCleanup() {
-    cleanError = "";
-    busy = converting ? `Converting ${cleanPlan.items.length} discs…` : `Renaming and cleaning up ${cleanPlan.items.length} games…`;
-    try {
-      const r = converting ? await invoke("convert_apply", { only }) : await invoke("cleanup_apply", { only, from });
+    // What the plan was made from: the job plans again with exactly these.
+    const [conv, ids, dir, n, kept] = [converting, only, from, cleanPlan.items.length, cleanPlan.keep_originals];
+    open = false;
+    const r = conv
+      ? await run(`Converting ${n} discs…`, "convert_apply", { only: ids })
+      : await run(`${homeRoot ? "Importing" : "Renaming and cleaning up"} ${n} games…`, "cleanup_apply", { only: ids, from: dir });
+    if (r) {
       const trashed = homeRoot ? "to the RomForge trash" : "to .romforge-trash";
+      const failed = r.failed.map(([t, e]) => `${t}: ${e}`).join("; ");
       note = r.batch_id
-        ? `Batch #${r.batch_id}: ${converting ? "converted" : homeRoot ? "imported" : "wrote"} ${r.done}, ${cleanPlan.keep_originals ? "originals kept" : `${r.trashed} originals ${trashed}`}` +
-          (r.failed.length ? `; ${r.failed.length} failed: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "")
-        : "Nothing was written" + (r.failed.length ? `: ${r.failed.map(([t, e]) => `${t}: ${e}`).join("; ")}` : "");
-      open = false;
-    } catch (e) {
-      cleanError = String(e);
+        ? `Batch #${r.batch_id}: ${conv ? "converted" : homeRoot ? "imported" : "wrote"} ${r.done}, ${kept ? "originals kept" : `${r.trashed} originals ${trashed}`}` +
+          (r.stopped ? "; stopped before the rest" : "") +
+          (r.failed.length ? `; ${r.failed.length} failed: ${failed}` : "")
+        : "Nothing was written" + (r.failed.length ? `: ${failed}` : "");
     }
-    busy = "";
     await load();
   }
 
   async function undoCleanup() {
     confirmCleanUndo = false;
-    cleanError = "";
-    busy = "Undoing the last cleanup…";
-    try {
-      const r = await invoke("cleanup_undo");
-      note = `Batch #${r.batch_id}: removed ${r.removed} new files, restored ${r.restored} originals` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
-      open = false;
-    } catch (e) {
-      cleanError = String(e);
-    }
-    busy = "";
+    open = false;
+    const r = await run("Undoing the last cleanup…", "cleanup_undo", {}, { key: "cleanup_undo" });
+    if (r) note = `Batch #${r.batch_id}: removed ${r.removed} new files, restored ${r.restored} originals` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
     await load();
   }
 

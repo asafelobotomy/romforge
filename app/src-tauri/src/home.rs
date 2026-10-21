@@ -40,7 +40,10 @@ pub async fn home_create(
     parent: String,
 ) -> Res<PathBuf> {
     let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
+    let detached = db.detached.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
+        // Background fetches on their own connection finish first.
+        let _alone = detached.write().unwrap_or_else(|e| e.into_inner());
         let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
         let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
         let current = w.home().cloned();
@@ -89,7 +92,10 @@ pub async fn home_move(
     parent: String,
 ) -> Res<PathBuf> {
     let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
+    let detached = db.detached.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
+        // Background fetches on their own connection finish first.
+        let _alone = detached.write().unwrap_or_else(|e| e.into_inner());
         let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
         let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
         let Some(old) = w.home().cloned() else {

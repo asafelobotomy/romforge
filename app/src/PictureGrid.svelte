@@ -1,5 +1,6 @@
 <script>
   import { thumbSrc } from "./lib.js";
+  import { listLabel } from "./listLabel.js";
 
   // The library as pictures: box art, 3D boxes or banners (fanart with the
   // game's logo over it), nothing but the picture, in the same order and
@@ -7,8 +8,8 @@
   // `scroll` (the library) only the lines in view are drawn, so thousands
   // stay quick; without it (Details' Versions) it is as tall as it needs.
   // `picked`: the selected cards (else just `selected`, which has the
-  // focus).
-  let { rows, mode, selected, picked = null, isOpen, open, toggle, statusLabel, scroll = true } = $props();
+  // focus). `regionFlags`: version tooltips use emojis (Settings).
+  let { rows, mode, selected, picked = null, isOpen, open, toggle, statusLabel, regionFlags = true, scroll = true } = $props();
 
   // Boxes: every box the same height (BOX px) on one baseline, each at its
   // platform's and region's shape (`box_aspect`, width / height in
@@ -82,7 +83,7 @@
     return p.boxart;
   }
   const tip = (r) =>
-    [r.label ?? r.title, r.system_name, r.year, statusLabel[r.status]].filter(Boolean).join(" · ");
+    [listLabel(r, regionFlags), r.system_name, r.year, statusLabel[r.status]].filter(Boolean).join(" · ");
   // Only what needs saying is marked: a game you don't have, a patch file,
   // a file nothing identified.
   const MARKS = { missing: "○", patch: "✚", unknown: "?", candidate: "~", wrong_system: "~", incomplete: "~" };
@@ -118,7 +119,7 @@
                 title={tip(r)}
                 aria-label={tip(r)}
               >
-                <span class="placeholder">{r.label ?? r.title}</span>
+                <span class="placeholder">{listLabel(r, regionFlags)}</span>
                 {#if src}<img class="art" {src} alt="" loading="lazy" decoding="async" onerror={broken} />{/if}
                 {#if logo}<img class="logo" src={logo} alt="" loading="lazy" onerror={broken} />{/if}
                 {#if MARKS[r.status]}<span class="mark" aria-hidden="true">{MARKS[r.status]}</span>{/if}

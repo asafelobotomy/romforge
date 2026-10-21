@@ -25,6 +25,9 @@
     listMode = $bindable(),
     listSort = $bindable(),
     table = $bindable(),
+    regionFlags = true,
+    icons = {},
+    iconStyle = "",
   } = $props();
 </script>
 
@@ -48,9 +51,9 @@
       <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
     </div>
   {:else if listMode !== "list"}
-    <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {picked} {isOpen} {open} {toggle} {statusLabel} />
+    <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {picked} {isOpen} {open} {toggle} {statusLabel} {regionFlags} />
   {:else}
-    <GameTable bind:this={table} {rows} {selected} {picked} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} bind:sort={listSort} />
+    <GameTable bind:this={table} {rows} {selected} {picked} platformCol={platform === "*"} {isOpen} {toggle} {open} {statusLabel} {regionFlags} {icons} {iconStyle} bind:sort={listSort} />
   {/if}
   {#if lib.rows.length}
     <p class="foot">

@@ -113,7 +113,7 @@ fn refresh_rescans_each_source_folder_once() {
     std::fs::remove_dir(&b).unwrap();
     std::fs::copy(fixtures().join("roms/nes/Test NES 2.0.nes"), a.join("new.nes")).unwrap();
 
-    let results = lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    let results = lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     let ok: Vec<_> = results
         .iter()
         .filter_map(|r| r.as_ref().ok())
@@ -159,7 +159,7 @@ fn refresh_scans_the_settings_folders() {
         ..Default::default()
     })
     .unwrap();
-    let results = lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    let results = lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2, "{results:?}");
     let titles: Vec<String> = lib
         .library_view()
@@ -240,4 +240,71 @@ fn versions_group_under_the_preferred_region() {
     };
     lib.save_settings(&japan_first).unwrap();
     assert_eq!(main(&lib), ("Quest (Japan)".to_owned(), 4));
+}
+
+/// "Display missing versions": the DAT's other versions of a game you have
+/// join its group, a clone named apart from its parent too ("Rockman" of
+/// "Mega Man"); other games don't.
+#[test]
+fn missing_versions_join_their_parent_group() {
+    use romforge_core::hash::hash_stream;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir_all(&dir).unwrap();
+    let data = vec![7u8; 2048];
+    let h = hash_stream(&data[..], data.len() as u64).unwrap().raw;
+    std::fs::write(dir.join("Mega Man (USA).gb"), &data).unwrap();
+    let rom =
+        |name: &str, n: u8| format!(r#"<rom name="{name}.gb" size="2048" crc="{n:08x}" sha1="{n:040x}"/>"#);
+    let dat = tmp.path().join("gb.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Nintendo - Game Boy</name></header>
+            <game name="Mega Man (USA)"><rom name="Mega Man (USA).gb" size="{}" crc="{}" md5="{}" sha1="{}"/></game>
+            <game name="Rockman (Japan)" cloneof="Mega Man (USA)">{}</game>
+            <game name="Mega Man (Europe)" cloneof="Mega Man (USA)">{}</game>
+            <game name="Other Game (USA)">{}</game>
+            </datafile>"#,
+            h.size,
+            h.crc32,
+            h.md5,
+            h.sha1,
+            rom("Rockman (Japan)", 1),
+            rom("Mega Man (Europe)", 2),
+            rom("Other Game (USA)", 3),
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let titles = |lib: &Library| {
+        let v = lib.library_view_fresh().unwrap();
+        let mut t: Vec<_> = v.rows.iter().map(|r| (r.title.clone(), r.status)).collect();
+        t.sort();
+        t
+    };
+    assert_eq!(titles(&lib), [("Mega Man (USA)".to_owned(), RowStatus::Verified)]);
+
+    let all = romforge_core::settings::Settings {
+        show_missing_versions: true,
+        ..Default::default()
+    };
+    lib.save_settings(&all).unwrap();
+    assert_eq!(
+        titles(&lib),
+        [
+            ("Mega Man (Europe)".to_owned(), RowStatus::Missing),
+            ("Mega Man (USA)".to_owned(), RowStatus::Verified),
+            ("Rockman (Japan)".to_owned(), RowStatus::Missing),
+        ]
+    );
+    let v = lib.library_view_fresh().unwrap();
+    let main = v.rows.iter().find(|r| r.main).unwrap();
+    assert_eq!(
+        main.title, "Mega Man (USA)",
+        "an owned original stays the main row"
+    );
+    assert!(v.rows.iter().all(|r| r.group == main.group));
 }

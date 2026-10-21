@@ -27,7 +27,13 @@ impl SortBy {
 /// or platform go last either way. Stable, so a group's versions keep their
 /// order among equals.
 pub fn sort_rows(rows: &mut [GameRow], by: SortBy, descending: bool) {
-    let title = |r: &GameRow| sort_key(r.label.as_deref().unwrap_or(&r.title));
+    let title = |r: &GameRow| {
+        sort_key(if r.name.title.is_empty() {
+            r.label.as_deref().unwrap_or(&r.title)
+        } else {
+            &r.name.title
+        })
+    };
     rows.sort_by(|a, b| {
         let (missing, ord) = match by {
             SortBy::Title => (std::cmp::Ordering::Equal, title(a).cmp(&title(b))),

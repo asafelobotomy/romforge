@@ -51,7 +51,7 @@ impl Library {
     }
 
     /// Enrich options using this library's downloaded databases unless the
-    /// caller named a folder.
+    /// caller named a folder, and its Settings `threads` unless given.
     pub(super) fn with_extdb(&self, opts: &enrich::EnrichOptions) -> enrich::EnrichOptions {
         let mut o = opts.clone();
         if o.extdb.is_none() {
@@ -59,6 +59,9 @@ impl Library {
         }
         if o.art_dir.is_none() {
             o.art_dir = self.home.as_ref().map(home::Home::media);
+        }
+        if o.threads == 0 {
+            o.threads = crate::settings::load(&self.conn).map_or(0, |s| s.threads);
         }
         o
     }

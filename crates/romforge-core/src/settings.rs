@@ -24,7 +24,7 @@ pub use keys::*;
 mod store;
 pub use store::*;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
     pub source_dir: Option<PathBuf>,
     pub library_dir: Option<PathBuf>,
@@ -44,6 +44,15 @@ pub struct Settings {
     /// in them (off: only the art there is).
     #[serde(default)]
     pub show_empty_media: bool,
+    /// Version rows show region and language as flag emojis (on, the
+    /// default) or as text ("USA", "En").
+    #[serde(default = "default_true")]
+    pub region_flags: bool,
+    /// List every DAT version of a game romforge can link, even ones you
+    /// don't have (off by default: only what you own, plus a missing
+    /// original when you only have a translation, hack or patch).
+    #[serde(default)]
+    pub show_missing_versions: bool,
     /// Which region's version is a game's main row in the library, best
     /// first ("USA", "Europe", "Japan"...). Empty: [`crate::organize::DEFAULT_REGIONS`].
     #[serde(default)]
@@ -53,6 +62,34 @@ pub struct Settings {
     /// "flatui", the controllers.
     #[serde(default)]
     pub platform_icons: String,
+    /// Threads for long jobs (hashing, repacking, downloads from several
+    /// hosts): 0 picks one per CPU, at most 8 ([`crate::parallel::threads`]);
+    /// 1 suits a slow spinning disk.
+    #[serde(default)]
+    pub threads: usize,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            source_dir: None,
+            library_dir: None,
+            keep_originals: false,
+            in_place: false,
+            staging_dir: None,
+            keys: Keys::default(),
+            show_empty_media: false,
+            region_flags: true,
+            show_missing_versions: false,
+            regions: Vec::new(),
+            platform_icons: String::new(),
+            threads: 0,
+        }
+    }
 }
 
 impl Settings {
@@ -173,6 +210,12 @@ impl Settings {
             staging_dir: staging,
             keys,
             show_empty_media: self.show_empty_media,
+            region_flags: self.region_flags,
+            show_missing_versions: self.show_missing_versions,
+            threads: match self.threads {
+                0..=64 => self.threads,
+                n => return bad(format!("{n} threads is too many (0 for automatic, at most 64)")),
+            },
             platform_icons: {
                 let t = self.platform_icons.trim();
                 if !t.is_empty() && t != "none" && !crate::enrich::PLATFORM_ICON_THEMES.contains(&t) {

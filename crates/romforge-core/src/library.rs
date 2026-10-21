@@ -4,6 +4,7 @@ mod art;
 mod dat_import;
 mod dat_lists;
 mod dats;
+mod edit;
 mod emulators;
 mod files;
 mod folders;

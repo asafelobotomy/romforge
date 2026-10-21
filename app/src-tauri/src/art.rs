@@ -32,12 +32,19 @@ impl ArtRoots {
 /// a thumbnail that tall (made on first request, kept in the cache), or
 /// the picture itself if that fails.
 pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> tauri::http::Response<Vec<u8>> {
-    let not_found = || {
+    // fetch() from the page (pdf.js manuals, OCR traineddata) is
+    // cross-origin to art://, so CORS headers are required; <img> does not
+    // need them. Without Allow-Origin, WebKit fails the fetch as "Load failed".
+    let respond = |status: u16, mime: &str, body: Vec<u8>| {
         tauri::http::Response::builder()
-            .status(404)
-            .body(Vec::new())
+            .status(status)
+            .header("Content-Type", mime)
+            .header("Cache-Control", "no-cache")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(body)
             .unwrap_or_default()
     };
+    let not_found = || respond(404, "application/octet-stream", Vec::new());
     let mime = |p: &Path| match p
         .extension()
         .and_then(|e| e.to_str())
@@ -74,11 +81,7 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
         return not_found();
     };
     match std::fs::read(&real) {
-        Ok(data) => tauri::http::Response::builder()
-            .header("Content-Type", mime)
-            .header("Cache-Control", "no-cache")
-            .body(data)
-            .unwrap_or_else(|_| not_found()),
+        Ok(data) => respond(200, mime, data),
         Err(_) => not_found(),
     }
 }

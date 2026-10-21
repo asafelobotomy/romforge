@@ -9,8 +9,15 @@ use super::{Applied, Batch, Plan, Undone};
 
 /// Carry out a plan, journaling each move so [`undo`] can reverse it. A
 /// plan that moves nothing leaves no batch behind (`batch_id` 0), so `undo`
-/// never lands on an empty batch.
-pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied, Error> {
+/// never lands on an empty batch. `progress(done, total)` follows each
+/// move; asked to stop, it stops between moves (`stopped`).
+pub fn apply(
+    conn: &mut Connection,
+    plan: &Plan,
+    dest: &Path,
+    cancel: &crate::job::Cancel,
+    mut progress: impl FnMut(usize, usize),
+) -> Result<Applied, Error> {
     let mut applied = Applied::default();
     if plan.moves.is_empty() {
         return Ok(applied);
@@ -30,6 +37,11 @@ pub fn apply(conn: &mut Connection, plan: &Plan, dest: &Path) -> Result<Applied,
     // both places): the batch stays for undo.
     let mut kept_rows = 0;
     for (seq, m) in plan.moves.iter().enumerate() {
+        progress(seq, plan.moves.len());
+        if cancel.is_set() {
+            applied.stopped = true;
+            break;
+        }
         // Journaled before it moves: a crash or a database error in between
         // leaves a row undo can act on, never a moved file nothing knows
         // about.

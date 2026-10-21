@@ -1,4 +1,4 @@
-use super::find::{first_year, strip_tags};
+use super::find::{first_year, parse_entities, parse_page_ids, strip_tags};
 use super::*;
 
 #[test]
@@ -27,6 +27,31 @@ fn wikidata_search_results() {
     assert_eq!(r[1].year, Some(1995));
     assert_eq!(r[2].year, None);
     assert_eq!(r[0].system.as_deref(), Some("SNES"));
+}
+
+#[test]
+fn platform_search_keeps_qid_order_and_mul_labels() {
+    let pages = br#"{"query":{"search":[
+        {"title":"Q1045765"},{"title":"Q853143"},{"title":"NotAQid"}]}}"#;
+    assert_eq!(parse_page_ids(pages).unwrap(), ["Q1045765", "Q853143"]);
+    let ents = br#"{"entities":{
+        "Q853143":{"labels":{"mul":{"value":"Super Mario World"}},
+                   "descriptions":{"en":{"value":"1990 platform video game"}}},
+        "Q1045765":{"labels":{"en":{"value":"Super Mario World 2: Yoshi's Island"}},
+                    "descriptions":{"en":{"value":"1995 video game"}}}
+    }}"#;
+    let r = parse_entities(
+        ents,
+        "Super Mario World",
+        Some("SNES"),
+        &["Q1045765".into(), "Q853143".into()],
+    )
+    .unwrap();
+    assert_eq!(r.len(), 2);
+    assert_eq!(r[0].id, "Q1045765");
+    assert_eq!(r[1].title, "Super Mario World");
+    assert_eq!(r[1].year, Some(1990));
+    assert_eq!(r[1].system.as_deref(), Some("SNES"));
 }
 
 #[test]

@@ -15,6 +15,7 @@ mod enrich;
 mod firmware;
 mod home;
 mod images;
+mod jobs;
 mod library;
 mod manual;
 mod patch;
@@ -36,6 +37,7 @@ fn main() {
     let db = Db {
         write: Arc::new(Mutex::new(open())),
         read: Arc::new(Mutex::new(open())),
+        detached: Arc::new(RwLock::new(())),
     };
     let roots = {
         let lib = db.read.lock().unwrap_or_else(|e| e.into_inner());
@@ -57,6 +59,7 @@ fn main() {
         .manage(db)
         .manage(roots)
         .manage(play::Now::default())
+        .manage(jobs::Jobs::default())
         // Game pads, heard even while an emulator has the focus: "pad"
         // events for the page (no pads, or no access: the app works without).
         .setup(|app| {
@@ -72,7 +75,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             library::summary,
             library::dat_games,
-            scan::scan,
             dats::download_dats,
             dats::mame_dat,
             dats::extdb_list,
@@ -148,6 +150,9 @@ fn main() {
             search::search_accept,
             search::search_find,
             search::search_preview,
+            search::search_apply,
+            search::search_fetch,
+            jobs::job_cancel,
             search::search_choose,
             search::forget_identity,
             library::all_systems

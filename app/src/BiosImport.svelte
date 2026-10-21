@@ -1,7 +1,8 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { run } from "./jobs.svelte.js";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { open as pick } from "@tauri-apps/plugin-dialog";
+  import { ask, open as pick } from "@tauri-apps/plugin-dialog";
 
   // Dropping BIOS files on the BIOS page (milestone 20, step 3): a folder,
   // files, zips or 7z. The core matches each file by its contents and says
@@ -57,27 +58,27 @@
     if (p) look(Array.isArray(p) ? p : [p]);
   }
 
+  // Importing and undoing are jobs in the queue (footer); their errors go
+  // to the status line.
   async function apply() {
     working = true;
-    try {
-      const r = await invoke("firmware_import", { paths, also });
+    const r = await run("Importing BIOS files…", "firmware_import", { paths, also });
+    if (r) {
       note = `BIOS import: ${r.written} file${r.written === 1 ? "" : "s"} written, ${r.linked} more place${r.linked === 1 ? "" : "s"} linked. Undo takes them away.`;
       plan = null;
       await done();
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
     }
     working = false;
   }
 
   async function undo() {
+    const ok = await ask("Take away what the last BIOS import wrote?", { title: "Undo BIOS import", kind: "warning" });
+    if (!ok) return;
     working = true;
-    try {
-      const n = await invoke("firmware_undo");
+    const n = await run("Undoing the last BIOS import…", "firmware_undo", {}, { key: "firmware_undo" });
+    if (n != null) {
       note = `Undone: ${n} file${n === 1 ? "" : "s"} taken away.`;
       await done();
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
     }
     working = false;
   }

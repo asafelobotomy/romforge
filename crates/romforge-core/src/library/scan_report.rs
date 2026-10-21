@@ -97,10 +97,41 @@ impl SkippedKind {
 /// One source folder's rescan: its report, or the folder and why it failed.
 pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
 
-/// Running totals passed to the progress callback after every file or member.
+/// Running totals passed to the progress callback after every file or
+/// member, and when the files to read are known and each is done.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct ScanProgress {
     pub hashed: usize,
+    /// Bytes as read (an archive member's unpacked size).
     pub bytes_hashed: u64,
     pub skipped: usize,
+    /// Files and archives to read (0 until the folder has been walked),
+    /// and how many of them are done.
+    pub units_total: usize,
+    pub units_done: usize,
+    /// Their size on disk, in all and done: this is what the bar follows.
+    pub disk_total: u64,
+    pub disk_done: u64,
+    /// In a Refresh: which folder this is (from 0), of how many (0 for a
+    /// single scan).
+    pub folder: usize,
+    pub folders: usize,
+}
+
+impl ScanProgress {
+    /// As a job's step, in thousandths: each folder of a Refresh an equal
+    /// share, filled by its on-disk bytes done.
+    pub fn step(&self) -> crate::job::Step {
+        let folders = self.folders.max(1) as u64;
+        let within = match self.disk_total {
+            0 if self.units_total > 0 => 1000 * self.units_done as u64 / self.units_total as u64,
+            0 => 0,
+            t => 1000 * self.disk_done.min(t) / t,
+        };
+        let mut detail = format!("{} of {} files", self.units_done, self.units_total);
+        if self.folders > 1 {
+            detail = format!("folder {} of {}: {detail}", self.folder + 1, self.folders);
+        }
+        crate::job::Step::new(1000 * self.folder as u64 + within, 1000 * folders, detail)
+    }
 }

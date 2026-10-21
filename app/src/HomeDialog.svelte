@@ -67,6 +67,7 @@
       {/if}
       {#if homeError}<p class="err" role="alert">{homeError}</p>{/if}
       <div class="actions">
+        <button onclick={() => (open = false)} disabled={creating} title="Continue without a RomForge folder; you can create one later in Settings">Not now</button>
         <span class="spacer"></span>
         <button class="primary" onclick={create} disabled={!parent.trim() || creating}>
           {creating ? "Creating…" : "Create RomForge folder"}

@@ -76,6 +76,9 @@ pub struct Applied {
     pub batch_id: i64,
     pub moved: usize,
     pub failed: Vec<(Move, String)>,
+    /// Asked to stop: the moves after the last one done weren't made.
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -117,5 +120,5 @@ mod tests;
 pub use apply::{apply, batches, undo};
 pub(crate) use fs::{copy_checked, move_file, rename_noreplace, same_file, sync_dir};
 pub use names::base_title;
-pub(crate) use names::{clone_groups, rank, sanitize};
+pub(crate) use names::{CloneGroups, clone_groups, rank, sanitize};
 pub use plan::plan;

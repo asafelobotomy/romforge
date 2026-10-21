@@ -1,7 +1,8 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { edit, run } from "./jobs.svelte.js";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { open as pick } from "@tauri-apps/plugin-dialog";
+  import { ask, open as pick } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { artSrc } from "./lib.js";
   // pdf.js is big: the reader loads the first time a manual is opened.
@@ -18,7 +19,7 @@
   let info = $state(null);
   let offers = $state(null);
   let busy = $state("");
-  let dpi = $state(300);
+  let dpi = $state(100);
   let over = $state(false);
   let saveTimer = null;
 
@@ -52,7 +53,8 @@
   async function add(path) {
     busy = "add";
     try {
-      await invoke("add_manual", { rowId: row.id, path });
+      const onWait = (why) => (note = `Adding the manual ${why}`);
+      await edit("Adding a manual…", "add_manual", { rowId: row.id, path }, { onWait });
       note = "Manual added.";
       await load(row.id);
     } catch (e) {
@@ -66,33 +68,33 @@
     if (typeof path === "string") add(path);
   }
 
+  // Downloads are jobs in the queue (footer); the game may have changed
+  // by the time one is done.
   async function download() {
+    const [id, title] = [row.id, row.label ?? row.title];
     busy = "download";
-    try {
-      await invoke("download_manual", { rowId: row.id, dpi });
-      note = "Manual downloaded from Vimm's Lair.";
-      await load(row.id);
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
-    }
+    const done = await run(`Downloading the manual of ${title}…`, "download_manual", { rowId: id, dpi }, { key: `manual:${id}` });
     busy = "";
+    if (done) note = `${title}: manual downloaded from Vimm's Lair.`;
+    if (done && row?.id === id) await load(id);
   }
 
   async function take(offer) {
+    const [id, title] = [row.id, row.label ?? row.title];
     busy = offer.url;
-    try {
-      await invoke("download_manual_offer", { rowId: row.id, offer });
-      note = `Manual downloaded (${offer.source}).`;
-      await load(row.id);
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
-    }
+    const done = await run(`Downloading the manual of ${title}…`, "download_manual_offer", { rowId: id, offer }, { key: `manual:${id}` });
     busy = "";
+    if (done) note = `${title}: manual downloaded (${offer.source}).`;
+    if (done && row?.id === id) await load(id);
   }
 
   async function remove() {
+    const ok = await ask("Forget this manual and delete romforge's copy?", { title: "Remove manual", kind: "warning" });
+    if (!ok) return;
     try {
-      await invoke("remove_manual", { rowId: row.id });
+      const onWait = (why) => (note = `Removing the manual ${why}`);
+      await edit("Removing a manual…", "remove_manual", { rowId: row.id }, { onWait });
+      note = "Manual removed.";
       await load(row.id);
     } catch (e) {
       error = String(e).replace(/^(launch|settings): /, "");
@@ -177,12 +179,12 @@
         <p>Vimm's Lair has a scan of this manual{offers?.length ? " too" : ""}.</p>
         <div class="pick">
           <button class:primary={!offers?.length} onclick={download} disabled={!!busy}>{busy === "download" ? "Downloading…" : "Download manual (Vimm's Lair)"}</button>
-          <select bind:value={dpi} aria-label="Scan resolution" title="The scan's resolution: higher is sharper and bigger">
-            {#each [150, 300, 600] as d}<option value={d}>{d} dpi</option>{/each}
+          <select bind:value={dpi} aria-label="Scan resolution" title="Scan resolution (clamped to each manual's own max on Vimm's Lair)">
+            {#each [50, 100, 200, 300] as d}<option value={d}>{d} dpi</option>{/each}
           </select>
           <button class="linkish" onclick={() => openUrl(vimmPage(info.vimm_id))}>Visit Vimm's Lair</button>
         </div>
-        <p class="hint">One manual per click, as Vimm's Lair asks. If it won't download, get it from their page and drop it here.</p>
+        <p class="hint">One manual per click, as Vimm's Lair asks. If their server won't send it, get it from their page and drop it here.</p>
       {:else if info.checked && offers?.length === 0}
         <p class="hint">Neither archive.org (by name) nor Vimm's Lair (by hash) has this game's manual.</p>
       {/if}

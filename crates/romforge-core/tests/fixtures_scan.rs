@@ -134,7 +134,7 @@ fn non_rom_files_and_members_are_skipped() {
         ..ScanOptions::default()
     };
     let report = lib
-        .scan_with(fixtures().join("roms"), Scope::All, opts, |_| {})
+        .scan_with(fixtures().join("roms"), Scope::All, &opts, |_| {})
         .unwrap();
     assert_eq!(report.skipped, 0);
     let files = by_path(&lib);
@@ -195,7 +195,7 @@ fn progress_reports_running_totals() {
     let mut lib = Library::open_in_memory().unwrap();
     let mut seen = Vec::new();
     let report = lib
-        .scan_with(fixtures(), Scope::All, ScanOptions::default(), |p| seen.push(p))
+        .scan_with(fixtures(), Scope::All, &ScanOptions::default(), |p| seen.push(p))
         .unwrap();
     let last = seen.last().unwrap();
     assert_eq!(last.hashed, report.hashed);
@@ -213,7 +213,7 @@ fn parallel_and_serial_scans_agree() {
             ..ScanOptions::default()
         };
         let report = lib
-            .scan_with(fixtures().join("roms"), Scope::All, opts, |_| {})
+            .scan_with(fixtures().join("roms"), Scope::All, &opts, |_| {})
             .unwrap();
         let files: Vec<_> = by_path(&lib).into_iter().map(|(p, f)| (p, f.status)).collect();
         (report.hashed, report.bytes_hashed, report.skipped, files)
@@ -271,7 +271,7 @@ fn rescans_skip_unchanged_files() {
         .scan_with(
             &dir,
             Scope::All,
-            ScanOptions {
+            &ScanOptions {
                 rehash: true,
                 ..ScanOptions::default()
             },
@@ -302,7 +302,7 @@ fn unreadable_files_keep_their_rows() {
         .scan_with(
             &roms,
             Scope::All,
-            ScanOptions {
+            &ScanOptions {
                 rehash: true,
                 ..ScanOptions::default()
             },

@@ -95,7 +95,7 @@ fn refresh_rescans_only_the_settings_folders() {
     // Gone from both folders.
     std::fs::remove_file(source.join("Test GB.gb")).unwrap();
     std::fs::remove_file(other.join("Test NES (iNES).nes")).unwrap();
-    let done = lib.refresh_settings(ScanOptions::default(), |_, _| {}).unwrap();
+    let done = lib.refresh_settings(&ScanOptions::default(), |_, _| {}).unwrap();
     assert_eq!(done.len(), 1, "only the Source");
     let t = titles(&lib);
     assert!(!t.contains(&"Test GB".to_owned()), "the Source was rescanned");
@@ -104,7 +104,7 @@ fn refresh_rescans_only_the_settings_folders() {
         "the other folder wasn't"
     );
     // A full refresh (after a cleanup, or the CLI's) still takes every folder.
-    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     assert!(!titles(&lib).contains(&"Test NES (iNES)".to_owned()));
 }
 

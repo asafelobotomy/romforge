@@ -38,7 +38,7 @@ impl Library {
     pub fn patch_apply(&mut self, plan: &patcher::PatchPlan) -> Result<patcher::Patched, Error> {
         let (_, staging) = self.patch_places()?;
         let done = patcher::apply(&mut self.conn, plan, &staging)?;
-        self.refresh(ScanOptions::default(), |_, _| {})?;
+        self.refresh(&ScanOptions::default(), |_, _| {})?;
         // A folder outside the scanned ones (a Library not yet scanned).
         if let Some(dir) = done.target.parent()
             && !self.library_view()?.rows.iter().any(|r| r.title == done.title)

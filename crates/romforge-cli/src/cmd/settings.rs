@@ -17,6 +17,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             in_place,
             staging,
             regions,
+            threads,
             steamgriddb_key,
             igdb_client_id,
             igdb_client_secret,
@@ -31,7 +32,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || keep_originals.is_some()
                 || in_place.is_some()
                 || staging.is_some()
-                || regions.is_some();
+                || regions.is_some()
+                || threads.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
                 (igdb_client_id, &mut s.keys.igdb_client_id),
@@ -69,6 +71,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                     .filter(|r| !r.is_empty())
                     .collect();
             }
+            if let Some(n) = threads {
+                s.threads = n;
+            }
             if changed {
                 s = lib.save_settings(&s)?;
             }
@@ -86,6 +91,13 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             );
             println!("staging         {}", s.staging().display());
             println!("regions         {}", s.region_order().join(", "));
+            println!(
+                "threads         {}",
+                match s.threads {
+                    0 => format!("automatic ({})", romforge_core::parallel::threads(0)),
+                    n => n.to_string(),
+                }
+            );
             let key = |v: &Option<String>| v.as_deref().map_or("-".to_owned(), settings::mask);
             println!("steamgriddb     {}", key(&s.keys.steamgriddb_key));
             println!(
@@ -97,7 +109,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 "screenscraper   dev {} / {}, user {}",
                 key(&s.keys.screenscraper_dev_id),
                 key(&s.keys.screenscraper_dev_password),
-                s.keys.screenscraper_user.as_deref().unwrap_or("-")
+                key(&s.keys.screenscraper_user)
             );
         }
         _ => unreachable!(),

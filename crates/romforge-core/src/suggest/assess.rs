@@ -8,6 +8,21 @@ use super::{Band, Evidence, Facts, Proof, Suggestion};
 use crate::ident::GameId;
 use crate::{Error, dat, names, systems, titles, view};
 
+/// Display order: what the file claims, then the ROM header, then bytes.
+const EVIDENCE_ORDER: &[&str] = &[
+    "name",
+    "alias",
+    "derived",
+    "header_title",
+    "serial",
+    "region",
+    "size",
+    "crc",
+    "nkit",
+    "patch",
+    "hash",
+];
+
 /// Header regions as region words: "Japan", "USA", Mega Drive's "JUE".
 fn header_regions(id: &GameId) -> Vec<&'static str> {
     let Some(r) = id.region.as_deref() else {
@@ -53,11 +68,11 @@ pub(super) fn assess(
     let mut ev = Vec::new();
     let mut score = titles::score(&f.text, title);
     let name_text = match score {
-        s if s >= 1.0 => "the same title".to_owned(),
-        s if s >= 0.9 => "the same title, a subtitle missing".to_owned(),
-        s if s >= 0.85 => "every word of one in the other".to_owned(),
-        s if s > 0.0 => format!("similar title ({:.0}%)", s * 100.0),
-        _ => "a different title".to_owned(),
+        s if s >= 1.0 => "Title matches".to_owned(),
+        s if s >= 0.9 => "Title matches (subtitle missing)".to_owned(),
+        s if s >= 0.85 => "Title words all match".to_owned(),
+        s if s > 0.0 => format!("Similar title ({:.0}%)", s * 100.0),
+        _ => "Different title".to_owned(),
     };
     ev.push(Evidence {
         kind: "name".into(),
@@ -69,7 +84,7 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "alias".into(),
             agrees: true,
-            text: format!("LaunchBox gives it the name \"{a}\""),
+            text: format!("Also known as \"{a}\" (LaunchBox)"),
         });
         score = score.max(0.9);
     }
@@ -81,7 +96,11 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "header_title".into(),
             agrees: header_fits,
-            text: format!("header title {t}"),
+            text: if header_fits {
+                format!("Header title fits: {t}")
+            } else {
+                format!("Header title differs: {t}")
+            },
         });
     }
     let rom_sizes: Vec<u64> = conn
@@ -99,10 +118,12 @@ pub(super) fn assess(
             kind: "size".into(),
             agrees: same_size,
             text: match (same_size, compressed) {
-                (true, true) => format!("holds an image the size of its ROM ({})", mib(*mine)),
-                (true, false) => format!("the same size as its ROM ({})", mib(*mine)),
-                (false, true) => format!("holds a {} image, its ROM {}", mib(*mine), mib(*theirs)),
-                (false, false) => format!("{} here, its ROM {}", mib(*mine), mib(*theirs)),
+                (true, true) => format!("Image inside matches DAT ROM size ({})", mib(*mine)),
+                (true, false) => format!("Same size as DAT ROM ({})", mib(*mine)),
+                (false, true) => {
+                    format!("Image inside is {}; DAT ROM is {}", mib(*mine), mib(*theirs))
+                }
+                (false, false) => format!("Size differs: {} here, {} in DAT", mib(*mine), mib(*theirs)),
             },
         });
     }
@@ -111,7 +132,7 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "crc".into(),
             agrees: true,
-            text: "CRC32 agrees (no SHA1 or MD5 to confirm)".into(),
+            text: "CRC32 matches (no SHA1/MD5 to confirm)".into(),
         });
     }
     let patched = proofs.get(&(system_id, title.to_owned())).copied();
@@ -121,13 +142,10 @@ pub(super) fn assess(
             agrees: true,
             text: match proof {
                 Proof::Applied => {
-                    "the patch beside it, applied to your verified copy, gives exactly this file (SHA1)"
-                        .into()
+                    "Patch beside it, applied to your verified copy, yields this file (SHA1)".into()
                 }
-                Proof::Turns => {
-                    "a patch beside it turns its ROM into this file (sizes and CRC32s agree)".into()
-                }
-                Proof::MadeFrom => "a patch beside it was made from its ROM (size and CRC32 agree)".into(),
+                Proof::Turns => "Patch beside it turns the DAT ROM into this file (size + CRC32)".into(),
+                Proof::MadeFrom => "Patch beside it was made from the DAT ROM (size + CRC32)".into(),
             },
         });
     }
@@ -136,7 +154,7 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "nkit".into(),
             agrees: true,
-            text: "its NKit header gives the original image's CRC32, which is its ROM's".into(),
+            text: "NKit header CRC32 matches the DAT ROM".into(),
         });
     }
     if let Some(serial) = serial {
@@ -145,9 +163,9 @@ pub(super) fn assess(
             kind: "serial".into(),
             agrees: true,
             text: if dat::serial_key(&code) == dat::serial_key(serial) {
-                format!("header serial {code} is its serial")
+                format!("Header serial matches: {code}")
             } else {
-                format!("header code {code} is in its serial {serial}")
+                format!("Header code {code} is in DAT serial {serial}")
             },
         });
     }
@@ -157,7 +175,7 @@ pub(super) fn assess(
     let (mine_regions, from): (Vec<String>, &str) = if !header_regions.is_empty() {
         (header_regions.iter().map(|r| (*r).to_owned()).collect(), "header")
     } else {
-        (mine.regions.clone(), "name")
+        (mine.regions.clone(), "filename")
     };
     if !mine_regions.is_empty() && !theirs.regions.is_empty() {
         let world = theirs.regions.iter().any(|r| r == "World");
@@ -165,14 +183,18 @@ pub(super) fn assess(
             || mine_regions
                 .iter()
                 .any(|r| theirs.regions.iter().any(|t| t.eq_ignore_ascii_case(r)));
+        let mine_s = mine_regions.join(", ");
+        let theirs_s = theirs.regions.join(", ");
         ev.push(Evidence {
             kind: "region".into(),
             agrees,
-            text: format!(
-                "{from} region {} vs {}",
-                mine_regions.join(", "),
-                theirs.regions.join(", ")
-            ),
+            text: if agrees && mine_s.eq_ignore_ascii_case(&theirs_s) {
+                format!("Region matches: {mine_s} (from {from})")
+            } else if agrees {
+                format!("Region matches: {mine_s} ({from}) fits DAT {theirs_s}")
+            } else {
+                format!("Region differs: {mine_s} ({from}) vs {theirs_s} (DAT)")
+            },
         });
     }
     let derived = mine
@@ -197,7 +219,7 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "derived".into(),
             agrees: true,
-            text: format!("its name says {}", d.relation.as_str())
+            text: format!("Filename marks a {}", d.relation.as_str())
                 + &d.tag.as_ref().map(|t| format!(": {t}")).unwrap_or_default(),
         });
     }
@@ -205,9 +227,16 @@ pub(super) fn assess(
         ev.push(Evidence {
             kind: "hash".into(),
             agrees: false,
-            text: "no SHA1 or MD5 match".into(),
+            text: "Contents differ (no SHA1/MD5 match)".into(),
         });
     }
+
+    ev.sort_by_key(|e| {
+        EVIDENCE_ORDER
+            .iter()
+            .position(|k| *k == e.kind)
+            .unwrap_or(EVIDENCE_ORDER.len())
+    });
 
     let band = if patched == Some(Proof::Applied) {
         Band::PatchOf

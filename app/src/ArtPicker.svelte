@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { edit } from "./jobs.svelte.js";
   import { artSrc } from "./lib.js";
 
   // Details' art picker: every picture of one kind (fanart for now) the
@@ -38,13 +39,24 @@
   async function pick(c) {
     failure = "";
     busy = `Saving the ${label.toLowerCase()}…`;
-    try {
-      await invoke("choose_art", { rowId: row.id, kind, url: c.url, source: c.source });
-      note = `${label} for ${row.label ?? row.title}: ${sourceLabel[c.source] ?? c.source}${c.label ? ` (${c.label})` : ""}; Enrich keeps it`;
+    const r = row;
+    const name = r.label ?? r.title;
+    // Behind a scan or the like it waits its turn: the picker closes.
+    let waiting = false;
+    const onWait = (why) => {
+      waiting = true;
+      busy = "";
       open = false;
-      await reload(row.id);
+      note = `${label} for ${name} ${why}`;
+    };
+    try {
+      await edit(busy, "choose_art", { rowId: r.id, kind, url: c.url, source: c.source }, { onWait });
+      note = `${label} for ${name}: ${sourceLabel[c.source] ?? c.source}${c.label ? ` (${c.label})` : ""}; Enrich keeps it`;
+      open = false;
+      await reload(r.id);
     } catch (e) {
-      failure = String(e);
+      if (waiting) note = String(e);
+      else failure = String(e);
     }
     busy = "";
   }
@@ -57,7 +69,7 @@
       {#if current}
         <div class="now">
           <img src={current} alt="The {label.toLowerCase()} now" />
-          <button class="link" onclick={() => view()}>View full size</button>
+          <button class="link" onclick={() => view(kind, current)}>View full size</button>
         </div>
       {/if}
       {#if loading}

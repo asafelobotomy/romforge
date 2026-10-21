@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use romforge_core::manual::ManualInfo;
 
-use crate::db::{Db, Res, read, read_net, with};
+use crate::db::{Db, Res, edit, read, read_net, with};
 
 #[tauri::command]
 pub async fn manual_info(db: tauri::State<'_, Db>, row_id: String) -> Res<ManualInfo> {
@@ -19,7 +19,7 @@ pub async fn manual_lookup(db: tauri::State<'_, Db>, row_id: String) -> Res<Opti
 
 #[tauri::command]
 pub async fn add_manual(db: tauri::State<'_, Db>, row_id: String, path: PathBuf) -> Res<PathBuf> {
-    with(&db, move |lib| lib.add_manual(&row_id, &path)).await
+    edit(&db, move |lib| lib.add_manual(&row_id, &path)).await
 }
 
 /// The manuals archive.org has for the game, best first.
@@ -34,27 +34,43 @@ pub async fn manual_offers(
 /// Download the manual the user picked.
 #[tauri::command]
 pub async fn download_manual_offer(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     row_id: String,
     offer: romforge_core::manual::ManualOffer,
+    job: Option<u64>,
 ) -> Res<PathBuf> {
-    with(&db, move |lib| lib.download_manual_offer(&row_id, &offer)).await
+    let job = crate::jobs::Job::start(&app, job);
+    with(&db, move |lib| {
+        job.watch("manual", || lib.download_manual_offer(&row_id, &offer))
+    })
+    .await
 }
 
 /// Download it from Vimm's Lair: only ever on the user's click.
 #[tauri::command]
-pub async fn download_manual(db: tauri::State<'_, Db>, row_id: String, dpi: u32) -> Res<PathBuf> {
-    with(&db, move |lib| lib.download_manual(&row_id, dpi)).await
+pub async fn download_manual(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    row_id: String,
+    dpi: u32,
+    job: Option<u64>,
+) -> Res<PathBuf> {
+    let job = crate::jobs::Job::start(&app, job);
+    with(&db, move |lib| {
+        job.watch("manual", || lib.download_manual(&row_id, dpi))
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn remove_manual(db: tauri::State<'_, Db>, row_id: String) -> Res<()> {
-    with(&db, move |lib| lib.remove_manual(&row_id)).await
+    edit(&db, move |lib| lib.remove_manual(&row_id)).await
 }
 
 #[tauri::command]
 pub async fn set_manual_page(db: tauri::State<'_, Db>, row_id: String, page: u32) -> Res<()> {
-    with(&db, move |lib| lib.set_manual_page(&row_id, page)).await
+    edit(&db, move |lib| lib.set_manual_page(&row_id, page)).await
 }
 
 #[tauri::command]
@@ -68,17 +84,17 @@ pub async fn add_manual_mark(
     row_id: String,
     mark: romforge_core::manual::NewMark,
 ) -> Res<i64> {
-    with(&db, move |lib| lib.add_manual_mark(&row_id, &mark)).await
+    edit(&db, move |lib| lib.add_manual_mark(&row_id, &mark)).await
 }
 
 #[tauri::command]
 pub async fn edit_manual_mark(db: tauri::State<'_, Db>, id: i64, note: String, color: String) -> Res<()> {
-    with(&db, move |lib| lib.edit_manual_mark(id, &note, &color)).await
+    edit(&db, move |lib| lib.edit_manual_mark(id, &note, &color)).await
 }
 
 #[tauri::command]
 pub async fn remove_manual_mark(db: tauri::State<'_, Db>, id: i64) -> Res<()> {
-    with(&db, move |lib| lib.remove_manual_mark(id)).await
+    edit(&db, move |lib| lib.remove_manual_mark(id)).await
 }
 
 /// The words recognised on a scanned page, if it has been.
@@ -100,7 +116,7 @@ pub async fn save_manual_ocr(
     lang: String,
     words: Vec<romforge_core::manual::OcrWord>,
 ) -> Res<()> {
-    with(&db, move |lib| lib.save_manual_ocr(&row_id, page, &lang, &words)).await
+    edit(&db, move |lib| lib.save_manual_ocr(&row_id, page, &lang, &words)).await
 }
 
 #[tauri::command]

@@ -9,11 +9,14 @@ export const basename = (p) => p.split(/[\\/]/).pop();
 
 // A picture file as the page loads it: through the app's `art://` scheme
 // (only romforge's art folders are served), so a grid of covers loads just
-// what is on screen, straight from disk.
+// what is on screen, straight from disk. Parentheses stay in titles
+// ("Game (USA).png"); encodeURIComponent leaves them, so encode those too
+// or some fetches break on the path.
 const ART_BASE = navigator.userAgent.includes("Windows") ? "http://art.localhost" : "art://localhost";
+const artSeg = (s) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 export function artSrc(path) {
   if (!path) return null;
-  return ART_BASE + path.split(/[\\/]/).map(encodeURIComponent).join("/").replace(/^(?!\/)/, "/");
+  return ART_BASE + path.split(/[\\/]/).map(artSeg).join("/").replace(/^(?!\/)/, "/");
 }
 
 // The same picture scaled down for a card `cssHeight` px tall (at the

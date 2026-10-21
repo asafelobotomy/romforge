@@ -84,10 +84,9 @@ pub fn enrich(
             ready.retain(|n| done.contains(n));
         }
         // Titles not searched everywhere yet wait for the next run.
-        todo.retain(|t| {
-            let n = normalize(t);
-            n.is_empty() || ready.contains(&n)
-        });
+        // Every name [`names_for`] tries (full title and edition-stripped
+        // fallbacks) must be ready, or pick could settle "none" too early.
+        todo.retain(|t| ready_for(t, &ready));
         if todo.is_empty() {
             continue;
         }

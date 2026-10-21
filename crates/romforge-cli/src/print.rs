@@ -146,9 +146,13 @@ impl Progress {
         self.last = Some(Instant::now());
         self.drawn = true;
         let mut err = std::io::stderr().lock();
+        let of = match p.units_total {
+            0 => String::new(),
+            n => format!("[{}/{n}] ", p.units_done),
+        };
         let _ = write!(
             err,
-            "\r\x1b[2Khashed {} files, {}; skipped {}",
+            "\r\x1b[2K{of}hashed {} files, {}; skipped {}",
             p.hashed,
             bytes(p.bytes_hashed),
             p.skipped

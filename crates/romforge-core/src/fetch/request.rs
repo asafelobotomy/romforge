@@ -101,13 +101,31 @@ pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
     let Some(mut response) = respond(req)? else {
         return Ok(None);
     };
-    response
+    let total = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok()?.parse().ok());
+    let mut body = response
         .body_mut()
         .with_config()
         .limit(req.max_body.unwrap_or(MAX_BODY))
-        .read_to_vec()
-        .map(Some)
-        .map_err(|e| Error::Http(format!("{}: {e}", short(req.url))))
+        .reader();
+    // Read in pieces so a watched download shows how far it is
+    // ([`super::watching`]) and can be stopped.
+    let mut out = Vec::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = body
+            .read(&mut buf)
+            .map_err(|e| Error::Http(format!("{}: {e}", short(req.url))))?;
+        if n == 0 {
+            return Ok(Some(out));
+        }
+        out.extend_from_slice(&buf[..n]);
+        if !super::watch::report(out.len() as u64, total) {
+            return Err(Error::Cancelled);
+        }
+    }
 }
 
 /// GET `url` straight into the file `to` (written as `<to>.part`, renamed
@@ -160,6 +178,11 @@ pub fn download_to(
         }
         std::io::Write::write_all(&mut out, &buf[..n])?;
         progress(done, total);
+        if !super::watch::report(done, total) {
+            drop(out);
+            let _ = std::fs::remove_file(&part);
+            return Err(Error::Cancelled);
+        }
     }
     std::io::Write::flush(&mut out)?;
     drop(out);

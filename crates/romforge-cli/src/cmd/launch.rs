@@ -116,10 +116,18 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 None => println!("{emulator} {key} unset"),
             }
         }
-        Command::Emulator(EmulatorCommand::ImportSetup { emulator, undo }) => {
+        Command::Emulator(EmulatorCommand::ImportSetup {
+            emulator,
+            apply,
+            undo,
+        }) => {
             if undo {
                 let n = lib.undo_emulator_setup(&emulator)?;
                 println!("{emulator}: {n} file(s) taken back");
+            } else if !apply {
+                println!(
+                    "{emulator}: would copy its existing setup into romforge (run again with --apply; --undo takes the last import back)"
+                );
             } else {
                 let d = lib.import_emulator_setup(&emulator)?;
                 println!(
@@ -165,11 +173,18 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             let date = lib.download_core(&core)?;
             println!("{core} ({date}) downloaded into the RomForge folder's Emulators/cores");
         }
-        Command::Emulator(EmulatorCommand::RemoveCore { core }) => {
+        Command::Emulator(EmulatorCommand::RemoveCore { core, yes }) => {
+            if !yes {
+                bail!("refusing to remove {core} without --yes");
+            }
             lib.remove_core(&core)?;
             println!("{core} removed");
         }
-        Command::Emulator(EmulatorCommand::Install { emulator }) => {
+        Command::Emulator(EmulatorCommand::Install { emulator, apply }) => {
+            if !apply {
+                println!("would install {emulator} from Flathub into your Flatpak (run again with --apply)");
+                return Ok(());
+            }
             println!("installing {emulator} from Flathub (this takes a while)…");
             let id = lib.install_emulator(&emulator)?;
             println!("installed {id}");

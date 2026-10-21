@@ -58,6 +58,31 @@ impl Library {
         )
     }
 
+    /// Name or settle a Search result for a row (no art fetch). The list is
+    /// rebuilt so the new row id is known; Enrich can follow with
+    /// [`Library::enrich_rows`].
+    pub fn search_apply(
+        &mut self,
+        row_id: &str,
+        found: &search::Found,
+        system: Option<&str>,
+    ) -> Result<search::Chosen, Error> {
+        let v = self.cached_view()?;
+        let taken = search::apply(
+            &mut self.conn,
+            &v,
+            row_id,
+            found,
+            system,
+            Some(crate::wikidata::ENDPOINT),
+        )?;
+        let v = self.cached_view()?;
+        Ok(search::Chosen {
+            row_id: search::row_in(&v, &taken.system, &taken.title)?,
+            enrich: taken.enrich,
+        })
+    }
+
     /// Take a result for a row, then fetch for that game what `opts` asks.
     pub fn search_choose(
         &mut self,
@@ -80,9 +105,20 @@ impl Library {
     /// Name each row by its strongest suggestion, when that is a name
     /// match or better ([`search::accept`]).
     pub fn search_accept(&mut self, ids: &[String]) -> Result<Vec<search::Accepted>, Error> {
+        self.search_accept_with(ids, &crate::job::Cancel::default(), |_, _| {})
+    }
+
+    /// [`Library::search_accept`] that can be stopped between rows, with
+    /// `progress(done, total)`.
+    pub fn search_accept_with(
+        &mut self,
+        ids: &[String],
+        cancel: &crate::job::Cancel,
+        progress: impl FnMut(usize, usize),
+    ) -> Result<Vec<search::Accepted>, Error> {
         let v = self.cached_view()?;
         let dbs = self.extdb_dir();
-        search::accept(&mut self.conn, &v, ids, dbs.as_deref())
+        search::accept(&mut self.conn, &v, ids, dbs.as_deref(), cancel, progress)
     }
 
     /// Name a row's files yourself ("identified by you").

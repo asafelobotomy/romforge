@@ -22,7 +22,7 @@ mod tests;
 
 pub use accept::{Accepted, accept};
 pub use find::{Found, Scraper, WIKIDATA_API, find, parse_entity_search};
-pub use preview::{Chosen, Preview, Taken, choose, preview, row_in};
+pub use preview::{Chosen, Preview, Taken, apply, choose, preview, row_in};
 
 /// What a queue item needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]

@@ -8,33 +8,29 @@
 //! Files and archives are hashed on several threads, largest first; members
 //! of one archive are read in order on one thread (a solid 7z is a single
 //! stream). Results reach the caller on the calling thread.
-
-use std::fs::File;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, mpsc};
+//!
+//! [`Visit::Planned`] says how many files and archives will be read (and
+//! their size on disk) before any is; [`Visit::UnitDone`] follows each.
+//! [`ScanOptions::cancel`] stops it between them.
 
 use crate::hash::{Hashes, hash_stream};
 use crate::{Error, systems};
+use std::fs::File;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
 
 /// What to hash, and how.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScanOptions {
     /// Hash every file and member, not only those with a known ROM extension.
     pub all_files: bool,
-    /// Hashing threads; 0 picks one per CPU, at most 8.
+    /// Hashing threads; 0 picks one per CPU, at most 8 (in a
+    /// [`crate::Library`] scan, 0 means the Settings `threads`).
     pub jobs: usize,
     /// Hash every file again, even ones unchanged since the last scan.
     pub rehash: bool,
-}
-
-impl ScanOptions {
-    fn threads(self) -> usize {
-        match self.jobs {
-            0 => std::thread::available_parallelism().map_or(1, |n| n.get().min(8)),
-            n => n,
-        }
-    }
+    /// Asked to stop: no file or archive is started after it is set.
+    pub cancel: crate::job::Cancel,
 }
 
 /// A file to hash, or an archive whose members to hash.
@@ -96,6 +92,16 @@ pub enum Visit {
     /// A file (or archive) whose size and modification time match what was
     /// hashed before; not read again.
     Unchanged(PathBuf),
+    /// Before any file is read: how many files and archives will be, and
+    /// their size on disk.
+    Planned {
+        units: usize,
+        bytes: u64,
+    },
+    /// One of those is done (its size on disk).
+    UnitDone {
+        bytes: u64,
+    },
 }
 
 fn ext_of(name: &str) -> String {
@@ -111,7 +117,7 @@ fn is_archive(ext: &str) -> bool {
 
 /// Whether a file (or archive member) with this name should be hashed.
 /// Members are never archives themselves: nested archives are not opened.
-fn wanted(name: &str, opts: ScanOptions) -> bool {
+fn wanted(name: &str, opts: &ScanOptions) -> bool {
     // A game's details as import writes them (`.md` is a Mega Drive
     // extension too).
     // Patches are listed apart, to pair with their games.
@@ -123,7 +129,7 @@ fn wanted(name: &str, opts: ScanOptions) -> bool {
 /// An archive member worth hashing: not one of the files cleanup and
 /// import put in an archive's `romforge/` folder (art, and details as
 /// `.romforge.md`, which `.md` would otherwise take for a Mega Drive ROM).
-fn wanted_member(name: &str, opts: ScanOptions) -> bool {
+fn wanted_member(name: &str, opts: &ScanOptions) -> bool {
     !crate::layout::is_extra(name) && wanted(name, opts)
 }
 
@@ -135,7 +141,7 @@ fn wanted_member(name: &str, opts: ScanOptions) -> bool {
 pub fn walk(
     root: &Path,
     skip: &[PathBuf],
-    opts: ScanOptions,
+    opts: &ScanOptions,
     // Arcade set names (lower case): an archive named after one has every
     // member hashed.
     sets: &std::collections::HashSet<String>,
@@ -152,6 +158,7 @@ pub fn walk(
         .into_iter()
         .filter_entry(|e| !crate::layout::is_own_dir(e.file_name()));
     for item in walker {
+        opts.cancel.check()?;
         let item = match item {
             Ok(item) => item,
             Err(e) => {
@@ -218,38 +225,26 @@ pub fn walk(
 
     // Largest first, so one big archive doesn't start last and run alone.
     units.sort_by_key(|u| std::cmp::Reverse(u.0));
-    let threads = opts.threads().min(units.len());
-    if threads <= 1 {
-        for (_, stamp, unit) in units {
-            hash_unit(unit, stamp, opts, &mut each);
-        }
-        return Ok(());
-    }
-    let queue = Mutex::new(units.into_iter().map(|(_, s, u)| (s, u)));
-    let (tx, rx) = mpsc::sync_channel::<Visit>(256);
-    std::thread::scope(|s| {
-        for _ in 0..threads {
-            let tx = tx.clone();
-            let queue = &queue;
-            s.spawn(move || {
-                loop {
-                    let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
-                    let Some((stamp, unit)) = next else { break };
-                    hash_unit(unit, stamp, opts, &mut |v| {
-                        let _ = tx.send(v);
-                    });
-                }
-            });
-        }
-        drop(tx);
-        for visit in rx {
-            each(visit);
-        }
+    each(Visit::Planned {
+        units: units.len(),
+        bytes: units.iter().map(|u| u.0).sum(),
     });
-    Ok(())
+    crate::parallel::stream(
+        units,
+        crate::parallel::threads(opts.jobs),
+        |(size, stamp, unit), send| {
+            if opts.cancel.is_set() {
+                return;
+            }
+            hash_unit(unit, stamp, opts, &mut *send);
+            send(Visit::UnitDone { bytes: size });
+        },
+        &mut each,
+    );
+    opts.cancel.check()
 }
 
-fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut impl FnMut(Visit)) {
+fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) {
     // Every entry of the unit carries the file's stamp.
     let each = &mut |v: Visit| match v {
         Visit::Hashed(mut e) => {
@@ -260,11 +255,11 @@ fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut imp
     };
     let (path, result) = match unit {
         Unit::Zip(path, whole) => {
-            let r = walk_zip(&path, member_opts(opts, whole), each);
+            let r = walk_zip(&path, &member_opts(opts, whole), each);
             (path, r)
         }
         Unit::SevenZ(path, whole) => {
-            let r = walk_7z(&path, member_opts(opts, whole), each);
+            let r = walk_7z(&path, &member_opts(opts, whole), each);
             (path, r)
         }
         Unit::Chd(path) => {
@@ -302,10 +297,10 @@ fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: ScanOptions, each: &mut imp
 }
 
 /// The options for an archive's members: all of them for an arcade set.
-fn member_opts(opts: ScanOptions, whole: bool) -> ScanOptions {
+fn member_opts(opts: &ScanOptions, whole: bool) -> ScanOptions {
     ScanOptions {
         all_files: opts.all_files || whole,
-        ..opts
+        ..opts.clone()
     }
 }
 
@@ -320,7 +315,7 @@ fn hash_file(path: &Path) -> std::io::Result<Hashes> {
     Ok(hashes)
 }
 
-fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Result<(), Error> {
+fn walk_zip(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
     let mut archive = zip::ZipArchive::new(BufReader::new(File::open(path)?))?;
     for i in 0..archive.len() {
         // One member that can't be opened (encrypted, an unsupported
@@ -368,7 +363,7 @@ fn walk_zip(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Res
     Ok(())
 }
 
-fn walk_7z(path: &Path, opts: ScanOptions, each: &mut impl FnMut(Visit)) -> Result<(), Error> {
+fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
     let mut archive = sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty())?;
     archive.for_each_entries(|entry, reader| {
         if entry.is_directory() {

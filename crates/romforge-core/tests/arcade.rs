@@ -189,7 +189,7 @@ fn mame_sets_are_matched_imported_whole_and_started_by_name() {
     assert!(files_under(&incoming).is_empty(), "originals to the trash");
 
     // Found again in Games/, and started there by set name.
-    lib.refresh(Default::default(), |_, _| {}).unwrap();
+    lib.refresh(&Default::default(), |_, _| {}).unwrap();
     let rows = lib.library_view().unwrap().rows;
     let clone = rows.iter().find(|r| r.title == "mslugj").unwrap();
     assert_eq!(clone.status, RowStatus::Verified);

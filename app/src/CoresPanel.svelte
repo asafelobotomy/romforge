@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { run } from "./jobs.svelte.js";
   import { ask } from "@tauri-apps/plugin-dialog";
 
   // RetroArch's cores (milestone 18, 1.4): the ones romforge's platforms
@@ -27,17 +28,16 @@
       if (!ok) return;
     }
     working = c.name;
-    try {
-      const date = await invoke("download_core", { core: c.name });
-      note = `${c.display_name} (${date}) downloaded.`;
-    } catch (e) {
-      error = String(e).replace(/^(launch|settings): /, "");
-    }
+    // A job in the queue (footer); its errors go to the status line.
+    const date = await run(`Downloading ${c.display_name}…`, "download_core", { core: c.name }, { key: `core:${c.name}` });
+    if (date) note = `${c.display_name} (${date}) downloaded.`;
     working = "";
     await load();
   }
 
   async function remove(c) {
+    const ok = await ask(`Remove ${c.display_name} from romforge's Emulators/cores?`, { title: "Remove core", kind: "warning" });
+    if (!ok) return;
     working = c.name;
     try {
       await invoke("remove_core", { core: c.name });

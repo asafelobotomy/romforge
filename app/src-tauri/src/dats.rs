@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
 
 use crate::db::{Db, Res, blocking, read, with};
+use crate::jobs::Job;
 
 #[derive(serde::Serialize)]
 pub struct Downloaded {
@@ -31,9 +32,20 @@ pub async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
 
 /// Downloads without holding the library, so the window stays usable.
 #[tauri::command]
-pub async fn extdb_download(db: tauri::State<'_, Db>, name: String) -> Res<ExtDbInfo> {
+pub async fn extdb_download(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    name: String,
+    job: Option<u64>,
+) -> Res<ExtDbInfo> {
     let (dir, which) = (extdb_dir(&db).await?, extdb_named(&name)?);
-    blocking(move || romforge_core::extdb::download(which, &dir, &Default::default(), |_| {})).await
+    let job = Job::start(&app, job);
+    blocking(move || {
+        job.watch(&name, || {
+            romforge_core::extdb::download(which, &dir, &Default::default(), |_| {})
+        })
+    })
+    .await
 }
 
 #[tauri::command]
@@ -53,14 +65,22 @@ pub async fn mame_dat(db: tauri::State<'_, Db>) -> Res<romforge_core::ImportedDa
 }
 
 #[tauri::command]
-pub async fn download_dats(db: tauri::State<'_, Db>, extras: bool) -> Res<Downloaded> {
+pub async fn download_dats(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    extras: bool,
+    job: Option<u64>,
+) -> Res<Downloaded> {
+    let mut job = Job::start(&app, job);
     with(&db, move |lib| {
         let mut out = Downloaded {
             imported: 0,
             unchanged: 0,
             errors: Vec::new(),
         };
-        lib.download_all(extras, |key, source, r| match r {
+        let cancel = job.cancel.clone();
+        let progress = |n, total| job.count(n, total, format!("{n} of {total} DATs"));
+        lib.download_all_with(extras, &cancel, progress, |key, source, r| match r {
             Ok(dats) => {
                 for d in dats {
                     if d.unchanged {

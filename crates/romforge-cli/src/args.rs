@@ -56,9 +56,10 @@ pub enum Command {
     /// Move the identified games of a scanned folder into the RomForge
     /// folder's Games/, repacked one file each (milestone 13)
     ///
-    /// Shows the plan and changes nothing unless --apply. Unidentified
-    /// files stay where they are. Originals go to the RomForge trash
-    /// (unless "keep originals"); `cleanup undo` puts them back.
+    /// Shows the plan and moves nothing unless --apply. Naming a folder
+    /// rescans it into the library first (hashes only; ROM files stay put).
+    /// Unidentified files stay where they are. Originals go to the RomForge
+    /// trash (unless "keep originals"); `cleanup undo` puts them back.
     Import {
         /// Only this folder [default: every scanned folder outside RomForge]
         dir: Option<PathBuf>,
@@ -144,12 +145,16 @@ pub enum Command {
     /// Show metadata and art for games whose name contains QUERY
     Info { query: String },
     /// Start a game (by name, part of a name, or file path) in an emulator
+    ///
+    /// Unlike organize/cleanup, this runs unless `--dry-run`: starting the
+    /// game is the point. Without that flag romforge may also write the
+    /// emulator's config keys it manages.
     Launch {
         query: String,
         /// Emulator to use (see `emulator list`), e.g. retroarch:snes9x
         #[arg(long, short)]
         emulator: Option<String>,
-        /// Print the command instead of running it
+        /// Print the command (and config writes) instead of running it
         #[arg(long)]
         dry_run: bool,
         /// Wait until the game ends and record its play time
@@ -187,20 +192,31 @@ pub enum Command {
         /// ("USA, Europe, Japan"; "" for the default)
         #[arg(long)]
         regions: Option<String>,
+        /// Threads for long jobs (hashing, repacking, downloads): 0 for one
+        /// per CPU (at most 8), 1 for a slow spinning disk
+        #[arg(long)]
+        threads: Option<usize>,
         /// Optional online-source credentials ("" clears). Values given here
         /// end up in your shell history.
+        /// SteamGridDB API key
         #[arg(long, value_name = "KEY")]
         steamgriddb_key: Option<String>,
+        /// IGDB (Twitch) client id
         #[arg(long)]
         igdb_client_id: Option<String>,
+        /// IGDB (Twitch) client secret
         #[arg(long)]
         igdb_client_secret: Option<String>,
+        /// ScreenScraper developer id
         #[arg(long)]
         screenscraper_dev_id: Option<String>,
+        /// ScreenScraper developer password
         #[arg(long)]
         screenscraper_dev_password: Option<String>,
+        /// ScreenScraper user login
         #[arg(long)]
         screenscraper_user: Option<String>,
+        /// ScreenScraper user password
         #[arg(long)]
         screenscraper_password: Option<String>,
     },
@@ -208,6 +224,10 @@ pub enum Command {
     Refresh {
         #[arg(long, short)]
         quiet: bool,
+        /// Hashing threads [default: one per CPU, at most 8]; 1 for a slow
+        /// spinning disk
+        #[arg(long, short = 'j')]
+        jobs: Option<usize>,
         /// Hash every file again, even ones unchanged since the last scan
         #[arg(long)]
         rehash: bool,

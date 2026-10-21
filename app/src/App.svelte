@@ -20,6 +20,9 @@
   import LibraryPane from "./LibraryPane.svelte";
   import DetailPane from "./DetailPane.svelte";
   import ImageViewer from "./ImageViewer.svelte";
+  import JobsBar from "./JobsBar.svelte";
+  import JobsDialog from "./JobsDialog.svelte";
+  import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
   import { storedView, storeView, libraryRows } from "./listing.js";
@@ -32,8 +35,11 @@
   // Which screen: the library (default), DATs, BIOS, or organize.
   let view = $state("library");
   let error = $state("");
+  // A quick action a dialog is waiting on (long jobs are in the queue).
   let busy = $state("");
   let note = $state("");
+  let jobsOpen = $state(false);
+  reportTo((e) => (error = e), (n) => (note = n));
 
   let lib = $state({ platforms: [], rows: [] });
   let platform = $state("*"); // "*" all, "" unidentified, else system key
@@ -115,12 +121,10 @@
     }
   }
 
-  async function run(label, cmd, args) {
-    busy = label;
-    note = "";
-    const r = await call(cmd, args);
-    busy = "";
-    return r;
+  // A long job: queued behind the one running (footer, Jobs dialog);
+  // resolves to its result, or null (failed, stopped or removed).
+  function run(label, cmd, args, opts) {
+    return queue(label, cmd, args, opts);
   }
 
   // The library's generation the page has: the list comes again only when
@@ -173,7 +177,7 @@
   }
 
   async function refresh() {
-    const r = await run("Rescanning your folders…", "refresh", {});
+    const r = await run("Rescanning your folders…", "refresh", {}, { key: "refresh" });
     if (r) note = refreshNote(r);
     await load();
   }
@@ -202,8 +206,8 @@
     if (dir) await previewer.show(dir);
   }
 
-  // Rename & Cleanup: the whole job (rename, repack, move or replace, as
-  // Settings says) straight away; its dry run shows the plan first.
+  // Rename & Cleanup [apply now]: the whole job without showing the plan.
+  // The primary toolbar button opens the dry-run dialog instead.
   async function renameCleanup() {
     const r = await run(`Renaming and cleaning up ${chosen.length} games…`, "cleanup_apply", { only: chosen, from: null });
     if (r) note = cleanupNote(r);
@@ -218,15 +222,22 @@
 
   // Undo a title picked in Search for the selected row.
   async function forget() {
-    await run("Forgetting…", "forget_identity", { rowId: selected });
-    if (!error) note = "Forgotten: the files show as unknown again";
+    error = "";
+    const onWait = (why) => (note = `Forget ${why}`);
+    await edit("Forgetting the title…", "forget_identity", { rowId: selected }, { onWait }).then(
+      () => (note = "Forgotten: the files show as unknown again"),
+      (e) => (error = String(e)),
+    );
     await load();
   }
 
   async function play() {
     const row = lib.rows.find((r) => r.id === selected);
     if (!row) return;
-    const r = await run(`Starting ${row.label ?? row.title}…`, "launch", { rowId: row.id });
+    // Never queued: a game starts at once, whatever is running.
+    note = `Starting ${row.label ?? row.title}…`;
+    const r = await call("launch", { rowId: row.id });
+    note = "";
     if (!r) return;
     const mine = detail?.row?.id === row.id ? detail.art : {};
     nowPlaying.started(r, { box3d: mine.box3d ?? null, boxart: mine.boxart ?? null, platform: row.system_name ?? r.system });
@@ -234,6 +245,7 @@
 
   // Details: empty media boxes only when Settings says so.
   let showEmpty = $state(false);
+  let regionFlags = $state(true);
 
   // The Series tab's sort and the Versions tab's view, kept for next time.
   $effect(() => remember("series", ui.seriesSort));
@@ -275,7 +287,7 @@
 
   // The selection keys (selection.js) when no text field has focus.
   function listKeys(e) {
-    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || namingOpen || patchOpen || pickerOpen || previewOpen || homeOpen || ui.viewer;
+    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || namingOpen || patchOpen || pickerOpen || previewOpen || homeOpen || jobsOpen || ui.viewer;
     if (view !== "library" || dialog) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const s = selectKey({ picked, anchor, focus: selected }, rows, e);
@@ -316,6 +328,7 @@
     call("get_settings", undefined, true).then((s) => {
       if (!s) return;
       showEmpty = s.show_empty_media;
+      regionFlags = s.region_flags !== false;
     });
   }
   readSettings();
@@ -324,13 +337,16 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === "Escape" && ui.viewer) ui.viewer = null;
+    else if (e.key === "Escape" && jobsOpen) jobsOpen = false;
     else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
     else if (e.key === "Escape" && emuOpen) emuOpen = false;
     else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
     else if (e.key === "Escape" && searchOpen) searchOpen = false;
-    else if (e.key === "Escape" && namingOpen && !busy) namingOpen = false;
+    else if (e.key === "Escape" && namingOpen) namingOpen = false;
     else if (e.key === "Escape" && patchOpen) patchOpen = false;
     else if (e.key === "Escape" && pickerOpen && !busy) pickerOpen = false;
+    else if (e.key === "Escape" && previewOpen) previewOpen = false;
+    else if (e.key === "Escape" && homeOpen) homeOpen = false;
     else listKeys(e);
   }}
 />
@@ -338,46 +354,44 @@
 <div class="app">
   <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
 
-  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:homeRoot {call} {load} />
+  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
 
-  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:busy bind:note {homeRoot} {call} {load} />
+  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:note {homeRoot} {call} {load} />
 
   <HomeDialog bind:this={home} bind:open={homeOpen} bind:root={homeRoot} bind:note {load} />
 
-  <NameDialog bind:this={naming} bind:open={namingOpen} bind:busy bind:note {call} {load} />
+  <NameDialog bind:this={naming} bind:open={namingOpen} bind:note {call} {load} />
   <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
 
-  <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:busy bind:note {call} {load} />
-  <ScanPreview bind:this={previewer} bind:open={previewOpen} bind:busy {statusLabel} {scanned} />
-  <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={() => (ui.viewer = { kind: "hero", src: detail.art.hero })} reload={(id) => open(id)} />
+  <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:note {call} {load} />
+  <ScanPreview bind:this={previewer} bind:open={previewOpen} {statusLabel} {scanned} />
+  <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={(kind, src) => (ui.viewer = { kind, src })} reload={(id) => open(id)} />
 
   <ImageViewer {detail} {row} />
 
 
   <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error ended={() => selected && open(selected, true)} />
 
-  <!-- One fixed-height line, so the controls below never move under the cursor. -->
-  <p class="status" class:error={!!error && !busy} title={error || busy || note}>{busy || error || note}</p>
-
   <div class="body">
     <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} />
 
     {#if view === "library"}
-      <LibraryPane {lib} {rows} {games} {platform} {selected} {picked} chosen={chosen.length} {isOpen} {toggle} open={pick} bind:filter bind:listMode bind:listSort bind:table />
+      <LibraryPane {lib} {rows} {games} {platform} {selected} {picked} chosen={chosen.length} {isOpen} {toggle} open={pick} {regionFlags} {icons} {iconStyle} bind:filter bind:listMode bind:listSort bind:table />
 
-      <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} open={pick} {forget} {applyPatchRow} {patcher} {artPicker} bind:error />
+      <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} {regionFlags} open={pick} {forget} {applyPatchRow} {patcher} {artPicker} bind:note bind:error />
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
     <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} />
     <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>
+
+  <JobsBar note={busy || note} error={busy ? "" : error} openJobs={() => (jobsOpen = true)} />
+  <JobsDialog bind:open={jobsOpen} />
 </div>
 
 <style>
   .app { display: flex; flex-direction: column; height: 100vh; }
-  .status { margin: 0; padding: 0.2rem 0.75rem; min-height: 1.4em; color: var(--accent); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .status.error { color: var(--bad); }
 
   .body { flex: 1; display: grid; grid-template-columns: 6.5rem minmax(0, 1.2fr) minmax(0, 1fr); min-height: 0; }
 </style>

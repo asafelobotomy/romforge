@@ -451,6 +451,17 @@ The toolbar:
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
   Cleanup, Display, Sources, Credits), **Play**.
 
+Long jobs (scans, Refresh, Enrich, Rename & Cleanup, Convert, DAT and
+database downloads, naming in bulk, patching, installs) wait their turn
+behind the one running. The bar at the foot of the window shows how far
+the whole queue is; click it for the job running now (its own bar, and
+**Stop**, which halts it at the next safe point and keeps what is done)
+and the ones waiting (**Remove**). Play and quick edits never wait.
+Settings → **Threads for long jobs** sets how many files are hashed and
+games repacked at once (automatic: one per CPU, at most 8; 1 for a slow
+spinning disk); downloads use up to four, each website at its own pace
+(`romforge-cli settings --threads N`).
+
 Search, Enrich, Rename & Cleanup and Convert work on the games selected
 in the list, never on the whole library (Refresh and Scan folder work on
 folders). Click picks one game, Ctrl+click adds or drops one, Shift+click
@@ -472,11 +483,11 @@ bold), fetched once into the cache; Settings → Display picks **Controller
 icons** (the default) or **System icons** from RetroArch's own icon sets,
 or **Platform logos** from Wikidata (Wikimedia Commons, on a light tile).
 A platform without one keeps a coloured badge.
-- **Rename & Cleanup ▾** does the whole job at once: every identified game
-  renamed by its DAT, repacked (zip, or CHD for discs) and moved into
-  RomForge (or the Library), or replaced in place, as Settings says.
-  **Rename & Cleanup [dry run]** shows the plan first, with Undo and Empty
-  trash.
+- **Rename & Cleanup** shows the plan first (Undo and Empty trash are
+  there too). **Rename & Cleanup [apply now]** on the ▾ menu does the
+  whole job at once: every identified game renamed by its DAT, repacked
+  (zip, or CHD for discs) and moved into RomForge (or the Library), or
+  replaced in place, as Settings says.
 - **Convert** turns identified disc images into CHD where they are, under
   their own names, for platforms whose emulators read CHD (never GameCube,
   Wii or Xbox): it shows what it would do first, every CHD is checked

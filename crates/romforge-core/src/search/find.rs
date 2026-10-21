@@ -3,8 +3,8 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{candidates_for, default_text, similarity};
-use crate::Error;
 use crate::view;
+use crate::{Error, systems, wikidata};
 
 /// Where a Search result comes from (the "Scraper" of the dialog).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -95,13 +95,24 @@ pub fn find(
                 .filter(|t| !t.trim().is_empty())
                 .map(str::to_owned)
                 .unwrap_or_else(|| strip_tags(&default_text(&d)));
-            let url = format!(
-                "{api}?action=wbsearchentities&format=json&language=en&uselang=en&type=item&limit=20&search={}",
-                crate::fetch::encode_segment(&text)
-            );
-            let body = crate::fetch::get(&url)?;
             let system = system.map(str::to_owned).or(d.row.system.clone());
-            let mut out = parse_entity_search(&body, &text, system.as_deref())?;
+            // When the platform is known, only video games on that platform
+            // (same P400 + P31 filter Enrich uses). Else any entity.
+            let platforms = system
+                .as_deref()
+                .and_then(systems::by_key)
+                .map(|s| s.wikidata)
+                .filter(|p| !p.is_empty());
+            let mut out = match platforms {
+                Some(p) => search_on_platforms(api, &text, p, system.as_deref())?,
+                None => {
+                    let url = format!(
+                        "{api}?action=wbsearchentities&format=json&language=en&uselang=en&type=item&limit=20&search={}",
+                        crate::fetch::encode_segment(&text)
+                    );
+                    parse_entity_search(&crate::fetch::get(&url)?, &text, system.as_deref())?
+                }
+            };
             // The candidates Enrich found equally good come too.
             for c in candidates_for(conn, &d)? {
                 if !out.iter().any(|f| f.id == c.qid) {
@@ -129,6 +140,40 @@ pub fn find(
     }
 }
 
+/// MediaWiki search + entity labels, limited to video games on `platforms`.
+fn search_on_platforms(
+    api: &str,
+    text: &str,
+    platforms: &[&str],
+    system: Option<&str>,
+) -> Result<Vec<Found>, Error> {
+    let mut ids: Vec<String> = Vec::new();
+    for platform in platforms {
+        let sr = format!(
+            "{text} haswbstatement:P400={platform} haswbstatement:P31={}|P31={}",
+            wikidata::GAME,
+            wikidata::EDITION
+        );
+        let url = format!(
+            "{api}?action=query&list=search&format=json&srlimit=20&srsearch={}",
+            crate::fetch::encode_segment(&sr)
+        );
+        for id in parse_page_ids(&crate::fetch::get(&url)?)? {
+            if !ids.iter().any(|x| x == &id) {
+                ids.push(id);
+            }
+        }
+    }
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let url = format!(
+        "{api}?action=wbgetentities&format=json&props=labels|descriptions&languages=en|mul&ids={}",
+        ids.join("|")
+    );
+    parse_entities(&crate::fetch::get(&url)?, text, system, &ids)
+}
+
 /// A DAT name as Wikidata would label it: [`view::search_title`] (no tags,
 /// "Legend of Zelda, The" as "The Legend of Zelda"), and No-Intro's " - "
 /// back to the colon it stands for.
@@ -152,21 +197,72 @@ pub fn parse_entity_search(body: &[u8], text: &str, system: Option<&str>) -> Res
                 .or(h["display"]["label"]["value"].as_str())?
                 .to_owned();
             let description = h["description"].as_str().map(str::to_owned);
-            let year = description.as_deref().and_then(first_year);
-            Some(Found {
-                scraper: Scraper::Wikidata,
-                score: similarity(text, &title),
-                id,
-                title,
-                system: system.map(str::to_owned),
-                year,
-                description,
-                band: None,
-                evidence: Vec::new(),
-                derived: None,
-            })
+            Some(found(id, title, description, text, system))
         })
         .collect())
+}
+
+/// Item ids from MediaWiki `list=search` (`title` is the Q id).
+pub(super) fn parse_page_ids(body: &[u8]) -> Result<Vec<String>, Error> {
+    let v: serde_json::Value =
+        serde_json::from_slice(body).map_err(|e| Error::Http(format!("Wikidata search answer: {e}")))?;
+    let hits = v["query"]["search"]
+        .as_array()
+        .ok_or_else(|| Error::Http("Wikidata search answer has no results".into()))?;
+    Ok(hits
+        .iter()
+        .filter_map(|h| {
+            let id = h["title"].as_str()?;
+            wikidata::is_qid(id).then(|| id.to_owned())
+        })
+        .collect())
+}
+
+/// Labels and descriptions from `wbgetentities`, in `order`.
+pub(super) fn parse_entities(
+    body: &[u8],
+    text: &str,
+    system: Option<&str>,
+    order: &[String],
+) -> Result<Vec<Found>, Error> {
+    let v: serde_json::Value =
+        serde_json::from_slice(body).map_err(|e| Error::Http(format!("Wikidata entities answer: {e}")))?;
+    let ents = v["entities"]
+        .as_object()
+        .ok_or_else(|| Error::Http("Wikidata entities answer has no entities".into()))?;
+    Ok(order
+        .iter()
+        .filter_map(|id| {
+            let e = ents.get(id)?;
+            let title = lang_value(e, "labels")?;
+            let description = lang_value(e, "descriptions");
+            Some(found(id.clone(), title, description, text, system))
+        })
+        .collect())
+}
+
+fn lang_value(entity: &serde_json::Value, field: &str) -> Option<String> {
+    let map = entity.get(field)?;
+    map["en"]["value"]
+        .as_str()
+        .or_else(|| map["mul"]["value"].as_str())
+        .map(str::to_owned)
+}
+
+fn found(id: String, title: String, description: Option<String>, text: &str, system: Option<&str>) -> Found {
+    let year = description.as_deref().and_then(first_year);
+    Found {
+        scraper: Scraper::Wikidata,
+        score: similarity(text, &title),
+        id,
+        title,
+        system: system.map(str::to_owned),
+        year,
+        description,
+        band: None,
+        evidence: Vec::new(),
+        derived: None,
+    }
 }
 
 /// The first plausible release year in a text ("1991 video game").

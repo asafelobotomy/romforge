@@ -20,7 +20,7 @@ mod tests;
 
 use conventions::{codes, from_goodtools, from_nointro, from_tosec};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Convention {
     /// No-Intro, and Redump (which follows it).
@@ -32,7 +32,7 @@ pub enum Convention {
     Loose,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Name {
     pub convention: Convention,
     /// As written, articles where the convention puts them

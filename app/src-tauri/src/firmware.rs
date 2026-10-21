@@ -13,8 +13,16 @@ pub async fn firmware_report(db: tauri::State<'_, Db>) -> Res<FirmwareReport> {
 
 /// Fetch RetroBIOS's list (the list only, never BIOS files).
 #[tauri::command]
-pub async fn firmware_download(db: tauri::State<'_, Db>) -> Res<usize> {
-    read(&db, move |lib| lib.firmware_download()).await
+pub async fn firmware_download(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    job: Option<u64>,
+) -> Res<usize> {
+    let job = crate::jobs::Job::start(&app, job);
+    read(&db, move |lib| {
+        job.watch("RetroBIOS list", || lib.firmware_download())
+    })
+    .await
 }
 
 /// What importing dropped files would do.

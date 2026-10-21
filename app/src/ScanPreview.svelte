@@ -1,12 +1,16 @@
 <script>
-  import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
   import { sorted } from "./sort.js";
+  import { basename } from "./lib.js";
+  import { run } from "./jobs.svelte.js";
 
   // Scan folder's dry run: what scanning a folder would find, worked out
   // without changing the library; Scan it to keep it, or leave it.
   // `scanned(report)` runs after an accepted scan.
-  let { open = $bindable(false), busy = $bindable(""), statusLabel, scanned } = $props();
+  // The dry run and the scan are jobs in the queue (footer): the dialog
+  // waits for the dry run's turn, and closes once the scan is queued.
+  let { open = $bindable(false), statusLabel, scanned } = $props();
+  let busy = $state("");
 
   let dir = $state("");
   let preview = $state(null);
@@ -26,25 +30,18 @@
     failure = "";
     open = true;
     busy = `Looking at ${folder} (a dry run: nothing is kept)…`;
-    try {
-      preview = await invoke("scan_preview", { dir: folder });
-    } catch (e) {
-      failure = String(e);
-    }
+    preview = await run(`Looking at ${basename(folder)} (dry run)…`, "scan_preview", { dir: folder });
     busy = "";
+    // Failed (the status line says why), stopped or taken out of the queue.
+    if (!preview && dir === folder) open = false;
   }
 
   async function accept() {
     failure = "";
-    busy = `Scanning ${dir}…`;
-    try {
-      const r = await invoke("scan_folder", { dir });
-      open = false;
-      await scanned(r);
-    } catch (e) {
-      failure = String(e);
-    }
-    busy = "";
+    const folder = dir;
+    open = false;
+    const r = await run(`Scanning ${folder}…`, "scan_folder", { dir: folder }, { key: `scan:${folder}` });
+    if (r) await scanned(r);
   }
 
   const counts = (gs) => {

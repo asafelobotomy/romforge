@@ -1,24 +1,46 @@
 //! Scanning folders and Refresh.
 
-use romforge_core::{ScanReport, Scope};
+use romforge_core::ScanOptions;
 
 use crate::db::{Db, Res, read, with};
+use crate::jobs::Job;
 
-#[tauri::command]
-pub async fn scan(db: tauri::State<'_, Db>, dir: String) -> Res<ScanReport> {
-    with(&db, move |lib| lib.scan(&dir, Scope::All)).await
+/// A job's scan options: its stop flag (threads from Settings).
+fn options(job: &Job) -> ScanOptions {
+    ScanOptions {
+        cancel: job.cancel.clone(),
+        ..ScanOptions::default()
+    }
 }
 
 /// Scan folder: any folder (the first becomes the Source).
 #[tauri::command]
-pub async fn scan_folder(db: tauri::State<'_, Db>, dir: String) -> Res<romforge_core::FolderScan> {
-    with(&db, move |lib| lib.scan_folder(&dir)).await
+pub async fn scan_folder(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    dir: String,
+    job: Option<u64>,
+) -> Res<romforge_core::FolderScan> {
+    let mut job = Job::start(&app, job);
+    with(&db, move |lib| {
+        lib.scan_folder_with(&dir, &options(&job), |p| job.step(p.step()))
+    })
+    .await
 }
 
 /// Scan folder's dry run: what a scan would find; nothing is kept.
 #[tauri::command]
-pub async fn scan_preview(db: tauri::State<'_, Db>, dir: String) -> Res<romforge_core::ScanPreview> {
-    with(&db, move |lib| lib.scan_preview(&dir)).await
+pub async fn scan_preview(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    dir: String,
+    job: Option<u64>,
+) -> Res<romforge_core::ScanPreview> {
+    let mut job = Job::start(&app, job);
+    with(&db, move |lib| {
+        lib.scan_preview_with(&dir, &options(&job), |p| job.step(p.step()))
+    })
+    .await
 }
 
 /// Whether Refresh has a folder to rescan.
@@ -37,11 +59,12 @@ pub struct Refreshed {
 }
 
 #[tauri::command]
-pub async fn refresh(db: tauri::State<'_, Db>) -> Res<Refreshed> {
+pub async fn refresh(app: tauri::AppHandle, db: tauri::State<'_, Db>, job: Option<u64>) -> Res<Refreshed> {
     // The toolbar's Refresh: the folders Settings names, not every folder
     // ever scanned.
+    let mut job = Job::start(&app, job);
     let results = with(&db, move |lib| {
-        lib.refresh_settings(Default::default(), |_, _| {})
+        lib.refresh_settings(&options(&job), |_, p| job.step(p.step()))
     })
     .await?;
     let mut out = Refreshed {

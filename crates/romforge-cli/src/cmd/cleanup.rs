@@ -14,17 +14,25 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if lib.home().is_none() {
                 bail!("no RomForge folder yet: `romforge-cli home create <parent>` first");
             }
-            if let Some(d) = &dir {
+            let scanned = if let Some(d) = &dir {
                 lib.scan(d, Scope::All)?;
-            }
+                true
+            } else {
+                false
+            };
             let plan = lib.import_plan(dir.as_deref())?;
             print_cleanup(&plan, verbose);
             if !apply {
                 println!(
-                    "{} to import into {}, {} skipped; nothing changed (run with --apply to move them)",
+                    "{} to import into {}, {} skipped; {} (run with --apply to move them)",
                     plan.items.len(),
                     plan.dest.display(),
-                    plan.skipped.len()
+                    plan.skipped.len(),
+                    if scanned {
+                        "hashed into the library, nothing moved"
+                    } else {
+                        "nothing moved"
+                    }
                 );
                 return Ok(());
             }

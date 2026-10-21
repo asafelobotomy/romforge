@@ -6,6 +6,7 @@
   import PageView from "./PageView.svelte";
   import ReaderSide from "./ReaderSide.svelte";
   import { find } from "./manualSearch.js";
+  import { edit } from "./jobs.svelte.js";
   import { languages, ocrTexts, pageWords } from "./ocr.js";
 
   // A manual's pages (milestone 26), drawn with pdf.js (Apache-2.0), the
@@ -97,7 +98,10 @@
     problem = "";
     search = null;
     try {
-      const data = await (await fetch(url)).arrayBuffer();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.arrayBuffer();
+      if (data.byteLength < 5) throw new Error("empty file");
       const d = await pdfjs.getDocument({ data }).promise;
       pages = d.numPages;
       page = Math.min(Math.max(1, start), pages);
@@ -114,7 +118,7 @@
   async function addMark(m) {
     if (!rowId) return;
     try {
-      await invoke("add_manual_mark", { rowId, mark: m });
+      await edit("Saving a bookmark…", "add_manual_mark", { rowId, mark: m });
       await loadMarks(rowId);
     } catch (e) {
       fail(e);
@@ -122,7 +126,7 @@
   }
   async function editMark(id, note, c) {
     try {
-      await invoke("edit_manual_mark", { id, note, color: c });
+      await edit("Saving a bookmark…", "edit_manual_mark", { id, note, color: c });
       await loadMarks(rowId);
     } catch (e) {
       fail(e);
@@ -130,7 +134,7 @@
   }
   async function removeMark(id) {
     try {
-      await invoke("remove_manual_mark", { id });
+      await edit("Saving a bookmark…", "remove_manual_mark", { id });
       await loadMarks(rowId);
     } catch (e) {
       fail(e);

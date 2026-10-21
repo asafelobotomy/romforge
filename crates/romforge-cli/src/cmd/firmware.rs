@@ -101,11 +101,20 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             }
         }
-        Command::Firmware(FirmwareCommand::InstallPs3) => {
+        Command::Firmware(FirmwareCommand::InstallPs3 { apply }) => {
+            if !apply {
+                println!(
+                    "would run RPCS3's firmware installer on Bios/rpcs3/PS3UPDAT.PUP (run again with --apply)"
+                );
+                return Ok(());
+            }
             let flash = lib.install_ps3_firmware()?;
             println!("PS3 firmware installed into {}", flash.display());
         }
-        Command::Firmware(FirmwareCommand::Undo) => {
+        Command::Firmware(FirmwareCommand::Undo { yes }) => {
+            if !yes {
+                anyhow::bail!("refusing to undo without --yes");
+            }
             let n = lib.firmware_undo()?;
             println!("removed {n} file(s)");
         }

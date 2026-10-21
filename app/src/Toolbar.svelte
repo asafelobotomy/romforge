@@ -39,10 +39,10 @@
   <SplitButton
     glyph="✎"
     label="Rename & Cleanup"
-    title={n ? `Rename, repack and ${homeRoot ? "import" : "move"} ${games} now (those identified), as Settings says (originals to the trash, kept, or replaced in place); Undo is in the dry run` : pickFirst}
+    title={n ? `See the plan to rename, repack and ${homeRoot ? "import" : "move"} ${games} (those identified), as Settings says; apply from the dialog, or use Apply now in the menu` : pickFirst}
     disabled={!!busy || !n}
-    onclick={renameCleanup}
-    items={[{ label: "Rename & Cleanup [dry run]", title: "See the plan first, then do it or not (Undo and Empty trash are here too)", onclick: () => cleanup.openCleanup(null, "cleanup", chosen) }]}
+    onclick={() => cleanup.openCleanup(null, "cleanup", chosen)}
+    items={[{ label: "Rename & Cleanup [apply now]", title: "Do it straight away without showing the plan (Undo is in the dry-run dialog)", onclick: renameCleanup }]}
   />
   <button class="tool" onclick={() => cleanup.openCleanup(null, "convert", chosen)} disabled={!!busy || !n} title={n ? `Turn the disc images of ${games} into CHD where they are (shows what it would do first)` : pickFirst}>
     <span class="glyph">⇲</span>Convert

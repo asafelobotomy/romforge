@@ -31,13 +31,25 @@
     <img src={detail.art[kind]} alt="{artLabel[kind]} of {row.title}" onload={(e) => sized(kind, e)} />
   </button>
 {/snippet}
+{#snippet pickable(kind, cls)}
+  {#if canPick(row)}
+    <button class="shot pick {cls}" onclick={() => artPicker.openPicker(row, kind, artLabel[kind], detail.art[kind])} title="{caption(kind, ui.dims, detail)} — click to choose another">
+      <img src={detail.art[kind]} alt="{artLabel[kind]} of {row.title}" onload={(e) => sized(kind, e)} />
+      <span class="change" aria-hidden="true">Change</span>
+    </button>
+  {:else}
+    {@render shot(kind, cls)}
+  {/if}
+{/snippet}
 <!-- The box above the fanart on the left; like an
      encyclopedia's infobox, the logo and the facts in a compact
      card on the right. Stacked, art first, when narrow. -->
 <div class="lead">
   <aside class="infobox" aria-label="Facts">
     {#if detail.art.logo}
-      <figure class="logo" title={caption("logo", ui.dims, detail)}>{@render shot("logo", "")}</figure>
+      <figure class="logo" title={caption("logo", ui.dims, detail)}>{@render pickable("logo", "")}</figure>
+    {:else if canPick(row)}
+      <button class="emptypick logo-pick" onclick={() => artPicker.openPicker(row, "logo", "Logo", null)}>No logo yet: find one…</button>
     {:else}
       <p class="ibtitle">{row.label ?? row.title}</p>
     {/if}
@@ -100,10 +112,17 @@
     {/if}
     {#if detail.art.boxart}
       <figure class="cover">
-        {@render shot("boxart", "")}
+        {@render pickable("boxart", "")}
       </figure>
-    {:else if showEmpty}
-      <figure class="cover empty"><span>No box art</span><figcaption>Box art</figcaption></figure>
+    {:else if showEmpty || canPick(row)}
+      <figure class="cover empty">
+        {#if canPick(row)}
+          <button class="emptypick" onclick={() => artPicker.openPicker(row, "boxart", "Box art", null)}>No box art yet: find one…</button>
+        {:else}
+          <span>No box art</span>
+        {/if}
+        <figcaption>Box art</figcaption>
+      </figure>
     {/if}
   </div>
 </div>
@@ -119,11 +138,18 @@
     {#each mediaKinds as k}
       {#if detail.art[k]}
         <figure class="media">
-          {@render shot(k, "")}
+          {@render pickable(k, "")}
           <figcaption>{caption(k, ui.dims, detail)}</figcaption>
         </figure>
-      {:else if showEmpty}
-        <figure class="media empty"><span>—</span><figcaption>{artLabel[k]}</figcaption></figure>
+      {:else if showEmpty || canPick(row)}
+        <figure class="media empty">
+          {#if canPick(row)}
+            <button class="emptypick" onclick={() => artPicker.openPicker(row, k, artLabel[k], null)}>Find {artLabel[k].toLowerCase()}…</button>
+          {:else}
+            <span>—</span>
+          {/if}
+          <figcaption>{artLabel[k]}</figcaption>
+        </figure>
       {/if}
     {/each}
   </div>
@@ -152,11 +178,12 @@
   figure.empty span { display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); font-size: 0.8rem; border: 1px dashed var(--line); border-radius: 6px; }
   .fanart { margin-bottom: 0.75rem; }
   .fanart .shot { margin: 0 auto; }
-  .fanart .shot.pick { position: relative; cursor: pointer; }
-  .fanart .change { position: absolute; right: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.55rem; border-radius: 4px; background: #000a; color: #fff; font-size: 0.75rem; line-height: 1.4; opacity: 0; transition: opacity 0.15s; }
-  .fanart .shot.pick:hover .change, .fanart .shot.pick:focus-visible .change { opacity: 1; }
+  .shot.pick { position: relative; cursor: pointer; }
+  .shot.pick .change { position: absolute; right: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.55rem; border-radius: 4px; background: #000a; color: #fff; font-size: 0.75rem; line-height: 1.4; opacity: 0; transition: opacity 0.15s; }
+  .shot.pick:hover .change, .shot.pick:focus-visible .change { opacity: 1; }
   .emptypick { width: 100%; height: 3rem; border: 1px dashed var(--line); border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
   .emptypick:hover { color: var(--accent); border-color: var(--accent); }
+  .logo-pick { margin: 0 0 0.45rem; height: 2.5rem; }
   .fanart .shot img { max-height: 16rem; border-radius: 6px; }
   .fanart.empty span { height: 5rem; }
   /* Portrait (most boxes) and landscape (SNES, N64) both fit: the cover

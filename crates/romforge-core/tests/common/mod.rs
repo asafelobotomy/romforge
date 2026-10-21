@@ -11,6 +11,7 @@ pub mod home;
 pub mod organize;
 pub mod patcher;
 pub mod search;
+pub mod serve;
 
 pub fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")

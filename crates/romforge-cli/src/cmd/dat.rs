@@ -132,7 +132,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                     let i = extdb::import(db, &zip, &dir, &zip.to_string_lossy(), |m| eprintln!("{m}"))?;
                     println!("{}: {} entries", i.name, i.entries.unwrap_or(0));
                 }
-                DatabasesCommand::Remove { name } => {
+                DatabasesCommand::Remove { name, yes } => {
+                    if !yes {
+                        bail!("refusing to remove {name} without --yes");
+                    }
                     let db = pick(&name)?;
                     extdb::remove(db, &dir)?;
                     println!("{} removed", db.name());

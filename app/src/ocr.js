@@ -9,6 +9,7 @@ import Tesseract from "tesseract.js/dist/tesseract.esm.min.js";
 import workerUrl from "tesseract.js/dist/worker.min.js?url";
 import simdCore from "tesseract.js-core/tesseract-core-simd-lstm.wasm.js?url";
 import plainCore from "tesseract.js-core/tesseract-core-lstm.wasm.js?url";
+import { edit } from "./jobs.svelte.js";
 import { artSrc } from "./lib.js";
 
 // The smallest module using a SIMD instruction (as wasm-feature-detect).
@@ -70,7 +71,7 @@ export async function pageWords(doc, n, rowId, lang, run) {
   const kept = await invoke("manual_ocr", { rowId, page: n, lang });
   if (kept || !run) return kept;
   const words = await recognize(await doc.getPage(n), lang);
-  await invoke("save_manual_ocr", { rowId, page: n, lang, words });
+  await edit("Saving recognised text…", "save_manual_ocr", { rowId, page: n, lang, words });
   return words;
 }
 

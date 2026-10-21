@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import BiosImport from "./BiosImport.svelte";
 
   // The BIOS page (milestone 20): what each system's emulators load, from
@@ -25,6 +26,11 @@
 
   // RPCS3 installs PS3 firmware rather than loading a file.
   async function installPs3() {
+    const ok = await ask("Run RPCS3's firmware installer on Bios/rpcs3/PS3UPDAT.PUP?", {
+      title: "Install PS3 firmware",
+      kind: "warning",
+    });
+    if (!ok) return;
     const where = await run("Installing the PS3 firmware into RPCS3…", "install_ps3_firmware", {});
     if (where) note = `PS3 firmware installed into ${where}.`;
     await loadBios();

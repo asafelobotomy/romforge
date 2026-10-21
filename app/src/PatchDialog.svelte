@@ -3,11 +3,14 @@
   import { open as pickFile } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { basename } from "./lib.js";
+  import { run } from "./jobs.svelte.js";
 
   // Milestone 19: apply a translation or hack you fetched to the selected
   // game. romforge makes a new copy (a version of the game); the original
   // stays as it is.
-  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), call, load } = $props();
+  // Making the copy is a job in the queue (footer): the dialog closes.
+  let { open = $bindable(false), note = $bindable(""), call, load } = $props();
+  let busy = $state("");
 
   let row = $state(null);
   let links = $state([]);
@@ -71,16 +74,10 @@
   }
 
   async function apply() {
-    patchError = "";
-    busy = `Patching ${plan.title}…`;
-    try {
-      const r = await invoke("patch_apply", { rowId: row.id, patch, hack, tag: tag.trim() || null });
-      note = `Made ${r.title} (batch #${r.batch_id}; Undo in Import / Cleanup removes it)`;
-      open = false;
-    } catch (e) {
-      patchError = String(e).replace(/^(cleanup|DAT): /, "");
-    }
-    busy = "";
+    const args = { rowId: row.id, patch, hack, tag: tag.trim() || null };
+    open = false;
+    const r = await run(`Patching ${plan.title}…`, "patch_apply", args);
+    if (r) note = `Made ${r.title} (batch #${r.batch_id}; Undo in Import / Cleanup removes it)`;
     await load();
   }
 

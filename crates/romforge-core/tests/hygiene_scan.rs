@@ -48,7 +48,7 @@ fn nested_folder_keeps_its_scope() {
     assert!(!scoped.is_empty());
     assert!(!scoped.contains(&Status::Matched), "{scoped:?}");
 
-    let results = lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    let results = lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     assert_eq!(results.len(), 1, "only the outer folder is rescanned");
     assert_eq!(statuses_under(&lib, &gb), scoped, "after Refresh");
 
@@ -56,7 +56,7 @@ fn nested_folder_keeps_its_scope() {
         rehash: true,
         ..ScanOptions::default()
     };
-    lib.scan_with(&roms, Scope::All, rehash, |_| {}).unwrap();
+    lib.scan_with(&roms, Scope::All, &rehash, |_| {}).unwrap();
     assert_eq!(statuses_under(&lib, &gb), scoped, "after a rehash");
 
     // Files that went away from the inner folder still go.

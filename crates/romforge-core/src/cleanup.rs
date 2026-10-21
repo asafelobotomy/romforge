@@ -122,6 +122,10 @@ pub struct CleanupReport {
     #[serde(default)]
     pub playlists: usize,
     pub failed: Vec<(String, String)>,
+    /// Asked to stop: the games after the last one done were left as
+    /// they are.
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 /// Which files a cleanup or import takes games from.

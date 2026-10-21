@@ -70,7 +70,9 @@ fn games_you_have(
     Ok(out)
 }
 
-/// Fetch metadata and art for the games you have.
+/// Fetch metadata and art for the games you have. Asked to stop
+/// ([`EnrichOptions::cancel`]), it keeps what it saved and says so
+/// (`stopped`).
 pub fn enrich(
     conn: &mut Connection,
     opts: &EnrichOptions,
@@ -125,13 +127,18 @@ pub fn enrich(
         .extdb
         .as_deref()
         .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d));
-    let mut session = crate::artsources::Session::default();
     // Sources that said "slow down" aren't asked again this run.
-    let mut halted: Vec<crate::artsources::Provider> = Vec::new();
+    let halted = std::sync::Mutex::new(Vec::new());
     // Hosts that said "slow down" (libretro's, LaunchBox's image server)
-    // aren't asked again this run either.
-    let mut halted_hosts: std::collections::HashSet<String> = Default::default();
+    // aren't asked again this run either, by any thread.
+    let halted_hosts = std::sync::Mutex::new(std::collections::HashSet::new());
+    let mut tally = Tally::new(have.len(), opts.wikidata.is_some());
+    progress(EnrichEvent::Progress(crate::job::Step::new(0, 0, "starting")));
     for (system_id, games) in &by_system {
+        if opts.cancel.is_set() {
+            report.stopped = true;
+            break;
+        }
         let Some(system) = systems::by_id(*system_id) else {
             continue;
         };
@@ -151,7 +158,7 @@ pub fn enrich(
                 system_id,
                 lr_name,
                 games,
-                &mut halted_hosts,
+                &mut halted_hosts.lock().unwrap_or_else(|e| e.into_inner()),
                 &mut report,
                 &mut progress,
             )?;
@@ -164,7 +171,7 @@ pub fn enrich(
                 opts,
                 system,
                 games,
-                &mut halted_hosts,
+                &mut halted_hosts.lock().unwrap_or_else(|e| e.into_inner()),
                 &mut report,
                 &mut progress,
             )?;
@@ -189,7 +196,7 @@ pub fn enrich(
             }
         }
 
-        system_art(
+        match system_art(
             conn,
             opts,
             system,
@@ -198,14 +205,23 @@ pub fn enrich(
             games,
             &keys,
             &lbdb,
-            &mut session,
-            &mut halted,
-            &mut halted_hosts,
+            &halted,
+            &halted_hosts,
             &mut report,
+            &mut tally,
             &mut progress,
-        )?;
+        ) {
+            Err(Error::Cancelled) => {
+                report.stopped = true;
+                break;
+            }
+            r => r?,
+        }
     }
-    wikidata_step(conn, opts, &have, &mut report, &mut progress)?;
+    if report.stopped {
+        return Ok(report);
+    }
+    wikidata_step(conn, opts, &have, &mut report, &mut tally, &mut progress)?;
     extdb_fill(conn, opts, &have, &ovgdb, &lbdb, &mut report)?;
     // The same failure for many games is listed once.
     let mut seen = std::collections::HashSet::new();
@@ -219,6 +235,7 @@ fn wikidata_step(
     opts: &EnrichOptions,
     have: &BTreeMap<(i64, String), Vec<String>>,
     report: &mut EnrichReport,
+    tally: &mut Tally,
     progress: &mut impl FnMut(EnrichEvent),
 ) -> Result<(), Error> {
     // Wikidata after libretro, so a release year is there to tell apart
@@ -236,6 +253,7 @@ fn wikidata_step(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, |step| {
+            tally.wikidata(step, progress);
             progress(EnrichEvent::Wikidata { step })
         }) {
             Ok(mut w) => {
@@ -244,6 +262,7 @@ fn wikidata_step(
                     .art_dir
                     .clone()
                     .unwrap_or_else(|| opts.cache_dir.join(crate::layout::LOOSE_ART_DIR));
+                tally.wikidata("pictures", progress);
                 progress(EnrichEvent::Wikidata { step: "pictures" });
                 crate::wikidata::fetch_pictures(conn, &dir.join("wikidata"), &mut w.errors)?;
                 report.wikidata = Some(w);

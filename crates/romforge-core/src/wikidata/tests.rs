@@ -167,6 +167,25 @@ fn search_words_drop_stray_letters() {
 }
 
 #[test]
+fn matching_waits_for_every_edition_name() {
+    let title = "Resident Evil - Director's Cut - Dual Shock Ver. (USA)";
+    let names = names_for(title);
+    assert_eq!(names.len(), 2);
+    let mut ready: BTreeSet<String> = BTreeSet::new();
+    ready.insert(names[0].clone());
+    assert!(
+        !ready_for(title, &ready),
+        "full name alone is not enough: pick still needs the stripped name"
+    );
+    ready.insert(names[1].clone());
+    assert!(ready_for(title, &ready));
+    assert!(ready_for(
+        "Super Mario World (USA)",
+        &BTreeSet::from(["super mario world".into()])
+    ));
+}
+
+#[test]
 fn parses_sparql_json() {
     let body = br#"{"results":{"bindings":[{"g":{"type":"uri","value":"http://www.wikidata.org/entity/Q123"},"label":{"type":"literal","value":"Doom"}}]}}"#;
     let rows = parse_results(body).unwrap();

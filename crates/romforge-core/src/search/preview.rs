@@ -67,8 +67,8 @@ pub fn preview(
             let mut seen = BTreeSet::new();
             for (_, name, size, _, _) in &rows {
                 if seen.insert(name) {
-                    let size = size.map_or("?".into(), |s| format!("{s} bytes"));
-                    p.facts.push(("ROM".into(), format!("{name} · {size}")));
+                    let size = size.map_or("?".into(), fmt_bytes);
+                    p.facts.push(("DAT ROM".into(), format!("{name} · {size}")));
                 }
             }
             let mut crc_of = conn.prepare("SELECT crc32 FROM files WHERE sha1 = ?1 AND size = ?2 LIMIT 1")?;
@@ -79,24 +79,24 @@ pub fn preview(
                 let image = f.game_id.as_ref().and_then(|i| i.image_size);
                 let same = rows.iter().find(|r| r.2 == Some(image.unwrap_or(f.size)));
                 let verdict = match (same, image) {
-                    (Some(r), Some(_)) => format!("holds an image the size of {}", r.1),
-                    (None, Some(n)) => format!("holds a {n}-byte image, a size no ROM has"),
+                    (Some(_), Some(_)) => "image inside matches DAT ROM size".into(),
+                    (None, Some(n)) => format!("image inside is {}; no DAT ROM that size", fmt_bytes(n)),
                     (Some(r), None) if r.4 => {
                         let crc: Option<String> = crc_of
                             .query_row(params![f.sha1, f.size], |r| r.get(0))
                             .optional()?;
                         if crc.is_some() && crc == r.3 {
-                            format!("same size and CRC32 as {} (no SHA1 or MD5 to confirm)", r.1)
+                            "same size and CRC32 as DAT ROM (no SHA1/MD5 to confirm)".into()
                         } else {
-                            format!("same size as {}, different contents", r.1)
+                            "same size as DAT ROM, different contents".into()
                         }
                     }
-                    (Some(r), None) => format!("same size as {}, different contents", r.1),
-                    (None, None) => "size differs from every ROM".into(),
+                    (Some(_), None) => "same size as DAT ROM, different contents".into(),
+                    (None, None) => "size differs from every DAT ROM".into(),
                 };
                 p.facts.push((
                     "Your file".into(),
-                    format!("{file} · {} bytes · {verdict}", f.size),
+                    format!("{file} · {} · {verdict}", fmt_bytes(f.size)),
                 ));
             }
             let meta: Option<String> = conn
@@ -172,19 +172,18 @@ pub struct Chosen {
     pub enrich: crate::enrich::EnrichReport,
 }
 
-/// Take a result for a row of `v` (the library's list): a DAT title names
-/// its files ("identified by you"); a Wikidata item settles the match
-/// (naming an unidentified row by the item's label on `system` first). Then
-/// fetches for that one game what `opts` asks for (art kinds, Wikidata,
-/// `refresh` to overwrite). Its row in the list built afterwards:
-/// [`row_in`].
-pub fn choose(
+/// Name or settle a result for a row of `v` (the library's list): a DAT
+/// title names its files ("identified by you"); a Wikidata item settles
+/// the match (naming an unidentified row by the item's label on `system`
+/// first). Does **not** fetch art or metadata — use [`choose`] or Enrich
+/// afterwards so Search can move on to the next queue item without waiting.
+pub fn apply(
     conn: &mut Connection,
     v: &view::LibraryView,
     row_id: &str,
     found: &Found,
     system: Option<&str>,
-    opts: &crate::enrich::EnrichOptions,
+    wikidata_endpoint: Option<&str>,
 ) -> Result<Taken, Error> {
     let d = view::detail_in(conn, v, row_id)?;
     let identified = d.row.status.identified();
@@ -213,23 +212,38 @@ pub fn choose(
                 (key.to_owned(), found.title.clone())
             };
             let sys = systems::by_key(&key).ok_or_else(|| Error::Search("identify the game first".into()))?;
-            let endpoint = opts.wikidata.as_deref().unwrap_or(wikidata::ENDPOINT);
+            let endpoint = wikidata_endpoint.unwrap_or(wikidata::ENDPOINT);
             settle_for(conn, endpoint, sys, &title, &found.id)?;
             (key, title)
         }
     };
-    let mut one = opts.clone();
-    one.system = Some(key.clone());
-    one.title = Some(title.clone());
-    if found.scraper == Scraper::Wikidata {
-        one.wikidata = None; // settled and fetched just now
-    }
-    let enrich = crate::enrich::enrich(conn, &one, |_| {})?;
     Ok(Taken {
         system: key,
         title,
-        enrich,
+        enrich: crate::enrich::EnrichReport::default(),
     })
+}
+
+/// [`apply`], then fetch for that one game what `opts` asks for (art kinds,
+/// Wikidata, `refresh` to overwrite). The app's Search queue uses [`apply`]
+/// alone and Enrich in the background so the next item isn't blocked.
+pub fn choose(
+    conn: &mut Connection,
+    v: &view::LibraryView,
+    row_id: &str,
+    found: &Found,
+    system: Option<&str>,
+    opts: &crate::enrich::EnrichOptions,
+) -> Result<Taken, Error> {
+    let mut taken = apply(conn, v, row_id, found, system, opts.wikidata.as_deref())?;
+    let mut one = opts.clone();
+    one.system = Some(taken.system.clone());
+    one.title = Some(taken.title.clone());
+    if found.scraper == Scraper::Wikidata {
+        one.wikidata = None; // settled and fetched just now
+    }
+    taken.enrich = crate::enrich::enrich(conn, &one, |_| {})?;
+    Ok(taken)
 }
 
 /// The row of the game `title` on `system` (a key) in `v`.
@@ -241,4 +255,16 @@ pub fn row_in(v: &view::LibraryView, system: &str, title: &str) -> Result<String
         })
         .map(|r| r.id.clone())
         .ok_or_else(|| Error::Search(format!("{title} [{system}] is not in the library")))
+}
+
+fn fmt_bytes(n: u64) -> String {
+    if n >= 1 << 20 && n.is_multiple_of(1 << 20) {
+        format!("{} MiB", n >> 20)
+    } else if n >= 1 << 20 {
+        format!("{:.1} MiB", n as f64 / (1u64 << 20) as f64)
+    } else if n >= 1024 {
+        format!("{} KiB", n.div_ceil(1024))
+    } else {
+        format!("{n} bytes")
+    }
 }

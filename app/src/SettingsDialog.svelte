@@ -3,10 +3,11 @@
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { iconCredits } from "./facts.js";
+  import { edit } from "./jobs.svelte.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
-  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), homeRoot = $bindable(null), call, load } = $props();
+  let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), regionFlags = $bindable(true), homeRoot = $bindable(null), call, load } = $props();
   let moving = $state(false);
   let regionsText = $state("");
   let scummvmNote = $state("");
@@ -48,7 +49,18 @@
   }
 
   // Settings panel: a working copy, saved on "Save".
-  let draft = $state({ source_dir: null, library_dir: null, keep_originals: false, in_place: false, staging_dir: null, keys: {}, show_empty_media: false });
+  let draft = $state({
+    source_dir: null,
+    library_dir: null,
+    keep_originals: false,
+    in_place: false,
+    staging_dir: null,
+    keys: {},
+    show_empty_media: false,
+    region_flags: true,
+    show_missing_versions: false,
+    threads: 0,
+  });
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
   function setMode(m) {
@@ -86,10 +98,17 @@
     settingsError = "";
     try {
       draft.regions = regionsText.split(",").map((r) => r.trim()).filter(Boolean);
-      draft = await invoke("save_settings", { settings: draft });
+      // Behind a scan or the like it waits its turn: the dialog closes.
+      const onWait = (why) => {
+        open = false;
+        note = `Saving settings ${why}`;
+      };
+      draft = await edit("Saving settings…", "save_settings", { settings: draft }, { onWait });
       showEmpty = draft.show_empty_media;
+      regionFlags = draft.region_flags !== false;
       open = false;
-      note = "Settings saved. Refresh scans the Source and Library folders.";
+      note = "Settings saved.";
+      await load();
     } catch (e) {
       settingsError = String(e).replace(/^settings: /, "");
     }
@@ -191,6 +210,37 @@
         <label for="regions">Preferred regions</label>
         <p class="hint">Every version of a game is kept and listed under one row; that row shows the version from the first region here that you have.</p>
         <input id="regions" bind:value={regionsText} placeholder="USA, World, Europe, Japan" />
+      </section>
+
+      <section class="setting">
+        <span class="flabel">Region and language</span>
+        <label class="toggle">
+          <input type="radio" name="region-display" checked={draft.region_flags !== false} onchange={() => (draft.region_flags = true)} />
+          Flag emojis
+        </label>
+        <label class="toggle">
+          <input type="radio" name="region-display" checked={draft.region_flags === false} onchange={() => (draft.region_flags = false)} />
+          Text: (USA)/(En)
+        </label>
+        <p class="hint">On a game's other versions in the list (not the main title, which stays clean).</p>
+      </section>
+
+      <section class="setting">
+        <label class="toggle">
+          <input type="checkbox" bind:checked={draft.show_missing_versions} />
+          Display missing versions
+        </label>
+        <p class="hint">Under each game, list every region and edition in your DATs that romforge can link to it, even ones you don't have (shown italic). Off: only what you own, plus a missing original when you only have a translation, hack or patch.</p>
+      </section>
+
+      <section class="setting">
+        <label class="flabel" for="threads">Threads for long jobs</label>
+        <select id="threads" bind:value={draft.threads}>
+          <option value={0}>Automatic (one per CPU, at most 8)</option>
+          <option value={1}>1 (a slow spinning disk)</option>
+          {#each [2, 4, 8] as n}<option value={n}>{n}</option>{/each}
+        </select>
+        <p class="hint">How many files Scan and Refresh hash, and how many games Rename & Cleanup and Convert write, at once; downloads use up to four. Each website still gets no more than its own pace.</p>
       </section>
 
       <section class="setting">

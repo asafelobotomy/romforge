@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { edit, run as runJob } from "./jobs.svelte.js";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
   // `call` is the app's invoke that reports errors on the status line;
@@ -117,23 +118,32 @@
     await loadItem();
   }
 
+  // Name/settle now; the chips' fetch runs in the background on its own
+  // connection (search_fetch), so the next pick doesn't wait on downloads.
   async function take(found) {
     qError = "";
     busy = `Taking ${found.title}…`;
     try {
-      const r = await invoke("search_choose", {
-        rowId: queue[qi].row_id,
-        found,
-        system: sSystem || null,
-        art: fetchOn.filter((k) => k !== "wikidata"),
-        wikidata: fetchOn.includes("wikidata"),
-        overwrite: !noOverwrite,
-      });
+      const art = fetchOn.filter((k) => k !== "wikidata");
+      const wantWd = fetchOn.includes("wikidata") && found.scraper !== "wikidata";
+      const overwrite = !noOverwrite;
+      const onWait = (why) => (busy = `Taking ${found.title} ${why}`);
+      const args = { rowId: queue[qi].row_id, found, system: sSystem || null };
+      const r = await edit(busy, "search_apply", args, { onWait });
       busy = "";
-      const e = r.enrich;
-      const fetched = e.art_saved ? `; ${e.art_saved} images saved` : "";
       const what = found.scraper === "wikidata" ? `matched to ${found.id}` : "identified by you";
-      await answered(`${found.title}: ${what}${fetched}.` + (e.errors?.length ? ` Fetching: ${e.errors.join("; ")}` : ""));
+      if (art.length || wantWd) {
+        const rowId = r.row_id;
+        const title = found.title;
+        // A job in the queue (footer); its errors go to the status line.
+        runJob(`Fetching art for ${title}…`, "search_fetch", { rowId, art, wikidata: wantWd, overwrite }).then((e) => {
+          if (!e) return;
+          if (e.errors?.length) note = `${title}: ${e.errors.join("; ")}`;
+          else if (e.art_saved) note = `${title}: ${e.art_saved} images saved`;
+          return load();
+        });
+      }
+      await answered(`${found.title}: ${what}.`);
     } catch (e) {
       busy = "";
       qError = String(e);
@@ -229,7 +239,8 @@
             <h3 class="sub">{chosen.title}{chosen.year ? ` (${chosen.year})` : ""}</h3>
             {#if preview?.system_name}<p class="meta">{preview.system_name}</p>{/if}
             {#if chosen.evidence?.length}
-              <p class="meta">{chosen.description} (a suggestion, never verified)</p>
+              <p class="verdict">{chosen.description}</p>
+              <p class="meta">Suggestion — never counted as verified</p>
               <ul class="evidence">
                 {#each chosen.evidence as e}<li class:agrees={e.agrees}><span aria-hidden="true">{e.agrees ? "+" : "−"}</span> {e.text}</li>{/each}
               </ul>
@@ -262,7 +273,7 @@
       </div>
 
       <section class="setting">
-        <span class="flabel">Fetch after choosing</span>
+        <span class="flabel">Fetch after choosing (in the background)</span>
         <div class="chips">
           {#each fetchItems as [k, label]}
             <button class="chip" class:on={fetchOn.includes(k)} aria-pressed={fetchOn.includes(k)} onclick={() => toggleFetch(k)}>
@@ -318,8 +329,9 @@
   }
   .qhead { display: flex; justify-content: space-between; align-items: baseline; }
   .score { width: 2.6rem; color: var(--muted); font-size: 0.8rem; text-align: right; }
-  .evidence { list-style: none; padding: 0; margin: 0.2rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); }
+  .verdict { margin: 0; font-size: 0.85rem; font-weight: 600; }
+  .evidence { list-style: none; padding: 0; margin: 0.15rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.12rem; }
   .evidence li.agrees { color: inherit; }
-  .evidence span { display: inline-block; width: 1em; }
+  .evidence span { display: inline-block; width: 1em; font-variant-numeric: tabular-nums; }
   .pick select { max-width: 14rem; }
 </style>

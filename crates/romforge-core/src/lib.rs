@@ -21,6 +21,7 @@ pub mod headers;
 pub mod home;
 pub mod ident;
 mod identify;
+pub mod job;
 pub mod launch;
 pub mod layout;
 mod library;
@@ -28,6 +29,7 @@ pub mod manual;
 pub mod names;
 pub mod obtain;
 pub mod organize;
+pub mod parallel;
 pub mod patch;
 pub mod patcher;
 mod report;
@@ -91,6 +93,28 @@ pub enum Error {
     Cleanup(String),
     #[error("picture: {0}")]
     Image(String),
+    /// Stopped at a safe point because it was asked to ([`job::Cancel`]).
+    #[error("stopped")]
+    Cancelled,
+    /// A quick edit ([`Library::edit`]) found the library held by another
+    /// connection's long write. The message starts with `busy:` so a
+    /// caller can tell it apart and wait for the job instead.
+    #[error("busy: the library is held by a running scan, refresh or DAT import until it ends")]
+    Busy,
+}
+
+impl Error {
+    /// Whether SQLite gave up waiting for another connection's write.
+    pub fn is_busy(&self) -> bool {
+        use rusqlite::ErrorCode::{DatabaseBusy, DatabaseLocked};
+        match self {
+            Error::Busy => true,
+            Error::Sql(rusqlite::Error::SqliteFailure(e, _)) => {
+                matches!(e.code, DatabaseBusy | DatabaseLocked)
+            }
+            _ => false,
+        }
+    }
 }
 
 /// `s` for a `LIKE ... ESCAPE '\'` pattern: `%`, `_` and `\` match

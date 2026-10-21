@@ -33,7 +33,7 @@ fn arcade_sets(conn: &Connection) -> Result<std::collections::HashSet<String>, E
 impl Library {
     /// [`Library::scan_with`] with default options and no progress.
     pub fn scan(&mut self, root: impl AsRef<Path>, scope: Scope) -> Result<ScanReport, Error> {
-        self.scan_with(root, scope, ScanOptions::default(), |_| {})
+        self.scan_with(root, scope, &ScanOptions::default(), |_| {})
     }
 
     /// Hash the likely ROMs under `root` (all files with
@@ -43,7 +43,7 @@ impl Library {
         &mut self,
         root: impl AsRef<Path>,
         scope: Scope,
-        opts: ScanOptions,
+        opts: &ScanOptions,
         mut progress: impl FnMut(ScanProgress),
     ) -> Result<ScanReport, Error> {
         let root = std::fs::canonicalize(root.as_ref())
@@ -64,6 +64,14 @@ impl Library {
             })
             .collect();
 
+        // No thread count given: the Settings one (itself 0 for automatic).
+        let opts = &ScanOptions {
+            jobs: match opts.jobs {
+                0 => crate::settings::load(&self.conn)?.threads,
+                n => n,
+            },
+            ..opts.clone()
+        };
         let scummvm_list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
         let arcade_sets = arcade_sets(&self.conn)?;
         // Paths are keys: one that isn't UTF-8 can't be stored as itself.
@@ -175,6 +183,7 @@ impl Library {
             let mut chd_sha1s: std::collections::HashMap<String, Option<String>> = Default::default();
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
+            let mut units = ScanProgress::default();
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
             scan::walk(&root, &skip, opts, &arcade_sets, unchanged, |visit| {
@@ -183,6 +192,17 @@ impl Library {
                 }
                 let entry = match visit {
                     Visit::Hashed(entry) => entry,
+                    Visit::Planned { units: n, bytes } => {
+                        (units.units_total, units.disk_total) = (n, bytes);
+                        progress(units);
+                        return;
+                    }
+                    Visit::UnitDone { bytes } => {
+                        units.units_done += 1;
+                        units.disk_done += bytes;
+                        progress(units);
+                        return;
+                    }
                     Visit::Skipped { path, member } => {
                         report.skipped += 1;
                         let name = if member.is_empty() {
@@ -321,11 +341,9 @@ impl Library {
                     }
                     Err(e) => report.errors.push((entry.path, entry.member, e)),
                 }
-                progress(ScanProgress {
-                    hashed: report.hashed,
-                    bytes_hashed: report.bytes_hashed,
-                    skipped: report.skipped,
-                });
+                (units.hashed, units.bytes_hashed, units.skipped) =
+                    (report.hashed, report.bytes_hashed, report.skipped);
+                progress(units);
             })?;
             result?;
         }

@@ -1,9 +1,10 @@
 <script>
+  import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
   import { sorted } from "./sort.js";
   // Always mounted, so the folders and the plan last while you look at other
-  // screens; drawn only while `active`. `run` is the app's invoke with
-  // progress on the status line; `load` reloads the library.
+  // screens; drawn only while `active`. `run` queues a long job (the
+  // footer shows it); `load` reloads the library.
   // With a RomForge folder (`homeRoot`) Import does this job: the screen
   // says so and keeps only the undo of earlier batches; `openImport` opens
   // the Import plan.
@@ -16,9 +17,20 @@
   // The inputs `plan` was made from: Move uses exactly these.
   let planned = $state(null);
 
+  // Planning only reads: it runs at once, not in the job queue.
+  let planning = $state(false);
+  let planError = $state("");
   async function planOrganize() {
     const inputs = { from, dest, oneG1r: oneG1R };
-    plan = await run("Planning…", "organize_plan", inputs);
+    planning = true;
+    planError = "";
+    try {
+      plan = await invoke("organize_plan", inputs);
+    } catch (e) {
+      plan = null;
+      planError = String(e);
+    }
+    planning = false;
     planned = plan ? inputs : null;
   }
 
@@ -72,7 +84,7 @@
       <input placeholder="Organize files in, /home/me/roms" bind:value={from} oninput={replan} />
       <input placeholder="Into, /home/me/roms-sorted" bind:value={dest} oninput={replan} />
       <label><input type="checkbox" bind:checked={oneG1R} onchange={replan} /> 1G1R</label>
-      <button onclick={planOrganize} disabled={!from || !dest || !!busy}>Plan</button>
+      <button onclick={planOrganize} disabled={!from || !dest || planning}>{planning ? "Planning…" : "Plan"}</button>
       <button onclick={applyOrganize} disabled={!plan || !planned || !plan.moves.length || !!busy}>Move {plan ? plan.moves.length : ""} files</button>
       {#if confirmUndo}
         <span>Move the last batch back?</span>
@@ -82,6 +94,7 @@
         <button onclick={() => (confirmUndo = true)} disabled={!!busy}>Undo last batch…</button>
       {/if}
     </div>
+    {#if planError}<p class="err" role="alert">{planError}</p>{/if}
     {#if plan}
       <p class="meta">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
       <table>

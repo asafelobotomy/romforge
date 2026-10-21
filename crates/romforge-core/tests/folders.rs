@@ -130,7 +130,7 @@ fn a_dos_game_is_its_folder() {
     assert!(!game.exists(), "the folder went to the trash whole");
 
     // Found again in Games/ by refresh: the zip is the game now.
-    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     let rows = lib.library_view().unwrap().rows;
     let keen = rows
         .iter()
@@ -254,7 +254,7 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     );
     assert!(!game.exists() && other.exists(), "only the game moved");
 
-    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     let rows = lib.library_view().unwrap().rows;
     let sky = rows.iter().find(|r| r.status == RowStatus::Detected).unwrap();
     assert_eq!(sky.folder.as_deref(), Some(target.to_str().unwrap()));
@@ -353,13 +353,13 @@ fn scummvm_names_what_its_list_leaves_out() {
         std::fs::read_to_string(target.join("monkey.scummvm")).unwrap(),
         "monkey"
     );
-    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     let monkey = find(&lib).expect("found again in Games");
     assert_eq!(monkey.folder.as_deref(), Some(target.to_str().unwrap()));
 
     lib.cleanup_undo(None).unwrap();
     assert_eq!(files_under(&incoming), before);
-    lib.refresh(ScanOptions::default(), |_, _| {}).unwrap();
+    lib.refresh(&ScanOptions::default(), |_, _| {}).unwrap();
     let monkey = find(&lib).expect("and back where it was");
     assert_eq!(monkey.folder.as_deref(), Some(game.to_str().unwrap()));
 }

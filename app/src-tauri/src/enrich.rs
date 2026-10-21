@@ -2,7 +2,41 @@
 
 use romforge_core::enrich::{ArtKind, EnrichOptions, EnrichReport, default_cache_dir};
 
-use crate::db::{Db, Res, read_net, with};
+use crate::db::{Db, Res, edit, read_net, with};
+use crate::jobs::Job;
+
+/// Send an enrich run's progress for its job.
+pub fn report(job: &mut Job, e: romforge_core::enrich::EnrichEvent) {
+    if let romforge_core::enrich::EnrichEvent::Progress(s) = e {
+        job.step(s);
+    }
+}
+
+/// Enrich's options from the app's chips: `art` kinds (`None`: every
+/// kind), `wikidata` (`None`: yes), `overwrite` to fetch again.
+pub fn options(
+    system: Option<String>,
+    art: Option<Vec<String>>,
+    wikidata: Option<bool>,
+    overwrite: Option<bool>,
+) -> EnrichOptions {
+    let art = match art {
+        Some(ks) => ks.iter().filter_map(|k| ArtKind::parse(k)).collect(),
+        None => ArtKind::ALL.to_vec(),
+    };
+    let mut opts = EnrichOptions {
+        system,
+        art,
+        refresh: overwrite.unwrap_or(false),
+        ..EnrichOptions::new(default_cache_dir())
+    };
+    match wikidata {
+        Some(false) => opts.wikidata = None,
+        Some(true) => opts.wikidata = Some(romforge_core::wikidata::ENDPOINT.to_owned()),
+        None => {}
+    }
+    opts
+}
 
 /// The sidebar's platform icons (fetched once from retroarch-assets):
 /// system key -> file, shown through `art://`.
@@ -33,21 +67,25 @@ pub async fn platform_logo(db: tauri::State<'_, Db>, system: String) -> Res<Opti
 }
 
 /// `only`: these library rows (the selection), else every game of
-/// `system` (or of every platform).
+/// `system` (or of every platform); the rest as in [`options`].
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn enrich(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     system: Option<String>,
     only: Option<Vec<String>>,
+    art: Option<Vec<String>>,
+    wikidata: Option<bool>,
+    overwrite: Option<bool>,
+    job: Option<u64>,
 ) -> Res<EnrichReport> {
-    let opts = EnrichOptions {
-        system,
-        art: ArtKind::ALL.to_vec(),
-        ..EnrichOptions::new(default_cache_dir())
-    };
+    let mut job = Job::start(&app, job);
+    let mut opts = options(system, art, wikidata, overwrite);
+    opts.cancel = job.cancel.clone();
     with(&db, move |lib| match &only {
-        Some(ids) => lib.enrich_rows(&opts, ids, |_| {}),
-        None => lib.enrich(&opts, |_| {}),
+        Some(ids) => lib.enrich_rows(&opts, ids, |e| report(&mut job, e)),
+        None => lib.enrich(&opts, |e| report(&mut job, e)),
     })
     .await
 }
@@ -77,7 +115,7 @@ pub async fn choose_art(
 ) -> Res<()> {
     let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
     let opts = EnrichOptions::new(default_cache_dir());
-    with(&db, move |lib| {
+    edit(&db, move |lib| {
         lib.choose_art(&opts, &row_id, kind, &url, &source)
     })
     .await

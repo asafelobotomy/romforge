@@ -30,7 +30,12 @@ fn needs_identify(conn: &rusqlite::Connection) -> Result<bool, Error> {
 
 impl Library {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let path = path.as_ref();
+        Self::open_at(path.as_ref(), true)
+    }
+
+    /// `catch_up`: run an identify a DAT batch left due (not for a
+    /// connection opened beside the batch itself, [`Library::edit`]).
+    pub(super) fn open_at(path: &Path, catch_up: bool) -> Result<Self, Error> {
         let mut conn = db::open(path)?;
         let home = home::Home::of_db(path);
         if let Some(h) = &home {
@@ -46,7 +51,7 @@ impl Library {
         };
         // A batch of DAT imports that never got to identify (it failed,
         // or the program stopped): do it now.
-        if needs_identify(&lib.conn)? {
+        if catch_up && needs_identify(&lib.conn)? {
             lib.identify()?;
         }
         Ok(lib)
@@ -116,6 +121,11 @@ impl Library {
             Some(h) => Some(h.databases()),
             None => self.path.as_deref().map(extdb::dir_for),
         }
+    }
+
+    /// The database file it is open on (none in memory).
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// The RomForge folder this library lives in (milestone 13).

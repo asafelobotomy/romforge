@@ -10,7 +10,7 @@
 
   // Details of the picked game: its name, status and what can be done
   // with it, over five tabs.
-  let { row, detail, lib, busy, listSort, showEmpty, open, forget, applyPatchRow, patcher, artPicker, error = $bindable() } = $props();
+  let { row, detail, lib, busy, listSort, showEmpty, regionFlags = true, open, forget, applyPatchRow, patcher, artPicker, note = $bindable(""), error = $bindable() } = $props();
 </script>
 
 <section class="detail">
@@ -18,8 +18,8 @@
     <div class="empty"><p>Pick a game to see its details.</p></div>
   {:else}
     <div class="dhead">
-      <h1>{row.label ?? row.title}</h1>
-      {#if row.label}<p class="meta">Set <code>{row.title}</code></p>{/if}
+      <h1>{row.name?.title || row.label || row.title}</h1>
+      {#if row.label && row.label !== row.title}<p class="meta">Set <code>{row.title}</code></p>{:else if row.name?.title && row.name.title !== row.title}<p class="meta" title={row.title}>{row.title}</p>{/if}
       <p class="meta">
         {row.system_name ?? "Unidentified"} · <span class="badge {row.status}">{statusLabel[row.status]}</span>
         {#if row.status === "by_you" || row.status === "derivative"}
@@ -51,11 +51,11 @@
     {#if ui.tab === "details"}
       <DetailsTab {row} {detail} {showEmpty} {artPicker} />
     {:else if ui.tab === "manual"}
-      {#if row.system && row.playable}<ManualTab {row} bind:error />{:else}<p class="hint">Manuals are for identified games.</p>{/if}
+      {#if row.system && row.playable}<ManualTab {row} bind:note bind:error />{:else}<p class="hint">Manuals are for identified games.</p>{/if}
     {:else if ui.tab === "development"}
       <DevelopmentTab {detail} bind:error />
     {:else if ui.tab === "versions"}
-      <VersionsTab {row} {lib} {listSort} {open} />
+      <VersionsTab {row} {lib} {listSort} {open} {regionFlags} />
     {:else if ui.tab === "series"}
       <SeriesTab {detail} {lib} {open} />
     {:else}

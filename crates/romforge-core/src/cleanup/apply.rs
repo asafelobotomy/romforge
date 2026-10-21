@@ -4,22 +4,39 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 
 use crate::home::Home;
+use crate::job::Cancel;
 use crate::organize::{rename_noreplace, sanitize};
 use crate::{Error, layout, settings, systems};
 
-use super::chd::write_chd;
-use super::items::write_set;
-use super::parts::extras;
-use super::write::{copy_folder, move_path, place, write_folder_zip, write_loose, write_zip};
+use super::write::move_path;
 use super::{CleanupPlan, CleanupReport, Format, Item};
+
+mod item;
+
+/// What an item's turn comes to on the calling thread.
+enum Turn<'a> {
+    /// Written on a worker (or failed or skipped there).
+    Worker(item::Prepared, Option<Result<item::Written, Error>>),
+    /// Couldn't be prepared.
+    Failed(String),
+    /// A set, a loose game, or one already in place: done here.
+    Here(&'a Item),
+}
 
 /// Carry out a plan. Each game is written next to its target, read back
 /// and checked, then moved into place; originals go to the trash only after
 /// that (and not at all with "keep originals"). Journaled for [`undo`](super::undo).
+///
+/// Games are written on the Settings `threads` (zips and CHDs at once);
+/// the journal is kept in plan order on this thread. `progress(n, title)`
+/// follows each game done, in order. Asked to stop, it finishes the games
+/// already started, leaves the rest as they are, and still trashes the
+/// originals of the finished ones (`report.stopped`).
 pub fn apply(
     conn: &mut Connection,
     plan: &CleanupPlan,
     home: Option<&Home>,
+    cancel: &Cancel,
     mut progress: impl FnMut(usize, &str),
 ) -> Result<CleanupReport, Error> {
     let s = settings::load(conn)?;
@@ -41,129 +58,88 @@ pub fn apply(
         .join(format!("batch-{batch_id}"));
     let mut ok: Vec<&Item> = Vec::new();
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
-    for (n, item) in plan.items.iter().enumerate() {
-        progress(n, &item.title);
-        if item.existing {
-            // Nothing to write; its copies go with the originals below.
-            ok.push(item);
-            continue;
+    let threads = crate::parallel::threads(s.threads);
+    let items: Vec<(usize, &Item)> = plan.items.iter().enumerate().collect();
+    // A few games per thread at a time: what they need from the database
+    // (art and details) is read for one chunk only.
+    for chunk in items.chunks(threads * 2) {
+        if cancel.is_set() {
+            report.stopped = true;
+            break;
         }
-        let staging = staging_root.join(n.to_string());
-        let result = (|| -> Result<bool, Error> {
-            if item.target.exists() {
-                return Err(Error::Cleanup(format!(
-                    "{} already exists",
-                    item.target.display()
-                )));
-            }
-            let dir = item.target.parent().unwrap_or(Path::new("."));
-            let new_dir = !dir.exists();
-            std::fs::create_dir_all(dir)?;
-            if item.format == Format::Set {
-                if new_dir {
-                    journal_output(conn, batch_id, dir, "setdir")?;
-                }
-                write_set(conn, batch_id, item)?;
-                return Ok(false);
-            }
-            if item.format == Format::Loose {
-                // The set's folder is journaled before what goes in it, so
-                // undo (last first) empties it before removing it.
-                if new_dir {
-                    journal_output(conn, batch_id, dir, "setdir")?;
-                }
-                let written = extras(conn, &item.row_id)
-                    .and_then(|extras| write_loose(conn, batch_id, item, &extras, &staging));
-                if let Err(e) = written {
-                    if new_dir && std::fs::remove_dir(dir).is_ok() {
-                        conn.execute(
-                            "DELETE FROM cleanup_outputs WHERE batch_id = ?1 AND path = ?2",
-                            params![batch_id, dir.to_string_lossy()],
-                        )?;
+        let turns: Vec<(usize, &Item, Turn)> = chunk
+            .iter()
+            .map(|&(n, item)| {
+                let turn = if !item::on_worker(item) {
+                    Turn::Here(item)
+                } else {
+                    match item::prepare(conn, item, staging_root.join(n.to_string())) {
+                        Ok(p) => Turn::Worker(p, None),
+                        Err(e) => Turn::Failed(e.to_string()),
                     }
-                    return Err(e);
+                };
+                (n, item, turn)
+            })
+            .collect();
+        let mut stopped = false;
+        crate::parallel::map_ordered(
+            turns,
+            threads,
+            |(n, item, turn)| match turn {
+                Turn::Worker(p, None) if !cancel.is_set() => {
+                    let w = item::write(item, &p);
+                    (n, item, Turn::Worker(p, Some(w)))
                 }
-                return Ok(false);
-            }
-            if item.format == Format::Dir {
-                let name = item.target.file_name().unwrap_or_default().to_string_lossy();
-                let part = dir.join(layout::part(&name));
-                let _ = std::fs::remove_dir_all(&part);
-                let extras = extras(conn, &item.row_id)?;
-                if let Err(e) = copy_folder(item, &extras, &part) {
-                    let _ = std::fs::remove_dir_all(&part);
-                    return Err(e);
+                t => (n, item, t),
+            },
+            |_, (n, item, turn)| {
+                let result: Option<Result<bool, Error>> = match turn {
+                    Turn::Here(i) if i.existing => {
+                        // Nothing to write; its copies go with the originals below.
+                        ok.push(i);
+                        progress(n, &i.title);
+                        return;
+                    }
+                    Turn::Here(i) => {
+                        let staging = staging_root.join(n.to_string());
+                        let r = if cancel.is_set() {
+                            None
+                        } else {
+                            Some(item::write_here(conn, batch_id, i, &staging))
+                        };
+                        let _ = std::fs::remove_dir_all(&staging);
+                        r
+                    }
+                    Turn::Failed(e) => Some(Err(Error::Cleanup(e))),
+                    Turn::Worker(p, w) => {
+                        let _ = std::fs::remove_dir_all(p.staging());
+                        w.map(|w| {
+                            w.and_then(|w| item::journal(conn, batch_id, item, &w).map(|()| w.took_sheet))
+                        })
+                    }
+                };
+                match result {
+                    // Not started: asked to stop.
+                    None => stopped = true,
+                    Some(Ok(took_sheet)) => {
+                        report.done += 1;
+                        ok.push(item);
+                        // A cue sheet that didn't fit the tracks keeps its file.
+                        if let (false, Some(sheet)) = (took_sheet, &item.sheet) {
+                            failed_paths.insert(sheet.path.clone());
+                        }
+                    }
+                    Some(Err(e)) => {
+                        report.failed.push((item.title.clone(), e.to_string()));
+                        failed_paths.extend(item.parts.iter().map(|p| p.path.clone()));
+                    }
                 }
-                if let Err(e) = place(&part, &item.target) {
-                    let _ = std::fs::remove_dir_all(&part);
-                    return Err(e);
-                }
-                journal_tree(conn, batch_id, &item.target)?;
-                return Ok(false);
-            }
-            let name = item
-                .target
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let part = dir.join(layout::part(&name));
-            let _ = std::fs::remove_file(&part);
-            let extras = extras(conn, &item.row_id)?;
-            let written = match item.format {
-                Format::Zip => write_zip(item, &extras, &staging, &part).map(|()| false),
-                Format::Folder => write_folder_zip(item, &extras, &staging, &part).map(|()| false),
-                _ => write_chd(item, &staging, &part),
-            };
-            let took_sheet = match written {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = std::fs::remove_file(&part);
-                    return Err(e);
-                }
-            };
-            // The sidecar is written to a temporary folder and renamed too.
-            if let Some(side) = &item.sidecar {
-                let tmp = dir.join(layout::side(&name));
-                let _ = std::fs::remove_dir_all(&tmp);
-                let wrote = std::fs::create_dir_all(&tmp).and_then(|()| {
-                    extras
-                        .iter()
-                        .try_for_each(|(f, data)| std::fs::write(tmp.join(f), data))
-                });
-                if let Err(e) = wrote {
-                    let _ = std::fs::remove_dir_all(&tmp);
-                    let _ = std::fs::remove_file(&part);
-                    return Err(e.into());
-                }
-                if let Err(e) = place(&tmp, side) {
-                    let _ = std::fs::remove_dir_all(&tmp);
-                    let _ = std::fs::remove_file(&part);
-                    return Err(e);
-                }
-                journal_tree(conn, batch_id, side)?;
-            }
-            if let Err(e) = place(&part, &item.target) {
-                let _ = std::fs::remove_file(&part);
-                return Err(e);
-            }
-            journal_output(conn, batch_id, &item.target, "file")?;
-            Ok(took_sheet)
-        })();
-        let _ = std::fs::remove_dir_all(&staging);
-        match result {
-            Ok(took_sheet) => {
-                report.done += 1;
-                ok.push(item);
-                // A cue sheet that didn't fit the tracks keeps its file.
-                if let (false, Some(sheet)) = (took_sheet, &item.sheet) {
-                    failed_paths.insert(sheet.path.clone());
-                }
-            }
-            Err(e) => {
-                report.failed.push((item.title.clone(), e.to_string()));
-                failed_paths.extend(item.parts.iter().map(|p| p.path.clone()));
-            }
+                progress(n, &item.title);
+            },
+        );
+        if stopped {
+            report.stopped = true;
+            break;
         }
     }
     let _ = std::fs::remove_dir_all(&staging_root);

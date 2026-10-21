@@ -71,7 +71,12 @@ pub enum DatabasesCommand {
     /// Build one from a zip you downloaded yourself
     Import { name: String, zip: PathBuf },
     /// Delete the local copy
-    Remove { name: String },
+    Remove {
+        name: String,
+        /// Confirm deletion
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -196,12 +201,17 @@ pub enum ManualCommand {
     /// Download the game's manual from Vimm's Lair (one at a time)
     Download {
         game: String,
-        /// The scan's resolution, 50 to 640
-        #[arg(long, default_value_t = 300)]
+        /// Scan resolution in dpi (clamped to each manual's own max on Vimm's Lair)
+        #[arg(long, default_value_t = 100)]
         dpi: u32,
     },
     /// Forget the game's manual and delete romforge's copy
-    Remove { game: String },
+    Remove {
+        game: String,
+        /// Confirm deletion
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -232,9 +242,19 @@ pub enum FirmwareCommand {
         also: Vec<String>,
     },
     /// Take away what the last import wrote
-    Undo,
+    Undo {
+        /// Confirm removal
+        #[arg(long)]
+        yes: bool,
+    },
     /// Install the PS3 firmware from Bios/rpcs3/PS3UPDAT.PUP into RPCS3
-    InstallPs3,
+    ///
+    /// Shows what it would do unless --apply.
+    InstallPs3 {
+        /// Run RPCS3's firmware installer now
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -290,13 +310,30 @@ pub enum EmulatorCommand {
         yes: bool,
     },
     /// Remove a core romforge downloaded
-    RemoveCore { core: String },
+    RemoveCore {
+        core: String,
+        /// Confirm removal
+        #[arg(long)]
+        yes: bool,
+    },
     /// Install an emulator from Flathub (your own Flatpak installation)
-    Install { emulator: String },
+    ///
+    /// Shows what it would do unless --apply.
+    Install {
+        emulator: String,
+        /// Run `flatpak install` now
+        #[arg(long)]
+        apply: bool,
+    },
     /// Copy an emulator's existing setup (memory cards, saves, controller
     /// mappings, settings) from its usual folders into romforge's
+    ///
+    /// Copies nothing unless --apply (or --undo).
     ImportSetup {
         emulator: String,
+        /// Copy the setup now
+        #[arg(long)]
+        apply: bool,
         /// Take back the last import instead
         #[arg(long)]
         undo: bool,

@@ -2,7 +2,7 @@
 
 use romforge_core::emusettings::{EmulatorSettings, EmulatorSettingsView};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, edit, read, with};
 
 #[tauri::command]
 pub async fn get_emulator_settings(db: tauri::State<'_, Db>) -> Res<EmulatorSettingsView> {
@@ -14,7 +14,7 @@ pub async fn save_emulator_settings(
     db: tauri::State<'_, Db>,
     settings: EmulatorSettings,
 ) -> Res<EmulatorSettings> {
-    with(&db, move |lib| lib.save_emulator_settings(&settings)).await
+    edit(&db, move |lib| lib.save_emulator_settings(&settings)).await
 }
 
 #[tauri::command]
@@ -42,8 +42,14 @@ pub async fn emulator_cores(db: tauri::State<'_, Db>, refresh: bool) -> Res<romf
 }
 
 #[tauri::command]
-pub async fn download_core(db: tauri::State<'_, Db>, core: String) -> Res<String> {
-    read(&db, move |lib| lib.download_core(&core)).await
+pub async fn download_core(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    core: String,
+    job: Option<u64>,
+) -> Res<String> {
+    let job = crate::jobs::Job::start(&app, job);
+    read(&db, move |lib| job.watch(&core, || lib.download_core(&core))).await
 }
 
 #[tauri::command]

@@ -68,7 +68,7 @@ fn queue_suggest_identify_forget() {
     lib.scan_with(
         &dir,
         Scope::All,
-        romforge_core::ScanOptions {
+        &romforge_core::ScanOptions {
             rehash: true,
             ..Default::default()
         },
@@ -138,12 +138,12 @@ fn find_preview_and_choose_a_dat_title() {
     assert!(
         p.facts
             .iter()
-            .any(|(k, v)| k == "ROM" && v.starts_with("Test GB.gb · 1024")),
+            .any(|(k, v)| k == "DAT ROM" && v.starts_with("Test GB.gb · 1 KiB")),
         "{p:?}"
     );
     let mine = p.facts.iter().find(|(k, _)| k == "Your file").unwrap();
     assert!(
-        mine.1.contains("same size as Test GB.gb, different contents"),
+        mine.1.contains("same size as DAT ROM, different contents"),
         "{mine:?}"
     );
 

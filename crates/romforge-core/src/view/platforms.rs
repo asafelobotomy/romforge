@@ -12,9 +12,18 @@ use crate::{Error, systems};
 
 /// Sort, group versions, count games per platform.
 pub(super) fn finish(conn: &Connection, mut rows: Vec<GameRow>, listing: bool) -> Result<LibraryView, Error> {
-    let shown = |r: &GameRow| sort_key(r.label.as_deref().unwrap_or(&r.title));
+    for r in &mut rows {
+        r.name = crate::names::parse(r.label.as_deref().unwrap_or(&r.title));
+    }
+    let shown = |r: &GameRow| sort_key(&r.name.title);
     rows.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.system.cmp(&b.system)));
     group_versions(conn, &mut rows, listing)?;
+    // Missing rows added while grouping still need a parsed name.
+    for r in &mut rows {
+        if r.name.title.is_empty() {
+            r.name = crate::names::parse(r.label.as_deref().unwrap_or(&r.title));
+        }
+    }
     release_years(conn, &mut rows)?;
     pictures(conn, &mut rows)?;
     if listing {

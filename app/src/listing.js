@@ -29,7 +29,7 @@ export function storeView(name, mode) {
 // The list's sort (games by it, and the versions under each heading).
 const statusOrder = ["verified", "incomplete", "by_you", "derivative", "detected", "candidate", "duplicate", "wrong_system", "missing", "patch", "unknown"];
 const listGetters = {
-  title: (r) => r.label ?? r.title,
+  title: (r) => r.name?.title || r.label || r.title,
   platform: (r) => r.system_name,
   year: (r) => r.year,
   status: (r) => statusOrder.indexOf(r.status),
@@ -46,7 +46,9 @@ export function libraryRows(libRows, platform, filter, listSort, isOpen) {
     // isn't matched yet (unknown files, CRC-only candidates, other
     // platforms' matches, patches for no game), whatever its platform.
     (platform === "*" ? !r.unmatched : platform === "" ? r.unmatched : r.system === platform && !r.unmatched) &&
-    (!filter || r.title.toLowerCase().includes(filter.toLowerCase()));
+    (!filter ||
+      r.title.toLowerCase().includes(filter.toLowerCase()) ||
+      (r.name?.title || "").toLowerCase().includes(filter.toLowerCase()));
   const all = sorted(libRows, listSort, listGetters);
   const members = new Map();
   for (const r of all) if (r.group) members.set(r.group, [...(members.get(r.group) ?? []), r]);

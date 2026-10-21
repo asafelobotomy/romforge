@@ -73,7 +73,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 lib.download_manual(&row.id, dpi)?.display()
             );
         }
-        ManualCommand::Remove { game } => {
+        ManualCommand::Remove { game, yes } => {
+            if !yes {
+                anyhow::bail!("refusing to remove the manual without --yes");
+            }
             let row = lib.find_row(&game)?;
             lib.remove_manual(&row.id)?;
             println!("{}: manual removed", row.title);

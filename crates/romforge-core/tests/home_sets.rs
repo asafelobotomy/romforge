@@ -26,7 +26,7 @@ fn a_pc98_set_is_kept_loose_with_its_cmd() {
 
     // Play starts the set's .cmd, whichever disk's row it is.
     let mut lib = Library::open(home.db()).unwrap();
-    lib.refresh(romforge_core::scan::ScanOptions::default(), |_, _| {})
+    lib.refresh(&romforge_core::scan::ScanOptions::default(), |_, _| {})
         .unwrap();
     let rows = lib.library_view().unwrap().rows;
     let disk2 = rows

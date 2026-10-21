@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::job::Cancel;
 use crate::{Error, Library, ScanOptions, cleanup, organize};
 
 impl Library {
@@ -21,7 +22,19 @@ impl Library {
 
     /// Carry out an organize plan and journal it for [`Library::organize_undo`].
     pub fn organize_apply(&mut self, plan: &organize::Plan, dest: &Path) -> Result<organize::Applied, Error> {
-        organize::apply(&mut self.conn, plan, dest)
+        self.organize_apply_with(plan, dest, &Cancel::default(), |_, _| {})
+    }
+
+    /// [`Library::organize_apply`] that can be stopped, with progress
+    /// (moves done, of how many).
+    pub fn organize_apply_with(
+        &mut self,
+        plan: &organize::Plan,
+        dest: &Path,
+        cancel: &Cancel,
+        progress: impl FnMut(usize, usize),
+    ) -> Result<organize::Applied, Error> {
+        organize::apply(&mut self.conn, plan, dest, cancel, progress)
     }
 
     /// Move a batch's files back (the latest batch by default).
@@ -48,14 +61,26 @@ impl Library {
     }
 
     /// Carry out a cleanup plan, then refresh so the library shows the new
-    /// files.
+    /// files. `progress(n, title)` follows each game done.
     pub fn cleanup_apply(
         &mut self,
         plan: &cleanup::CleanupPlan,
         progress: impl FnMut(usize, &str),
     ) -> Result<cleanup::CleanupReport, Error> {
-        let r = cleanup::apply(&mut self.conn, plan, self.home.as_ref(), progress)?;
-        self.refresh(ScanOptions::default(), |_, _| {})?;
+        self.cleanup_apply_with(plan, &Cancel::default(), progress)
+    }
+
+    /// [`Library::cleanup_apply`] that can be stopped between games: what
+    /// is done stays journaled (and its originals trashed), the refresh
+    /// still runs.
+    pub fn cleanup_apply_with(
+        &mut self,
+        plan: &cleanup::CleanupPlan,
+        cancel: &Cancel,
+        progress: impl FnMut(usize, &str),
+    ) -> Result<cleanup::CleanupReport, Error> {
+        let r = cleanup::apply(&mut self.conn, plan, self.home.as_ref(), cancel, progress)?;
+        self.refresh(&ScanOptions::default(), |_, _| {})?;
         Ok(r)
     }
 
@@ -76,11 +101,24 @@ impl Library {
         self.cleanup_apply(&plan, progress)
     }
 
+    /// [`Library::convert_apply`] that can be stopped; `progress(n, total,
+    /// title)` (the plan is made here, so its size comes with it).
+    pub fn convert_apply_with(
+        &mut self,
+        only: Option<&[String]>,
+        cancel: &Cancel,
+        mut progress: impl FnMut(usize, usize, &str),
+    ) -> Result<cleanup::CleanupReport, Error> {
+        let plan = self.convert_plan(only)?;
+        let total = plan.items.len();
+        self.cleanup_apply_with(&plan, cancel, |n, t| progress(n, total, t))
+    }
+
     /// Remove a cleanup batch's new files and put its originals back (the
     /// latest batch by default), then refresh.
     pub fn cleanup_undo(&mut self, batch_id: Option<i64>) -> Result<cleanup::CleanupUndone, Error> {
         let u = cleanup::undo(&mut self.conn, batch_id)?;
-        self.refresh(ScanOptions::default(), |_, _| {})?;
+        self.refresh(&ScanOptions::default(), |_, _| {})?;
         Ok(u)
     }
 

@@ -23,7 +23,7 @@ pub fn fingerprint(conn: &Connection) -> Result<u64, Error> {
         "SELECT count(*), total(fp(system_id, title, field, value)) FROM game_meta",
         "SELECT count(*), total(fp(system_id, title, grp, priority, list)) FROM clone_groups",
         "SELECT count(*), total(fp(dat_id, system_id, name)) FROM dats",
-        "SELECT count(*), total(fp(key, value)) FROM settings WHERE key = 'regions'",
+        "SELECT count(*), total(fp(key, value)) FROM settings WHERE key IN ('regions', 'show_missing_versions')",
         // Folder games are found under the scanned folders (a nested one
         // changes which). `games` needs no line: a DAT imported again gets
         // a new `dat_id`, so `dats` changes with its games.

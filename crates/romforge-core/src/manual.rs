@@ -10,8 +10,9 @@
 //! 2. the Vimm's Lair Manual Project, found through Hasheous by the game's
 //!    SHA1 (`api/v1/Lookup/ByHash/sha1/<sha1>`, no key or account; the
 //!    attribute `VIMMManualId`; by hash, so house rule 8 holds), and
-//!    downloaded only when the user clicks for it, one at a time:
-//!    `dl.vimm.net`'s robots.txt asks for no automated fetching.
+//!    downloaded only when the user clicks for it, one at a time
+//!    (their robots.txt asks for no bulk bots; the request uses a browser
+//!    User-Agent, matching their own download form).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -188,22 +189,7 @@ pub fn download_vimm(
     let id = manual(conn, system, game)?
         .vimm_id
         .ok_or_else(|| Error::Launch(format!("no Vimm's Lair manual is known for {game}")))?;
-    let url = format!(
-        "{VIMM_PDF}?manualId={id}&category=pdf&destDPI={}",
-        dpi.clamp(50, 640)
-    );
-    let page = format!("{VIMM_PAGE}{id}");
-    let req = crate::fetch::Request {
-        headers: vec![("Referer", page.clone())],
-        max_body: Some(512 << 20),
-        ..crate::fetch::Request::get(&url)
-    };
-    let bytes = crate::fetch::request(&req)?.unwrap_or_default();
-    if !is_pdf(&bytes) {
-        return Err(Error::Launch(format!(
-            "Vimm's Lair didn't send a PDF; download it from {page} and drop it on the Manual tab"
-        )));
-    }
+    let bytes = vimm::fetch_pdf(&id, dpi)?;
     std::fs::create_dir_all(staging)?;
     let tmp = staging.join(format!("manual-{id}.pdf"));
     crate::atomic::write(&tmp, &bytes)?;
@@ -218,6 +204,7 @@ mod ocr;
 pub use ocr::*;
 mod sources;
 pub use sources::*;
+mod vimm;
 
 #[cfg(test)]
 mod tests;

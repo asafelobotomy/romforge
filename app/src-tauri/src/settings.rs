@@ -2,7 +2,7 @@
 
 use romforge_core::settings::{Settings, default_staging_dir};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, edit, read};
 
 #[tauri::command]
 pub async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
@@ -11,7 +11,7 @@ pub async fn get_settings(db: tauri::State<'_, Db>) -> Res<Settings> {
 
 #[tauri::command]
 pub async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<Settings> {
-    with(&db, move |lib| lib.save_settings_from_form(&settings)).await
+    edit(&db, move |lib| lib.save_settings_from_form(&settings)).await
 }
 
 #[derive(serde::Serialize)]

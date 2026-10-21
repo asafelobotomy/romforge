@@ -12,6 +12,16 @@ impl Library {
     /// setting), except that the first folder scanned while no Source folder
     /// is set becomes the Source. Returns the report and whether it did.
     pub fn scan_folder(&mut self, root: impl AsRef<Path>) -> Result<FolderScan, Error> {
+        self.scan_folder_with(root, &ScanOptions::default(), |_| {})
+    }
+
+    /// [`Library::scan_folder`] with options (threads, cancel) and progress.
+    pub fn scan_folder_with(
+        &mut self,
+        root: impl AsRef<Path>,
+        opts: &ScanOptions,
+        progress: impl FnMut(ScanProgress),
+    ) -> Result<FolderScan, Error> {
         let root = root.as_ref();
         let mut became_source = None;
         let mut s = settings::load(&self.conn)?;
@@ -23,7 +33,7 @@ impl Library {
                 Err(e) => Err(e.to_string()),
             });
         }
-        let report = self.scan(root, Scope::All)?;
+        let report = self.scan_with(root, Scope::All, opts, progress)?;
         Ok(FolderScan {
             report,
             became_source,
@@ -35,6 +45,16 @@ impl Library {
     /// unchanged (scanning never touches ROM files either). The caller
     /// scans for real if the owner accepts (the files are read again then).
     pub fn scan_preview(&mut self, root: impl AsRef<Path>) -> Result<ScanPreview, Error> {
+        self.scan_preview_with(root, &ScanOptions::default(), |_| {})
+    }
+
+    /// [`Library::scan_preview`] with options (threads, cancel) and progress.
+    pub fn scan_preview_with(
+        &mut self,
+        root: impl AsRef<Path>,
+        opts: &ScanOptions,
+        progress: impl FnMut(ScanProgress),
+    ) -> Result<ScanPreview, Error> {
         let root = std::fs::canonicalize(root.as_ref())?;
         let before: std::collections::HashSet<String> = view::library(&self.conn)?
             .rows
@@ -51,7 +71,7 @@ impl Library {
         self.conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
         let result = (|| -> Result<ScanPreview, Error> {
             let mut copy = Library::open(&tmp)?;
-            let report = copy.scan(&root, Scope::All)?;
+            let report = copy.scan_with(&root, Scope::All, opts, progress)?;
             let under: std::collections::HashSet<i64> = copy
                 .conn
                 .prepare("SELECT file_id, path FROM files")?
@@ -84,7 +104,7 @@ impl Library {
     /// reported, not forgotten.
     pub fn refresh(
         &mut self,
-        opts: ScanOptions,
+        opts: &ScanOptions,
         progress: impl FnMut(&Path, ScanProgress),
     ) -> Result<Vec<RefreshResult>, Error> {
         self.refresh_roots(true, opts, progress)
@@ -95,7 +115,7 @@ impl Library {
     /// with Scan folder.
     pub fn refresh_settings(
         &mut self,
-        opts: ScanOptions,
+        opts: &ScanOptions,
         progress: impl FnMut(&Path, ScanProgress),
     ) -> Result<Vec<RefreshResult>, Error> {
         self.refresh_roots(false, opts, progress)
@@ -111,7 +131,7 @@ impl Library {
     fn refresh_roots(
         &mut self,
         all: bool,
-        opts: ScanOptions,
+        opts: &ScanOptions,
         mut progress: impl FnMut(&Path, ScanProgress),
     ) -> Result<Vec<RefreshResult>, Error> {
         let known: Vec<(String, Option<i64>, Option<i64>)> = self
@@ -153,15 +173,19 @@ impl Library {
             }
         }
         let mut out = Vec::new();
-        for (path, system_id, dat_id) in top {
+        let folders = top.len();
+        for (folder, (path, system_id, dat_id)) in top.into_iter().enumerate() {
             let path = PathBuf::from(path);
             if !path.exists() {
                 out.push(Err((path, "folder not found".into())));
                 continue;
             }
             let scope = Scope::from_columns(*system_id, *dat_id);
-            match self.scan_with(&path, scope, opts, |p| progress(&path, p)) {
+            let at = |p: ScanProgress| ScanProgress { folder, folders, ..p };
+            match self.scan_with(&path, scope, opts, |p| progress(&path, at(p))) {
                 Ok(r) => out.push(Ok(r)),
+                // Stopped: the folders after it aren't scanned either.
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
                 Err(e) => out.push(Err((path, e.to_string()))),
             }
         }

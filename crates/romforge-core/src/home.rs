@@ -210,7 +210,9 @@ pub(crate) fn heal(conn: &mut rusqlite::Connection, root: &Path) -> Result<bool,
         })
         .optional()?;
     let moved = was.as_ref().is_some_and(|w| *w != now);
-    let tx = conn.transaction()?;
+    // Deferred: opening a connection must not wait on another one's write
+    // (a scan's) when there is nothing to fix.
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     if let Some(old) = was.as_ref().filter(|_| moved) {
         for (table, col) in PATH_COLUMNS {
             tx.execute(

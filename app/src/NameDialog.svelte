@@ -1,12 +1,14 @@
 <script>
-  import { invoke } from "@tauri-apps/api/core";
+  import { run } from "./jobs.svelte.js";
 
   // Search's "Name as suggested": the selected rows that need naming, each
   // with its strongest suggestion; the ticked ones are named by it (a
   // translation or hack as one when its name says so), never verified.
   // Only a name match or better can be ticked; weaker ones go to Search.
   // `call` reports errors on the status line; `load` reloads the library.
-  let { open = $bindable(false), busy = $bindable(""), note = $bindable(""), call, load } = $props();
+  // Naming is a job in the queue (footer): the dialog closes.
+  let { open = $bindable(false), note = $bindable(""), call, load } = $props();
+  let busy = $state("");
   let items = $state([]);
   let ticked = $state({});
   let error = $state("");
@@ -29,18 +31,14 @@
   }
 
   async function name() {
-    error = "";
-    busy = `Naming ${n} games…`;
-    try {
-      const done = await invoke("search_accept", { only: items.filter((it) => ticked[it.row_id]).map((it) => it.row_id) });
+    const only = items.filter((it) => ticked[it.row_id]).map((it) => it.row_id);
+    open = false;
+    const done = await run(`Naming ${only.length} games…`, "search_accept", { only });
+    if (done) {
       const named = done.filter((d) => d.named).length;
       const left = done.filter((d) => !d.named);
       note = `Named ${named} (identified by you, never verified)` + (left.length ? `; left ${left.length}: ${left.map((d) => `${d.file} (${d.why_not})`).join("; ")}` : "");
-      open = false;
-    } catch (e) {
-      error = String(e);
     }
-    busy = "";
     await load();
   }
 </script>

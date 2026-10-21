@@ -26,15 +26,23 @@ pub struct Accepted {
 
 /// Name each of `ids` by its strongest suggestion. `databases`: the
 /// downloaded databases' folder (LaunchBox's names help the suggestions).
+/// `progress(done, total)` follows each row; asked to stop, the rows not
+/// reached stay as they are (and aren't listed).
 pub fn accept(
     conn: &mut Connection,
     v: &view::LibraryView,
     ids: &[String],
     databases: Option<&Path>,
+    cancel: &crate::job::Cancel,
+    mut progress: impl FnMut(usize, usize),
 ) -> Result<Vec<Accepted>, Error> {
     let items = queue(conn, v, Some(ids), databases)?;
     let mut out = Vec::new();
-    for id in ids {
+    for (n, id) in ids.iter().enumerate() {
+        progress(n, ids.len());
+        if cancel.is_set() {
+            break;
+        }
         let file = v
             .rows
             .iter()

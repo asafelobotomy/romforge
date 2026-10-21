@@ -42,10 +42,12 @@ mod request;
 mod sources;
 #[cfg(test)]
 mod tests;
+mod watch;
 
 pub use dats::*;
 pub use request::*;
 pub use sources::*;
+pub use watch::watching;
 
 /// Wikimedia's User-Agent policy: a name, a version and a contact. Without
 /// the contact, Wikimedia's edge may treat romforge as an anonymous client

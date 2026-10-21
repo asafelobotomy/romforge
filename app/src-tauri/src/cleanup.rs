@@ -7,6 +7,7 @@ use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, 
 use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
 
 use crate::db::{Db, Res, read, with};
+use crate::jobs::Job;
 
 fn organize_options(from: &str, dest: &str, one_g1r: bool) -> OrganizeOptions {
     OrganizeOptions {
@@ -25,14 +26,20 @@ pub async fn organize_plan(db: tauri::State<'_, Db>, from: String, dest: String,
 
 #[tauri::command]
 pub async fn organize_apply(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     from: String,
     dest: String,
     one_g1r: bool,
+    job: Option<u64>,
 ) -> Res<Applied> {
+    let mut job = Job::start(&app, job);
     with(&db, move |lib| {
         let plan = lib.organize_plan(&organize_options(&from, &dest, one_g1r))?;
-        lib.organize_apply(&plan, &PathBuf::from(&dest))
+        let cancel = job.cancel.clone();
+        lib.organize_apply_with(&plan, &PathBuf::from(&dest), &cancel, |n, total| {
+            job.count(n, total, format!("{n} of {total} files"))
+        })
     })
     .await
 }
@@ -68,13 +75,18 @@ pub async fn cleanup_plan(
 /// Plans again here rather than trusting a plan sent back from the window.
 #[tauri::command]
 pub async fn cleanup_apply(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     only: Option<Vec<String>>,
     from: Option<String>,
+    job: Option<u64>,
 ) -> Res<CleanupReport> {
+    let mut job = Job::start(&app, job);
     with(&db, move |lib| {
         let plan = plan_for(lib, only.as_deref(), from.as_deref())?;
-        lib.cleanup_apply(&plan, |_, _| {})
+        let (cancel, total) = (job.cancel.clone(), plan.items.len());
+        job.count(0, total, "starting");
+        lib.cleanup_apply_with(&plan, &cancel, |n, title| job.count(n + 1, total, title))
     })
     .await
 }
@@ -87,8 +99,20 @@ pub async fn convert_plan(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -
 
 /// Convert (planned again here).
 #[tauri::command]
-pub async fn convert_apply(db: tauri::State<'_, Db>, only: Option<Vec<String>>) -> Res<CleanupReport> {
-    with(&db, move |lib| lib.convert_apply(only.as_deref(), |_, _| {})).await
+pub async fn convert_apply(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    only: Option<Vec<String>>,
+    job: Option<u64>,
+) -> Res<CleanupReport> {
+    let mut job = Job::start(&app, job);
+    with(&db, move |lib| {
+        let cancel = job.cancel.clone();
+        lib.convert_apply_with(only.as_deref(), &cancel, |n, total, title| {
+            job.count(n + 1, total, title)
+        })
+    })
+    .await
 }
 
 #[tauri::command]

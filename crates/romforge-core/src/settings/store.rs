@@ -22,7 +22,11 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
             igdb_client_secret: get("igdb_client_secret")?,
         },
         show_empty_media: get("show_empty_media")?.as_deref() == Some("1"),
+        // Absent means on (the default); only "0" turns flags off.
+        region_flags: get("region_flags")?.as_deref() != Some("0"),
+        show_missing_versions: get("show_missing_versions")?.as_deref() == Some("1"),
         platform_icons: get("platform_icons")?.unwrap_or_default(),
+        threads: get("threads")?.and_then(|v| v.parse().ok()).unwrap_or(0),
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -77,7 +81,19 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 "show_empty_media",
                 Some(if s.show_empty_media { "1" } else { "0" }.to_owned()),
             ),
+            (
+                "region_flags",
+                Some(if s.region_flags { "1" } else { "0" }.to_owned()),
+            ),
+            (
+                "show_missing_versions",
+                Some(if s.show_missing_versions { "1" } else { "0" }.to_owned()),
+            ),
             ("regions", Some(s.regions.join(", ")).filter(|r| !r.is_empty())),
+            (
+                "threads",
+                Some(s.threads).filter(|&n| n > 0).map(|n| n.to_string()),
+            ),
             (
                 "platform_icons",
                 Some(s.platform_icons.clone()).filter(|t| !t.is_empty()),

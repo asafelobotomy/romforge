@@ -44,6 +44,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                             format!("{system}: {} {game}", kind.as_str())
                         }
                         enrich::EnrichEvent::Wikidata { step } => format!("Wikidata: {step}"),
+                        enrich::EnrichEvent::Progress(s) if s.total > 0 => {
+                            format!("[{}/{}] {}", s.done, s.total, s.detail)
+                        }
+                        enrich::EnrichEvent::Progress(s) => s.detail,
                     };
                     eprint!("\r\x1b[2K{line}");
                 }

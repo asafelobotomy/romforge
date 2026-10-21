@@ -114,6 +114,11 @@ pub struct EnrichOptions {
     /// the RomForge folder's `Media/` if the library has one, else
     /// `<cache>/art`.
     pub art_dir: Option<PathBuf>,
+    /// Threads for downloads (at most four games at once); 0: the
+    /// library's Settings `threads`.
+    pub threads: usize,
+    /// Asked to stop: no game is started after it is set.
+    pub cancel: crate::job::Cancel,
 }
 
 impl EnrichOptions {
@@ -134,6 +139,8 @@ impl EnrichOptions {
             extdb: None,
             art_dir: None,
             launchbox_images: crate::extdb::Bases::default().launchbox_images,
+            threads: 0,
+            cancel: crate::job::Cancel::default(),
         }
     }
 }
@@ -151,6 +158,9 @@ pub struct EnrichReport {
     /// Games given fields by the downloaded databases (OpenVGDB, LaunchBox).
     pub extdb_games: usize,
     pub errors: Vec<String>,
+    /// Asked to stop: games not reached were left for the next run.
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 /// What [`enrich`] is doing, for progress output.
@@ -167,6 +177,58 @@ pub enum EnrichEvent {
         game: String,
         kind: ArtKind,
     },
+    /// How far the whole run is: each game's art, then Wikidata's steps.
+    Progress(crate::job::Step),
+}
+
+/// Counts an enrich run's progress: every game's art is one step, and
+/// Wikidata (when it runs) as many again, split over its four phases.
+#[derive(Debug, Default)]
+pub(crate) struct Tally {
+    games: u64,
+    done: u64,
+    wikidata: bool,
+}
+
+impl Tally {
+    pub(crate) fn new(games: usize, wikidata: bool) -> Self {
+        Self {
+            games: games as u64,
+            done: 0,
+            wikidata,
+        }
+    }
+
+    fn total(&self) -> u64 {
+        self.games * if self.wikidata { 2 } else { 1 }
+    }
+
+    /// A game's art is done.
+    pub(crate) fn game(&mut self, system: &str, game: &str, progress: &mut impl FnMut(EnrichEvent)) {
+        self.done = (self.done + 1).min(self.games);
+        progress(EnrichEvent::Progress(crate::job::Step::new(
+            self.done,
+            self.total(),
+            format!("{system}: {game}"),
+        )));
+    }
+
+    /// Wikidata reached `step` (a platform being matched, then "details",
+    /// "series", "pictures").
+    pub(crate) fn wikidata(&mut self, step: &str, progress: &mut impl FnMut(EnrichEvent)) {
+        let phase = match step {
+            "details" => 1,
+            "series" => 2,
+            "pictures" => 3,
+            _ => 0,
+        };
+        let done = self.games + self.games * phase / 4;
+        progress(EnrichEvent::Progress(crate::job::Step::new(
+            done,
+            self.total(),
+            format!("Wikidata: {step}"),
+        )));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

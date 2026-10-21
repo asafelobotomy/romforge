@@ -31,9 +31,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 all_files,
                 jobs: jobs.unwrap_or(0),
                 rehash,
+                ..ScanOptions::default()
             };
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
-            let report = lib.scan_with(&dir, scope, opts, |p| meter.update(p))?;
+            let report = lib.scan_with(&dir, scope, &opts, |p| meter.update(p))?;
             meter.finish();
             for (sheet, problem) in &report.sheet_problems {
                 eprintln!("sheet: {}: {problem}", sheet.display());
@@ -112,13 +113,14 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 }
             }
         }
-        Command::Refresh { quiet, rehash } => {
+        Command::Refresh { quiet, jobs, rehash } => {
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
             let opts = ScanOptions {
+                jobs: jobs.unwrap_or(0),
                 rehash,
                 ..ScanOptions::default()
             };
-            let results = lib.refresh(opts, |_, p| meter.update(p))?;
+            let results = lib.refresh(&opts, |_, p| meter.update(p))?;
             meter.finish();
             let mut failed = 0;
             for r in results {

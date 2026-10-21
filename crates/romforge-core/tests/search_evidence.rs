@@ -97,7 +97,7 @@ fn suggestions_with_evidence() {
         .search_preview(&row, &found, tmp.path(), "http://127.0.0.1:1")
         .unwrap();
     let mine = p.facts.iter().find(|(k, _)| k == "Your file").unwrap();
-    assert!(mine.1.contains("same size and CRC32 as"), "{mine:?}");
+    assert!(mine.1.contains("same size and CRC32 as DAT ROM"), "{mine:?}");
 
     assert_eq!(top("Totally Different"), None);
     let loose = top("Puzzle Quest").expect("a suggestion");
@@ -134,7 +134,7 @@ fn suggestions_with_evidence() {
 }
 
 /// A GameCube RVZ: its header gives the game ID and the ISO's size, so it
-/// is "Likely: compressed image" of the game with that serial and size,
+/// is "Likely compressed image" of the game with that serial and size,
 /// never verified (that needs the whole image decompressed).
 #[test]
 fn compressed_images_by_id_and_size() {
@@ -171,7 +171,7 @@ fn compressed_images_by_id_and_size() {
     assert!(
         s.evidence
             .iter()
-            .any(|e| e.kind == "size" && e.agrees && e.text.starts_with("holds an image"))
+            .any(|e| e.kind == "size" && e.agrees && e.text.starts_with("Image inside matches"))
     );
     assert!(
         s.evidence
@@ -182,7 +182,7 @@ fn compressed_images_by_id_and_size() {
 }
 
 /// An NKit image keeps the disc header (its ID) and the original image's
-/// CRC32: with the serial agreeing, "Likely: compressed image".
+/// CRC32: with the serial agreeing, "Likely compressed image".
 #[test]
 fn nkit_images_by_id_and_original_crc() {
     use romforge_core::suggest::Band;

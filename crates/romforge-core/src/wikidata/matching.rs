@@ -69,6 +69,13 @@ pub fn pick<'a>(
     Err(Vec::new())
 }
 
+/// True when every name [`names_for`] looks up for `title` is in `ready`
+/// (searched on every platform item). Empty titles are treated as ready.
+pub(super) fn ready_for(title: &str, ready: &BTreeSet<String>) -> bool {
+    let names = names_for(title);
+    names.is_empty() || names.iter().all(|n| ready.contains(n))
+}
+
 /// The names a DAT title is looked for under: its own, then without the
 /// edition tags it ends in, one by one ("Dual Shock Ver.", "Greatest Hits",
 /// "Platinum", ...). Only parts that are clearly an edition go, so a

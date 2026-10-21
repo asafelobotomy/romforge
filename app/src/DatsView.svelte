@@ -1,5 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { size } from "./lib.js";
   import SortButton from "./SortButton.svelte";
@@ -15,10 +16,28 @@
   let datId = $state(null);
   let datGames = $state([]);
   let gameFilter = $state("all");
+  let extras = $state(false);
 
   // Third-party databases the user downloads (milestone 11).
   let extdbs = $state([]);
   let extBusy = $state("");
+
+  const fileStatus = {
+    Matched: "matched",
+    matched: "matched",
+    Candidate: "candidate",
+    candidate: "candidate",
+    Unknown: "unknown",
+    unknown: "unknown",
+    WrongSystem: "wrong system",
+    wrong_system: "wrong system",
+    Duplicate: "duplicate",
+    duplicate: "duplicate",
+    Manual: "identified by you",
+    manual: "identified by you",
+    Sheet: "sheet",
+    sheet: "sheet",
+  };
 
   async function loadExtdbs() {
     extdbs = (await call("extdb_list", undefined, true)) ?? [];
@@ -26,18 +45,15 @@
 
   async function getExtdb(d) {
     extBusy = d.db;
-    note = `Downloading ${d.name}… (runs in the background; the rest of romforge stays usable)`;
-    try {
-      const r = await invoke("extdb_download", { name: d.db });
-      note = `${r.name}: ${r.entries?.toLocaleString()} entries. Enrich now uses it to fill what libretro and Wikidata leave empty.`;
-    } catch (e) {
-      error = `${d.name}: ${e}`;
-    }
+    const r = await run(`Downloading ${d.name}…`, "extdb_download", { name: d.db }, { key: `extdb:${d.db}` });
+    if (r) note = `${r.name}: ${r.entries?.toLocaleString()} entries. Enrich now uses it to fill what libretro and Wikidata leave empty.`;
     extBusy = "";
     await loadExtdbs();
   }
 
   async function dropExtdb(d) {
+    const ok = await ask(`Remove the local copy of ${d.name}? What Enrich already filled from it stays until you enrich with refresh.`, { title: "Remove database", kind: "warning" });
+    if (!ok) return;
     await call("extdb_remove", { name: d.db });
     note = `${d.name} removed. What Enrich already filled from it stays until you enrich with refresh.`;
     await loadExtdbs();
@@ -55,11 +71,18 @@
   }
 
   async function downloadDats() {
-    const r = await run("Downloading DATs… (a few minutes the first time)", "download_dats", { extras: false });
+    const r = await run("Downloading DATs… (a few minutes the first time)", "download_dats", { extras });
     if (r) note = `DATs: ${r.imported} imported, ${r.unchanged} unchanged` + (r.errors.length ? `; errors: ${r.errors.join("; ")}` : "");
     await loadDats();
     await load();
   }
+
+  let statusLine = $derived(
+    (summary.files_by_status ?? [])
+      .filter(([, n]) => n > 0)
+      .map(([st, n]) => `${n} ${fileStatus[st] ?? String(st).toLowerCase()}`)
+      .join(", "),
+  );
 
   // Arcade: the installed MAME's own list (SHA1 of every ROM and disk).
   async function mameDat() {
@@ -91,8 +114,10 @@
   <section class="wide">
     <div class="bar">
       <button onclick={downloadDats} disabled={!!busy}>Download DATs for all systems</button>
+      <label class="toggle" title="Also fetch libretro's ROM hack and homebrew DATs"><input type="checkbox" bind:checked={extras} /> Include hacks and homebrew</label>
       <button onclick={mameDat} disabled={!!busy} title="Arcade: import your installed MAME's own list (mame -listxml), the DAT that matches it">Read MAME's list</button>
     </div>
+    {#if statusLine}<p class="hint">Scanned files: {statusLine}</p>{/if}
     <section class="extdbs" aria-labelledby="extdb-title">
       <h3 id="extdb-title">Game databases <span class="hint">(optional, downloaded by you)</span></h3>
       <p class="hint">

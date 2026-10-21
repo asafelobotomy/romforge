@@ -877,7 +877,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     metadata (genre, year) isn't fetched; real CHDs are hashed in full
     as well as read for their SHA1 (slow for big hard disks).
 
-## Launcher (milestone 18; researched 2026-10-18, not built)
+## Launcher (milestone 18; researched 2026-10-18, partly built)
 
 Folded in from the separate launcher plan the owner kept apart until it was
 decided.
@@ -1080,7 +1080,7 @@ Like rule 10's "the user downloads it": never shipped, fetched on request.
 
 *(Built 2026-10-19.)* `obtain.rs`:
 - **Cores:** Emulator Settings → RetroArch → Cores, and `emulator cores
-  [--refresh]` / `get-core NAME [--yes]` / `remove-core NAME`. The
+  [--refresh]` / `get-core NAME [--yes]` / `remove-core NAME [--yes]`. The
   buildbot's `.index-extended` (date and the CRC32 of the core inside
   each zip, checked 2026-10-19) and libretro's `info.zip` are kept in
   `Databases/`; the cores romforge's platforms use are listed with
@@ -1091,9 +1091,10 @@ Like rule 10's "the user downloads it": never shipped, fetched on request.
   non-commercial core asks first (the app; `--yes` on the CLI). Tried on
   a scratch folder with Gambatte.
 - **Emulators:** "Install from Flathub" for each emulator not installed
-  (`emulator install NAME`): `flatpak remote-add --user
+  (`emulator install NAME --apply`): `flatpak remote-add --user
   --if-not-exists flathub …` then `flatpak install --user
-  --noninteractive`. Every Flatpak id in the table was checked on Flathub
+  --noninteractive`. Without `--apply` the CLI only prints what it would
+  do. Every Flatpak id in the table was checked on Flathub
   (`api/v2/appstream`); Mednafen isn't on Flathub (its id was wrong and
   is gone). Not run for real here (it installs software).
 - **Not yet:** AppImages from each project's releases; uninstalling.
@@ -1434,10 +1435,18 @@ Follow-up (2026-10-19, built and tested on scratch copies):
   with the DAT game its readme names (one platform, or the platform the
   readme names). The app folds each heading; a patch row's Apply opens
   the patcher on its game.
+- List titles (2026-10-20): the main row shows the clean game name (no
+  `(USA)` / language brackets); expanding shows Other regions / Editions /
+  Translations / Hacks with flag emojis by default (Settings: text like
+  `(USA)/(En)` instead), 🔤 for translations and 🔧 for hacks. Owned
+  versions are not greyed; missing ones stay italic. Settings "Display
+  missing versions" (off by default) lists every DAT title in the same
+  group that you don't have. All games keeps each platform's release as
+  its own row (groups are `v:{system_id}:…`); the platform's icon sits
+  to the right of the title.
 **Open:** discs aren't named on their own (only cartridges); a zip of
 several patches and patches in 7z archives aren't listed (pick one by
-hand); the new list layout is tested in the core, not yet looked at in
-the running app.
+hand).
 
 ## Details, Development, Series and sorting (2026-10-19, built)
 
@@ -1506,7 +1515,8 @@ the running app.
   (`scan_preview`) scans a `VACUUM INTO` copy of the library in the temp
   folder, lists the rows with files in that folder (new or not), and
   deletes the copy; accepting scans for real (the files are read again).
-- Rename & Cleanup: runs at once; its dry run is the old plan dialog.
+- Rename & Cleanup: opens the plan dialog first; Apply now is on the ▾
+  menu for the old one-click path.
   Settings: move then trash (default), move and keep, or replace in place
   (`Settings::in_place`: written in the game's own folder, the original to
   the trash; arcade sets and folder games stay where they are).
@@ -1643,7 +1653,7 @@ the long test files became smaller test binaries with shared helpers in
 `tests/common/`. Only the systems table (`systems/table.rs`) is exempt.
 `tests/file_length.rs` fails CI on a file over the limit.
 
-## Firmware (milestone 20; researched 2026-10-19, not built)
+## Firmware (milestone 20; researched 2026-10-19, partly built)
 
 romforge knows which core runs a system but not whether that core has the
 BIOS it needs: a PS1 game "launches" and RetroArch stops at a missing
@@ -1764,7 +1774,7 @@ In this order:
    - **App:** the BIOS page takes drops (Tauri's webview drag-drop event,
      paths passed to the core), plus Add folder… / Add files…; it shows the
      plan and imports on "Import (n places)". CLI: `firmware import PATH…
-     [--apply] [--also NAME]`, `firmware undo`.
+     [--apply] [--also NAME]`, `firmware undo --yes`.
    - **Not yet:** a needed BIOS zip dropped whole (e.g. `neogeo.zip`) is
      opened, not placed as a zip; "placed by you" isn't shown on the page
      afterwards (a name-only file then reads as present).
@@ -1805,7 +1815,7 @@ In this order:
    `hdd_path` and `eeprom_path` (from their `xemu.toml`), else
    `Bios/xemu/`'s, and `bootrom_path` / `flashrom_path` from
    `Bios/xemu/`. PS3 firmware isn't a file to place: "Install into
-   RPCS3" on the BIOS page (`firmware install-ps3`) runs RPCS3's own
+   RPCS3" on the BIOS page (`firmware install-ps3 --apply`) runs RPCS3's own
    `--installfw … --headless` with romforge's config and checks the
    firmware landed (RPCS3 exits 0 even when it fails). Writers for TOML,
    flat YAML and Cemu's XML joined `owned/formats.rs`. Not yet: RPCS3's
@@ -1814,7 +1824,7 @@ In this order:
    *(Built 2026-10-19: "Import my existing setup".)* An emulator started
    from romforge's folder no longer sees its usual one, so Emulator
    Settings (each emulator's tab) and `emulator import-setup NAME
-   [--undo]` copy it across (`launch/owned/existing.rs`): the usual
+   --apply [--undo]` copy it across (`launch/owned/existing.rs`): the usual
    folders from each emulator's source, native and Flatpak
    (`~/.var/app/<id>/config|data`), caches and logs left behind. Files
    already in romforge's folder are kept, except the emulator's settings
@@ -1844,7 +1854,7 @@ other than RetroArch's (romforge launches RetroArch and standalone
 emulators, whose BIOS folders come from their profiles in
 `emulators.json`).
 
-## Emulator settings (milestone 21; decided 2026-10-19, not built)
+## Emulator settings (milestone 21; decided 2026-10-19, partly built)
 
 romforge has full control of its own copy of each emulator's config
 (milestone 18, 1.3: `RomForge/Emulators/config/<emulator>/`), so users
@@ -2132,11 +2142,14 @@ Sources, in this order:
    - **Download, only on a click.** The tab's "Download manual (Vimm's
      Lair)" button fetches `https://dl.vimm.net/?manualId=<id>&category=pdf&destDPI=<dpi>`
      (the fields of the page's own form), DPI picked in the tab (default
-     300; the page allows 50–640). One manual per click, never in bulk or
-     from Enrich: `dl.vimm.net/robots.txt` disallows automated fetching.
-     A "Visit Vimm's Lair" link beside it credits them. Not yet checked
-     (robots.txt): whether the server also wants a Referer or cookie, and
-     whether the page's script adds fields.
+     100; clamped to that manual's `ValidateForm` max — often 100, some
+     640). One manual per click, never in bulk or from Enrich:
+     `dl.vimm.net/robots.txt` disallows bulk bots. The request uses a
+     browser User-Agent and a Referer of their page (their endpoint
+     rejects romforge's own UA with HTTP 400). If their FPDF builder
+     fails, romforge builds a PDF from their `image.php` page JPEGs;
+     if that also fails, the user downloads from their page and drops
+     it on the Manual tab.
    - **Fallback: the page in a romforge window.** If the direct download
      fails or is not a PDF, `vimm.net/manual/<id>` opens in a separate
      webview (Tauri's `on_navigation` and `on_download`, both in tauri
@@ -2203,13 +2216,10 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   Manual tab first opens on a game without a manual (not from Enrich);
   the answer, even none, is kept. Checked 2026-10-20: Super Mario World
   (USA) gives `VIMMManualId` 4770.
-- **Vimm's Lair** download only on the button (DPI 150 / 300 / 600),
-  with a Referer of the manual's page, kept only if it is a PDF; else the
-  tab says to download it from their page and drop it on the tab. Not
-  tried against the live server (its robots.txt asks for no automated
-  fetching, so only a user's click should). The restricted fallback
-  window from the plan isn't built: the page opens in the browser
-  instead.
+- **Vimm's Lair** download only on the button (DPI 50 / 100 / 200 / 300,
+  clamped to the page's max), browser User-Agent + Referer; PDF form
+  first, else JPEG pages assembled into a PDF. Else the tab says to
+  download from their page and drop it on the tab.
 - **Reader:** pdf.js 6.4.299 (Apache-2.0), loaded only when a manual is
   opened (the main bundle stays as it was); one page or a spread (cover
   alone, then pairs), fit width or whole page, zoom 50–400%, arrows /
@@ -2270,6 +2280,33 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   and LaunchBox's manual folders in "Import my existing setup", Cleanup
   putting the manual in the archive's `romforge/` folder, pad control of
   the reader.
+
+## Jobs, progress and parallel work (2026-10-21, built)
+
+- **Core:** `job.rs` (`Cancel`, a stop flag checked at safe points;
+  `Step`, done of total) and `parallel.rs` (`threads`, `stream`,
+  `map_ordered`: workers never touch the database; results come back to
+  the thread that owns it, in order). Scan reports its files and their
+  size on disk before reading any (`Visit::Planned`, `UnitDone`); a
+  stopped scan rolls back. Enrich fetches up to four games at once (each
+  game's sources in rule 10's order, a system's first game alone so a
+  host that says "slow down" says it once; Wikidata stays serial) and
+  reports `EnrichEvent::Progress`. Cleanup and Convert write zips and
+  CHDs on the Settings `threads`, a chunk at a time, journaled in plan
+  order; stopped, the finished games stay journaled and their originals
+  go to the trash (`stopped`). Download all DATs fetches one-file DATs on
+  several threads and imports in order. `fetch::watching` shows a
+  thread's downloads (bytes) and stops them. Opening the library writes
+  nothing when it is up to date, so a second connection never waits for
+  a running scan.
+- **App:** `jobs.rs` (`job-progress` events, `job_cancel`), a queue in
+  `jobs.svelte.js`, the footer bar (`JobsBar`) and the queue dialog
+  (`JobsDialog`). Tried on a scratch library: Enrich then Refresh queued,
+  Remove, Stop mid-Enrich, Refresh starting on its own.
+- **Open:** progress inside one CHD (chd 0.4 can also compress hunks on
+  threads); the DAT download's parallel path has no offline test (its
+  URLs are fixed); quick edits (Forget, choosing art, Settings' folder
+  move) still wait for the job holding the library to finish.
 
 ## Code review follow-ups (2026-10-18)
 

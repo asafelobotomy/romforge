@@ -55,12 +55,12 @@ pub enum Band {
 impl Band {
     pub fn label(self) -> &'static str {
         match self {
-            Band::PatchOf => "Patch of it (proven)",
-            Band::LikelyCrc => "Likely: CRC match",
-            Band::LikelyCompressed => "Likely: compressed image",
-            Band::LikelyModified => "Likely: modified copy",
-            Band::Suggested => "Suggested: name match",
-            Band::Possible => "Possible: similar name",
+            Band::PatchOf => "Proven patch of it",
+            Band::LikelyCrc => "Likely CRC match",
+            Band::LikelyCompressed => "Likely compressed image",
+            Band::LikelyModified => "Likely modified copy",
+            Band::Suggested => "Suggested by name",
+            Band::Possible => "Possible similar name",
         }
     }
 }
