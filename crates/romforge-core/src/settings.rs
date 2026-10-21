@@ -67,6 +67,15 @@ pub struct Settings {
     /// 1 suits a slow spinning disk.
     #[serde(default)]
     pub threads: usize,
+    /// Refresh downloads a system's online lists again (DATs, serials,
+    /// clone lists) once they are this many days old; 0: Refresh never
+    /// goes online for them.
+    #[serde(default = "default_list_age")]
+    pub list_age_days: u32,
+}
+
+fn default_list_age() -> u32 {
+    30
 }
 
 fn default_true() -> bool {
@@ -88,6 +97,7 @@ impl Default for Settings {
             regions: Vec::new(),
             platform_icons: String::new(),
             threads: 0,
+            list_age_days: default_list_age(),
         }
     }
 }
@@ -215,6 +225,10 @@ impl Settings {
             threads: match self.threads {
                 0..=64 => self.threads,
                 n => return bad(format!("{n} threads is too many (0 for automatic, at most 64)")),
+            },
+            list_age_days: match self.list_age_days {
+                0..=3650 => self.list_age_days,
+                n => return bad(format!("{n} days is too long (0 for never, at most 3650)")),
             },
             platform_icons: {
                 let t = self.platform_icons.trim();

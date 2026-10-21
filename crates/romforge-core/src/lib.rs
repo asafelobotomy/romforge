@@ -51,8 +51,8 @@ use rusqlite::Connection;
 
 pub use identify::{Scope, Status};
 pub use library::{
-    DatState, DatStatus, FolderScan, ImportedDat, PlatformIcons, PreviewGame, RefreshResult, ScanPreview,
-    ScanProgress, ScanReport, ScummvmList, SkippedKind,
+    DatState, DatStatus, FolderScan, ImportedDat, ListOptions, ListsReport, PlatformIcons, PreviewGame,
+    RefreshResult, ScanPreview, ScanProgress, ScanReport, ScummvmList, SkippedKind,
 };
 pub use report::{DatGame, DatSummary, LibraryFile, LibraryFilter, Summary, SystemInfo};
 pub use scan::ScanOptions;
@@ -146,6 +146,9 @@ pub struct Library {
     batch_depth: u32,
     /// A DAT was imported inside the batch; identify when it ends.
     batch_dirty: bool,
+    /// Where the downloaded databases and lists are, when not the usual
+    /// place (Scan folder's dry run reads the library's own on its copy).
+    databases: Option<PathBuf>,
     /// The library view, kept until the database changes (by any
     /// connection: SQLite's `data_version`, and this one's own changes).
     view_cache: std::sync::Mutex<Option<CachedView>>,

@@ -224,7 +224,16 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     let r = lib.scummvm_import(list.as_bytes()).unwrap();
     assert_eq!((r.entries, r.games), (1, 0), "nothing scanned yet");
     assert!(home.databases().join("scummvm-detection.dat").is_file());
-    lib.scan(&incoming, Scope::All).unwrap();
+    // The dry run finds it too (its copy reads the library's list).
+    let preview = lib.scan_preview(&incoming).unwrap();
+    assert!(
+        preview.games.iter().any(|g| g.title.starts_with("Beneath")),
+        "{preview:?}"
+    );
+    let scanned = lib.scan(&incoming, Scope::All).unwrap();
+    // Found before hashing: the game's files aren't hashed (only "Not
+    // Sky"'s sky.dsk is), and get no rows of their own.
+    assert_eq!((scanned.in_games, scanned.hashed), (4, 1), "{scanned:?}");
     let rows = lib.library_view().unwrap().rows;
     let sky: Vec<_> = rows.iter().filter(|r| r.status == RowStatus::Detected).collect();
     assert_eq!(sky.len(), 1, "{rows:?}");
@@ -234,6 +243,7 @@ fn a_scummvm_game_is_named_by_scummvm_s_list() {
     assert_eq!(sky.folder.as_deref(), Some(game.to_str().unwrap()));
     assert_eq!(sky.files, 4);
     assert!(sky.playable);
+    assert!(lib.game_detail(&sky.id).unwrap().files.is_empty());
 
     let plan = lib.import_plan(Some(&incoming)).unwrap();
     assert_eq!(plan.items.len(), 1, "{plan:?}");

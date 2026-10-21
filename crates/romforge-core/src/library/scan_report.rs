@@ -44,6 +44,9 @@ pub struct ScanReport {
     pub skipped_links: Vec<PathBuf>,
     /// Files (or archives) unchanged since the last scan, not read again.
     pub unchanged: usize,
+    /// Files inside ScummVM games found before hashing (by ScummVM's
+    /// list): the game is named by them, they aren't hashed one by one.
+    pub in_games: usize,
     pub errors: Vec<(PathBuf, String, String)>,
     /// Loose `.cue`/`.gdi` sheets and the track files they name that are
     /// missing.

@@ -13,10 +13,8 @@
 //! their size on disk) before any is; [`Visit::UnitDone`] follows each.
 //! [`ScanOptions::cancel`] stops it between them.
 
-use crate::hash::{Hashes, hash_stream};
+use crate::hash::Hashes;
 use crate::{Error, systems};
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 /// What to hash, and how.
@@ -102,6 +100,12 @@ pub enum Visit {
     UnitDone {
         bytes: u64,
     },
+    /// A folder or archive that is a game by ScummVM's list (`games`): its
+    /// `files` aren't read or hashed.
+    InGame {
+        path: PathBuf,
+        files: usize,
+    },
 }
 
 fn ext_of(name: &str) -> String {
@@ -137,10 +141,13 @@ fn wanted_member(name: &str, opts: &ScanOptions) -> bool {
 /// while walking, then hashed files as threads finish them. `root` itself may be a
 /// symlink; symlinked folders below it are reported and not followed, so a
 /// link loop or a link to another drive cannot make a scan run away.
-/// Symlinked files are hashed like normal files.
+/// Symlinked files are hashed like normal files. `games`: folders and
+/// archives already known to be ScummVM games (with their file counts),
+/// passed over whole ([`Visit::InGame`]).
 pub fn walk(
     root: &Path,
     skip: &[PathBuf],
+    games: &[(PathBuf, usize)],
     opts: &ScanOptions,
     // Arcade set names (lower case): an archive named after one has every
     // member hashed.
@@ -151,13 +158,14 @@ pub fn walk(
     let mut units: Vec<(u64, Option<Stamp>, Unit)> = Vec::new();
     // Cleanup's trash folders hold originals waiting for undo: not part of
     // the library.
-    let walker = walkdir::WalkDir::new(root)
+    let mut walker = walkdir::WalkDir::new(root)
         .follow_links(false)
         .follow_root_links(true)
         .sort_by_file_name()
         .into_iter()
         .filter_entry(|e| !crate::layout::is_own_dir(e.file_name()));
-    for item in walker {
+    let game = |p: &Path| games.iter().find(|(g, _)| g == p).map(|(_, n)| *n);
+    while let Some(item) = walker.next() {
         opts.cancel.check()?;
         let item = match item {
             Ok(item) => item,
@@ -172,6 +180,13 @@ pub fn walk(
             }
         };
         let path = item.path().to_path_buf();
+        if let Some(files) = game(&path) {
+            if item.file_type().is_dir() {
+                walker.skip_current_dir();
+            }
+            each(Visit::InGame { path, files });
+            continue;
+        }
         if item.path_is_symlink() && item.depth() > 0 {
             match std::fs::metadata(&path) {
                 Ok(m) if m.is_file() => {}
@@ -244,151 +259,5 @@ pub fn walk(
     opts.cancel.check()
 }
 
-fn hash_unit(unit: Unit, stamp: Option<Stamp>, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) {
-    // Every entry of the unit carries the file's stamp.
-    let each = &mut |v: Visit| match v {
-        Visit::Hashed(mut e) => {
-            e.stamp = stamp;
-            each(Visit::Hashed(e))
-        }
-        v => each(v),
-    };
-    let (path, result) = match unit {
-        Unit::Zip(path, whole) => {
-            let r = walk_zip(&path, &member_opts(opts, whole), each);
-            (path, r)
-        }
-        Unit::SevenZ(path, whole) => {
-            let r = walk_7z(&path, &member_opts(opts, whole), each);
-            (path, r)
-        }
-        Unit::Chd(path) => {
-            let r = crate::disc::chd_members(&path).map(|members| {
-                for (member, hashes) in members {
-                    each(Visit::Hashed(Entry {
-                        stamp: None,
-                        path: path.clone(),
-                        member,
-                        hashes: Ok(hashes),
-                    }));
-                }
-            });
-            (path, r)
-        }
-        Unit::File(path) => {
-            let hashes = hash_file(&path).map_err(|e| e.to_string());
-            each(Visit::Hashed(Entry {
-                stamp: None,
-                path,
-                member: String::new(),
-                hashes,
-            }));
-            return;
-        }
-    };
-    if let Err(e) = result {
-        each(Visit::Hashed(Entry {
-            stamp: None,
-            path,
-            member: String::new(),
-            hashes: Err(e.to_string()),
-        }));
-    }
-}
-
-/// The options for an archive's members: all of them for an arcade set.
-fn member_opts(opts: &ScanOptions, whole: bool) -> ScanOptions {
-    ScanOptions {
-        all_files: opts.all_files || whole,
-        ..opts.clone()
-    }
-}
-
-fn hash_file(path: &Path) -> std::io::Result<Hashes> {
-    let file = File::open(path)?;
-    let size = file.metadata()?.len();
-    let mut hashes = hash_stream(BufReader::new(file), size)?;
-    // A compressed disc image: its own header says what it holds.
-    if hashes.id.is_none() {
-        hashes.id = crate::ident::read_container(&mut BufReader::new(File::open(path)?));
-    }
-    Ok(hashes)
-}
-
-fn walk_zip(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
-    let mut archive = zip::ZipArchive::new(BufReader::new(File::open(path)?))?;
-    for i in 0..archive.len() {
-        // One member that can't be opened (encrypted, an unsupported
-        // method) is that member's error; the rest are still read.
-        let name = match archive.name_for_index(i) {
-            Some(Ok(n)) => n.into_owned(),
-            _ => format!("#{i}"),
-        };
-        let mut member = match archive.by_index(i) {
-            Ok(m) => m,
-            Err(e) => {
-                let path = path.to_path_buf();
-                each(match wanted_member(&name, opts) {
-                    true => Visit::Hashed(Entry {
-                        stamp: None,
-                        path,
-                        member: name,
-                        hashes: Err(e.to_string()),
-                    }),
-                    false => Visit::Skipped { path, member: name },
-                });
-                continue;
-            }
-        };
-        if member.is_dir() {
-            continue;
-        }
-        let name = member.name().map_or(name, |n| n.into_owned());
-        if !wanted_member(&name, opts) {
-            each(Visit::Skipped {
-                path: path.to_path_buf(),
-                member: name,
-            });
-            continue;
-        }
-        let size = member.size();
-        let hashes = hash_stream(&mut member, size).map_err(|e| e.to_string());
-        each(Visit::Hashed(Entry {
-            stamp: None,
-            path: path.to_path_buf(),
-            member: name,
-            hashes,
-        }));
-    }
-    Ok(())
-}
-
-fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
-    let mut archive = sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty())?;
-    archive.for_each_entries(|entry, reader| {
-        if entry.is_directory() {
-            // nothing to hash
-        } else if !wanted_member(entry.name(), opts) {
-            // A solid archive is one stream: a member not read to its end
-            // would leave the next one starting at the wrong bytes.
-            std::io::copy(reader, &mut std::io::sink())?;
-            each(Visit::Skipped {
-                path: path.to_path_buf(),
-                member: entry.name().to_owned(),
-            });
-        } else {
-            let hashes = hash_stream(&mut *reader, entry.size()).map_err(|e| e.to_string());
-            if hashes.is_err() {
-                let _ = std::io::copy(reader, &mut std::io::sink());
-            }
-            each(Visit::Hashed(Entry {
-                stamp: None,
-                path: path.to_path_buf(),
-                member: entry.name().to_owned(),
-                hashes,
-            }));
-        }
-        Ok(true)
-    })?;
-    Ok(())
-}
+mod members;
+use members::hash_unit;

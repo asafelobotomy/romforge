@@ -18,6 +18,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             staging,
             regions,
             threads,
+            list_age_days,
             steamgriddb_key,
             igdb_client_id,
             igdb_client_secret,
@@ -33,7 +34,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || in_place.is_some()
                 || staging.is_some()
                 || regions.is_some()
-                || threads.is_some();
+                || threads.is_some()
+                || list_age_days.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
                 (igdb_client_id, &mut s.keys.igdb_client_id),
@@ -74,6 +76,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if let Some(n) = threads {
                 s.threads = n;
             }
+            if let Some(d) = list_age_days {
+                s.list_age_days = d;
+            }
             if changed {
                 s = lib.save_settings(&s)?;
             }
@@ -91,6 +96,13 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             );
             println!("staging         {}", s.staging().display());
             println!("regions         {}", s.region_order().join(", "));
+            println!(
+                "list age        {}",
+                match s.list_age_days {
+                    0 => "never online on Refresh".to_owned(),
+                    d => format!("{d} days"),
+                }
+            );
             println!(
                 "threads         {}",
                 match s.threads {

@@ -196,6 +196,10 @@ pub enum Command {
         /// per CPU (at most 8), 1 for a slow spinning disk
         #[arg(long)]
         threads: Option<usize>,
+        /// Refresh downloads a system's online lists again once they are
+        /// this many days old [default: 30; 0: never]
+        #[arg(long)]
+        list_age_days: Option<u32>,
         /// Optional online-source credentials ("" clears). Values given here
         /// end up in your shell history.
         /// SteamGridDB API key
@@ -221,9 +225,18 @@ pub enum Command {
         screenscraper_password: Option<String>,
     },
     /// Rescan the Source and Library folders and every folder scanned before
+    ///
+    /// First brings the lists games are named by up to date: ScummVM's and
+    /// MAME's when the installed program changed, and the online lists
+    /// (DATs, serials, clone lists) of the systems you have files for once
+    /// they are `settings --list-age-days` old. Then the lists of systems
+    /// this scan found first.
     Refresh {
         #[arg(long, short)]
         quiet: bool,
+        /// Only rescan; leave the lists as they are
+        #[arg(long)]
+        no_lists: bool,
         /// Hashing threads [default: one per CPU, at most 8]; 1 for a slow
         /// spinning disk
         #[arg(long, short = 'j')]

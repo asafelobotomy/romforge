@@ -1,12 +1,14 @@
 //! Scanning a folder.
 
+mod visits;
+
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
 use crate::scan::Visit;
 use crate::{
-    Error, Library, ScanOptions, ScanProgress, ScanReport, Scope, SkippedKind, disc, identify, layout, patch,
+    Error, Library, ScanOptions, ScanProgress, ScanReport, Scope, SkippedKind, disc, identify, layout,
     patcher, scan, scummvm, systems,
 };
 
@@ -160,6 +162,9 @@ impl Library {
         let mut skipped_kinds: std::collections::BTreeMap<String, SkippedKind> = Default::default();
         // Patch files (or zips holding one) seen, to pair with their games.
         let mut patch_files: std::collections::BTreeSet<PathBuf> = Default::default();
+        // ScummVM games are named by their files' sizes and first bytes:
+        // found first, so those files aren't hashed one by one.
+        let games = scummvm::games_under(&tx, scummvm_list.as_deref(), &root)?;
         {
             let mut upsert = tx.prepare(
                 concat!("INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
@@ -186,7 +191,7 @@ impl Library {
             let mut units = ScanProgress::default();
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
-            scan::walk(&root, &skip, opts, &arcade_sets, unchanged, |visit| {
+            scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
                     return;
                 }
@@ -204,35 +209,11 @@ impl Library {
                         return;
                     }
                     Visit::Skipped { path, member } => {
-                        report.skipped += 1;
-                        let name = if member.is_empty() {
-                            path.file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_default()
-                        } else {
-                            member.clone()
-                        };
-                        if patch::is_patch_name(&name) && path.to_str().is_some() {
-                            patch_files.insert(path.clone());
-                        }
-                        if !layout::is_extra(&member) && !layout::is_extra(&name) {
-                            let ext = std::path::Path::new(&name)
-                                .extension()
-                                .map(|e| e.to_string_lossy().to_ascii_lowercase())
-                                .unwrap_or_default();
-                            skipped_kinds
-                                .entry(ext.clone())
-                                .and_modify(|k: &mut SkippedKind| k.count += 1)
-                                .or_insert_with(|| SkippedKind {
-                                    ext,
-                                    count: 1,
-                                    example: if member.is_empty() {
-                                        path.display().to_string()
-                                    } else {
-                                        format!("{}#{member}", path.display())
-                                    },
-                                });
-                        }
+                        visits::skipped(&mut report, &mut skipped_kinds, &mut patch_files, path, member);
+                        return;
+                    }
+                    Visit::InGame { files, .. } => {
+                        report.in_games += files;
                         return;
                     }
                     Visit::SkippedLink(path) => {

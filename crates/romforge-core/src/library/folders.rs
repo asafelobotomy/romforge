@@ -71,6 +71,8 @@ impl Library {
         self.conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
         let result = (|| -> Result<ScanPreview, Error> {
             let mut copy = Library::open(&tmp)?;
+            // The library's own lists (ScummVM's), read where they are.
+            copy.databases = self.extdb_dir();
             let report = copy.scan_with(&root, Scope::All, opts, progress)?;
             let under: std::collections::HashSet<i64> = copy
                 .conn
@@ -83,7 +85,13 @@ impl Library {
             let mut games: Vec<PreviewGame> = view::library(&copy.conn)?
                 .rows
                 .into_iter()
-                .filter(|r| r.file_ids().iter().any(|f| under.contains(f)))
+                // A ScummVM game has no rows for its files: by its place.
+                .filter(|r| {
+                    r.file_ids().iter().any(|f| under.contains(f))
+                        || r.folder
+                            .as_deref()
+                            .is_some_and(|d| Path::new(d).starts_with(&root))
+                })
                 .map(|r| PreviewGame {
                     new: !before.contains(&r.id),
                     title: r.label.clone().unwrap_or(r.title),
@@ -119,6 +127,37 @@ impl Library {
         progress: impl FnMut(&Path, ScanProgress),
     ) -> Result<Vec<RefreshResult>, Error> {
         self.refresh_roots(false, opts, progress)
+    }
+
+    /// Refresh as the app and CLI run it: first the lists games are
+    /// identified by ([`Library::update_lists`]), then the folders
+    /// (`all`: every folder ever scanned, else the Settings ones,
+    /// [`Library::refresh_settings`]), then the online lists of systems
+    /// this scan found first. `progress` follows all of it, in
+    /// thousandths: the lists a fifth, the folders the rest.
+    pub fn refresh_with_lists(
+        &mut self,
+        all: bool,
+        opts: &ScanOptions,
+        lists: &crate::ListOptions,
+        mut progress: impl FnMut(crate::job::Step),
+    ) -> Result<(crate::ListsReport, Vec<RefreshResult>), Error> {
+        use crate::job::Step;
+        let before = super::lists::systems_in_use(&self.conn)?;
+        let mut report = self.update_lists(lists, |s| {
+            progress(Step::new(0, 1000, format!("Lists: {}", s.detail)))
+        })?;
+        opts.cancel.check()?;
+        let results = self.refresh_roots(all, opts, |_, p| {
+            let s = p.step();
+            let done = 200 + 800 * s.done / s.total.max(1);
+            progress(Step::new(done, 1000, s.detail))
+        })?;
+        opts.cancel.check()?;
+        self.update_new_lists(&before, lists, &mut report, |s| {
+            progress(Step::new(1000, 1000, format!("Lists: {}", s.detail)))
+        })?;
+        Ok((report, results))
     }
 
     /// Whether Refresh has a folder to rescan (a Source or Library folder,

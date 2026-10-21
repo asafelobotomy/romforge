@@ -25,11 +25,26 @@ impl Library {
         &mut self,
         extras: bool,
         cancel: &Cancel,
+        progress: impl FnMut(usize, usize),
+        each: impl FnMut(&'static str, fetch::Source, Result<Vec<ImportedDat>, Error>),
+    ) -> Result<bool, Error> {
+        let keys: Vec<&'static str> = systems::SYSTEMS.iter().map(|s| s.key).collect();
+        self.download_systems_with(&keys, extras, cancel, progress, each)
+    }
+
+    /// [`Library::download_all_with`] for these systems only (keys); the
+    /// ones without a source are passed over.
+    pub fn download_systems_with(
+        &mut self,
+        keys: &[&'static str],
+        extras: bool,
+        cancel: &Cancel,
         mut progress: impl FnMut(usize, usize),
         mut each: impl FnMut(&'static str, fetch::Source, Result<Vec<ImportedDat>, Error>),
     ) -> Result<bool, Error> {
-        let all: Vec<(&'static str, fetch::Source)> = systems::SYSTEMS
+        let all: Vec<(&'static str, fetch::Source)> = keys
             .iter()
+            .filter_map(|k| systems::by_key(k))
             .flat_map(|s| fetch::sources(s, extras).into_iter().map(|src| (s.key, src)))
             .collect();
         let total = all.len();

@@ -2308,6 +2308,24 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   URLs are fixed); quick edits (Forget, choosing art, Settings' folder
   move) still wait for the job holding the library to finish.
 
+## Refresh updates its lists (2026-10-21, built)
+
+- `library/lists.rs`: `update_lists` (ScummVM's list when `scummvm
+  --version` differs from the one that made it, or it is missing, else
+  `--detect` for folders never asked; libretro's ScummVM names and the
+  online lists of systems in use once older than `list_age_days`; MAME's
+  DAT when `mame -version` differs from the imported one, only with an
+  Arcade DAT or a folder scanned for Arcade) and `refresh_with_lists`
+  (lists, rescan, then the lists of systems first seen). Stamps are
+  `settings` rows (`list:scummvm`, `list:scummvm-roots`,
+  `list:scummvm-titles`, `list:checked:<system>`).
+- Scans find ScummVM games first (`scummvm::games_under`) and pass over
+  them whole (`Visit::InGame`, `ScanReport::in_games`); Scan folder's
+  dry run reads the library's own list.
+- **Open:** online lists are checked without hacks and homebrew DATs; a
+  member file named by hand inside a ScummVM game loses that name (its
+  files have no rows now).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits

@@ -92,7 +92,9 @@ fn round_trip(name: &str, write: Writer) {
 
     let mut lib = Library::open(home.db()).unwrap();
     lib.scummvm_import(list.as_bytes()).unwrap();
-    lib.scan(&incoming, Scope::All).unwrap();
+    let scanned = lib.scan(&incoming, Scope::All).unwrap();
+    // The archive is the game by the list: its members aren't hashed.
+    assert_eq!(scanned.in_games, files.len(), "{scanned:?}");
     let rows = lib.library_view().unwrap().rows;
     let found: Vec<_> = rows.iter().filter(|r| r.status == RowStatus::Detected).collect();
     assert_eq!(found.len(), 1, "{rows:?}");

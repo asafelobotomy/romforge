@@ -60,6 +60,7 @@
     region_flags: true,
     show_missing_versions: false,
     threads: 0,
+    list_age_days: 30,
   });
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
@@ -231,6 +232,16 @@
           Display missing versions
         </label>
         <p class="hint">Under each game, list every region and edition in your DATs that romforge can link to it, even ones you don't have (shown italic). Off: only what you own, plus a missing original when you only have a translation, hack or patch.</p>
+      </section>
+
+      <section class="setting">
+        <label class="flabel" for="list-age">Online lists on Refresh</label>
+        <select id="list-age" bind:value={draft.list_age_days}>
+          {#each [[7, "Every 7 days"], [14, "Every 14 days"], [30, "Every 30 days"], [0, "Never"]] as [d, label]}<option value={d}>{label}</option>{/each}
+          <!-- A number set with the CLI stays as it is. -->
+          {#if ![7, 14, 30, 0].includes(draft.list_age_days)}<option value={draft.list_age_days}>Every {draft.list_age_days} days</option>{/if}
+        </select>
+        <p class="hint">Refresh first reads ScummVM's and MAME's lists again when the installed program changed, and downloads the DATs and lists of the systems you have files for once they are this old. Never: Refresh doesn't go online for them (Download DATs still does).</p>
       </section>
 
       <section class="setting">

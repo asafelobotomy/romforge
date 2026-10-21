@@ -441,7 +441,15 @@ The toolbar:
 
 - **Refresh** rescans the folders Settings names (Source and Library) and
   the RomForge folder's Games, not folders you scanned once; greyed out
-  until there is one.
+  until there is one. First it brings the lists games are named by up to
+  date: ScummVM's detection list and MAME's own DAT when the installed
+  ScummVM or MAME changed (or the list is missing; MAME only once you have
+  Arcade), and the DATs, serials and clone lists of the systems you have
+  files for once they are older than Settings → **Online lists on
+  Refresh** (every 7, 14 or 30 days, the default, or never). A system the scan finds for the first time
+  gets its lists in the same Refresh. ScummVM games are found before
+  hashing, so their data files aren't hashed one by one
+  (`romforge-cli refresh --no-lists` only rescans).
 - **Scan folder ▾** scans any folder you pick without making it a setting,
   except the very first folder you scan while no Source is set, which
   becomes your Source. **Scan folder [dry run]** reads the folder on a

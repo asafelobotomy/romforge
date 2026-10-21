@@ -1,7 +1,13 @@
 // The status line's words after the toolbar's jobs.
 
 export function refreshNote(r) {
-  return `Rescanned ${r.folders} folders, ${r.entries} entries` + (r.skipped ? `; skipped for their extension: ${r.skipped}` : "") + (r.problems.length ? `; ${r.problems.length} problems: ${r.problems.join("; ")}` : "");
+  return (
+    (r.lists?.length ? `Updated ${r.lists.join("; ")}. ` : "") +
+    `Rescanned ${r.folders} folders, ${r.entries} entries` +
+    (r.in_games ? `; ${r.in_games} files of ScummVM games named by ScummVM's list, not hashed` : "") +
+    (r.skipped ? `; skipped for their extension: ${r.skipped}` : "") +
+    (r.problems.length ? `; ${r.problems.length} problems: ${r.problems.join("; ")}` : "")
+  );
 }
 
 export function scanNote(r) {
@@ -20,6 +26,7 @@ export function scanNote(r) {
       : "";
   return (
     `Scanned ${report.hashed} entries in ${report.root}${source}` +
+    (report.in_games ? `; ${report.in_games} files of ScummVM games named by ScummVM's list, not hashed` : "") +
     (kinds ? `; skipped for their extension: ${kinds}${report.skipped_kinds.length > 6 ? ", …" : ""}` : "") +
     (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "")
   );

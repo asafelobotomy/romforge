@@ -118,16 +118,51 @@ fn cached<T>(slot: &Cached<T>, path: &Path, parse: fn(&str) -> Result<T, Error>)
     Ok(v)
 }
 
+static LISTS: Cached<Vec<Entry>> = Mutex::new(None);
+
+/// ScummVM's list in `list` (parsed once while the file stays the same);
+/// empty when there is none.
+pub(crate) fn load_list(list: Option<&Path>) -> Result<Arc<Vec<Entry>>, Error> {
+    match list.filter(|p| p.is_file()) {
+        Some(p) => cached(&LISTS, p, parse),
+        None => Ok(Arc::default()),
+    }
+}
+
+/// The ScummVM games under `root`, by the list or by what --detect named
+/// before, with how many files each has: a scan passes over them whole
+/// (their files are the game, named by the list, never hashed one by one).
+pub(crate) fn games_under(
+    conn: &Connection,
+    list: Option<&Path>,
+    root: &Path,
+) -> Result<Vec<(PathBuf, usize)>, Error> {
+    let entries = load_list(list)?;
+    let roots = [root.to_owned()];
+    let mut out: Vec<(PathBuf, usize)> = if entries.is_empty() {
+        Vec::new()
+    } else {
+        detect(&entries, &roots)
+            .into_iter()
+            .map(|f| (f.dir, f.files))
+            .collect()
+    };
+    let named: Vec<PathBuf> = out.iter().map(|(p, _)| p.clone()).collect();
+    for (dir, _, _) in asked_before(conn, &roots, &named)? {
+        if dir.starts_with(root) {
+            let files = folder_stats(&dir).0;
+            out.push((dir, files));
+        }
+    }
+    Ok(out)
+}
+
 /// Work out the ScummVM games again from the list in `list` (when there
 /// is one), what ScummVM's --detect named before, and every scanned
 /// folder. Returns how many there are.
 pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, Error> {
-    static LISTS: Cached<Vec<Entry>> = Mutex::new(None);
     static NAMES: Cached<HashMap<String, String>> = Mutex::new(None);
-    let entries = match list.filter(|p| p.is_file()) {
-        Some(p) => cached(&LISTS, p, parse)?,
-        None => Arc::default(),
-    };
+    let entries = load_list(list)?;
     // libretro's names, when its ScummVM.dat is kept beside the list.
     let names = list
         .and_then(Path::parent)

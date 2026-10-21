@@ -113,14 +113,44 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 }
             }
         }
-        Command::Refresh { quiet, jobs, rehash } => {
-            let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
+        Command::Refresh {
+            quiet,
+            no_lists,
+            jobs,
+            rehash,
+        } => {
+            let tty = !quiet && std::io::stderr().is_terminal();
+            let mut meter = Progress::new(tty);
             let opts = ScanOptions {
                 jobs: jobs.unwrap_or(0),
                 rehash,
                 ..ScanOptions::default()
             };
-            let results = lib.refresh(&opts, |_, p| meter.update(p))?;
+            let results = if no_lists {
+                lib.refresh(&opts, |_, p| meter.update(p))?
+            } else {
+                let lists = romforge_core::ListOptions {
+                    max_age_days: lib.settings()?.list_age_days,
+                    ..Default::default()
+                };
+                let mut last = String::new();
+                let (report, results) = lib.refresh_with_lists(true, &opts, &lists, |s| {
+                    if tty && s.detail != last {
+                        eprint!("\r\x1b[2K{}", s.detail);
+                        last = s.detail;
+                    }
+                })?;
+                if tty {
+                    eprint!("\r\x1b[2K");
+                }
+                for u in &report.updated {
+                    println!("updated {u}");
+                }
+                for p in &report.problems {
+                    eprintln!("lists: {p}");
+                }
+                results
+            };
             meter.finish();
             let mut failed = 0;
             for r in results {

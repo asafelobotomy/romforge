@@ -47,6 +47,7 @@ impl Library {
             path: Some(std::path::absolute(path)?),
             batch_depth: 0,
             batch_dirty: false,
+            databases: None,
             view_cache: Default::default(),
         };
         // A batch of DAT imports that never got to identify (it failed,
@@ -64,6 +65,7 @@ impl Library {
             home: None,
             batch_depth: 0,
             batch_dirty: false,
+            databases: None,
             view_cache: Default::default(),
         })
     }
@@ -117,6 +119,9 @@ impl Library {
     /// `Databases/`, else `databases/` next to the library database; `None`
     /// for an in-memory library.
     pub fn extdb_dir(&self) -> Option<PathBuf> {
+        if let Some(d) = &self.databases {
+            return Some(d.clone());
+        }
         match &self.home {
             Some(h) => Some(h.databases()),
             None => self.path.as_deref().map(extdb::dir_for),

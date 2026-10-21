@@ -61,15 +61,58 @@ fn run_known(
     Ok((program, out))
 }
 
+/// Whether the known emulator `name` is installed (Settings path, `PATH`,
+/// Flatpak, romforge's Emulators folder).
+pub fn installed(env: &Env, name: &str) -> bool {
+    KNOWN_EMULATORS
+        .iter()
+        .find(|e| e.name == name)
+        .is_some_and(|e| env.known(e).is_some())
+}
+
+/// The installed ScummVM's build, as `--version` says it ("ScummVM
+/// 2026.3.0 (Oct 2 2026 12:00:00)"): what its list was made by. Its first
+/// run prints "Default configuration file missing, creating a new one"
+/// before that: the line naming ScummVM is taken.
+pub fn scummvm_version(env: &Env) -> Result<String, Error> {
+    let (_, out) = run_scummvm(env, &["--version".to_owned()], None)?;
+    scummvm_version_in(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| Error::Launch("ScummVM --version gave no version".into()))
+}
+
+pub(crate) fn scummvm_version_in(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("ScummVM ") && version_in(l).is_some())
+        .map(str::to_owned)
+}
+
+/// The installed MAME's version (`-version`). A wrapper script may print a
+/// line of its own first ("Running MAME for the first time..."): the first
+/// word that looks like a version ("0.289") is taken.
+pub fn mame_version(env: &Env) -> Result<String, Error> {
+    let (_, v) = run_known(env, "mame", "MAME", &["-version".to_owned()], None)?;
+    version_in(&String::from_utf8_lossy(&v.stdout))
+        .ok_or_else(|| Error::Launch("MAME -version gave no version".into()))
+}
+
+/// The first word that is digits and dots with at least one dot.
+pub(crate) fn version_in(text: &str) -> Option<String> {
+    text.split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.'))
+        .find(|w| {
+            w.contains('.')
+                && w.chars().next().is_some_and(|c| c.is_ascii_digit())
+                && w.split('.')
+                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        })
+        .map(str::to_owned)
+}
+
 /// The installed MAME's own DAT (`-listxml`: every machine with its ROMs'
 /// and disks' SHA1) and its version (`-version`).
 pub fn mame_listxml(env: &Env) -> Result<(Vec<u8>, String), Error> {
-    let (_, v) = run_known(env, "mame", "MAME", &["-version".to_owned()], None)?;
-    let version = String::from_utf8_lossy(&v.stdout)
-        .split_whitespace()
-        .next()
-        .unwrap_or("?")
-        .to_owned();
+    let version = mame_version(env).unwrap_or_else(|_| "?".to_owned());
     let (program, out) = run_known(env, "mame", "MAME", &["-listxml".to_owned()], None)?;
     if !out.status.success() || out.stdout.is_empty() {
         return Err(Error::Launch(format!(

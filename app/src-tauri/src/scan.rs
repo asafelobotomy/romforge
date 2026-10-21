@@ -56,22 +56,34 @@ pub struct Refreshed {
     problems: Vec<String>,
     /// Files skipped for their extension, by kind (`.txt 5, .nfo 3`).
     skipped: String,
+    /// Files of ScummVM games, named by ScummVM's list and not hashed.
+    in_games: usize,
+    /// The lists brought up to date first ("ScummVM's list (…)", "DATs
+    /// and lists: SNES").
+    lists: Vec<String>,
 }
 
 #[tauri::command]
 pub async fn refresh(app: tauri::AppHandle, db: tauri::State<'_, Db>, job: Option<u64>) -> Res<Refreshed> {
-    // The toolbar's Refresh: the folders Settings names, not every folder
-    // ever scanned.
+    // The toolbar's Refresh: the lists games are named by, then the
+    // folders Settings names (not every folder ever scanned).
     let mut job = Job::start(&app, job);
-    let results = with(&db, move |lib| {
-        lib.refresh_settings(&options(&job), |_, p| job.step(p.step()))
+    let (lists, results) = with(&db, move |lib| {
+        let lists = romforge_core::ListOptions {
+            max_age_days: lib.settings()?.list_age_days,
+            cancel: job.cancel.clone(),
+            env: None,
+        };
+        lib.refresh_with_lists(false, &options(&job), &lists, |s| job.step(s))
     })
     .await?;
     let mut out = Refreshed {
         folders: 0,
         entries: 0,
-        problems: Vec::new(),
+        problems: lists.problems,
         skipped: String::new(),
+        in_games: 0,
+        lists: lists.updated,
     };
     let mut kinds = Vec::new();
     for r in results {
@@ -79,6 +91,7 @@ pub async fn refresh(app: tauri::AppHandle, db: tauri::State<'_, Db>, job: Optio
             Ok(report) => {
                 out.folders += 1;
                 out.entries += report.hashed;
+                out.in_games += report.in_games;
                 kinds.push(report.skipped_kinds.clone());
                 out.problems.extend(
                     report

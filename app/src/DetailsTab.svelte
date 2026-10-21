@@ -165,6 +165,13 @@
         <span class="fid" title="What the game's own header or boot files say (evidence, not a match)">{[g.title, g.serial, g.region].filter(Boolean).join(" · ")}</span>
       {/if}
     </li>
+  {:else}
+    {#if row.folder}
+      <li title="Named by ScummVM's list from these files' sizes and first bytes; they aren't hashed one by one">
+        <span class="badge {row.status}">{row.files} files</span>
+        <span class="fpath"><bdi>{row.folder}</bdi></span>
+      </li>
+    {/if}
   {/each}
 </ul>
 

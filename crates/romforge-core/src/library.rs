@@ -8,6 +8,7 @@ mod edit;
 mod emulators;
 mod files;
 mod folders;
+mod lists;
 mod manuals;
 mod open;
 mod patching;
@@ -20,6 +21,7 @@ mod view_cache;
 pub use art::PlatformIcons;
 pub use dat_lists::{DatState, DatStatus};
 pub use dats::ImportedDat;
+pub use lists::{ListOptions, ListsReport};
 pub use scan_report::{
     FolderScan, PreviewGame, RefreshResult, ScanPreview, ScanProgress, ScanReport, SkippedKind,
 };
