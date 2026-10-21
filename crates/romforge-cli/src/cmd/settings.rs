@@ -19,6 +19,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             regions,
             threads,
             list_age_days,
+            start_fullscreen,
             steamgriddb_key,
             igdb_client_id,
             igdb_client_secret,
@@ -35,7 +36,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || staging.is_some()
                 || regions.is_some()
                 || threads.is_some()
-                || list_age_days.is_some();
+                || list_age_days.is_some()
+                || start_fullscreen.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
                 (igdb_client_id, &mut s.keys.igdb_client_id),
@@ -79,6 +81,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if let Some(d) = list_age_days {
                 s.list_age_days = d;
             }
+            if let Some(f) = start_fullscreen {
+                s.start_fullscreen = f;
+            }
             if changed {
                 s = lib.save_settings(&s)?;
             }
@@ -86,6 +91,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             println!("source          {}", shown(&s.source_dir));
             println!("library         {}", shown(&s.library_dir));
             println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
+            println!(
+                "start fullscr.  {}",
+                if s.start_fullscreen { "yes" } else { "no" }
+            );
             println!(
                 "in place        {}",
                 if s.in_place {

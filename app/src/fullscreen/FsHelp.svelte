@@ -1,0 +1,21 @@
+<script>
+  // The help bar along the bottom of the fullscreen mode, always on: what
+  // each button does on this screen, as a pad's buttons once one was seen,
+  // else as keys.
+  let { items, pad = false } = $props();
+
+  const PAD = { accept: "Ⓐ", back: "Ⓑ", north: "Ⓨ", menu: "☰ Start", context: "⧉ Select", page: "LB / RB", move: "✛", side: "◀ ▶" };
+  const KEYS = { accept: "Enter", back: "Esc", north: "O", menu: "Tab", context: "Space", page: "PgUp / PgDn", move: "Arrows", side: "◀ ▶" };
+</script>
+
+<footer class="help" data-fs-help>
+  {#each items as [button, label]}
+    <span class="item"><kbd>{(pad ? PAD : KEYS)[button] ?? button}</kbd> {label}</span>
+  {/each}
+</footer>
+
+<style>
+  .help { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.8vh 2.4vw; padding: 1.4vh 2vw; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 80%, transparent); font-size: 1.9vh; color: var(--muted); }
+  .item { display: inline-flex; align-items: center; gap: 0.5vw; }
+  kbd { padding: 0.2vh 0.6vw; border: 1px solid var(--line); border-radius: 0.6vh; background: var(--bg); color: var(--text); font: inherit; font-weight: 600; }
+</style>

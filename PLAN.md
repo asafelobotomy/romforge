@@ -1253,6 +1253,17 @@ themes. Researched online the same day (sources below); decided:
    built-in theme; Start for the main menu, Select for a context menu,
    North for per-game options, left/right to switch platforms, shoulders
    to page, triggers to jump; a help bar always on; `--fullscreen`.
+   *(Built 2026-10-21.)* `app/src/fullscreen/`: one home screen (the
+   carousel over the grid, the focused game's facts beside it; the owner's
+   choice), the game page (fanart behind, box, facts, overview; Play,
+   Versions, Back), menus for Start, Select and North, the help bar (pad
+   buttons once a pad was seen, else keys). Our own focus model
+   (`fsnav.js`, pure, `node --test app/test`), not Norigin: the layouts
+   are fixed; revisit with step 4's themes. In by the toolbar's
+   Fullscreen, F11, `romforge-app --fullscreen` or Settings
+   `start_fullscreen`; out by Start → Back to desktop (B on the carousel
+   asks). Playing from it keeps the window fullscreen. `data-fs-*`
+   attributes for step 4. Not yet: tried with a pad.
 3. *Hotkeys:* the table above, written into every emulator; the graceful
    quit chord.
 4. *Theme engine v1:* manifest, variables, options, fallback variants,

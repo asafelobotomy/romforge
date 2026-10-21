@@ -62,3 +62,10 @@ export function released(f) {
     .map((v, i) => (i ? String(v).padStart(2, "0") : v))
     .join("-");
 }
+
+// Play time romforge recorded: "3.2 h · 5 times · last 19 Oct 2026".
+export function played(p) {
+  const time = p.seconds < 5400 ? `${Math.max(1, Math.round(p.seconds / 60))} min` : `${(p.seconds / 3600).toFixed(1)} h`;
+  const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
+}

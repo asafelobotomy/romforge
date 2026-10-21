@@ -160,3 +160,15 @@ fn while_playing_is_one_of_three() {
     };
     assert!(odd.validated().is_err());
 }
+
+#[test]
+fn start_fullscreen_round_trips() {
+    let mut lib = crate::Library::open_in_memory().unwrap();
+    assert!(!lib.settings().unwrap().start_fullscreen);
+    let on = Settings {
+        start_fullscreen: true,
+        ..Settings::default()
+    };
+    lib.save_settings(&on).unwrap();
+    assert!(lib.settings().unwrap().start_fullscreen);
+}

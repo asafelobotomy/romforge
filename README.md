@@ -462,6 +462,15 @@ The toolbar:
   (Settings → **While a game plays**: tray, minimise, or keep open). Its
   tray menu has **Show romforge** and **Stop**; when the game ends,
   romforge comes back by itself.
+- **Fullscreen** (or F11) switches to the fullscreen mode, for a game pad
+  and a TV: the platforms along the top (left/right), that platform's
+  games as large box art below with the focused game's facts beside
+  them, and a game's own page (A opens it, A again plays). Start opens
+  the menu (sort, art, Back to desktop, Quit), Select more for a game,
+  North (Y) its options; the shoulders page, the triggers jump; a help
+  bar shows the buttons (or keys: Enter, Esc, Tab, Space, O, PgUp/PgDn).
+  `romforge-app --fullscreen`, or Settings → **Start in the fullscreen
+  mode**, opens it straight away.
 
 Long jobs (scans, Refresh, Enrich, Rename & Cleanup, Convert, DAT and
 database downloads, naming in bulk, patching, installs) wait their turn

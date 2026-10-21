@@ -23,6 +23,7 @@ mod play;
 mod scan;
 mod search;
 mod settings;
+mod start;
 mod tray;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -61,6 +62,7 @@ fn main() {
         .manage(roots)
         .manage(play::Now::default())
         .manage(jobs::Jobs::default())
+        .manage(start::start_options(std::env::args().skip(1)))
         // Game pads, heard even while an emulator has the focus: "pad"
         // events for the page (no pads, or no access: the app works without).
         .setup(|app| {
@@ -155,6 +157,8 @@ fn main() {
             search::search_fetch,
             jobs::job_cancel,
             tray::tuck_away,
+            start::start_options_now,
+            start::quit,
             search::search_choose,
             search::forget_identity,
             library::all_systems

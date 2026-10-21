@@ -77,6 +77,10 @@ pub struct Settings {
     /// It comes back by itself when the game ends.
     #[serde(default = "default_while_playing")]
     pub while_playing: String,
+    /// The app opens in its fullscreen mode (pad and TV sized) rather than
+    /// the desktop library.
+    #[serde(default)]
+    pub start_fullscreen: bool,
 }
 
 fn default_while_playing() -> String {
@@ -111,6 +115,7 @@ impl Default for Settings {
             threads: 0,
             list_age_days: default_list_age(),
             while_playing: default_while_playing(),
+            start_fullscreen: false,
         }
     }
 }
@@ -239,6 +244,7 @@ impl Settings {
                 0..=64 => self.threads,
                 n => return bad(format!("{n} threads is too many (0 for automatic, at most 64)")),
             },
+            start_fullscreen: self.start_fullscreen,
             while_playing: match self.while_playing.trim() {
                 "" => default_while_playing(),
                 w if WHILE_PLAYING.contains(&w) => w.to_owned(),

@@ -29,6 +29,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         threads: get("threads")?.and_then(|v| v.parse().ok()).unwrap_or(0),
         list_age_days: get("list_age_days")?.and_then(|v| v.parse().ok()).unwrap_or(30),
         while_playing: get("while_playing")?.unwrap_or_else(|| "tray".into()),
+        start_fullscreen: get("start_fullscreen")?.as_deref() == Some("1"),
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -98,6 +99,10 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
             ),
             ("list_age_days", Some(s.list_age_days.to_string())),
             ("while_playing", Some(s.while_playing.clone())),
+            (
+                "start_fullscreen",
+                Some(if s.start_fullscreen { "1" } else { "0" }.to_owned()),
+            ),
             (
                 "platform_icons",
                 Some(s.platform_icons.clone()).filter(|t| !t.is_empty()),

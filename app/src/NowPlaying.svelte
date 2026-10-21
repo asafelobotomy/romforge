@@ -10,7 +10,9 @@
   // focus), then a bar with the game, how long it has run, and Stop, which
   // asks the emulator to quit first (it saves) and stops it only if it
   // doesn't. `ended` is called when the game ends (its play time is kept).
-  let { playing = $bindable(null), note = $bindable(""), error = $bindable(""), ended } = $props();
+  // `stayFullscreen`: the fullscreen mode is on, so the window stays
+  // fullscreen when the splash goes, and is made so again after the game.
+  let { playing = $bindable(null), note = $bindable(""), error = $bindable(""), stayFullscreen = false, ended } = $props();
 
   const win = getCurrentWindow();
   let splash = $state(null);
@@ -43,7 +45,7 @@
     splash = null;
     clearTimeout(fallback);
     try {
-      await win.setFullscreen(false);
+      if (!stayFullscreen) await win.setFullscreen(false);
     } catch {
       // As above.
     }
@@ -64,6 +66,7 @@
     listen("game-ended", (e) => {
       const d = e.payload;
       hide();
+      if (stayFullscreen) win.setFullscreen(true).catch(() => {});
       playing = null;
       if (d.seconds < 10 && d.code !== 0 && d.code !== null) {
         error = `${d.playing.emulator} closed straight away (exit code ${d.code}); check its setup in Emulator Settings.`;

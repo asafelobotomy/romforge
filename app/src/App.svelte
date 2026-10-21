@@ -22,6 +22,10 @@
   import ImageViewer from "./ImageViewer.svelte";
   import JobsBar from "./JobsBar.svelte";
   import JobsDialog from "./JobsDialog.svelte";
+  import Fullscreen from "./fullscreen/Fullscreen.svelte";
+  import { fs, enter as enterFs, leave as leaveFs, toggle as toggleFs } from "./fullscreen/fs.svelte.js";
+  import { desktopPad } from "./desktopKeys.js";
+  import { startGame } from "./play.js";
   import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
@@ -231,16 +235,11 @@
     await load();
   }
 
-  async function play() {
-    const row = lib.rows.find((r) => r.id === selected);
-    if (!row) return;
-    // Never queued: a game starts at once, whatever is running.
-    note = `Starting ${row.label ?? row.title}…`;
-    const r = await call("launch", { rowId: row.id });
-    note = "";
-    if (!r) return;
-    const mine = detail?.row?.id === row.id ? detail.art : {};
-    nowPlaying.started(r, { box3d: mine.box3d ?? null, boxart: mine.boxart ?? null, platform: row.system_name ?? r.system });
+  const playRow = (r, art) => startGame(r, art, { call, nowPlaying, setNote: (n) => (note = n) });
+  function play() {
+    const r = lib.rows.find((x) => x.id === selected);
+    const mine = detail?.row?.id === r?.id ? detail.art : {};
+    playRow(r, { box3d: mine.box3d, boxart: mine.boxart });
   }
 
   // Details: empty media boxes only when Settings says so.
@@ -296,28 +295,13 @@
     select(s);
   }
 
-  // Game pads: the library moves with the d-pad, A plays, the shoulders
-  // switch platform, the triggers jump to the first or last game, Start
-  // opens Settings and Select Emulator Settings. Not while a game runs
-  // (the emulator has the pad then).
-  function padLibrary(action) {
-    if (view !== "library") return;
-    const games = rows.filter((r) => !r.head);
-    if (action === "up" || action === "down") listKeys({ key: action === "up" ? "ArrowUp" : "ArrowDown", preventDefault() {} });
-    else if (action === "accept" && row?.playable && !busy) play();
-    else if (action === "page_up" || action === "page_down") {
-      const all = ["*", ...lib.platforms.map((p) => p.system ?? "")];
-      const i = Math.max(0, all.indexOf(platform));
-      platform = all[(i + (action === "page_down" ? 1 : all.length - 1)) % all.length];
-    } else if ((action === "first" || action === "last") && games.length) {
-      pick((action === "first" ? games[0] : games[games.length - 1]).id);
-    } else if (action === "menu") settings.openSettings();
-    else if (action === "context") emulators.openEmulatorSettings();
-  }
+  // Game pads: the fullscreen mode's when it is on, else the library's.
+  const padLibrary = (a) => desktopPad(a, { view, rows, row, busy, platforms: lib.platforms, platform, setPlatform: (p) => (platform = p), pick, play, listKeys, settings, emulators });
   listen("pad", (e) => {
     const p = e.payload;
     if (p.kind === "connected") note = `Game pad connected: ${p.name}`;
     else if (p.kind === "disconnected") note = `Game pad disconnected: ${p.name}`;
+    else if (!playing && fs.on) ((fs.padSeen = true), fs.pad?.(p.action));
     else if (!playing) padAction(p.action, padLibrary);
   });
 
@@ -332,11 +316,15 @@
     });
   }
   readSettings();
+  // Straight into the fullscreen mode: `--fullscreen`, or Settings says so.
+  Promise.all([call("start_options_now", undefined, true), call("get_settings", undefined, true)]).then(([o, s]) => (o?.fullscreen || s?.start_fullscreen) && enterFs());
 </script>
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === "Escape" && ui.viewer) ui.viewer = null;
+    if (e.key === "F11") (e.preventDefault(), toggleFs());
+    else if (fs.on) return;
+    else if (e.key === "Escape" && ui.viewer) ui.viewer = null;
     else if (e.key === "Escape" && jobsOpen) jobsOpen = false;
     else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
     else if (e.key === "Escape" && emuOpen) emuOpen = false;
@@ -352,7 +340,7 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
 
   <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
@@ -371,7 +359,7 @@
   <ImageViewer {detail} {row} />
 
 
-  <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error ended={() => selected && open(selected, true)} />
+  <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error stayFullscreen={fs.on} ended={() => selected && open(selected, true)} />
 
   <div class="body">
     <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} />
@@ -389,6 +377,8 @@
   <JobsBar note={busy || note} error={busy ? "" : error} openJobs={() => (jobsOpen = true)} />
   <JobsDialog bind:open={jobsOpen} />
 </div>
+<!-- Outside .app: none of the desktop's shared styles reach it. -->
+{#if fs.on}<Fullscreen {lib} {icons} {iconStyle} {playing} play={playRow} desktop={(id) => (leaveFs(), (view = "library"), pick(id))} />{/if}
 
 <style>
   .app { display: flex; flex-direction: column; height: 100vh; }

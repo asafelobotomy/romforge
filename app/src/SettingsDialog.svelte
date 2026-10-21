@@ -62,6 +62,7 @@
     threads: 0,
     list_age_days: 30,
     while_playing: "tray",
+    start_fullscreen: false,
   });
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
@@ -233,6 +234,14 @@
           Display missing versions
         </label>
         <p class="hint">Under each game, list every region and edition in your DATs that romforge can link to it, even ones you don't have (shown italic). Off: only what you own, plus a missing original when you only have a translation, hack or patch.</p>
+      </section>
+
+      <section class="setting">
+        <label class="toggle">
+          <input type="checkbox" bind:checked={draft.start_fullscreen} />
+          Start in the fullscreen mode
+        </label>
+        <p class="hint">For a game pad and a TV: platforms along the top, games below. F11 or the toolbar's Fullscreen switches anytime; its Start menu has Back to desktop.</p>
       </section>
 
       <section class="setting">

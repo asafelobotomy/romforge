@@ -6,7 +6,7 @@
   // dialogs' instances open theirs. Search, Enrich, Rename & Cleanup and
   // Convert take only the games selected in the list (`chosen`, row ids);
   // Refresh and Scan folder work on folders.
-  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, naming, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play } = $props();
+  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, naming, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play, fullscreen } = $props();
   const n = $derived(chosen.length);
   const games = $derived(n === 1 ? "the selected game" : `the ${n} selected games`);
   const pickFirst = "Select games in the list first (Ctrl+A selects everything listed)";
@@ -48,6 +48,9 @@
     <span class="glyph">⇲</span>Convert
   </button>
   <span class="spacer"></span>
+  <button class="tool" onclick={fullscreen} title="The fullscreen mode, for a game pad and a TV (F11; Back to desktop is in its Start menu)">
+    <span class="glyph">⛶</span>Fullscreen
+  </button>
   <button class="tool" onclick={() => settings.openSettings()} disabled={!!busy} title="Source and Library folders, cleanup options">
     <span class="glyph">⚙</span>Settings
   </button>

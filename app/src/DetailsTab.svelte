@@ -1,7 +1,7 @@
 <script>
   import { size } from "./lib.js";
   import { genres, esrb, regionFlags, stars } from "./facts.js";
-  import { artLabel, mediaKinds, extdbLabel, edition, caption, released } from "./labels.js";
+  import { artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
   import { ui } from "./ui.svelte.js";
 
   // Details' first tab: the pictures, an infobox of facts, the overview,
@@ -9,12 +9,6 @@
   // setting).
   let { row, detail, showEmpty, artPicker } = $props();
 
-  // Play time romforge recorded: "3.2 h · 5 times · last 19 Oct 2026".
-  function played(p) {
-    const time = p.seconds < 5400 ? `${Math.max(1, Math.round(p.seconds / 60))} min` : `${(p.seconds / 3600).toFixed(1)} h`;
-    const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-    return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
-  }
   let f = $derived(detail.fields ?? {});
 
   // The fanart (and later other kinds) can be swapped for another the

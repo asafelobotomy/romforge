@@ -44,6 +44,9 @@ jobs:
         working-directory: app
       - run: npm run build
         working-directory: app
+      # The fullscreen mode's focus moves (Node's own test runner).
+      - run: node --test test
+        working-directory: app
       - run: cargo clippy -p romforge-app -- -D warnings
       - run: npx tauri build --no-bundle
         working-directory: app

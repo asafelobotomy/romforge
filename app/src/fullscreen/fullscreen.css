@@ -1,0 +1,42 @@
+/* The fullscreen mode's frame. Sizes follow the screen's height (a TV
+   across the room, a Steam Deck in the hands), colours the app's own
+   tokens (the UK SNES palette). Themes (stage 2, step 4) will hook the
+   data-fs-* attributes and these variables, never class names. */
+[data-fs-root] {
+  --fs-gap: 2vh;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background: radial-gradient(ellipse at 50% 0%, var(--panel), var(--bg) 75%);
+  color: var(--text);
+  font-size: 2vh;
+  overflow: hidden;
+}
+[data-fs-root][data-fs-screen="game"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+[data-fs-root] .top {
+  display: flex;
+  justify-content: center;
+  padding: 2vh 2vw 0;
+}
+[data-fs-root] .home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18vw, 26vw);
+  gap: 2vw;
+  min-height: 0;
+  padding: 1vh 3vw 5vh;
+}
+[data-fs-root] *,
+[data-fs-root] *::before,
+[data-fs-root] *::after {
+  box-sizing: border-box;
+}
+[data-fs-root] button {
+  font: inherit;
+}
+[data-fs-root] button:focus-visible {
+  outline: 0.4vh solid var(--accent);
+}
