@@ -23,6 +23,7 @@ mod play;
 mod scan;
 mod search;
 mod settings;
+mod tray;
 
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -153,6 +154,7 @@ fn main() {
             search::search_apply,
             search::search_fetch,
             jobs::job_cancel,
+            tray::tuck_away,
             search::search_choose,
             search::forget_identity,
             library::all_systems

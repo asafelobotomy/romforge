@@ -61,6 +61,7 @@
     show_missing_versions: false,
     threads: 0,
     list_age_days: 30,
+    while_playing: "tray",
   });
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
@@ -232,6 +233,16 @@
           Display missing versions
         </label>
         <p class="hint">Under each game, list every region and edition in your DATs that romforge can link to it, even ones you don't have (shown italic). Off: only what you own, plus a missing original when you only have a translation, hack or patch.</p>
+      </section>
+
+      <section class="setting">
+        <label class="flabel" for="while-playing">While a game plays</label>
+        <select id="while-playing" bind:value={draft.while_playing}>
+          <option value="tray">Hide romforge to the tray</option>
+          <option value="minimise">Minimise romforge</option>
+          <option value="stay">Keep romforge open</option>
+        </select>
+        <p class="hint">Once the game is up. romforge comes back by itself when the game ends; from the tray, Show romforge brings it back sooner and Stop asks the game to quit. Without a tray (some desktops have none), romforge minimises instead.</p>
       </section>
 
       <section class="setting">

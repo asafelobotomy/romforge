@@ -15,7 +15,7 @@ use crate::db::{Db, Res, blocking, read};
 pub struct Now(pub Mutex<Option<Arc<Session>>>);
 
 /// How long a game gets to quit on its own before it is stopped hard.
-const GRACE: Duration = Duration::from_secs(10);
+pub(crate) const GRACE: Duration = Duration::from_secs(10);
 
 #[tauri::command]
 /// Start one library row (exactly its files).
@@ -41,6 +41,7 @@ pub async fn launch(
             let mut lib = write.lock().unwrap_or_else(|e| e.into_inner());
             let _ = lib.record_play(&ended);
         }
+        crate::tray::game_ended(&app);
         let _ = app.emit("game-ended", &ended);
     });
     Ok(playing)

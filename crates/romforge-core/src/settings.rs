@@ -72,7 +72,19 @@ pub struct Settings {
     /// goes online for them.
     #[serde(default = "default_list_age")]
     pub list_age_days: u32,
+    /// What romforge's window does while a game plays: "tray" (hidden,
+    /// a tray icon brings it back; the default), "minimise" or "stay".
+    /// It comes back by itself when the game ends.
+    #[serde(default = "default_while_playing")]
+    pub while_playing: String,
 }
+
+fn default_while_playing() -> String {
+    "tray".into()
+}
+
+/// The choices for [`Settings::while_playing`].
+pub const WHILE_PLAYING: &[&str] = &["tray", "minimise", "stay"];
 
 fn default_list_age() -> u32 {
     30
@@ -98,6 +110,7 @@ impl Default for Settings {
             platform_icons: String::new(),
             threads: 0,
             list_age_days: default_list_age(),
+            while_playing: default_while_playing(),
         }
     }
 }
@@ -225,6 +238,15 @@ impl Settings {
             threads: match self.threads {
                 0..=64 => self.threads,
                 n => return bad(format!("{n} threads is too many (0 for automatic, at most 64)")),
+            },
+            while_playing: match self.while_playing.trim() {
+                "" => default_while_playing(),
+                w if WHILE_PLAYING.contains(&w) => w.to_owned(),
+                w => {
+                    return bad(format!(
+                        "no window choice {w:?} while playing (tray, minimise or stay)"
+                    ));
+                }
             },
             list_age_days: match self.list_age_days {
                 0..=3650 => self.list_age_days,

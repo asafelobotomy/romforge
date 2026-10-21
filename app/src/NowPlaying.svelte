@@ -27,7 +27,7 @@
       .then((file) => splash && file && (splash.logo = artSrc(file)))
       .catch(() => {});
     clearTimeout(fallback);
-    fallback = setTimeout(hide, 15000);
+    fallback = setTimeout(() => hide(true), 15000);
     try {
       await win.setFullscreen(true);
     } catch {
@@ -35,7 +35,10 @@
     }
   }
 
-  async function hide() {
+  // `away`: the game is up, so the window goes out of its way as Settings
+  // says (to the tray, minimised, or left); it comes back when the game
+  // ends (the backend shows it again).
+  async function hide(away = false) {
     if (!splash) return;
     splash = null;
     clearTimeout(fallback);
@@ -44,6 +47,7 @@
     } catch {
       // As above.
     }
+    if (away && playing) invoke("tuck_away", { game: playing.game }).catch(() => {});
   }
 
   const minutes = (s) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
@@ -51,7 +55,7 @@
   // The emulator's window taking the focus means it's up.
   $effect(() => {
     let off = null;
-    win.onFocusChanged(({ payload: focused }) => !focused && hide()).then((f) => (off = f));
+    win.onFocusChanged(({ payload: focused }) => !focused && hide(true)).then((f) => (off = f));
     return () => off?.();
   });
 

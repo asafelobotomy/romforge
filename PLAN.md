@@ -1132,6 +1132,19 @@ RetroDECK's `bios.json` is GPL-3.0: not used.
   when the system asks for less. It stays until the emulator's window
   takes the focus, with a 15-second fallback. Not a separate borderless window, and focus
   is the sign the emulator is up (no window-mapping check on Wayland).
+  Tried by the owner on KDE Plasma (Wayland) on 2026-10-21 with ScummVM
+  (Darkseed): the splash works (it stayed about a second), but quitting
+  the game didn't bring romforge back.
+- **Tray** (2026-10-21, the owner's idea; `app/src-tauri/src/tray.rs`):
+  once the game is up, romforge's window hides to a tray icon (Settings
+  `while_playing`: tray, the default; minimise; stay) whose menu has Show
+  romforge and Stop; when the game ends the tray icon goes and the
+  window is shown again, un-minimised and focused (showing a hidden
+  window comes to the front on Wayland where raising one may not).
+  Without `libayatana-appindicator` (or no tray at all) it minimises
+  instead. The packages depend on that library. Tried by the owner on
+  KDE Plasma (Wayland) on 2026-10-21: the tray icon shows while the game
+  runs, and romforge comes back in front when it ends.
 - **Running:** a bar under the toolbar says what's playing, for how long,
   with Stop; Play is off meanwhile.
 - **Stop:** SIGTERM first (RetroArch 1.22.2's first SIGTERM is a clean

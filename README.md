@@ -457,7 +457,11 @@ The toolbar:
   candidate, unknown; what's new), then scans it for real or not as you
   say.
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
-  Cleanup, Display, Sources, Credits), **Play**.
+  Cleanup, Display, Sources, Credits), **Play**. Play shows a splash
+  until the emulator is up; then romforge goes to the system tray
+  (Settings → **While a game plays**: tray, minimise, or keep open). Its
+  tray menu has **Show romforge** and **Stop**; when the game ends,
+  romforge comes back by itself.
 
 Long jobs (scans, Refresh, Enrich, Rename & Cleanup, Convert, DAT and
 database downloads, naming in bulk, patching, installs) wait their turn

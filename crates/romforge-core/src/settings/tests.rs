@@ -140,3 +140,23 @@ fn folders_must_make_sense_together() {
         .is_ok()
     );
 }
+
+#[test]
+fn while_playing_is_one_of_three() {
+    let s = Settings {
+        while_playing: "minimise".into(),
+        ..Settings::default()
+    };
+    assert_eq!(s.validated().unwrap().while_playing, "minimise");
+    assert_eq!(Settings::default().while_playing, "tray");
+    let blank = Settings {
+        while_playing: " ".into(),
+        ..Settings::default()
+    };
+    assert_eq!(blank.validated().unwrap().while_playing, "tray");
+    let odd = Settings {
+        while_playing: "vanish".into(),
+        ..Settings::default()
+    };
+    assert!(odd.validated().is_err());
+}
