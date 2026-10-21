@@ -61,6 +61,16 @@ const fn config(
 
 pub const SETTINGS: &[Setting] = &[
     Setting {
+        key: "hotkeys",
+        label: "Game pad hotkeys",
+        hint: "romforge's own hotkeys while a game runs (Select+Start quits; the Hotkeys tab lists them all). The emulators' own pad hotkeys stay off.",
+        kind: Kind::Bool,
+        global: true,
+        default: "true",
+        choices: &[],
+        keys: &[],
+    },
+    Setting {
         key: "fullscreen",
         label: "Fullscreen",
         hint: "Start games fullscreen, without the emulator's own window and menus.",

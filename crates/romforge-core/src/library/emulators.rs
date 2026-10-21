@@ -150,6 +150,11 @@ impl Library {
         Ok((home, e, user))
     }
 
+    /// Whether romforge's game pad hotkeys are on (Emulator Settings).
+    pub fn hotkeys_on(&self) -> Result<bool, Error> {
+        Ok(emusettings::hotkeys_on(&emusettings::load(&self.conn)?))
+    }
+
     pub fn save_emulator_settings(
         &mut self,
         s: &emusettings::EmulatorSettings,

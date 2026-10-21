@@ -37,6 +37,8 @@ pub struct Ended {
 /// A game being played.
 pub struct Session {
     pub playing: Playing,
+    /// How romforge reaches it for the hotkeys (`launch::controls`).
+    pub control: Option<super::controls::Channel>,
     child: Arc<Mutex<Option<Child>>>,
     began: Instant,
 }
@@ -62,6 +64,7 @@ impl Session {
                 emulator: spec.emulator.clone(),
                 started,
             },
+            control: spec.prepare.control,
             child: Arc::new(Mutex::new(Some(child))),
             began: Instant::now(),
         })

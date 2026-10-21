@@ -14,10 +14,12 @@ mod emulators;
 mod enrich;
 mod firmware;
 mod home;
+mod hotkeys;
 mod images;
 mod jobs;
 mod library;
 mod manual;
+mod overlay;
 mod patch;
 mod play;
 mod scan;
@@ -62,13 +64,24 @@ fn main() {
         .manage(roots)
         .manage(play::Now::default())
         .manage(jobs::Jobs::default())
+        .manage(hotkeys::Watcher::default())
         .manage(start::start_options(std::env::args().skip(1)))
         // Game pads, heard even while an emulator has the focus: "pad"
         // events for the page (no pads, or no access: the app works without).
         .setup(|app| {
             let handle = app.handle().clone();
             let listening = romforge_core::controller::listen(move |e| {
-                let _ = tauri::Emitter::emit(&handle, "pad", &e);
+                // Raw buttons, the stick and time are for the hotkeys; the
+                // page gets the actions and pads coming and going.
+                use romforge_core::controller::PadEvent;
+                match e {
+                    PadEvent::Button { .. } | PadEvent::Stick { .. } | PadEvent::Tick => {
+                        hotkeys::pad(&handle, &e)
+                    }
+                    _ => {
+                        let _ = tauri::Emitter::emit(&handle, "pad", &e);
+                    }
+                }
             });
             if let Err(e) = listening {
                 eprintln!("romforge: {e}");
@@ -157,6 +170,7 @@ fn main() {
             search::search_fetch,
             jobs::job_cancel,
             tray::tuck_away,
+            hotkeys::hotkeys_view,
             start::start_options_now,
             start::quit,
             search::search_choose,

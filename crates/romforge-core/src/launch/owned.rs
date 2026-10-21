@@ -43,6 +43,8 @@ pub struct Prepare {
     /// under `to`, where nothing is yet (an emulator with no key for its
     /// BIOS files).
     pub links: Vec<(PathBuf, PathBuf)>,
+    /// How romforge reaches it while it runs, for the hotkeys.
+    pub control: Option<super::controls::Channel>,
 }
 
 /// romforge's config for `e` running a game of `system`: its folder (the
@@ -90,6 +92,9 @@ pub(super) fn owned(
             };
             let mut keys = pairs(&base);
             keys.extend(options.config.iter().cloned());
+            let (hot, mut remove, control) = super::controls::retroarch(options.hotkeys);
+            keys.extend(hot);
+            remove.extend(options.unset.iter().cloned());
             let prepare = Prepare {
                 dirs: vec![bios, saves, states, shots],
                 writes: vec![
@@ -97,7 +102,7 @@ pub(super) fn owned(
                         path: dir.join("retroarch.cfg"),
                         format: Format::RetroArch,
                         keys,
-                        remove: options.unset.clone(),
+                        remove,
                     },
                     ConfigWrite {
                         path: dir.join("systems").join(format!("{}.cfg", system.key)),
@@ -106,6 +111,7 @@ pub(super) fn owned(
                         remove: Vec::new(),
                     },
                 ],
+                control,
                 ..Prepare::default()
             };
             Some((dir, prepare))
@@ -114,7 +120,10 @@ pub(super) fn owned(
             let bios = home.bios().join(name);
             standalone::standalone(name, &dir, &bios)
                 .or_else(|| gamedata::gamedata(name, &dir, &bios, user))
-                .map(|p| (dir, p))
+                .map(|mut p| {
+                    super::controls::bind(name, options.hotkeys, &mut p.writes);
+                    (dir, p)
+                })
         }
     }
 }

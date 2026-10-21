@@ -1187,8 +1187,9 @@ themes. Researched online the same day (sources below); decided:
   not `js-spatial-navigation` (MPL-2.0, stale).
 - **One hotkey table** (`hotkeys.rs`: a hotkey button plus a chord →
   an action), written into each emulator's config romforge owns:
-  RetroArch's pad hotkeys and its command port (UDP 55355, no
-  authentication: bound to localhost) for QUIT / SAVE_STATE / MENU;
+  RetroArch's pad hotkeys and its command port (UDP, no authentication;
+  1.22.2 binds every interface, so a free port per game) for QUIT /
+  SAVE_STATE / MENU;
   PCSX2's and DuckStation's native chords (`A & B`) and their PINE socket
   for saving state; the native pad hotkeys of Dolphin, PPSSPP, melonDS,
   mGBA and Flycast. Where an emulator has none (xemu, Cemu: to check),
@@ -1199,9 +1200,10 @@ themes. Researched online the same day (sources below); decided:
 - **Quit** (Hotkey+Start): the emulator's own quit command first, then
   SIGTERM (1.6), then a kill; romforge back in front. **Pause:** each
   emulator's own pause menu (RetroArch's menu, PCSX2's / DuckStation's
-  fullscreen menu). A romforge menu drawn over the game is parked as an
-  experiment: no overlay layer on GNOME, KWin refuses focus stealing on
-  Wayland, gamescope's external-overlay hook is undocumented.
+  fullscreen menu). A romforge menu drawn over the game (the radial
+  menu, step 3) is a layer-shell overlay where the compositor has one
+  (KWin, wlroots); GNOME has no overlay layer, and gamescope's
+  external-overlay hook is undocumented.
 - **Steam Deck:** romforge runs as the non-Steam game and starts
   emulators as its children (launchers that hand off and exit lose their
   windows under gamescope); a `--fullscreen` start option; later a
@@ -1265,7 +1267,34 @@ themes. Researched online the same day (sources below); decided:
    asks). Playing from it keeps the window fullscreen. `data-fs-*`
    attributes for step 4. Not yet: tried with a pad.
 3. *Hotkeys:* the table above, written into every emulator; the graceful
-   quit chord.
+   quit chord. *(Built 2026-10-21.)* As the owner decided, romforge is
+   the controller layer: it reads the chords itself (`hotkeys.rs`, the
+   one table, and its `Chords` state machine) and the emulators' own pad
+   hotkeys are off. Select+Start quit, Select+R1/L1 save/load state,
+   L3+R3 menu, Select+R2/L2 held fast forward/rewind, and L3 held 2 s for
+   a radial menu the right stick picks from. `launch/controls.rs` routes
+   each action, checked in source first:
+   - RetroArch 1.22.2: UDP commands on a free port per game (it binds
+     every interface; `network_cmd_bind_address` is master only). Holds
+     last one frame, so they are re-sent every 10 ms; QUIT twice
+     (`confirm_quit`); its `input_*_btn` hotkeys written `nul`. Tried
+     live: QUIT closes it. The game still sees the chord's buttons
+     (`input_hotkey_block_delay` needs a bound enable button).
+   - DuckStation and PCSX2: no command channel for these (PCSX2's PINE is
+     save/load only), so their own `[Hotkeys]` are written for exactly
+     romforge's chords (`SDL-0/Back & SDL-0/+RightTrigger`). No PCSX2
+     rewind. Quit is SIGTERM.
+   - Everything else: quit only (SIGTERM).
+   - Flatpak: SIGTERM to `flatpak run` reaches only bubblewrap's monitor
+     (read in source, not tried), so a Flatpak emulator's quit needs its
+     own command or the instance's child pid. Open.
+   The radial menu is an overlay window (`overlay.rs`, `app/src/radial/`):
+   a layer-shell surface (gtk-layer-shell loaded at run time, so it stays
+   optional) above the fullscreen game, which keeps the focus; tried on
+   KDE Plasma 6.7 Wayland with a virtual pad over ScummVM. Without
+   layer-shell (GNOME, X11) it falls back to a plain fullscreen window,
+   which KWin activates. Not yet: tried with a real pad, other emulators
+   added one by one, a hotkey editor.
 4. *Theme engine v1:* manifest, variables, options, fallback variants,
    live reload; two or three first-party themes, SNES UK the default.
 5. *`romforge-themes`:* the index, downloads and updates, licences shown.

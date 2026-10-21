@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "The radial menu's overlay window may hear romforge's events and call its own commands (what is playing, the hotkeys).",
+  "windows": [
+    "overlay"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

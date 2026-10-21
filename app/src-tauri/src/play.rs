@@ -30,7 +30,14 @@ pub async fn launch(
     {
         return Err(format!("{} is still running: stop it first", s.playing.game));
     }
-    let spec = read(&db, move |lib| lib.launch_row(&lib.env()?, &row_id, None)).await?;
+    let (spec, hotkeys) = read(&db, move |lib| {
+        Ok((lib.launch_row(&lib.env()?, &row_id, None)?, lib.hotkeys_on()?))
+    })
+    .await?;
+    crate::hotkeys::set_on(&app, hotkeys);
+    if hotkeys {
+        crate::overlay::prepare(&app);
+    }
     let session = Arc::new(blocking(move || Session::start(&spec)).await?);
     let playing = session.playing.clone();
     *now.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());

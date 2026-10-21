@@ -8,6 +8,7 @@ use gilrs::{Axis, EventType, Gilrs};
 
 use super::{Directions, PadEvent, PadId, action_of, parse_ignore, usable};
 use crate::Error;
+use crate::hotkeys::PadButton;
 
 /// Listen to the pads on a thread of its own, calling `on` with what they
 /// do. An error when they can't be read at all (no udev, no access to
@@ -34,6 +35,7 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                 .flat_map(|v| parse_ignore(&v))
                 .collect();
             let mut dirs = Directions::default();
+            let mut right = (0.0f32, 0.0f32);
             loop {
                 if let Some(ev) = g.next_event_blocking(Some(Duration::from_millis(30))) {
                     let pads: Vec<PadId> = g
@@ -53,6 +55,9 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                         EventType::Disconnected => on(PadEvent::Disconnected { name }),
                         _ if !listened => {}
                         EventType::ButtonPressed(b, _) => {
+                            if let Some(button) = PadButton::from_gilrs(&format!("{b:?}")) {
+                                on(PadEvent::Button { button, down: true });
+                            }
                             if let Some(a) = action_of(&format!("{b:?}")) {
                                 let a = if Directions::is_direction(a) {
                                     dirs.press(a, now)
@@ -63,6 +68,9 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                             }
                         }
                         EventType::ButtonReleased(b, _) => {
+                            if let Some(button) = PadButton::from_gilrs(&format!("{b:?}")) {
+                                on(PadEvent::Button { button, down: false });
+                            }
                             if let Some(a) =
                                 action_of(&format!("{b:?}")).filter(|a| Directions::is_direction(*a))
                             {
@@ -74,12 +82,24 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                                 on(PadEvent::Action { action: a });
                             }
                         }
+                        EventType::AxisChanged(axis @ (Axis::RightStickX | Axis::RightStickY), v, _) => {
+                            if axis == Axis::RightStickX {
+                                right.0 = v;
+                            } else {
+                                right.1 = v;
+                            }
+                            on(PadEvent::Stick {
+                                x: right.0,
+                                y: right.1,
+                            });
+                        }
                         _ => {}
                     }
                 }
                 if let Some(a) = dirs.tick(Instant::now()) {
                     on(PadEvent::Action { action: a });
                 }
+                on(PadEvent::Tick);
             }
         })?;
     match started.recv() {

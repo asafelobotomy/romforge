@@ -19,6 +19,7 @@ pub mod firmware;
 pub mod hash;
 pub mod headers;
 pub mod home;
+pub mod hotkeys;
 pub mod ident;
 mod identify;
 pub mod job;

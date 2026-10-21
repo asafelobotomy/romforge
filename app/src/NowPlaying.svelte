@@ -104,6 +104,7 @@
   <div class="playing" role="status">
     <span class="dot" aria-hidden="true"></span>
     <span class="what">Playing <strong>{playing.game}</strong> · {playing.emulator} · {minutes(Math.max(0, Math.floor(now / 1000) - playing.started))}</span>
+    <span class="keys" title="romforge's game pad hotkeys (Emulator Settings → Hotkeys)">Select+Start quits · hold L3 for the menu</span>
     <button onclick={stop} disabled={stopping} title="Asks the emulator to quit (it saves first); stops it only if it hasn't after 10 seconds">{stopping ? "Stopping…" : "Stop"}</button>
   </div>
 {/if}
@@ -111,5 +112,6 @@
 <style>
   .playing { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--accent-bg); font-size: 0.85rem; }
   .what { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .keys { color: var(--muted); white-space: nowrap; }
   .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--ok); }
 </style>

@@ -181,6 +181,12 @@ fn value<'a>(s: &'a EmulatorSettings, e: &KnownEmulator, key: &str) -> Option<&'
         .or_else(|| setting(key).map(|d| d.default))
 }
 
+/// Whether romforge's game pad hotkeys are on (the global setting; on
+/// unless turned off).
+pub fn hotkeys_on(s: &EmulatorSettings) -> bool {
+    s.global.get("hotkeys").map(String::as_str) != Some("false")
+}
+
 /// Put what `s` sets into `env`, for [`launch`] to start emulators by.
 pub fn apply(s: &EmulatorSettings, env: &mut Env) {
     for e in with_settings() {
@@ -194,6 +200,7 @@ pub fn apply(s: &EmulatorSettings, env: &mut Env) {
                 .split_whitespace()
                 .map(str::to_owned)
                 .collect(),
+            hotkeys: hotkeys_on(s),
             ..LaunchOptions::default()
         };
         // Config keys: set ones written, unset ones taken out (the

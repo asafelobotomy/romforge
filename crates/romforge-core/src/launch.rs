@@ -19,6 +19,7 @@ use rusqlite::{Connection, params};
 
 use crate::{Error, systems};
 
+pub mod controls;
 mod emulators;
 pub use emulators::*;
 mod plan;
@@ -117,6 +118,9 @@ pub struct LaunchOptions {
     pub config: Vec<(String, String)>,
     /// Keys romforge manages that aren't set: taken out of that copy.
     pub unset: Vec<String>,
+    /// romforge's game pad hotkeys on (`launch::controls` writes what the
+    /// emulator needs for them).
+    pub hotkeys: bool,
 }
 
 impl Env {

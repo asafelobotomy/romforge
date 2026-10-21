@@ -136,7 +136,7 @@
     menu
       ? [["move", "Move"], ["accept", "Choose"], ["back", "Close"]]
       : screen === "game"
-        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["north", "Options"], ["back", "Back"], ["menu", "Menu"]]
+        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["north", "Options"], ["back", "Back"], ["menu", "Menu"], ["Select+Start", "Quits a game"]]
         : focus === "carousel"
           ? [["side", "Platform"], ["accept", "Games"], ["back", "Desktop"], ["menu", "Menu"]]
           : [["accept", "Open"], ["north", "Options"], ["context", "More"], ["page", "Page"], ["back", "Platforms"], ["menu", "Menu"]],

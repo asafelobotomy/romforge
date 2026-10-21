@@ -51,7 +51,8 @@
         ],
         "recommends": [
           "retroarch",
-          "scummvm"
+          "scummvm",
+          "libgtk-layer-shell0"
         ],
         "section": "games"
       },
@@ -65,7 +66,8 @@
         ],
         "recommends": [
           "retroarch",
-          "scummvm"
+          "scummvm",
+          "gtk-layer-shell"
         ]
       }
     },

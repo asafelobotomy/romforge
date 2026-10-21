@@ -42,12 +42,31 @@ pub enum Action {
 }
 
 /// What the app hears from the pads.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PadEvent {
-    Action { action: Action },
-    Connected { name: String },
-    Disconnected { name: String },
+    Action {
+        action: Action,
+    },
+    Connected {
+        name: String,
+    },
+    Disconnected {
+        name: String,
+    },
+    /// A button going down or up, as it is (for hotkey chords,
+    /// [`crate::hotkeys::Chords`]).
+    Button {
+        button: crate::hotkeys::PadButton,
+        down: bool,
+    },
+    /// The right stick's position (x right, y up; -1..1).
+    Stick {
+        x: f32,
+        y: f32,
+    },
+    /// Time passing (about every 30 ms), for what waits on a hold.
+    Tick,
 }
 
 /// Steam Input's virtual pad.

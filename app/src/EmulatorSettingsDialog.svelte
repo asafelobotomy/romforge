@@ -2,6 +2,7 @@
   import { edit, run } from "./jobs.svelte.js";
   import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
   import CoresPanel from "./CoresPanel.svelte";
+  import HotkeysPanel from "./HotkeysPanel.svelte";
 
   // Emulator Settings: a Global tab for every emulator at once, then one
   // tab per installed emulator. An emulator takes the global value unless
@@ -21,7 +22,7 @@
     view = v;
     draft = { global: { ...v.values.global }, emulators: {} };
     for (const e of v.installed) draft.emulators[e.name] = { ...(v.values.emulators[e.name] ?? {}) };
-    if (tab !== "global" && !v.installed.some((e) => e.name === tab)) tab = "global";
+    if (tab !== "global" && tab !== "hotkeys" && !v.installed.some((e) => e.name === tab)) tab = "global";
     open = true;
   }
 
@@ -120,12 +121,15 @@
 
       <div class="etabs" role="tablist">
         <button role="tab" aria-selected={tab === "global"} class:active={tab === "global"} onclick={() => (tab = "global")}>Global</button>
+        <button role="tab" aria-selected={tab === "hotkeys"} class:active={tab === "hotkeys"} onclick={() => (tab = "hotkeys")}>Hotkeys</button>
         {#each view.installed as e}
           <button role="tab" aria-selected={tab === e.name} class:active={tab === e.name} onclick={() => (tab = e.name)}>{e.label}</button>
         {/each}
       </div>
 
-      {#if tab === "global"}
+      {#if tab === "hotkeys"}
+        <HotkeysPanel installed={view.installed} on={globalValue("hotkeys") !== "false"} />
+      {:else if tab === "global"}
         <p class="hint">For every emulator at once. An emulator's own tab can set something else for it.</p>
         {#each globals() as s}
           {@const users = usedBy(s.key)}

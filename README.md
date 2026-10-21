@@ -471,6 +471,20 @@ The toolbar:
   bar shows the buttons (or keys: Enter, Esc, Tab, Space, O, PgUp/PgDn).
   `romforge-app --fullscreen`, or Settings → **Start in the fullscreen
   mode**, opens it straight away.
+- **Hotkeys** on the pad while a game runs, the same for every emulator
+  (romforge reads them itself; the emulators' own pad hotkeys are off):
+  Select+Start quits, Select+R1 saves a state, Select+L1 loads it, L3+R3
+  opens the emulator's menu, Select+R2 held fast-forwards and Select+L2
+  held rewinds. Hold L3 for two seconds and a ring of these actions
+  shows over the game: point at one with the right stick and let go of L3
+  (or press A; B cancels). Quit works for every emulator; RetroArch,
+  DuckStation and PCSX2 get the rest (PCSX2 has no rewind; rewind needs
+  turning on in RetroArch's or DuckStation's settings). Emulator Settings
+  → **Hotkeys** lists them and what each installed emulator gets, and the
+  Global tab's **Game pad hotkeys** turns them off. The ring draws over a
+  fullscreen game where the desktop has layer-shell (KDE Plasma, wlroots)
+  and `gtk-layer-shell` is installed; elsewhere it shows as a window of
+  its own, which takes the focus while it is up.
 
 Long jobs (scans, Refresh, Enrich, Rename & Cleanup, Convert, DAT and
 database downloads, naming in bulk, patching, installs) wait their turn

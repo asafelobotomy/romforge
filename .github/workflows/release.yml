@@ -61,7 +61,8 @@ jobs:
                       'libretro-scummvm: ScummVM games in RetroArch'
                       'scummvm: ScummVM games, and naming them'
                       'mame: FM-7 and FM Towns games'
-                      'flatpak: DOSBox Staging or DOSBox-X from Flathub')
+                      'flatpak: DOSBox Staging or DOSBox-X from Flathub'
+                      'gtk-layer-shell: the radial menu over a fullscreen game')
           provides=('romforge')
           conflicts=('romforge')
           source=("\$pkgname-\$pkgver.deb::https://github.com/asafelobotomy/romforge/releases/download/v\$pkgver/romforge_\${pkgver}_amd64.deb"
