@@ -53,6 +53,15 @@ test("the home screen: carousel, grid and the buttons", () => {
   assert.deepEqual(homeAction(grid, "context"), { intent: "context" });
 });
 
+test("the list layout is one column of games", () => {
+  const list = { platform: 0, platforms: 2, game: 3, count: 10, cols: 5, rows: 8, focus: "grid", layout: "list" };
+  assert.deepEqual(homeAction(list, "down"), { game: 4 });
+  assert.deepEqual(homeAction(list, "up"), { game: 2 });
+  assert.deepEqual(homeAction({ ...list, game: 0 }, "up"), { focus: "carousel" });
+  assert.deepEqual(homeAction(list, "page_down"), { game: 9 }, "a page of rows");
+  assert.deepEqual(homeAction(list, "accept"), { intent: "open" });
+});
+
 test("keys stand in for the pad", () => {
   assert.equal(keyAction("Enter"), "accept");
   assert.equal(keyAction("Escape"), "back");

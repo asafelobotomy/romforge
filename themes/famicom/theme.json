@@ -1,0 +1,47 @@
+{
+  "api": 1,
+  "id": "famicom",
+  "name": "Famicom",
+  "author": "romforge",
+  "licence": "MIT",
+  "description": "Cream and deep red with gold details, square cards.",
+  "layout": "grid",
+  "layouts": ["list"],
+  "fallback": "title",
+  "schemes": {
+    "cream": {
+      "--fs-bg": "#e9dfc8",
+      "--fs-bg-2": "#f6efdf",
+      "--fs-panel": "#f8f2e4",
+      "--fs-text": "#3a1712",
+      "--fs-muted": "#7c5a4c",
+      "--fs-accent": "#a3201c",
+      "--fs-accent-text": "#fff8e8",
+      "--fs-line": "#a3201c33",
+      "--fs-focus": "#c9971f",
+      "--fs-radius": "0.3vh"
+    },
+    "red": {
+      "--fs-bg": "#5c0f0c",
+      "--fs-bg-2": "#8a1915",
+      "--fs-panel": "#701411",
+      "--fs-text": "#f6efdf",
+      "--fs-muted": "#e0c9a6",
+      "--fs-accent": "#e0b040",
+      "--fs-accent-text": "#3a1712",
+      "--fs-line": "#f6efdf33",
+      "--fs-focus": "#e0b040",
+      "--fs-radius": "0.3vh"
+    }
+  },
+  "options": [
+    {
+      "key": "stripe",
+      "label": "Gold stripe",
+      "choices": [
+        { "value": "on", "label": "On" },
+        { "value": "off", "label": "Off" }
+      ]
+    }
+  ]
+}

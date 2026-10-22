@@ -15,7 +15,7 @@
 </footer>
 
 <style>
-  .help { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.8vh 2.4vw; padding: 1.4vh 2vw; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 80%, transparent); font-size: 1.9vh; color: var(--muted); }
+  .help { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.8vh 2.4vw; padding: 1.4vh 2vw; border-top: 1px solid var(--fs-line); background: color-mix(in srgb, var(--fs-panel) 80%, transparent); font-size: calc(1.9vh * var(--fs-scale)); color: var(--fs-muted); }
   .item { display: inline-flex; align-items: center; gap: 0.5vw; }
-  kbd { padding: 0.2vh 0.6vw; border: 1px solid var(--line); border-radius: 0.6vh; background: var(--bg); color: var(--text); font: inherit; font-weight: 600; }
+  kbd { padding: 0.2vh 0.6vw; border: 1px solid var(--fs-line); border-radius: calc(var(--fs-radius) * 0.6); background: var(--fs-bg); color: var(--fs-text); font: inherit; font-weight: 600; }
 </style>

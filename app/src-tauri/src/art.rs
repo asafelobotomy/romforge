@@ -23,6 +23,7 @@ impl ArtRoots {
 
     pub fn set(&self, lib: &Library) {
         *self.0.write().unwrap_or_else(|e| e.into_inner()) = Self::of(lib);
+        crate::themes::set_dir(lib);
     }
 }
 

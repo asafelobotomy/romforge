@@ -14,9 +14,9 @@
 </div>
 
 <style>
-  .scrim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: #000a; }
-  .menu { display: grid; gap: 1vh; min-width: 32vw; max-width: 60vw; padding: 3vh 2.4vw; border-radius: 1.6vh; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 3vh 6vh #0008; }
-  h2 { margin: 0 0 1vh; font-size: 2.8vh; }
-  button { padding: 1.3vh 1.4vw; border: 0.3vh solid transparent; border-radius: 1vh; background: none; color: var(--text); font-size: 2.4vh; text-align: left; cursor: pointer; }
-  button.focus { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .scrim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: var(--fs-scrim); }
+  .menu { display: grid; gap: 1vh; min-width: 32vw; max-width: 60vw; padding: 3vh 2.4vw; border-radius: calc(var(--fs-radius) * 1.6); background: var(--fs-panel); border: 1px solid var(--fs-line); box-shadow: 0 3vh 6vh var(--fs-shadow); }
+  h2 { margin: 0 0 1vh; font-size: calc(2.8vh * var(--fs-scale)); }
+  button { padding: 1.3vh 1.4vw; border: 0.3vh solid transparent; border-radius: var(--fs-radius); background: none; color: var(--fs-text); font-size: calc(2.4vh * var(--fs-scale)); text-align: left; cursor: pointer; }
+  button.focus { border-color: var(--fs-focus); background: color-mix(in srgb, var(--fs-focus) 15%, transparent); }
 </style>

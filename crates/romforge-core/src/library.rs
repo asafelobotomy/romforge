@@ -16,6 +16,7 @@ mod scan_report;
 mod scanning;
 mod scummvm_io;
 mod searching;
+mod themes;
 mod view_cache;
 
 pub use art::PlatformIcons;

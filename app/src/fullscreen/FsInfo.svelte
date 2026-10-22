@@ -15,7 +15,7 @@
     {#if logo}
       <img class="logo" src={logo} alt={game.name?.title || game.title} />
     {:else}
-      <h2>{game.name?.title || game.label || game.title}</h2>
+      <h2 data-fs-title>{game.name?.title || game.label || game.title}</h2>
     {/if}
     <p class="meta">{[game.system_name, released(f) || game.year].filter(Boolean).join(" · ")}</p>
     {#if f.genre}
@@ -35,13 +35,13 @@
 <style>
   .info { display: grid; align-content: start; gap: 1.4vh; min-width: 0; padding: 1vh 1vw; }
   .logo { max-width: 100%; max-height: 14vh; object-fit: contain; justify-self: start; }
-  h2 { margin: 0; font-size: 3.6vh; line-height: 1.15; }
-  .meta { margin: 0; color: var(--muted); font-size: 2.1vh; }
-  .genres { display: flex; flex-wrap: wrap; gap: 0.6vh 1.2vw; margin: 0; font-size: 1.9vh; }
+  h2 { margin: 0; font-size: calc(3.6vh * var(--fs-scale)); line-height: 1.15; }
+  .meta { margin: 0; color: var(--fs-muted); font-size: calc(2.1vh * var(--fs-scale)); }
+  .genres { display: flex; flex-wrap: wrap; gap: 0.6vh 1.2vw; margin: 0; font-size: calc(1.9vh * var(--fs-scale)); }
   .genre { display: inline-flex; align-items: center; gap: 0.4vw; }
-  dl { display: grid; gap: 0.8vh; margin: 0; font-size: 1.9vh; }
+  dl { display: grid; gap: 0.8vh; margin: 0; font-size: calc(1.9vh * var(--fs-scale)); }
   dl div { display: grid; grid-template-columns: 9vw 1fr; gap: 0.6vw; }
-  dt { color: var(--muted); }
+  dt { color: var(--fs-muted); }
   dd { margin: 0; }
-  .note { margin: 0; color: var(--warn); font-size: 1.9vh; }
+  .note { margin: 0; color: var(--fs-warn); font-size: calc(1.9vh * var(--fs-scale)); }
 </style>

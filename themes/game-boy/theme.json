@@ -1,0 +1,51 @@
+{
+  "api": 1,
+  "id": "game-boy",
+  "name": "Game Boy",
+  "author": "romforge",
+  "licence": "MIT",
+  "description": "The original's four greens, square cards, a thick focus and monospace type.",
+  "layout": "grid",
+  "layouts": ["list"],
+  "fallback": "title",
+  "schemes": {
+    "dmg": {
+      "--fs-bg": "#9bbc0f",
+      "--fs-bg-2": "#8bac0f",
+      "--fs-panel": "#8bac0f",
+      "--fs-text": "#0f380f",
+      "--fs-muted": "#306230",
+      "--fs-accent": "#0f380f",
+      "--fs-accent-text": "#9bbc0f",
+      "--fs-line": "#30623066",
+      "--fs-focus": "#0f380f",
+      "--fs-radius": "0",
+      "--fs-font": "ui-monospace, \"DejaVu Sans Mono\", monospace",
+      "--fs-title-font": "ui-monospace, \"DejaVu Sans Mono\", monospace"
+    },
+    "night": {
+      "--fs-bg": "#0f380f",
+      "--fs-bg-2": "#306230",
+      "--fs-panel": "#1d4a1d",
+      "--fs-text": "#9bbc0f",
+      "--fs-muted": "#8bac0f",
+      "--fs-accent": "#9bbc0f",
+      "--fs-accent-text": "#0f380f",
+      "--fs-line": "#8bac0f44",
+      "--fs-focus": "#9bbc0f",
+      "--fs-radius": "0",
+      "--fs-font": "ui-monospace, \"DejaVu Sans Mono\", monospace",
+      "--fs-title-font": "ui-monospace, \"DejaVu Sans Mono\", monospace"
+    }
+  },
+  "options": [
+    {
+      "key": "art",
+      "label": "Box art",
+      "choices": [
+        { "value": "tinted", "label": "Green" },
+        { "value": "plain", "label": "As it is" }
+      ]
+    }
+  ]
+}

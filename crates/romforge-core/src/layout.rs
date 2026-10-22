@@ -32,11 +32,14 @@ pub const BIOS_DIR: &str = "Bios";
 pub const SAVES_DIR: &str = "Saves";
 pub const STATES_DIR: &str = "States";
 pub const SCREENSHOTS_DIR: &str = "Screenshots";
+/// Fullscreen themes the user adds, one folder each (stage 2, step 4).
+pub const THEMES_DIR: &str = "Themes";
 
 /// Without a RomForge folder: downloaded databases next to the library
 /// database, and art in romforge's cache folder.
 pub const LOOSE_DATABASES_DIR: &str = "databases";
 pub const LOOSE_ART_DIR: &str = "art";
+pub const LOOSE_THEMES_DIR: &str = "themes";
 
 /// Scratch space for imports and cleanup (7z tracks are unpacked here).
 pub const STAGING_DIR: &str = ".romforge-staging";

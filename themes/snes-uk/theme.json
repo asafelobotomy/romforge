@@ -1,0 +1,53 @@
+{
+  "api": 1,
+  "id": "snes-uk",
+  "name": "SNES UK",
+  "author": "romforge",
+  "licence": "MIT",
+  "description": "The UK (PAL) SNES: console greys and its four face-button colours, light or dark with the system.",
+  "layout": "grid",
+  "layouts": ["list"],
+  "fallback": "title",
+  "schemes": {
+    "light": {
+      "--fs-bg": "#dcdce3",
+      "--fs-bg-2": "#f1f1f4",
+      "--fs-panel": "#f1f1f4",
+      "--fs-text": "#23232b",
+      "--fs-muted": "#62626f",
+      "--fs-accent": "#3b5ab0",
+      "--fs-accent-text": "#ffffff",
+      "--fs-line": "#5c5c6a33",
+      "--fs-focus": "#3b5ab0"
+    },
+    "dark": {
+      "--fs-bg": "#222228",
+      "--fs-bg-2": "#2c2c33",
+      "--fs-panel": "#2c2c33",
+      "--fs-text": "#e4e4ea",
+      "--fs-muted": "#9a9aa8",
+      "--fs-accent": "#7f97e3",
+      "--fs-accent-text": "#111111",
+      "--fs-line": "#ffffff1f",
+      "--fs-focus": "#7f97e3"
+    }
+  },
+  "options": [
+    {
+      "key": "corners",
+      "label": "Card corners",
+      "choices": [
+        { "value": "round", "label": "Round", "vars": { "--fs-radius": "0.8vh" } },
+        { "value": "square", "label": "Square", "vars": { "--fs-radius": "0" } }
+      ]
+    },
+    {
+      "key": "background",
+      "label": "Background",
+      "choices": [
+        { "value": "glow", "label": "Glow" },
+        { "value": "flat", "label": "Flat" }
+      ]
+    }
+  ]
+}

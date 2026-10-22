@@ -1,17 +1,41 @@
 /* The fullscreen mode's frame. Sizes follow the screen's height (a TV
-   across the room, a Steam Deck in the hands), colours the app's own
-   tokens (the UK SNES palette). Themes (stage 2, step 4) will hook the
-   data-fs-* attributes and these variables, never class names. */
+   across the room, a Steam Deck in the hands). Themes (stage 2, step 4)
+   hook the data-fs-* attributes and these --fs-* variables, never class
+   names; the defaults are the app's own tokens (the UK SNES palette, light
+   or dark with the system), so with no theme it looks as it always did.
+   Every fullscreen component takes its colours, corners, fonts, card
+   shape and font sizes from here. */
 [data-fs-root] {
+  --fs-bg: var(--bg);
+  --fs-bg-2: var(--panel);
+  --fs-panel: var(--panel);
+  --fs-text: var(--text);
+  --fs-muted: var(--muted);
+  --fs-accent: var(--accent);
+  --fs-accent-text: #fff;
+  --fs-line: var(--line);
+  --fs-focus: var(--accent);
+  --fs-warn: var(--warn);
+  --fs-shadow: #0008;
+  --fs-scrim: #000a;
+  /* A card's corners; other corners are this times a factor. */
+  --fs-radius: 1vh;
+  /* Width over height of a game's card (box art). */
+  --fs-card-ratio: 0.74;
+  --fs-font: system-ui, sans-serif;
+  --fs-title-font: var(--fs-font);
+  /* Every font size is multiplied by this. */
+  --fs-scale: 1;
   --fs-gap: 2vh;
   position: fixed;
   inset: 0;
   z-index: 40;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  background: radial-gradient(ellipse at 50% 0%, var(--panel), var(--bg) 75%);
-  color: var(--text);
-  font-size: 2vh;
+  background: radial-gradient(ellipse at 50% 0%, var(--fs-bg-2), var(--fs-bg) 75%);
+  color: var(--fs-text);
+  font-family: var(--fs-font);
+  font-size: calc(2vh * var(--fs-scale));
   overflow: hidden;
 }
 [data-fs-root][data-fs-screen="game"] {
@@ -20,7 +44,7 @@
 [data-fs-root] .top {
   display: flex;
   justify-content: center;
-  padding: 2vh 2vw 0;
+  padding: var(--fs-gap) 2vw 0;
 }
 [data-fs-root] .home {
   display: grid;
@@ -38,5 +62,8 @@
   font: inherit;
 }
 [data-fs-root] button:focus-visible {
-  outline: 0.4vh solid var(--accent);
+  outline: 0.4vh solid var(--fs-focus);
+}
+[data-fs-root] [data-fs-title] {
+  font-family: var(--fs-title-font);
 }

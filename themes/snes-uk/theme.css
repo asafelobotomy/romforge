@@ -1,0 +1,5 @@
+/* SNES UK: the fullscreen mode's own look (its defaults are this theme's
+   light and dark schemes), with a flat background as an option. */
+:scope[data-fs-opt-background="flat"] {
+  background: var(--fs-bg);
+}

@@ -1,0 +1,8 @@
+/* Famicom: a gold stripe under the platforms, gold focus, square cards. */
+:scope[data-fs-opt-stripe="on"] [data-fs-carousel] {
+  border-bottom: 0.5vh solid var(--fs-focus);
+  box-shadow: 0 0.6vh 0 var(--fs-accent);
+}
+[data-fs-title] {
+  letter-spacing: 0.02em;
+}

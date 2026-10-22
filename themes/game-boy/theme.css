@@ -1,0 +1,10 @@
+/* Game Boy: art in the screen's greens, a thick square focus. */
+:scope[data-fs-opt-art="tinted"] [data-fs-card] img,
+:scope[data-fs-opt-art="tinted"] [data-fs-list] img {
+  filter: grayscale(1) sepia(1) hue-rotate(40deg) saturate(2.2) brightness(0.8);
+}
+[data-fs-card][data-fs-selected],
+[data-fs-row][data-fs-selected] {
+  outline: 0.6vh solid var(--fs-focus);
+  outline-offset: 0.3vh;
+}

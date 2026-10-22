@@ -11,6 +11,7 @@ export function mainMenu(act, { sort, art }) {
     index: 0,
     items: [
       { label: "Back to desktop", run: () => act.leave() },
+      ...(act.themes() ? [{ label: "Theme…", run: () => themeMenu(act, act.themes()) }] : []),
       { label: `Sort: ${sort === "title" ? "Title" : "Year"} (change)`, run: () => act.sort(sort === "title" ? "year" : "title") },
       { label: `Art: ${art === "box3d" ? "3D box" : "Box"} (change)`, run: () => act.art(art === "box3d" ? "boxart" : "box3d") },
       { label: "Quit romforge", run: () => ask("Quit romforge?", () => act.quit()) },
@@ -55,5 +56,70 @@ export function ask(title, yes) {
       { label: "Yes", run: yes },
       { label: "No", run: () => undefined },
     ],
+  };
+}
+
+const nice = (s) => s.charAt(0).toUpperCase() + s.slice(1).replaceAll("-", " ");
+const next = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+
+// Start → Theme: the theme, its colours, layout, text size and options.
+// Pressing an item changes it at once (and it is kept); `index` stays on
+// the item pressed. `view` is themes_view; `act.theme(selection)` keeps one.
+export function themeMenu(act, view, index = 0) {
+  const sel = view.selection;
+  const m = view.themes.find((t) => t.id === sel.theme && t.manifest)?.manifest;
+  if (!m) return { title: "Theme", index: 0, items: [{ label: "No theme to show", run: () => undefined }] };
+  const again = (change, i) => {
+    const s = { ...sel, ...change };
+    act.theme(s);
+    return themeMenu(act, { ...view, selection: s }, i);
+  };
+  const schemes = Object.keys(m.schemes);
+  const follows = schemes.includes("light") && schemes.includes("dark");
+  const schemeList = follows ? ["", ...schemes] : schemes;
+  const scheme = sel.scheme || (follows ? "" : schemes[0]);
+  const layouts = [m.layout, ...(m.layouts ?? []).filter((l) => l !== m.layout)];
+  const layout = sel.layout || m.layout;
+  const mine = sel.options?.[sel.theme] ?? {};
+  const items = [
+    { label: `Theme: ${m.name}`, run: () => themesMenu(act, view) },
+    {
+      label: `Colours: ${scheme ? nice(scheme) : "with the system"}`,
+      run: () => again({ scheme: next(schemeList, scheme) }, 1),
+    },
+  ];
+  if (layouts.length > 1) items.push({ label: `Layout: ${nice(layout)}`, run: () => again({ layout: next(layouts, layout) }, 2) });
+  const sizeAt = items.length;
+  items.push({
+    label: `Text size: ${sel.text_size}%`,
+    run: () => again({ text_size: next(view.text_sizes, sel.text_size) }, sizeAt),
+  });
+  for (const o of m.options ?? []) {
+    const values = o.choices.map((c) => c.value);
+    const v = mine[o.key] ?? values[0];
+    const label = o.choices.find((c) => c.value === v)?.label ?? v;
+    const at = items.length;
+    items.push({
+      label: `${o.label}: ${label}`,
+      run: () => again({ options: { ...sel.options, [sel.theme]: { ...mine, [o.key]: next(values, v) } } }, at),
+    });
+  }
+  return { title: "Theme", index, items };
+}
+
+// The themes to pick from (a refused one isn't listed here; Settings says why).
+export function themesMenu(act, view) {
+  const usable = view.themes.filter((t) => t.manifest && !t.problem);
+  return {
+    title: "Pick a theme",
+    index: Math.max(0, usable.findIndex((t) => t.id === view.selection.theme)),
+    items: usable.map((t) => ({
+      label: t.manifest.name + (t.builtin ? "" : " (yours)"),
+      run: () => {
+        const s = { ...view.selection, theme: t.id, scheme: "", layout: "" };
+        act.theme(s);
+        return themeMenu(act, { ...view, selection: s });
+      },
+    })),
   };
 }

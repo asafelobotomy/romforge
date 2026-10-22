@@ -470,7 +470,11 @@ The toolbar:
   North (Y) its options; the shoulders page, the triggers jump; a help
   bar shows the buttons (or keys: Enter, Esc, Tab, Space, O, PgUp/PgDn).
   `romforge-app --fullscreen`, or Settings → **Start in the fullscreen
-  mode**, opens it straight away.
+  mode**, opens it straight away. Start → **Theme** (or Settings →
+  Display → **Fullscreen theme**) picks its look: SNES UK (the default,
+  light or dark with the system), Famicom, Mega Drive or Game Boy, each
+  with its colours, a grid or a list of games, a text size and the
+  theme's own options. Changes apply at once and are kept.
 - **Hotkeys** on the pad while a game runs, the same for every emulator
   (romforge reads them itself; the emulators' own pad hotkeys are off):
   Select+Start quits, Select+R1 saves a state, Select+L1 loads it, L3+R3
@@ -656,6 +660,56 @@ cd app && npm install && npm run tauri dev
 ```
 
 `npm run tauri build -- --no-bundle` builds `target/release/romforge-app`.
+
+## Fullscreen themes
+
+A theme is data, never code: a folder with `theme.json` and `theme.css`
+(and any pictures and fonts it uses), in `RomForge/Themes/<id>/` (or
+`themes/<id>/` beside the library's database without a RomForge folder;
+Settings → Display opens it). The folder's name is the theme's id.
+Settings → Display lists a refused theme with the reason. While the
+fullscreen mode is open, an edited theme reloads within a second.
+
+```json
+{
+  "api": 1, "id": "mine", "name": "Mine", "author": "you", "licence": "CC0-1.0",
+  "layout": "grid", "layouts": ["list"], "fallback": "title",
+  "schemes": { "light": { "--fs-bg": "#eee" }, "dark": { "--fs-bg": "#111" } },
+  "options": [{ "key": "corners", "label": "Card corners", "choices": [
+    { "value": "round", "label": "Round", "vars": { "--fs-radius": "1vh" } },
+    { "value": "square", "label": "Square", "vars": { "--fs-radius": "0" } }
+  ] }]
+}
+```
+
+- `layout`: `grid` or `list` (`layouts`: the others it allows);
+  `fallback`: what a game with no art shows, `title` or `platform` (its
+  platform's icon).
+- `schemes`: colour schemes, each a set of variables; with both `light`
+  and `dark`, the system's choice is followed unless one is picked.
+- `options`: each choice sets variables and the root attribute
+  `data-fs-opt-<key>="<value>"` for the CSS to match.
+
+**Theme API 1.** Variables (set by schemes and options, or in the CSS):
+`--fs-bg`, `--fs-bg-2` (the background's glow), `--fs-panel`, `--fs-text`,
+`--fs-muted`, `--fs-accent`, `--fs-accent-text`, `--fs-line`, `--fs-focus`,
+`--fs-warn`, `--fs-shadow`, `--fs-scrim`, `--fs-radius`, `--fs-card-ratio`,
+`--fs-font`, `--fs-title-font`, `--fs-gap`. `--fs-scale` is the user's text
+size and only romforge sets it. Hooks: the root `[data-fs-root]` (in the
+CSS, `:scope`) with `data-fs-screen` (`home`, `game`), `data-fs-layout`,
+`data-fs-aspect` (`wide`, `standard`, `tall`), `data-fs-theme`,
+`data-fs-scheme` and `data-fs-opt-*`; inside it `data-fs-wordmark`,
+`data-fs-carousel`, `data-fs-platform`, `data-fs-grid`, `data-fs-list`,
+`data-fs-card`, `data-fs-row`, `data-fs-selected`, `data-fs-art="missing"`,
+`data-fs-title`, `data-fs-info`, `data-fs-button`, `data-fs-menu`,
+`data-fs-help` and `data-fs-focus` (where the focus is). Class names are
+not part of the API and change.
+
+The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
+fullscreen mode only, under a policy that loads nothing from outside
+romforge. Refused: `@import`, URLs with a scheme or `//`, a `url()` out of
+the theme's folder, escapes, unbalanced braces, more than 256 KB of CSS
+or 8 MB in all, variables not named `--fs-…`.
 
 ## Layout
 

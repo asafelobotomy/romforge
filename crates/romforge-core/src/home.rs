@@ -144,6 +144,9 @@ impl Home {
     pub fn screenshots(&self) -> PathBuf {
         self.root.join(SCREENSHOTS_DIR)
     }
+    pub fn themes(&self) -> PathBuf {
+        self.root.join(crate::layout::THEMES_DIR)
+    }
     pub fn databases(&self) -> PathBuf {
         self.root.join(DATABASES_DIR)
     }

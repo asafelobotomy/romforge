@@ -40,6 +40,7 @@ pub mod search;
 pub mod settings;
 pub mod suggest;
 pub mod systems;
+pub mod themes;
 pub mod thumbs;
 pub mod titles;
 mod vcdiff;

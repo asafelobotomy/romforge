@@ -1297,6 +1297,20 @@ themes. Researched online the same day (sources below); decided:
    added one by one, a hotkey editor.
 4. *Theme engine v1:* manifest, variables, options, fallback variants,
    live reload; two or three first-party themes, SNES UK the default.
+   *(Built 2026-10-22.)* `themes.rs` in the core (manifest and CSS checks,
+   the user's pick in one `settings` row, `fit`/`applied`), the
+   `theme://` scheme serving CSS wrapped in `@scope ([data-fs-root])`
+   under the CSP (style, img and font sources only), and the theme API
+   1 the README lists. Built in from `themes/`: SNES UK (light and dark
+   with the system), Famicom, Mega Drive (a list by default) and Game Boy;
+   user themes in `RomForge/Themes/<id>/`. Layouts: grid and the new list
+   (`FsList`). Picked from Start → Theme by pad or Settings → Display,
+   kept at once; live reload polls the theme's files each second while
+   the mode is open. Tried with a virtual pad on the scratch library: all
+   four themes, the list layout, a user theme edited live. Not yet:
+   preview while moving through choices (a choice applies when pressed),
+   aspect- and font-file variants in the built-in themes, theme options
+   that pick layouts.
 5. *`romforge-themes`:* the index, downloads and updates, licences shown.
 6. *Extras:* favourites, recently and most played (from `play_sessions`),
    quick search with the on-screen keyboard, attract mode separate from a

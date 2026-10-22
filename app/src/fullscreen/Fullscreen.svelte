@@ -7,6 +7,8 @@
   import { ask, contextMenu, mainMenu, optionsMenu } from "./fsmenus.js";
   import FsCarousel from "./FsCarousel.svelte";
   import FsGrid from "./FsGrid.svelte";
+  import FsList from "./FsList.svelte";
+  import { theme, loadThemes, pickTheme, themeLink, applyTheme, watchTheme } from "./theme.svelte.js";
   import FsInfo from "./FsInfo.svelte";
   import FsGame from "./FsGame.svelte";
   import FsMenu from "./FsMenu.svelte";
@@ -32,6 +34,11 @@
   let cols = $state(5);
   let rows = $state(2);
   $effect(() => remember({ sort, art, platform: platformKey, game: gameId }));
+
+  // The screen's shape, for themes (data-fs-aspect): wide, standard, tall.
+  let winW = $state(window.innerWidth);
+  let winH = $state(window.innerHeight);
+  let aspect = $derived(winW / winH > 1.6 ? "wide" : winW / winH < 1 ? "tall" : "standard");
 
   const title = (r) => (r.name?.title || r.label || r.title).toLowerCase();
   let all = $derived(lib.rows.filter((r) => r.main && !r.unmatched && r.system));
@@ -61,7 +68,32 @@
   });
 
   // What the menus' items do.
+  // The theme (stage 2, step 4): its CSS linked, its variables and
+  // attributes on the root, the system's light or dark followed, and an
+  // edited user theme reloaded while the mode is open.
+  let root = $state(null);
+  let dark = $state(window.matchMedia("(prefers-color-scheme: dark)").matches);
+  loadThemes();
+  $effect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = (e) => (dark = e.matches);
+    mq.addEventListener("change", on);
+    const stop = watchTheme();
+    return () => {
+      mq.removeEventListener("change", on);
+      stop();
+      themeLink(null);
+    };
+  });
+  $effect(() => themeLink(theme.applied));
+  $effect(() => {
+    if (root) applyTheme(root, theme.applied, dark);
+  });
+  let layout = $derived(theme.applied?.layout ?? "grid");
+
   const act = {
+    themes: () => theme.view,
+    theme: (s) => pickTheme(s),
     leave,
     quit: () => invoke("quit"),
     sort: (s) => (sort = s),
@@ -99,7 +131,11 @@
       else menu.index = listMove(menu.index, menu.items.length, action);
       return;
     }
-    if (action === "menu") return void (menu = mainMenu(act, { sort, art }));
+    if (action === "menu") {
+      // Themes added to the folder since show up in Start → Theme.
+      loadThemes();
+      return void (menu = mainMenu(act, { sort, art }));
+    }
     if (screen === "game") {
       if (action === "back") screen = "home";
       else if (action === "accept") buttons[button]?.run();
@@ -112,7 +148,7 @@
       } else button = listMove(button, buttons.length, action === "up" ? "left" : action === "down" ? "right" : action);
       return;
     }
-    const r = homeAction({ focus, platform: pIndex, platforms: platforms.length, game: gIndex, count: games.length, cols, rows }, action);
+    const r = homeAction({ focus, platform: pIndex, platforms: platforms.length, game: gIndex, count: games.length, cols, rows, layout }, action);
     if (r.platform !== undefined) {
       platformKey = platforms[r.platform].system;
       gameId = null;
@@ -144,6 +180,8 @@
 </script>
 
 <svelte:window
+  bind:innerWidth={winW}
+  bind:innerHeight={winH}
   onkeydown={(e) => {
     const a = keyAction(e.key);
     if (!a) return;
@@ -152,12 +190,16 @@
   }}
 />
 
-<div class="fs" data-fs-root data-fs-screen={screen}>
+<div class="fs" data-fs-root data-fs-screen={screen} data-fs-aspect={aspect} bind:this={root}>
   {#if screen === "home"}
-    <header class="top"><Wordmark height="3.2vh" /></header>
+    <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />
     <main class="home">
-      <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+      {#if layout === "list"}
+        <FsList {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+      {:else}
+        <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+      {/if}
       <FsInfo {game} {detail} />
     </main>
   {:else if game}

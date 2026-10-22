@@ -26,6 +26,7 @@ mod scan;
 mod search;
 mod settings;
 mod start;
+mod themes;
 mod tray;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -45,6 +46,7 @@ fn main() {
     };
     let roots = {
         let lib = db.read.lock().unwrap_or_else(|e| e.into_inner());
+        themes::set_dir(&lib);
         ArtRoots(Arc::new(RwLock::new(ArtRoots::of(&lib))))
     };
     tauri::Builder::default()
@@ -60,6 +62,7 @@ fn main() {
                 pool.run(move || responder.respond(serve_art(&roots, &path, query.as_deref())));
             }
         })
+        .register_uri_scheme_protocol("theme", |_ctx, request| themes::serve(request.uri().path()))
         .manage(db)
         .manage(roots)
         .manage(play::Now::default())
@@ -171,6 +174,10 @@ fn main() {
             jobs::job_cancel,
             tray::tuck_away,
             hotkeys::hotkeys_view,
+            themes::themes_view,
+            themes::theme_set,
+            themes::theme_stamp,
+            themes::themes_folder,
             start::start_options_now,
             start::quit,
             search::search_choose,

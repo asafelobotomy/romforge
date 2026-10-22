@@ -4,6 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { iconCredits } from "./facts.js";
   import { edit } from "./jobs.svelte.js";
+  import ThemeSettings from "./ThemeSettings.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -198,6 +199,8 @@
         </p>
       </section>
       {:else if stab === "display"}
+      <ThemeSettings />
+
       <section class="setting">
         <label for="icons">Platform icons</label>
         <p class="hint">The picture beside each platform in the sidebar, fetched once: controllers and systems from RetroArch's own icon sets, logos from Wikidata (Wikimedia Commons).</p>

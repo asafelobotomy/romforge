@@ -50,15 +50,15 @@
   .carousel { overflow: hidden; padding: 2.4vh 0 1.2vh; }
   /* The focused platform in the middle: the strip slides under it. */
   .strip { --w: 17vw; display: flex; gap: 1.5vw; margin: 0; padding: 0; list-style: none; transform: translateX(calc(50vw - var(--w) / 2 - var(--at) * (var(--w) + 1.5vw))); transition: transform 0.25s ease; }
-  .plat { display: grid; justify-items: center; gap: 0.6vh; width: var(--w); padding: 1vh 0.5vw; border: 0.3vh solid transparent; border-radius: 1.2vh; background: none; color: var(--muted); cursor: pointer; opacity: 0.55; transition: opacity 0.2s, transform 0.2s; }
-  .plat.sel { opacity: 1; color: var(--text); transform: scale(1.08); }
-  .plat.focus { outline: 0.4vh solid var(--accent); outline-offset: -0.4vh; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .plat { display: grid; justify-items: center; gap: 0.6vh; width: var(--w); padding: 1vh 0.5vw; border: 0.3vh solid transparent; border-radius: calc(var(--fs-radius) * 1.2); background: none; color: var(--fs-muted); cursor: pointer; opacity: 0.55; transition: opacity 0.2s, transform 0.2s; }
+  .plat.sel { opacity: 1; color: var(--fs-text); transform: scale(1.08); }
+  .plat.focus { outline: 0.4vh solid var(--fs-focus); outline-offset: -0.4vh; background: color-mix(in srgb, var(--fs-focus) 12%, transparent); }
   .mark { display: grid; place-items: center; height: 10vh; width: 100%; }
   .mark img { max-height: 10vh; max-width: 100%; object-fit: contain; }
   .mark img.icon { max-height: 8vh; }
-  .mark img.tile { padding: 0.5vh; background: #f4f4f4; border-radius: 0.6vh; }
-  .all, .short { font-size: 3.4vh; font-weight: 700; letter-spacing: 0.05em; }
-  .name { font-size: 1.9vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .mark img.tile { padding: 0.5vh; background: #f4f4f4; border-radius: calc(var(--fs-radius) * 0.6); }
+  .all, .short { font-size: calc(3.4vh * var(--fs-scale)); font-weight: 700; letter-spacing: 0.05em; }
+  .name { font-size: calc(1.9vh * var(--fs-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   @media (prefers-color-scheme: dark) {
     .mark img:not(.icon) { filter: drop-shadow(0 0 1px #fffa) drop-shadow(0 0 6px #fff3); }
   }
