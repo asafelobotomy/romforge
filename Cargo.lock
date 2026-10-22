@@ -3509,7 +3509,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-app"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "gtk",
  "libloading",
@@ -3524,7 +3524,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-cli"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "chd",
  "crc32fast",

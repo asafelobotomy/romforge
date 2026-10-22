@@ -48,11 +48,6 @@ Download from the [latest release](https://github.com/asafelobotomy/romforge/rel
 Install **RetroArch** (with a few cores) and any standalone emulators you
 like; romforge finds them on its own, Flatpaks too.
 
-Steam Deck support, **Get themes…**, and the fullscreen extras (favourites,
-recently played, search, attract mode and music) are new since 0.6.1 and
-arrive in the next release (0.7); until then, [build from source](GUIDE.md#packages-and-building)
-to try them.
-
 ## Getting started
 
 1. **Open romforge.** On first run it offers to make a `RomForge` folder:
