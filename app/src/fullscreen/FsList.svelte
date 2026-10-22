@@ -6,7 +6,7 @@
   // The list layout: a platform's games as one column of titles, the
   // focused one's box art large beside it. Only the rows in view are
   // drawn; `rows` (how many) is bound back so the shoulders page by it.
-  let { games, index, focused, art = "boxart", icons = {}, rows = $bindable(8), pick, open } = $props();
+  let { games, index, focused, art = "boxart", icons = {}, fav = new Set(), rows = $bindable(8), pick, open } = $props();
 
   let h = $state(600);
   const ROW = 0.062; // of the list's height: about 16 rows on a TV
@@ -37,6 +37,7 @@
         <li>
           <button class="row" class:sel={i === index} class:focus={focused && i === index} data-fs-row={r.id} data-fs-selected={i === index ? "" : undefined} onclick={() => (i === index ? open() : pick(i))}>
             <span data-fs-title>{listLabel(r)}</span>
+            {#if fav.has(`${r.system}\t${r.title}`)}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
             {#if r.year}<span class="year">{r.year}</span>{/if}
           </button>
         </li>
@@ -62,6 +63,7 @@
   .row span[data-fs-title] { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row.sel { background: var(--fs-accent); color: var(--fs-accent-text); }
   .row.focus { outline: 0.4vh solid var(--fs-focus); outline-offset: 0.2vh; }
+  .star { color: inherit; }
   .year { color: inherit; opacity: 0.7; font-size: 0.85em; }
   .art { margin: 0; display: grid; place-items: center; min-height: 0; }
   .art img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: calc(var(--fs-radius) * 0.6); filter: drop-shadow(0 0.8vh 1.2vh color-mix(in srgb, var(--fs-shadow) 75%, transparent)); }

@@ -20,6 +20,8 @@ const KEYS = {
   " ": "context",
   o: "north",
   O: "north",
+  f: "west",
+  F: "west",
   PageUp: "page_up",
   PageDown: "page_down",
   Home: "first",

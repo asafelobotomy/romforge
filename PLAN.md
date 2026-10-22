@@ -1327,6 +1327,24 @@ themes. Researched online the same day (sources below); decided:
    quick search with the on-screen keyboard, attract mode separate from a
    screensaver, background music (the user's files), per-game settings
    from the game page, startup and exit splashes per platform.
+   *(Built 2026-10-22.)* `user_games` (migration 42: favourite, emulator,
+   per system and title, apart from Enrich's `game_meta`), `play_summary`
+   and `marks` (one command, outside the cached view, so a play never
+   rebuilds it); Favourites, Recently played (50 latest) and Most played
+   as carousel entries (`fshome.js`, node tests); X favourites. Search with
+   our own on-screen keyboard (`fskeys.js`, node tests). Attract mode and
+   screensaver, off by default (`attract_minutes`, `screensaver_minutes`).
+   Music from the user's folder via a `music://` scheme, played as Blobs:
+   WebKitGTK 2.52's media player drops a custom scheme's response after
+   its first range (seen live), fetch() doesn't. A per-game emulator in
+   `plan_row`, falling back to romforge's choice when it can't start the
+   game. Splashes: the platform's colour (`System::accent`, by maker) and
+   an exit splash. Tried with a virtual pad on a scratch library: all of
+   it, the music paused (PulseAudio corked) while a game ran. Not yet: a
+   theme styling the splashes (they sit outside `[data-fs-root]`), the
+   Emulator menu hiding choices that can't start that game (RetroArch's
+   ScummVM core before Import writes the `.scummvm` file), video snaps in
+   attract mode.
 7. *Steam Deck:* `shortcuts.vdf` entry with art, Steam Input templates.
 
 Not yet sourced: video snaps (no current art source has videos;

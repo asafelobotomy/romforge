@@ -187,6 +187,38 @@ impl Library {
 
     /// How to start one library row: exactly its files, never another game
     /// that shares its title.
+    /// The favourites and every game's play time (fullscreen mode).
+    pub fn marks(&self) -> Result<crate::user_games::Marks, Error> {
+        crate::user_games::marks(&self.conn)
+    }
+
+    pub fn set_favourite(&self, system: &str, title: &str, on: bool) -> Result<(), Error> {
+        crate::user_games::set_favourite(&self.conn, system, title, on)
+    }
+
+    /// The emulator picked for a game, and the ones it could be.
+    pub fn game_emulator(
+        &self,
+        env: &launch::Env,
+        system: &str,
+        title: &str,
+    ) -> Result<(Option<String>, Vec<String>), Error> {
+        Ok((
+            crate::user_games::emulator(&self.conn, system, title)?,
+            crate::user_games::emulator_choices(&self.conn, env, system)?,
+        ))
+    }
+
+    pub fn set_game_emulator(
+        &self,
+        env: &launch::Env,
+        system: &str,
+        title: &str,
+        name: Option<&str>,
+    ) -> Result<(), Error> {
+        crate::user_games::set_emulator(&self.conn, env, system, title, name)
+    }
+
     pub fn launch_row(
         &self,
         env: &launch::Env,

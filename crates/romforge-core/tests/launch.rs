@@ -331,3 +331,49 @@ fn retroarch_runs_from_romforge_s_own_config() {
         "{text}"
     );
 }
+
+/// A game's own emulator (stage 2, step 6) is used, and romforge's choice
+/// comes back when that one is gone.
+#[test]
+fn a_game_keeps_the_emulator_picked_for_it() {
+    let lib = library();
+    let f = fake();
+    script(&f.root.join("bin/retroarch"), "exit 0");
+    core(&f, "mgba");
+    let vbam = core(&f, "vbam");
+    let rows = lib.library_view().unwrap().rows;
+    let gba = rows.iter().find(|r| r.title.starts_with("Test GBA")).unwrap();
+    let (system, title) = (gba.system.clone().unwrap(), gba.title.clone());
+    assert_eq!(
+        lib.launch_row(&f.env, &gba.id, None).unwrap().emulator,
+        "retroarch:mgba"
+    );
+
+    let (picked, choices) = lib.game_emulator(&f.env, &system, &title).unwrap();
+    assert_eq!(picked, None);
+    assert!(choices.contains(&"retroarch:vbam".to_owned()), "{choices:?}");
+    assert!(
+        lib.set_game_emulator(&f.env, &system, &title, Some("mgba"))
+            .is_err(),
+        "not installed"
+    );
+    lib.set_game_emulator(&f.env, &system, &title, Some("retroarch:vbam"))
+        .unwrap();
+    assert_eq!(
+        lib.launch_row(&f.env, &gba.id, None).unwrap().emulator,
+        "retroarch:vbam"
+    );
+    // Asked for one: that one.
+    assert_eq!(
+        lib.launch_row(&f.env, &gba.id, Some("retroarch:mgba"))
+            .unwrap()
+            .emulator,
+        "retroarch:mgba"
+    );
+    std::fs::remove_file(vbam).unwrap();
+    assert_eq!(
+        lib.launch_row(&f.env, &gba.id, None).unwrap().emulator,
+        "retroarch:mgba",
+        "gone: romforge's choice"
+    );
+}

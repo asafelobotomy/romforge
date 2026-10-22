@@ -8,7 +8,7 @@
   // quick; the focused card's row is always one of them. `cols` and
   // `rows` are worked out from the space there is and bound back, so the
   // focus model moves by them.
-  let { games, index, focused, art = "boxart", icons = {}, cols = $bindable(5), rows = $bindable(2), pick, open } = $props();
+  let { games, index, focused, art = "boxart", icons = {}, fav = new Set(), cols = $bindable(5), rows = $bindable(2), pick, open } = $props();
 
   let w = $state(1200);
   let h = $state(600);
@@ -63,6 +63,7 @@
         {@const i = top * cols + k}
         {@const src = thumbSrc(picture(r), cardH)}
         <button class="card" class:focus={focused && i === index} class:sel={i === index} data-fs-card={r.id} data-fs-selected={i === index ? "" : undefined} data-fs-art={src ? undefined : "missing"} onclick={() => (i === index ? open() : pick(i))} aria-label={listLabel(r)}>
+          {#if fav.has(`${r.system}\t${r.title}`)}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
           {#if src}
             <img {src} alt="" loading="lazy" decoding="async" />
           {:else if theme.applied?.fallback === "platform" && icons[r.system]}
@@ -87,6 +88,7 @@
      these scaled buttons. */
   .card.focus { outline: 0.5vh solid var(--fs-focus); outline-offset: 0.5vh; }
   .placeholder { box-sizing: border-box; display: grid; place-items: center; width: 100%; height: 100%; padding: 1vh; border-radius: calc(var(--fs-radius) * 0.8); background: var(--fs-panel); border: 1px solid var(--fs-line); color: var(--fs-text); font-size: calc(2vh * var(--fs-scale)); font-weight: 600; text-align: center; overflow: hidden; }
+  .star { position: absolute; top: 0.6vh; right: 0.6vh; z-index: 1; color: var(--fs-accent); font-size: calc(2.6vh * var(--fs-scale)); text-shadow: 0 0 0.6vh var(--fs-shadow); }
   .placeholder.icon { grid-template-rows: 1fr auto; gap: 1vh; }
   .placeholder.icon img { max-width: 60%; max-height: 100%; filter: none; border-radius: 0; }
   .count { position: absolute; right: 0; bottom: -3.4vh; margin: 0; color: var(--fs-muted); font-size: calc(1.8vh * var(--fs-scale)); }

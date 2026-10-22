@@ -81,4 +81,14 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         created_at TEXT NOT NULL,
         PRIMARY KEY (system, game, page, lang)
     );",
+    // 42: what the user keeps per game (stage 2, step 6): a favourite, the
+    // emulator picked for it. Apart from Enrich's `game_meta`, which a
+    // refresh rewrites.
+    "CREATE TABLE user_games (
+        system TEXT NOT NULL,
+        title  TEXT NOT NULL,
+        key    TEXT NOT NULL,
+        value  TEXT NOT NULL,
+        PRIMARY KEY (system, title, key)
+    );",
 ];

@@ -10,6 +10,8 @@ export function mainMenu(act, { sort, art }) {
     title: "romforge",
     index: 0,
     items: [
+      { label: "Search", run: () => act.search() },
+      ...(act.music() ? [{ label: "Music…", run: () => musicMenu(act, act.music()) }] : []),
       { label: "Back to desktop", run: () => act.leave() },
       ...(act.themes() ? [{ label: "Theme…", run: () => themeMenu(act, act.themes()) }] : []),
       { label: `Sort: ${sort === "title" ? "Title" : "Year"} (change)`, run: () => act.sort(sort === "title" ? "year" : "title") },
@@ -33,6 +35,7 @@ export function optionsMenu(act, game, versions) {
   const items = [];
   if (game.playable) items.push({ label: "Play", run: () => act.play(game) });
   if (versions.length) items.push({ label: `Play another version (${versions.length})`, run: () => versionsMenu(act, game, versions) });
+  if (game.playable) items.push({ label: "Emulator…", run: () => act.emulator(game) });
   items.push({ label: "Show in desktop", run: () => act.desktop(game) });
   return { title: game.name?.title || game.title, index: 0, items };
 }
@@ -142,4 +145,28 @@ export function storeMenu(act, available) {
   }));
   if (!items.length) items.push({ label: "No themes in the list yet", run: () => undefined });
   return { title: "Get themes", index: 0, items };
+}
+
+// The emulator a game plays in (stage 2, step 6): romforge's choice, or
+// one of the installed ones for its platform, kept for that game.
+export function emulatorMenu(act, game, { picked, choices }) {
+  const items = [
+    { label: `${picked ? "" : "✓ "}romforge's choice`, run: () => act.setEmulator(game, null) },
+    ...choices.map((name) => ({ label: `${picked === name ? "✓ " : ""}${name.replace(/^retroarch:/, "RetroArch: ")}`, run: () => act.setEmulator(game, name) })),
+  ];
+  return { title: `${game.name?.title || game.title}: emulator`, index: Math.max(0, choices.indexOf(picked) + 1), items };
+}
+
+// Start → Music (stage 2, step 6): the track playing, next, pause, volume.
+export function musicMenu(act, m, index = 0) {
+  const again = (f, i) => (f(), musicMenu(act, act.music(), i));
+  return {
+    title: m.title ? `Music: ${m.title}` : "Music",
+    index,
+    items: [
+      { label: "Next track", run: () => again(act.nextTrack, 0) },
+      { label: m.playing ? "Pause" : "Play", run: () => again(act.toggleMusic, 1) },
+      { label: `Volume: ${m.volume}% (louder)`, run: () => again(() => act.volume(m.volume >= 100 ? 0 : m.volume + 10), 2) },
+    ],
+  };
 }

@@ -30,6 +30,13 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         list_age_days: get("list_age_days")?.and_then(|v| v.parse().ok()).unwrap_or(30),
         while_playing: get("while_playing")?.unwrap_or_else(|| "tray".into()),
         start_fullscreen: get("start_fullscreen")?.as_deref() == Some("1"),
+        attract_minutes: get("attract_minutes")?.and_then(|v| v.parse().ok()).unwrap_or(0),
+        screensaver_minutes: get("screensaver_minutes")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+        music_dir: get("music_dir")?.map(PathBuf::from),
+        music_volume: get("music_volume")?.and_then(|v| v.parse().ok()).unwrap_or(40),
+        music_shuffle: get("music_shuffle")?.as_deref() != Some("0"),
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -102,6 +109,14 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
             (
                 "start_fullscreen",
                 Some(if s.start_fullscreen { "1" } else { "0" }.to_owned()),
+            ),
+            ("attract_minutes", Some(s.attract_minutes.to_string())),
+            ("screensaver_minutes", Some(s.screensaver_minutes.to_string())),
+            ("music_dir", path(&s.music_dir)),
+            ("music_volume", Some(s.music_volume.min(100).to_string())),
+            (
+                "music_shuffle",
+                Some(if s.music_shuffle { "1" } else { "0" }.to_owned()),
             ),
             (
                 "platform_icons",

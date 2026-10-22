@@ -19,6 +19,8 @@ mod images;
 mod jobs;
 mod library;
 mod manual;
+mod marks;
+mod music;
 mod overlay;
 mod patch;
 mod play;
@@ -47,6 +49,7 @@ fn main() {
     let roots = {
         let lib = db.read.lock().unwrap_or_else(|e| e.into_inner());
         themes::set_dir(&lib);
+        music::set_dir(lib.settings().ok().and_then(|s| s.music_dir));
         ArtRoots(Arc::new(RwLock::new(ArtRoots::of(&lib))))
     };
     tauri::Builder::default()
@@ -63,6 +66,9 @@ fn main() {
             }
         })
         .register_uri_scheme_protocol("theme", |_ctx, request| themes::serve(request.uri().path()))
+        .register_asynchronous_uri_scheme_protocol("music", |_ctx, request, responder| {
+            std::thread::spawn(move || responder.respond(music::serve(&request)));
+        })
         .manage(db)
         .manage(roots)
         .manage(play::Now::default())
@@ -179,6 +185,11 @@ fn main() {
             themes::theme_stamp,
             themes::themes_folder,
             themes::themes_available,
+            marks::marks,
+            marks::set_favourite,
+            marks::game_emulator,
+            marks::set_game_emulator,
+            music::music_tracks,
             themes::theme_install,
             themes::theme_remove,
             themes::theme_preview,

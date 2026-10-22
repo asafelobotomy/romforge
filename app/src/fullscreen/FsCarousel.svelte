@@ -13,7 +13,7 @@
     for (let d = -3; d <= 3; d++) {
       const p = platforms[(index + d + platforms.length) % platforms.length];
       const sys = p?.system;
-      if (!sys || sys === "*" || asked.has(sys)) continue;
+      if (!sys || sys.startsWith("*") || asked.has(sys)) continue;
       asked.add(sys);
       invoke("platform_logo", { system: sys })
         .then((file) => file && (logos[sys] = artSrc(file)))
@@ -29,8 +29,8 @@
       <li>
         <button class="plat" class:sel={i === index} class:focus={focused && i === index} data-fs-platform={p.system} onclick={() => pick(i)} aria-current={i === index ? "true" : undefined}>
           <span class="mark">
-            {#if p.system === "*"}
-              <span class="all">All games</span>
+            {#if p.system?.startsWith("*")}
+              <span class="all">{p.short === "★" ? "★" : p.name}</span>
             {:else if logos[p.system]}
               <img src={logos[p.system]} alt={p.name} />
             {:else if icon(p)}

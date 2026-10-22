@@ -145,5 +145,13 @@ pub fn plan_row(
             files.retain(|f| f.0 == folder && !f.1.is_empty());
         }
     }
+    // The emulator picked for this game, unless one is asked for; if it
+    // has gone, romforge's own choice.
+    if emulator.is_none()
+        && let Some(mine) = crate::user_games::emulator(conn, &system, &row.title)?
+        && let Ok(spec) = start(conn, env, &row.title, &system, &files, Some(&mine))
+    {
+        return Ok(spec);
+    }
     start(conn, env, &row.title, &system, &files, emulator)
 }

@@ -19,6 +19,8 @@ pub async fn dat_games(db: tauri::State<'_, Db>, dat_id: i64) -> Res<Vec<DatGame
 pub struct SystemChoice {
     key: &'static str,
     name: &'static str,
+    /// Its splash colour (`System::accent`).
+    accent: &'static str,
 }
 
 /// Every platform, for picking one by hand.
@@ -29,6 +31,7 @@ pub async fn all_systems() -> Res<Vec<SystemChoice>> {
         .map(|s| SystemChoice {
             key: s.key,
             name: s.name,
+            accent: s.accent(),
         })
         .collect();
     v.sort_by(|a, b| a.name.cmp(b.name));

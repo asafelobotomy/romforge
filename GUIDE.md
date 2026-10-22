@@ -690,14 +690,42 @@ CSS, `:scope`) with `data-fs-screen` (`home`, `game`), `data-fs-layout`,
 `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`, `data-fs-list`,
 `data-fs-card`, `data-fs-row`, `data-fs-selected`, `data-fs-art="missing"`,
 `data-fs-title`, `data-fs-info`, `data-fs-button`, `data-fs-menu`,
-`data-fs-help` and `data-fs-focus` (where the focus is). Class names are
-not part of the API and change.
+`data-fs-help` and `data-fs-focus` (where the focus is); `data-fs-fav` (a
+favourite's star), `data-fs-search`, `data-fs-keyboard` and `data-fs-key`
+(the search screen), `data-fs-attract` and `data-fs-screensaver`. The
+splashes outside the mode carry `data-fs-splash` (`start`, `exit`) and
+`data-fs-platform`. Class names are not part of the API and change.
 
 The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
 fullscreen mode only, under a policy that loads nothing from outside
 romforge. Refused: `@import`, URLs with a scheme or `//`, a `url()` out of
 the theme's folder, escapes, unbalanced braces, more than 256 KB of CSS
 or 8 MB in all, variables not named `--fs-…`.
+
+### Extras in the fullscreen mode
+
+- **Favourites, Recently played, Most played:** X (or F) toggles a game's
+  favourite; play time comes from the games romforge started (runs over
+  10 s). These are kept per game in the library (`user_games`), apart from
+  what Enrich gathers, so a refresh never touches them.
+- **Search:** Start → Search, or `/` on a keyboard. The d-pad moves over
+  the on-screen keys, A types, Y a space, B deletes (and leaves when the
+  line is empty), Start goes to the results. Every word must be in a
+  title; titles starting with what you typed come first.
+- **Attract mode and screensaver** (Settings → Display; off by default):
+  after 3, 5 or 10 minutes untouched, games are shown in turn with their
+  fanart or box art; 10 or 30 minutes after that the screen dims. Any
+  button wakes it, landing on the game it showed. `ROMFORGE_ATTRACT_SECONDS`
+  overrides the time (for trying a theme).
+- **Music** (Settings → Display): a folder of yours (MP3, Ogg, Opus, FLAC,
+  M4A, WAV, and the folders in it) played while the fullscreen mode is
+  open, shuffled unless turned off, paused while a game runs. Start →
+  Music skips, pauses and sets the volume.
+- **The emulator for a game:** its page's **Emulator…** (or Y → Emulator…)
+  lists the installed ones for its platform; the pick is kept for that
+  game, and if it can't start the game romforge's own choice is used.
+- **Splashes:** the startup splash and a short "Back from …" one when a
+  game ends (with the time played) carry the platform's colour.
 
 ### Community themes
 

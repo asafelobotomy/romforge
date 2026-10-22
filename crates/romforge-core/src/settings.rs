@@ -81,7 +81,33 @@ pub struct Settings {
     /// the desktop library.
     #[serde(default)]
     pub start_fullscreen: bool,
+    /// The fullscreen mode's attract mode after this many minutes idle
+    /// (games shown in turn); 0: never (the default).
+    #[serde(default)]
+    pub attract_minutes: u32,
+    /// The attract mode dims to a screensaver after this many more
+    /// minutes; 0: never.
+    #[serde(default)]
+    pub screensaver_minutes: u32,
+    /// Music the fullscreen mode plays (a folder of the user's own; none:
+    /// no music). Paused while a game runs.
+    #[serde(default)]
+    pub music_dir: Option<PathBuf>,
+    /// 0 to 100.
+    #[serde(default = "default_volume")]
+    pub music_volume: u32,
+    #[serde(default = "default_true")]
+    pub music_shuffle: bool,
 }
+
+fn default_volume() -> u32 {
+    40
+}
+
+/// The choices for [`Settings::attract_minutes`] and
+/// [`Settings::screensaver_minutes`].
+pub const ATTRACT_MINUTES: &[u32] = &[0, 3, 5, 10];
+pub const SCREENSAVER_MINUTES: &[u32] = &[0, 10, 30];
 
 fn default_while_playing() -> String {
     "tray".into()
@@ -116,6 +142,11 @@ impl Default for Settings {
             list_age_days: default_list_age(),
             while_playing: default_while_playing(),
             start_fullscreen: false,
+            attract_minutes: 0,
+            screensaver_minutes: 0,
+            music_dir: None,
+            music_volume: default_volume(),
+            music_shuffle: true,
         }
     }
 }
@@ -245,6 +276,24 @@ impl Settings {
                 n => return bad(format!("{n} threads is too many (0 for automatic, at most 64)")),
             },
             start_fullscreen: self.start_fullscreen,
+            attract_minutes: match self.attract_minutes {
+                n if ATTRACT_MINUTES.contains(&n) => n,
+                n => return bad(format!("attract mode after {n} minutes: one of 0, 3, 5, 10")),
+            },
+            screensaver_minutes: match self.screensaver_minutes {
+                n if SCREENSAVER_MINUTES.contains(&n) => n,
+                n => return bad(format!("screensaver after {n} minutes: one of 0, 10, 30")),
+            },
+            music_dir: match &self.music_dir {
+                Some(p) if p.as_os_str().is_empty() => None,
+                Some(p) if !p.is_dir() => {
+                    return bad(format!("the music folder {} isn't there", p.display()));
+                }
+                Some(p) => Some(p.canonicalize().unwrap_or_else(|_| p.clone())),
+                None => None,
+            },
+            music_volume: self.music_volume.min(100),
+            music_shuffle: self.music_shuffle,
             while_playing: match self.while_playing.trim() {
                 "" => default_while_playing(),
                 w if WHILE_PLAYING.contains(&w) => w.to_owned(),

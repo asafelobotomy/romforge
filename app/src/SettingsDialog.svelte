@@ -5,6 +5,7 @@
   import { iconCredits } from "./facts.js";
   import { edit } from "./jobs.svelte.js";
   import ThemeSettings from "./ThemeSettings.svelte";
+  import FullscreenSettings from "./FullscreenSettings.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -64,6 +65,11 @@
     list_age_days: 30,
     while_playing: "tray",
     start_fullscreen: false,
+    attract_minutes: 0,
+    screensaver_minutes: 0,
+    music_dir: null,
+    music_volume: 40,
+    music_shuffle: true,
   });
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
@@ -200,6 +206,7 @@
       </section>
       {:else if stab === "display"}
       <ThemeSettings />
+      <FullscreenSettings bind:draft />
 
       <section class="setting">
         <label for="icons">Platform icons</label>

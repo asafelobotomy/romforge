@@ -16,6 +16,14 @@
 
   const win = getCurrentWindow();
   let splash = $state(null);
+  // Each platform's colour, for the splash (all_systems, once).
+  let accents = {};
+  invoke("all_systems")
+    .then((all) => (accents = Object.fromEntries(all.map((s) => [s.key, s.accent]))))
+    .catch(() => {});
+  // The last game's art, for its exit splash.
+  let lastArt = {};
+  let exitTimer = null;
   let now = $state(Date.now());
   let stopping = $state(false);
   let fallback = null;
@@ -24,9 +32,10 @@
   /// `art` ({ box3d, boxart, platform }) when Details has it.
   export async function started(p, art) {
     playing = p;
-    splash = { title: p.game, emulator: p.emulator, logo: null, ...art };
+    lastArt = { ...art, system: p.system, accent: accents[p.system] ?? "" };
+    splash = { title: p.game, emulator: p.emulator, logo: null, ...lastArt };
     invoke("platform_logo", { system: p.system })
-      .then((file) => splash && file && (splash.logo = artSrc(file)))
+      .then((file) => file && ((lastArt.logo = artSrc(file)), splash && (splash.logo = lastArt.logo)))
       .catch(() => {});
     clearTimeout(fallback);
     fallback = setTimeout(() => hide(true), 15000);
@@ -66,6 +75,10 @@
     listen("game-ended", (e) => {
       const d = e.payload;
       hide();
+      // A moment of "Back from …" (any key or click skips it).
+      splash = { ...lastArt, title: d.playing.game, emulator: d.playing.emulator, kind: "exit", seconds: d.seconds };
+      clearTimeout(exitTimer);
+      exitTimer = setTimeout(() => splash?.kind === "exit" && (splash = null), 1500);
       if (stayFullscreen) win.setFullscreen(true).catch(() => {});
       playing = null;
       if (d.seconds < 10 && d.code !== 0 && d.code !== null) {
@@ -98,6 +111,7 @@
   }
 </script>
 
+<svelte:window onkeydown={() => splash?.kind === "exit" && (splash = null)} onpointerdown={() => splash?.kind === "exit" && (splash = null)} />
 {#if splash}<Splash {...splash} />{/if}
 
 {#if playing}

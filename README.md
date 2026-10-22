@@ -67,8 +67,15 @@ like; romforge finds them on its own, Flatpaks too.
 
 The fullscreen mode lays your platforms along the top and their games
 below as large box art. **A** opens a game, **A** again plays it,
-**Start** opens the menu. While a game runs, romforge goes to the tray and
-comes back when it ends.
+**X** makes it a favourite, **Start** opens the menu (with **Search**, an
+on-screen keyboard for the pad, and **Music**). **Favourites**, **Recently
+played** and **Most played** sit beside All games. While a game runs,
+romforge goes to the tray and comes back when it ends.
+
+In Settings → Display you can also turn on an **attract mode** (your games
+shown in turn when the pad is left alone, then a screensaver), choose a
+folder of your own **music** to play in the fullscreen mode (paused while
+you play), and on a game's page pick the **emulator** that game uses.
 
 These hotkeys work in every supported emulator:
 

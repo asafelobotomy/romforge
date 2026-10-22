@@ -41,6 +41,9 @@
 [data-fs-root][data-fs-screen="game"] {
   grid-template-rows: minmax(0, 1fr) auto;
 }
+[data-fs-root][data-fs-screen="search"] {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 [data-fs-root] .top {
   display: flex;
   justify-content: center;

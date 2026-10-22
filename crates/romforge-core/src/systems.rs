@@ -163,6 +163,24 @@ const fn s(
 }
 
 impl System {
+    /// A colour for the platform's splash and badges (stage 2, step 6): a
+    /// plain colour by maker, no logo or trademark; themes may override it.
+    pub fn accent(&self) -> &'static str {
+        match self.manufacturer {
+            "Nintendo" => "#d1293d",
+            "Sega" => "#1f5fbf",
+            "Sony" => "#3b4a6b",
+            "Microsoft" => "#2f8f3a",
+            "Atari" => "#c8501e",
+            "NEC" => "#e06c1f",
+            "SNK" => "#b38b1d",
+            "Commodore" => "#5a6fa8",
+            "Bandai" => "#6a3fa0",
+            "ScummVM" => "#3e8f5b",
+            _ => "#5c5c6a",
+        }
+    }
+
     const fn redump(mut self, codes: &'static [&'static str]) -> Self {
         self.redump = codes;
         self

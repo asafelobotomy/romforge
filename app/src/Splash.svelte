@@ -7,13 +7,17 @@
   // at an angle) sways from side to side, since a full turn would show its
   // picture from behind; flat box art is wrapped onto a box with a spine
   // that turns all the way round. No motion when the system asks for less.
-  let { title, emulator, platform = "", box3d = null, boxart = null, logo = null } = $props();
+  // Stage 2, step 6: `kind` "start", or "exit" when a game has ended
+  // (`seconds` played this time); the platform's colour (`accent`) runs
+  // along the foot. `data-fs-splash` and `data-fs-platform` are for themes.
+  let { title, emulator, platform = "", box3d = null, boxart = null, logo = null, system = "", accent = "", kind = "start", seconds = 0 } = $props();
+  const minutes = (s) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 
   // Flat box art's proportions, once it has loaded (a DVD case until then).
   let ratio = $state(0.7);
 </script>
 
-<div class="splash" role="status" aria-live="polite" aria-label="Starting {title}">
+<div class="splash" class:exit={kind === "exit"} role="status" aria-live="polite" aria-label="{kind === 'exit' ? 'Back from' : 'Starting'} {title}" data-fs-splash={kind} data-fs-platform={system || undefined} style:--accent-band={accent || "transparent"}>
   <div class="head"><Wordmark height="2.6rem" /></div>
 
   <div class="stage">
@@ -40,12 +44,19 @@
     {:else if platform}
       <span class="platform">{platform}</span>
     {/if}
-    <p><strong>{title}</strong> · starting {emulator}…</p>
+    {#if kind === "exit"}
+      <p>Back from <strong>{title}</strong>{seconds >= 10 ? ` · played ${minutes(seconds)} this time` : ""}</p>
+    {:else}
+      <p><strong>{title}</strong> · starting {emulator}…</p>
+    {/if}
   </div>
 </div>
 
 <style>
   .splash { position: fixed; inset: 0; z-index: 50; display: grid; grid-template-rows: auto 1fr auto; justify-items: center; padding: 4vh 2rem; background: radial-gradient(ellipse at 50% 55%, var(--panel), var(--bg) 70%); text-align: center; }
+  .splash::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.2vh; background: var(--accent-band); }
+  .exit .stage { animation: none; }
+  .exit .box, .exit .render { animation-duration: 30s; }
   .head { padding-top: 1vh; }
   .stage { --h: min(48vh, 28rem); --d: calc(var(--h) * 0.1); position: relative; display: grid; place-items: center; perspective: 1400px; width: 100%; }
   .shadow { position: absolute; bottom: calc(50% - var(--h) / 2 - 2.2rem); width: calc(var(--h) * 0.6); height: 1.4rem; border-radius: 50%; background: radial-gradient(#0007, #0000 70%); }

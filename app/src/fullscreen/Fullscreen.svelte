@@ -4,7 +4,7 @@
   import Wordmark from "../Wordmark.svelte";
   import { fs, leave, remembered, remember } from "./fs.svelte.js";
   import { homeAction, keyAction, listMove } from "./fsnav.js";
-  import { ask, contextMenu, mainMenu, optionsMenu, storeMenu } from "./fsmenus.js";
+  import { ask, contextMenu, emulatorMenu, mainMenu, optionsMenu, storeMenu } from "./fsmenus.js";
   import { run } from "../jobs.svelte.js";
   import FsCarousel from "./FsCarousel.svelte";
   import FsGrid from "./FsGrid.svelte";
@@ -14,6 +14,13 @@
   import FsGame from "./FsGame.svelte";
   import FsMenu from "./FsMenu.svelte";
   import FsHelp from "./FsHelp.svelte";
+  import FsSearch from "./FsSearch.svelte";
+  import FsAttract from "./FsAttract.svelte";
+  import { idle, poke, setIdle, pauseIdle } from "./attract.svelte.js";
+  import { music, startMusic, stopMusic, nextTrack, toggleMusic, setVolume, pauseMusic } from "./music.svelte.js";
+  import { gamesFor, virtualPlatforms } from "./fshome.js";
+  import { marks, loadMarks, isFavourite, toggleFavourite } from "./marks.svelte.js";
+  import { listen } from "@tauri-apps/api/event";
   import "./fullscreen.css";
 
   // romforge's fullscreen mode (stage 2): the platforms along the top, a
@@ -41,15 +48,16 @@
   let winH = $state(window.innerHeight);
   let aspect = $derived(winW / winH > 1.6 ? "wide" : winW / winH < 1 ? "tall" : "standard");
 
-  const title = (r) => (r.name?.title || r.label || r.title).toLowerCase();
+  // Favourites and play time (step 6): loaded now and after each game.
+  loadMarks();
+  $effect(() => {
+    const off = listen("game-ended", () => loadMarks());
+    return () => off.then((f) => f());
+  });
   let all = $derived(lib.rows.filter((r) => r.main && !r.unmatched && r.system));
-  let platforms = $derived([{ system: "*", name: "All games", short: "ALL", games: all.length }, ...lib.platforms.filter((p) => p.system && p.games)]);
+  let platforms = $derived([...virtualPlatforms(all, marks), ...lib.platforms.filter((p) => p.system && p.games)]);
   let pIndex = $derived(Math.max(0, platforms.findIndex((p) => p.system === platformKey)));
-  let games = $derived(
-    all
-      .filter((r) => platformKey === "*" || r.system === platformKey)
-      .sort((a, b) => (sort === "year" ? (a.year ?? 9999) - (b.year ?? 9999) : 0) || title(a).localeCompare(title(b))),
-  );
+  let games = $derived(gamesFor(platforms[pIndex]?.system ?? "*", all, marks, sort));
   let gIndex = $derived(Math.max(0, games.findIndex((r) => r.id === gameId)));
   let game = $derived(games[gIndex] ?? null);
   const versionsOf = (g) => (g?.group ? lib.rows.filter((r) => r.group === g.group && r.id !== g.id && !r.head) : []);
@@ -116,6 +124,20 @@
     art: (a) => void (art = a),
     desktop: (g) => void desktop(g.id),
     play: (g) => void start(g),
+    favourite: (g) => void toggleFavourite(g),
+    search: () => void (screen = "search"),
+    music: () => (music.tracks.length ? music : null),
+    nextTrack: () => nextTrack(),
+    toggleMusic: () => toggleMusic(),
+    volume: (v) => setVolume(v),
+    // The emulator for this game: fetched, then a menu of the installed ones.
+    emulator: (g) => {
+      invoke("game_emulator", { system: g.system, title: g.title })
+        .then((e) => (menu = emulatorMenu(act, g, e)))
+        .catch(() => (menu = null));
+      return { title: "Emulator", index: 0, items: [{ label: "Looking…", run: () => undefined }] };
+    },
+    setEmulator: (g, name) => void invoke("set_game_emulator", { system: g.system, title: g.title, name }).catch(() => {}),
   };
   function start(g) {
     if (!g?.playable) return;
@@ -128,6 +150,8 @@
       ? [
           ...(game.playable ? [{ id: "play", label: "Play", primary: true, run: () => start(game) }] : []),
           ...(versionsOf(game).length ? [{ id: "versions", label: "Versions", run: () => (menu = optionsMenu(act, game, versionsOf(game))) }] : []),
+          { id: "favourite", label: isFavourite(game) ? "★ Favourite" : "☆ Favourite", run: () => toggleFavourite(game) },
+          ...(game.playable ? [{ id: "emulator", label: "Emulator…", run: () => (menu = act.emulator(game)) }] : []),
           { id: "back", label: "Back", run: () => (screen = "home") },
         ]
       : [],
@@ -138,9 +162,45 @@
     menu = next ?? null;
   }
 
+  // Attract mode and the screensaver (Settings; off unless set there).
+  $effect(() => {
+    Promise.all([invoke("start_options_now").catch(() => ({})), invoke("get_settings").catch(() => ({}))]).then(([o, s]) => {
+      const attract = o?.attract_seconds ? o.attract_seconds * 1000 : (s?.attract_minutes ?? 0) * 60000;
+      setIdle(attract, (s?.screensaver_minutes ?? 0) * 60000);
+    });
+    return () => pauseIdle(true);
+  });
+  $effect(() => pauseIdle(!!playing));
+  // Music while the mode is open, quiet while a game runs.
+  $effect(() => {
+    startMusic();
+    return () => stopMusic();
+  });
+  $effect(() => pauseMusic(!!playing));
+  // Woken on a game: it is the one focused.
+  function wokeOn(g) {
+    if (!g) return;
+    platformKey = "*";
+    gameId = g.id;
+    screen = "home";
+    focus = "grid";
+  }
+  let attractGame = null;
+
+  let finder = $state(null);
+  // A search result: its platform, and its page.
+  function openFound(g) {
+    platformKey = "*";
+    gameId = g.id;
+    screen = "game";
+    button = 0;
+  }
+
   // One action from the pad or the keyboard.
   function handle(action) {
     if (playing) return;
+    if (poke()) return wokeOn(attractGame);
+    if (screen === "search" && !menu) return finder?.pad(action);
     if (menu) {
       if (action === "back") menu = null;
       else if (action === "accept") pressMenu(menu.index);
@@ -157,6 +217,7 @@
       else if (action === "accept") buttons[button]?.run();
       else if (action === "north") menu = optionsMenu(act, game, versionsOf(game));
       else if (action === "context") menu = contextMenu(act, game, versionsOf(game));
+      else if (action === "west") toggleFavourite(game);
       else if (action === "left" || action === "right") {
         const i = gIndex + (action === "left" ? -1 : 1);
         if (i >= 0 && i < games.length) gameId = games[i].id;
@@ -164,6 +225,7 @@
       } else button = listMove(button, buttons.length, action === "up" ? "left" : action === "down" ? "right" : action);
       return;
     }
+    if (action === "west" && focus === "grid") return void toggleFavourite(game);
     const r = homeAction({ focus, platform: pIndex, platforms: platforms.length, game: gIndex, count: games.length, cols, rows, layout }, action);
     if (r.platform !== undefined) {
       platformKey = platforms[r.platform].system;
@@ -187,18 +249,24 @@
   let help = $derived(
     menu
       ? [["move", "Move"], ["accept", "Choose"], ["back", "Close"]]
+      : screen === "search"
+        ? [["move", "Move"], ["accept", "Type"], ["north", "Space"], ["back", "Delete"], ["menu", "Results"]]
       : screen === "game"
-        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["north", "Options"], ["back", "Back"], ["menu", "Menu"], ["Select+Start", "Quits a game"]]
+        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["west", "Favourite"], ["north", "Options"], ["back", "Back"], ["Select+Start", "Quits a game"]]
         : focus === "carousel"
           ? [["side", "Platform"], ["accept", "Games"], ["back", "Desktop"], ["menu", "Menu"]]
-          : [["accept", "Open"], ["north", "Options"], ["context", "More"], ["page", "Page"], ["back", "Platforms"], ["menu", "Menu"]],
+          : [["accept", "Open"], ["west", isFavourite(game) ? "Unfavourite" : "Favourite"], ["north", "Options"], ["context", "More"], ["back", "Platforms"], ["menu", "Menu"]],
   );
 </script>
 
 <svelte:window
   bind:innerWidth={winW}
   bind:innerHeight={winH}
+  onmousemove={() => poke() && wokeOn(attractGame)}
   onkeydown={(e) => {
+    if (idle.mode) return void (e.preventDefault(), poke(), wokeOn(attractGame));
+    if (screen === "search" && !menu) return finder?.key(e);
+    if (e.key === "/" && !menu) return void (e.preventDefault(), (screen = "search"));
     const a = keyAction(e.key);
     if (!a) return;
     e.preventDefault();
@@ -212,15 +280,19 @@
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />
     <main class="home">
       {#if layout === "list"}
-        <FsList {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+        <FsList {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {:else}
-        <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+        <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {/if}
       <FsInfo {game} {detail} />
     </main>
+  {:else if screen === "search"}
+    <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
+    <FsSearch bind:this={finder} {all} open={openFound} close={() => (screen = "home")} />
   {:else if game}
     <FsGame {game} {detail} {buttons} focus={button} press={(i) => buttons[i]?.run()} />
   {/if}
   <FsHelp items={help} pad={fs.padSeen} />
   {#if menu}<FsMenu {menu} press={pressMenu} />{/if}
+  {#if idle.mode}<FsAttract {all} saver={idle.mode === "saver"} shown={(g) => (attractGame = g)} />{/if}
 </div>

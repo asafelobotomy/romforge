@@ -5,6 +5,9 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct StartOptions {
     pub fullscreen: bool,
+    /// `ROMFORGE_ATTRACT_SECONDS`: attract mode after this many seconds,
+    /// whatever Settings says (for trying it out).
+    pub attract_seconds: Option<u32>,
 }
 
 /// Read `args` (without the program's name). Unknown ones are left alone:
@@ -14,6 +17,10 @@ pub fn start_options<S: AsRef<str>>(args: impl IntoIterator<Item = S>) -> StartO
         fullscreen: args
             .into_iter()
             .any(|a| matches!(a.as_ref(), "--fullscreen" | "-f")),
+        attract_seconds: std::env::var("ROMFORGE_ATTRACT_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n > 0),
     }
 }
 

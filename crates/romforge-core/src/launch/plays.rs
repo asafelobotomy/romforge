@@ -55,3 +55,31 @@ pub fn play_stats(conn: &Connection, system: &str, game: &str) -> Result<Option<
         )
         .optional()?)
 }
+
+/// One game's play time, for the lists of games played.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Played {
+    pub system: String,
+    pub title: String,
+    pub seconds: u64,
+    pub sessions: u64,
+    pub last_played: u64,
+}
+
+/// Every game played, the most recent first.
+pub fn play_summary(conn: &Connection) -> Result<Vec<Played>, Error> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT system, game, SUM(seconds), COUNT(*), MAX(started_at) FROM play_sessions
+         GROUP BY system, game ORDER BY MAX(started_at) DESC, game",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(Played {
+            system: r.get(0)?,
+            title: r.get(1)?,
+            seconds: r.get::<_, i64>(2)? as u64,
+            sessions: r.get::<_, i64>(3)? as u64,
+            last_played: r.get::<_, i64>(4)? as u64,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}

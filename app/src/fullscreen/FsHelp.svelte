@@ -4,8 +4,8 @@
   // else as keys.
   let { items, pad = false } = $props();
 
-  const PAD = { accept: "Ⓐ", back: "Ⓑ", north: "Ⓨ", menu: "☰ Start", context: "⧉ Select", page: "LB / RB", move: "✛", side: "◀ ▶" };
-  const KEYS = { accept: "Enter", back: "Esc", north: "O", menu: "Tab", context: "Space", page: "PgUp / PgDn", move: "Arrows", side: "◀ ▶" };
+  const PAD = { accept: "Ⓐ", back: "Ⓑ", north: "Ⓨ", west: "Ⓧ", menu: "☰ Start", context: "⧉ Select", page: "LB / RB", move: "✛", side: "◀ ▶" };
+  const KEYS = { accept: "Enter", back: "Esc", north: "O", west: "F", menu: "Tab", context: "Space", page: "PgUp / PgDn", move: "Arrows", side: "◀ ▶" };
 </script>
 
 <footer class="help" data-fs-help>
