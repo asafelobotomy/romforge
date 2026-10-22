@@ -1433,6 +1433,89 @@ one, so an MIT program loading a GPL core at runtime places no obligation
 on romforge's distribution. Non-commercial cores carry their warning as in
 1.4.
 
+### Stage 4 (future): a romforge server, storage and streaming
+
+Planned, not scheduled (researched 2026-10-22). romforge on a home server
+in a container holds the library, BIOS, saves and emulators; other romforge
+installs (desktop, Steam Deck) and web browsers use it. Two problems,
+storage first.
+
+**Storage.** A headless `romforge-server` binary, a thin shell over a new
+core `server` module, in a rootless Podman quadlet:
+- `Games/`, `Bios/`, `Media/` mounted read-only (rule 6 holds on the
+  server too); an HTTP API (axum + tower-http `ServeDir`, byte ranges; all
+  MIT/Apache).
+- Found on the LAN by mDNS (`mdns-sd`); a device pairs with a PIN and gets
+  its own revocable token; TLS with a self-signed certificate
+  (rustls/rcgen) pinned on first use. LAN only by default; a VPN for away.
+- Clients download a game into a capped cache (`.part`, kept only when its
+  size and SHA1 match the library's: rule 8), rather than playing from an
+  SMB/NFS mount (awkward on SteamOS, and no check).
+
+**Save sync.** A negotiate API after RomM's: the client sends each save's
+name, mtime and SHA1; the server answers upload, download, nothing or
+conflict, judged against each device's last-synced hash; a conflict keeps
+both copies; N versions per save. Plus the small WebDAV subset RetroArch's
+own Cloud Sync speaks (GET/PUT/DELETE and its manifest; `dav-server`,
+Apache-2.0), with its own app password since RetroArch keeps it in plain
+text; a failed upload answers 409, never a false success. Save states are
+opt-in and tagged with the emulator or core version (they load only on the
+same one).
+
+**Browser play without streaming.** EmulatorJS (GPL-3.0, the user fetches
+it inside romforge as with OpenVGDB), served from the server's own origin
+with COOP/COEP: up to PS1, N64, NDS, Saturn; PSP needs HTTPS and threads;
+GameCube/Wii aren't practical. Its save hooks feed the save sync. Serving a
+GPL `.wasm` core is distributing it: the page links the exact source.
+Non-commercial cores (Snes9x) carry their warning.
+
+**Streaming.** Wolf (Games on Whales, MIT) as a separate, rootful container
+(rootless Podman breaks its device rules and uinput, wolf#477): one virtual
+Wayland desktop per client, encoding NVENC → VAAPI → QSV → software,
+virtual pads (inputtino, MIT), PulseAudio per session. romforge ships an
+app image on GoW's `base-emu` that runs its fullscreen pad UI under nested
+sway (headless gamescope has NVIDIA black-screen reports). Native clients
+start Moonlight as a child process, as any emulator; browsers go through a
+moonlight-web-stream container. Both GPL, both separate programs, never
+linked. Sunshine's REST API is the fallback for one user on a host with a
+real display. Not used: KasmVNC (on/off triggers, no rumble), Parsec (no
+Linux host), Steam Remote Play (no API), RetroArch's RTMP (watch only).
+Limits: consumer NVIDIA allows 8 encode sessions per system, one per
+client; the image needs a current Mesa (Fedora base) for new AMD GPUs.
+
+**Prior art, not reusable:** RomM and Gaseous (AGPL), Retrom (GPL; Rust,
+Tauri, axum and gRPC: romforge's near twin, to study). Gaseous falls back
+to file names (against rule 8). Playmatch (MIT, Rust) is the one reusable
+piece found.
+
+**Phases:** (1) the remote library and verified downloads, (2) save sync,
+(3) browser play, (4) streaming through Wolf (or Sunshine), (5) maybe a
+streamer of romforge's own (str0m or webrtc-rs, inputtino,
+gst-wayland-display).
+
+**Prototype first,** on scratch copies: a throwaway server and client
+doing ranged, verified downloads of a big CHD to a Deck over Wi-Fi (cache
+or stream?); and a rootful Wolf spike on the real GPU, a `base-emu` image
+starting one game through `romforge-cli`, played from Moonlight on the Deck
+and from moonlight-web-stream in a browser.
+
+**Open:**
+- Whether Wolf adds apps at runtime through its API (one "romforge" app,
+  or one per game).
+- Whether moonlight-qt can be started on a game from the command line.
+- RetroArch's server manifest format and hash.
+- axum 0.8 with tower-http 0.7; whether `ServeDir` sends ETag or
+  Last-Modified (resumable downloads); dav-server with axum.
+- Browsers need HTTPS for gamepads, WebCodecs and threads: certificate
+  warnings on a LAN address.
+- No trustworthy LAN latency figures for any stack: measure our own.
+- Whether MPL-2.0 and LGPL (GStreamer, webrtcsink) count as "similar"
+  under rule 9: the owner's call, and only for phase 5.
+
+The research, with sources:
+`romforge-research/reports/Romforge server storage and streaming.md`
+(beside the repository, not in it).
+
 ### Order with milestones 20–22 (decided 2026-10-19)
 
 Stage 1 and milestones 20–22 are one piece of work, built in this order:

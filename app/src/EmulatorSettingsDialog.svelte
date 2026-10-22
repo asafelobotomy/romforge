@@ -116,7 +116,7 @@
 
 {#if open && view}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (open = false)}>
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="emu-title">
+    <div class="dialog tall" role="dialog" aria-modal="true" aria-labelledby="emu-title">
       <h2 id="emu-title">Emulator Settings</h2>
 
       <div class="etabs" role="tablist">
@@ -127,6 +127,7 @@
         {/each}
       </div>
 
+      <div class="body">
       {#if tab === "hotkeys"}
         <HotkeysPanel installed={view.installed} on={globalValue("hotkeys") !== "false"} />
       {:else if tab === "global"}
@@ -217,6 +218,7 @@
           </section>
         {/each}
       {/if}
+      </div>
 
       {#if error}<p class="err" role="alert">{error}</p>{/if}
       <div class="actions">

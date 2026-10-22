@@ -129,7 +129,7 @@
 
 {#if open}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (open = false)}>
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="dialog tall" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
 
       <div class="stabs" role="tablist">
@@ -138,6 +138,7 @@
         {/each}
       </div>
 
+      <div class="body">
       {#if stab === "folders"}
       {#if homeRoot}
         <section class="setting">
@@ -350,6 +351,7 @@
         </p>
       </section>
       {/if}
+      </div>
 
       {#if settingsError}<p class="err" role="alert">{settingsError}</p>{/if}
       <div class="actions">

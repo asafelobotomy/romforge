@@ -61,7 +61,7 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .app .num { text-align: right; white-space: nowrap; }
 .app .meta { color: var(--muted); font-size: 0.85rem; }
 .app .scrim { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
-.app .dialog { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
+.app .dialog { box-sizing: border-box; width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
 .app .dialog h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
 .app .setting { padding: 0.6rem 0; border-top: 1px solid var(--line); }
 .app .setting > label { font-weight: 600; }
@@ -76,6 +76,11 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .app .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
 .app button.primary { background: var(--accent); border-color: var(--accent); color: white; }
 .app .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
+/* A dialog with tabs: its title, tabs and buttons stay put; only the tab's
+   content scrolls, so a long tab never pushes Save out of reach. */
+.app .dialog.tall { display: flex; flex-direction: column; overflow: hidden; }
+.app .dialog.tall > .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -1.5rem; padding: 0 1.5rem; }
+.app .dialog.tall > .actions { flex: none; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .app .search-dialog { width: min(64rem, calc(100vw - 2rem)); }
 .app .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app .badge.by_you, .app .badge.derivative, .app .badge.detected { color: var(--accent); }
