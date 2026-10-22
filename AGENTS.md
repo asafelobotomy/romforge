@@ -10,7 +10,8 @@
 4. **One table of systems** (`crates/romforge-core/src/systems/table.rs`) and **one
    table of copier headers** (`headers.rs`). Never a second detector or a
    second list.
-5. **No pile of docs, reports or scripts.** README, PLAN.md and this file.
+5. **No pile of docs, reports or scripts.** README (for users: short),
+   GUIDE.md (the technical detail), PLAN.md and this file.
    Ideas for later milestones go in PLAN.md, not into code.
 6. **Stay in the milestone.** See PLAN.md. Scanning and identifying never
    move, rename or write ROM files; only organize and cleanup do, and only

@@ -42,7 +42,7 @@ jobs:
         run: |
           mkdir out
           cp target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage out/
-          tar -czf "out/romforge-cli-$VERSION-x86_64-linux.tar.gz" -C target/release romforge-cli -C "$GITHUB_WORKSPACE" LICENSE README.md
+          tar -czf "out/romforge-cli-$VERSION-x86_64-linux.tar.gz" -C target/release romforge-cli -C "$GITHUB_WORKSPACE" LICENSE README.md GUIDE.md
           deb="romforge_${VERSION}_amd64.deb"
           test -f "out/$deb"
           sum=$(sha256sum "out/$deb" | cut -d' ' -f1)

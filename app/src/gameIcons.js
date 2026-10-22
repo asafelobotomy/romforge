@@ -3,7 +3,7 @@
 // Sbed, licensed CC BY 3.0
 // (https://creativecommons.org/licenses/by/3.0/). Changed here: the black
 // background square removed and the shape drawn in the text colour. The
-// app's Settings → Credits and the README list them.
+// app's Settings → Credits and GUIDE.md list them.
 //
 // key -> { author, name (its game-icons.net name), svg (inside a
 // 512×512 view box) }

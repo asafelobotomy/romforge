@@ -1,4 +1,4 @@
-//! The README quick start, run against the real binary.
+//! The guide's quick start, run against the real binary.
 
 use std::path::Path;
 use std::process::Command;

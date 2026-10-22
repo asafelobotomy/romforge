@@ -1301,7 +1301,7 @@ themes. Researched online the same day (sources below); decided:
    the user's pick in one `settings` row, `fit`/`applied`), the
    `theme://` scheme serving CSS wrapped in `@scope ([data-fs-root])`
    under the CSP (style, img and font sources only), and the theme API
-   1 the README lists. Built in from `themes/`: SNES UK (light and dark
+   1 GUIDE.md lists. Built in from `themes/`: SNES UK (light and dark
    with the system), Famicom, Mega Drive (a list by default) and Game Boy;
    user themes in `RomForge/Themes/<id>/`. Layouts: grid and the new list
    (`FsList`). Picked from Start → Theme by pad or Settings → Display,

@@ -19,7 +19,7 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
-      - name: Quick start from the README
+      - name: Quick start from the guide
         run: |
           export ROMFORGE_DB="$RUNNER_TEMP/quickstart.db"
           cargo run -q -p romforge-cli -- dat import fixtures/dats/*.dat

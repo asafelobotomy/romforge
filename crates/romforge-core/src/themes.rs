@@ -5,8 +5,8 @@
 //! `@scope ([data-fs-root])` so it reaches the fullscreen mode only, under a
 //! CSP that lets it load nothing from outside romforge.
 //!
-//! Theme API 1: the `data-fs-*` attributes and `--fs-*` variables the
-//! README lists; never the app's class names.
+//! Theme API 1: the `data-fs-*` attributes and `--fs-*` variables
+//! GUIDE.md lists; never the app's class names.
 //!
 //! romforge's own themes are in the repository's `themes/` folder, built
 //! in ([`BUILTIN`]); the user's are folders in `RomForge/Themes/` (or
