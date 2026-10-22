@@ -8,7 +8,7 @@ use romforge_core::organize;
 
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
-    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand,
+    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand, ThemesCommand,
 };
 
 #[derive(Parser)]
@@ -170,6 +170,10 @@ pub enum Command {
     /// A game's manual (a PDF): yours, archive.org's or Vimm's Lair's scan
     #[command(subcommand)]
     Manual(ManualCommand),
+    /// The fullscreen mode's themes: yours, and the community's from the
+    /// romforge-themes index (stage 2, step 5)
+    #[command(subcommand)]
+    Themes(ThemesCommand),
     /// Show or change your Source / Library folders and cleanup options
     Settings {
         /// Folder of unprocessed ROMs ("" to clear)

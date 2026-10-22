@@ -11,7 +11,7 @@ use clap::Parser;
 use romforge_core::{Library, enrich, systems};
 
 use crate::args::{Cli, Command};
-use crate::subcommands::{DatCommand, HomeCommand};
+use crate::subcommands::{DatCommand, HomeCommand, ThemesCommand};
 
 fn main() -> Result<()> {
     // Like other command-line tools, end quietly when the reader of our
@@ -79,6 +79,11 @@ fn main() -> Result<()> {
         _ => {}
     }
 
+    // Making an index needs no library.
+    if let Command::Themes(ThemesCommand::Index { repo, check }) = &cli.command {
+        return cmd::themes::index(repo, *check);
+    }
+
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
             let mut sources = String::new();
@@ -116,6 +121,7 @@ fn main() -> Result<()> {
         c @ Command::Settings { .. } => cmd::settings::run(&mut lib, c)?,
         c @ Command::Search(_) => cmd::search::run(&mut lib, c)?,
         c @ Command::Games { .. } => cmd::games::run(&mut lib, c)?,
+        Command::Themes(c) => cmd::themes::run(&lib, c)?,
         Command::Home(_) => unreachable!("handled before the library opens"),
     }
     Ok(())

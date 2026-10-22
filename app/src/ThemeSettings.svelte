@@ -1,6 +1,8 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { theme, loadThemes, pickTheme } from "./fullscreen/theme.svelte.js";
+  import ThemeStore from "./ThemeStore.svelte";
+  let storeOpen = $state(false);
 
   // Settings → Display: the fullscreen mode's theme and what it offers.
   // Each change is kept at once (as in the fullscreen mode's Start →
@@ -26,11 +28,11 @@
       <label for="fs-theme">Theme</label>
       <select id="fs-theme" value={sel.theme} onchange={(e) => set({ theme: e.currentTarget.value, scheme: "", layout: "" })}>
         {#each v.themes.filter((t) => t.manifest && !t.problem) as t}
-          <option value={t.id}>{t.manifest.name}{t.builtin ? "" : " (yours)"}</option>
+          <option value={t.id}>{t.manifest.name}{t.builtin ? "" : t.downloaded ? " (downloaded)" : " (yours)"}</option>
         {/each}
       </select>
       <label for="fs-scheme">Colours</label>
-      <select id="fs-scheme" value={sel.scheme} onchange={(e) => set({ scheme: e.currentTarget.value })}>
+      <select id="fs-scheme" value={sel.scheme || (follows ? "" : schemes[0])} onchange={(e) => set({ scheme: e.currentTarget.value })}>
         {#if follows}<option value="">With the system</option>{/if}
         {#each schemes as s}<option value={s}>{nice(s)}</option>{/each}
       </select>
@@ -56,6 +58,7 @@
       {/each}
     </div>
     {#if m.description}<p class="hint">{m.description}{m.author ? ` By ${m.author}` : ""}{m.licence ? ` (${m.licence}).` : ""}</p>{/if}
+    <p><button onclick={() => (storeOpen = true)}>Get themes…</button></p>
     {#if v.dir}
       <p class="hint">
         Your own themes go in <code>{v.dir}</code>, a folder each.
@@ -67,6 +70,7 @@
     {/each}
   </section>
 {/if}
+<ThemeStore bind:open={storeOpen} />
 
 <style>
   .grid { display: grid; grid-template-columns: auto minmax(10rem, 18rem); gap: 0.35rem 0.8rem; align-items: center; margin: 0.3rem 0; }

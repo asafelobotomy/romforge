@@ -339,3 +339,35 @@ pub enum EmulatorCommand {
         undo: bool,
     },
 }
+
+#[derive(Subcommand)]
+pub enum ThemesCommand {
+    /// The themes there are here, and whether each is usable
+    List,
+    /// The community index's themes (romforge-themes), and which you have
+    Available {
+        /// Another index: a URL to themes.json, a themes.json, or its folder
+        /// [default: $ROMFORGE_THEMES_INDEX, else romforge-themes on GitHub]
+        #[arg(long)]
+        index: Option<String>,
+    },
+    /// Download (or update) a community theme into your themes folder
+    Install {
+        id: String,
+        /// You have read the theme's licence (printed first) and accept it
+        #[arg(long)]
+        accept_licence: bool,
+        #[arg(long)]
+        index: Option<String>,
+    },
+    /// Remove a theme romforge downloaded (never one of your own)
+    Remove { id: String },
+    /// Write themes.json for a romforge-themes checkout from its themes/
+    /// folders, each checked as romforge checks any theme
+    Index {
+        repo: PathBuf,
+        /// Only check that themes.json is up to date (for CI)
+        #[arg(long)]
+        check: bool,
+    },
+}

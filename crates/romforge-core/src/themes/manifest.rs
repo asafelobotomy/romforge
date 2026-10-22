@@ -22,6 +22,13 @@ pub struct Manifest {
     pub author: String,
     #[serde(default)]
     pub licence: String,
+    /// Where the licence is read (a community theme's licence is shown
+    /// before it is downloaded).
+    #[serde(default)]
+    pub licence_url: String,
+    /// The theme's own version, for updates from the community index.
+    #[serde(default)]
+    pub version: String,
     #[serde(default)]
     pub description: String,
     /// The layout it starts in.

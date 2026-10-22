@@ -1312,6 +1312,17 @@ themes. Researched online the same day (sources below); decided:
    aspect- and font-file variants in the built-in themes, theme options
    that pick layouts.
 5. *`romforge-themes`:* the index, downloads and updates, licences shown.
+   *(Built 2026-10-22.)* github.com/asafelobotomy/romforge-themes: a
+   `themes.json` listing every file's size and SHA-256 (no archives, so
+   nothing to unpack), written and checked by `romforge-cli themes index`
+   (its CI runs it, building romforge-cli from main), and Neon Arcade
+   (CC0) as the first theme. `themes::remote` fetches the index from
+   raw.githubusercontent.com (free, no account), installs a theme file by
+   file into a folder of its own, checks it as any theme, then swaps it in
+   (`.romforge-source.json` marks it downloaded); updates by version;
+   removes only downloads. Settings → Display → Get themes… and Start →
+   Theme → Get themes show each licence before downloading. Tried: by the
+   CLI from GitHub, by pad in the fullscreen mode, and by mouse in Settings.
 6. *Extras:* favourites, recently and most played (from `play_sessions`),
    quick search with the on-screen keyboard, attract mode separate from a
    screensaver, background music (the user's files), per-game settings

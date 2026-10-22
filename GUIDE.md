@@ -11,7 +11,7 @@ and what is still open.
 - [The RomForge folder](#the-romforge-folder)
 - [DOS, ScummVM and Japanese computers](#dos-scummvm-and-japanese-computers) · [Arcade](#arcade-mame-and-fbneo) · [Patches](#patches-translations-and-hacks)
 - [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo)
-- [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes)
+- [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes)
 - [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
 
 Scanning and identifying only read your files. Only `organize apply` moves
@@ -698,6 +698,33 @@ fullscreen mode only, under a policy that loads nothing from outside
 romforge. Refused: `@import`, URLs with a scheme or `//`, a `url()` out of
 the theme's folder, escapes, unbalanced braces, more than 256 KB of CSS
 or 8 MB in all, variables not named `--fs-…`.
+
+### Community themes
+
+Themes others made are in [romforge-themes](https://github.com/asafelobotomy/romforge-themes).
+**Settings → Display → Get themes…** (or Start → Theme → **Get themes** in
+the fullscreen mode) lists them with a preview, author, version, size and
+licence; nothing is downloaded until you accept its licence. romforge
+fetches each file the index lists, checks its size and SHA-256, checks the
+whole theme as it checks yours, and only then puts it in your themes folder
+(an older download is replaced; a failed one leaves it as it was). A
+newer version in the index shows as **Update**. A theme of yours with the
+same name is never touched, and **Remove** removes downloaded themes only.
+
+```bash
+romforge-cli themes list                              # yours, downloaded, built in
+romforge-cli themes available                         # the index, and what you have
+romforge-cli themes install neon-arcade --accept-licence
+romforge-cli themes remove neon-arcade
+romforge-cli themes index ~/romforge-themes [--check] # write / check its themes.json
+```
+
+The index is `themes.json` at the repository's root: each theme's id, name,
+version, author, licence (and its URL), description, preview, and every
+file's path, size and SHA-256, under `themes/<id>/`. `romforge-cli themes
+index` writes it from the folders, refusing any theme romforge would refuse
+(its CI runs it with `--check`). `ROMFORGE_THEMES_INDEX` points romforge at
+another index: a URL, a `themes.json`, or a checkout's folder.
 
 ## Packages and building
 

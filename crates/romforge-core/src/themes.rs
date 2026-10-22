@@ -19,6 +19,7 @@ mod manifest;
 pub use manifest::*;
 mod choice;
 pub use choice::*;
+pub mod remote;
 
 /// The theme every fallback lands on.
 pub const DEFAULT: &str = "snes-uk";
@@ -51,6 +52,8 @@ pub struct Entry {
     /// Its folder's name (the manifest's id when usable).
     pub id: String,
     pub builtin: bool,
+    /// Downloaded from the community index (else made by the user).
+    pub downloaded: bool,
     pub manifest: Option<Manifest>,
     /// Why it is refused.
     pub problem: Option<String>,
@@ -79,6 +82,7 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
     users.sort();
     for id in users {
         let mut e = entry(&id, false, read(&dir.join(&id)));
+        e.downloaded = dir.join(&id).join(remote::SOURCE_FILE).is_file();
         if BUILTIN.iter().any(|(b, ..)| *b == id) {
             e.problem = Some(format!(
                 "{id:?} is a built-in theme's name: rename the folder and its id"
@@ -113,12 +117,14 @@ fn entry(id: &str, builtin: bool, files: Result<(String, String, u64), String>) 
         Ok(m) => Entry {
             id: id.to_owned(),
             builtin,
+            downloaded: false,
             manifest: Some(m),
             problem: None,
         },
         Err(problem) => Entry {
             id: id.to_owned(),
             builtin,
+            downloaded: false,
             manifest: None,
             problem: Some(problem),
         },

@@ -4,7 +4,8 @@
   import Wordmark from "../Wordmark.svelte";
   import { fs, leave, remembered, remember } from "./fs.svelte.js";
   import { homeAction, keyAction, listMove } from "./fsnav.js";
-  import { ask, contextMenu, mainMenu, optionsMenu } from "./fsmenus.js";
+  import { ask, contextMenu, mainMenu, optionsMenu, storeMenu } from "./fsmenus.js";
+  import { run } from "../jobs.svelte.js";
   import FsCarousel from "./FsCarousel.svelte";
   import FsGrid from "./FsGrid.svelte";
   import FsList from "./FsList.svelte";
@@ -93,13 +94,28 @@
 
   const act = {
     themes: () => theme.view,
-    theme: (s) => pickTheme(s),
+    theme: (s) => void pickTheme(s),
+    // Get themes: fetched, then shown (the menu says so meanwhile).
+    store: () => {
+      invoke("themes_available")
+        .then((a) => (menu = storeMenu(act, a)))
+        .catch(() => (menu = storeMenu(act, null)));
+      return { title: "Get themes", index: 0, items: [{ label: "Fetching the list…", run: () => undefined }] };
+    },
+    install: (t) => {
+      run(`Getting the ${t.name} theme…`, "theme_install", { id: t.id }).then(async (done) => {
+        if (done === null) return;
+        await loadThemes();
+        menu = ask(`${t.name} is in. Use it now?`, () => act.useTheme(t.id));
+      });
+    },
+    useTheme: (id) => void pickTheme({ ...theme.view.selection, theme: id, scheme: "", layout: "" }),
     leave,
-    quit: () => invoke("quit"),
-    sort: (s) => (sort = s),
-    art: (a) => (art = a),
-    desktop: (g) => desktop(g.id),
-    play: (g) => start(g),
+    quit: () => void invoke("quit"),
+    sort: (s) => void (sort = s),
+    art: (a) => void (art = a),
+    desktop: (g) => void desktop(g.id),
+    play: (g) => void start(g),
   };
   function start(g) {
     if (!g?.playable) return;

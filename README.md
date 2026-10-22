@@ -87,8 +87,10 @@ Quit works everywhere. RetroArch, DuckStation and PCSX2 get the full set.
 Pick the fullscreen look from **Start → Theme** or **Settings → Display**:
 **SNES UK** (the default, light or dark), **Famicom**, **Mega Drive** or
 **Game Boy**, each with a grid or list layout, a text size and its own
-options. You can make your own theme from a colour file and a stylesheet;
-see the [guide](GUIDE.md#fullscreen-themes).
+options. **Get themes…** downloads more made by the community, from
+[romforge-themes](https://github.com/asafelobotomy/romforge-themes), each
+with its licence shown first. You can make your own from a colour file and
+a stylesheet; see the [guide](GUIDE.md#fullscreen-themes).
 
 ## Where the data comes from
 

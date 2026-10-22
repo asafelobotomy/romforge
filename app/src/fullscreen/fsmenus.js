@@ -83,12 +83,13 @@ export function themeMenu(act, view, index = 0) {
   const mine = sel.options?.[sel.theme] ?? {};
   const items = [
     { label: `Theme: ${m.name}`, run: () => themesMenu(act, view) },
+    { label: "Get themes…", run: () => act.store() },
     {
       label: `Colours: ${scheme ? nice(scheme) : "with the system"}`,
-      run: () => again({ scheme: next(schemeList, scheme) }, 1),
+      run: () => again({ scheme: next(schemeList, scheme) }, 2),
     },
   ];
-  if (layouts.length > 1) items.push({ label: `Layout: ${nice(layout)}`, run: () => again({ layout: next(layouts, layout) }, 2) });
+  if (layouts.length > 1) items.push({ label: `Layout: ${nice(layout)}`, run: () => again({ layout: next(layouts, layout) }, 3) });
   const sizeAt = items.length;
   items.push({
     label: `Text size: ${sel.text_size}%`,
@@ -114,7 +115,7 @@ export function themesMenu(act, view) {
     title: "Pick a theme",
     index: Math.max(0, usable.findIndex((t) => t.id === view.selection.theme)),
     items: usable.map((t) => ({
-      label: t.manifest.name + (t.builtin ? "" : " (yours)"),
+      label: t.manifest.name + (t.builtin ? "" : t.downloaded ? " (downloaded)" : " (yours)"),
       run: () => {
         const s = { ...view.selection, theme: t.id, scheme: "", layout: "" };
         act.theme(s);
@@ -122,4 +123,23 @@ export function themesMenu(act, view) {
       },
     })),
   };
+}
+
+// Start → Theme → Get themes: the community index (themes_available).
+// A theme to get asks first, with its licence; one there is used.
+export function storeMenu(act, available) {
+  if (!available) return { title: "Get themes", index: 0, items: [{ label: "The list couldn't be fetched (offline?)", run: () => undefined }] };
+  const state = (t) =>
+    ({ not_installed: "", installed: " (installed)", update_available: " (update)", taken: " (name taken)", refused: " (can't install)" })[t.status.state] ?? "";
+  const items = available.themes.map((t) => ({
+    label: `${t.name} ${t.version}${state(t)}`,
+    run: () => {
+      const s = t.status.state;
+      if (s === "installed") return ask(`Use ${t.name} now?`, () => act.useTheme(t.id));
+      if (s !== "not_installed" && s !== "update_available") return undefined;
+      return ask(`${t.name} by ${t.author || "unknown"}, licence ${t.licence}. Download it?`, () => act.install(t));
+    },
+  }));
+  if (!items.length) items.push({ label: "No themes in the list yet", run: () => undefined });
+  return { title: "Get themes", index: 0, items };
 }
