@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-use super::fs::{move_file, same_file, source_left};
+use super::fs::{move_file, remove_empty_parents, same_file, source_left};
 use super::{Applied, Batch, Plan, Undone};
 
 /// Carry out a plan, journaling each move so [`undo`] can reverse it. A
@@ -245,11 +245,5 @@ pub fn batches(conn: &Connection) -> Result<Vec<Batch>, Error> {
 /// has something in it. Never `dest` itself or anything outside it, and only
 /// ever empty folders.
 pub(super) fn remove_empty_dirs(moved_out_of: &Path, dest: &Path) {
-    let mut dir = moved_out_of.parent();
-    while let Some(d) = dir {
-        if d == dest || !d.starts_with(dest) || std::fs::remove_dir(d).is_err() {
-            break;
-        }
-        dir = d.parent();
-    }
+    remove_empty_parents(moved_out_of, |d| d == dest || !d.starts_with(dest));
 }

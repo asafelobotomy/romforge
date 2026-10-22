@@ -168,7 +168,7 @@ fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
                 name: format!("retroarch:{core}"),
                 profile: profiles.iter().find(|p| p.cores.iter().any(|c| c == core)),
                 dir: home.bios().join("RetroArch"),
-                installed: env.find(&RETROARCH).is_some() && env.core_installed(core),
+                installed: env.find(&RETROARCH).is_some() && env.core_path(core).is_some(),
             });
         }
         for name in s.emulators {

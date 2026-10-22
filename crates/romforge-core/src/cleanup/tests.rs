@@ -78,3 +78,30 @@ fn track_types_from_sectors() {
     s[15] = 1;
     assert_eq!(track_type(&s), "MODE1_RAW");
 }
+
+/// A big zip member streams from the file itself, stored or deflated.
+#[test]
+fn zip_members_stream_in_place() {
+    use std::io::{Read, Write};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.zip");
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    let mut z = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    for (name, method) in [
+        ("stored.bin", zip::CompressionMethod::Stored),
+        ("deflated.bin", zip::CompressionMethod::Deflated),
+    ] {
+        let o = zip::write::SimpleFileOptions::default().compression_method(method);
+        z.start_file(name, o).unwrap();
+        z.write_all(&data).unwrap();
+    }
+    z.finish().unwrap();
+    let mut a = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+    for name in ["stored.bin", "deflated.bin"] {
+        let m = a.by_name(name).unwrap();
+        let mut r = super::parts::stream_member(&path, &m).unwrap().expect(name);
+        let mut back = Vec::new();
+        r.read_to_end(&mut back).unwrap();
+        assert!(back == data, "{name}");
+    }
+}

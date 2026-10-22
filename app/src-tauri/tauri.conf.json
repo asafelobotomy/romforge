@@ -52,7 +52,9 @@
         "recommends": [
           "retroarch",
           "scummvm",
-          "libgtk-layer-shell0"
+          "libgtk-layer-shell0",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-libav"
         ],
         "section": "games"
       },
@@ -67,7 +69,9 @@
         "recommends": [
           "retroarch",
           "scummvm",
-          "gtk-layer-shell"
+          "gtk-layer-shell",
+          "gstreamer1-plugins-good",
+          "gstreamer1-plugin-libav"
         ]
       }
     },

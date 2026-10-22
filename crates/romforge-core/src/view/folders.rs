@@ -58,11 +58,7 @@ pub(super) fn folder_games(
         }
         let recs: Vec<&FileRec> = r.file_ids.iter().filter_map(|i| by_id.get(i).copied()).collect();
         let place_of = |f: &FileRec| -> Option<String> {
-            if f.member.is_empty() {
-                f.path.rsplit_once('/').map(|(d, _)| d.to_owned())
-            } else {
-                Some(f.path.clone())
-            }
+            crate::report::place_of(&f.path, &f.member).map(str::to_owned)
         };
         let Some(place) = recs.first().and_then(|f| place_of(f)) else {
             continue;

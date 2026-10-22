@@ -2,6 +2,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 
+use crate::organize::remove_empty_parents;
 use crate::{Error, layout};
 
 /// One batch's originals waiting in the trash.
@@ -43,7 +44,7 @@ pub fn trash_contents(conn: &Connection, older_than_days: Option<u32>) -> Result
     let ids: Vec<(i64, String)> = conn
         .prepare(
             "SELECT b.batch_id, b.created_at FROM cleanup_batches b
-             WHERE b.undone_at IS NULL AND b.emptied_at IS NULL
+             WHERE b.emptied_at IS NULL
                AND EXISTS (SELECT 1 FROM cleanup_trash t WHERE t.batch_id = b.batch_id)
                AND (?1 IS NULL OR b.created_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?1))
              ORDER BY b.batch_id",
@@ -110,15 +111,7 @@ pub fn empty_trash(conn: &Connection, older_than_days: Option<u32>) -> Result<Tr
                 params![b.batch_id, at],
             )?;
             // The batch's folders in the trash go once empty.
-            let mut d = p.parent();
-            while let Some(dir) = d {
-                if dir.file_name().is_some_and(|n| n == layout::TRASH_DIR)
-                    || std::fs::remove_dir(dir).is_err()
-                {
-                    break;
-                }
-                d = dir.parent();
-            }
+            remove_empty_parents(p, |d| d.file_name().is_some_and(|n| n == layout::TRASH_DIR));
         }
     }
     Ok(out)

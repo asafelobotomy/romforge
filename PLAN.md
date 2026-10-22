@@ -22,7 +22,7 @@ is listed under each milestone as **Open**.
    folders and zip/7z members, hash raw and header-stripped data, match on
    size + SHA1/MD5, have/missing per DAT. Read-only: never moves or renames a
    file. Also CHD tracks (milestone 4). `dat download` fetches DATs (terms checked 2026-10-17); where from
-   is in the `redump` and `nointro` columns of `systems.rs`:
+   is in the `redump` and `nointro` columns of `systems/table.rs`:
    - **Redump**: game zips and BIOS DATs from `redump.org/datfile/<code>/`.
    - **No-Intro**: the data license allows any reuse, but DAT-o-MATIC serves
      DATs only through its download form (throttled, may show a captcha), so
@@ -136,7 +136,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
    links). Requests are 2 s apart; 429/503 answers are retried after
    Retry-After up to 30 s, beyond that the run stops asking and reports the
    wait. Platform items are in the `wikidata` column of
-   `systems.rs`, each checked against Wikidata; still missing: Lynx,
+   `systems/table.rs`, each checked against Wikidata; still missing: Lynx,
    TurboGrafx-CD, Neo Geo Pocket, 3DO, Neo Geo CD, PC-FX, CD-i, CD32,
    ColecoVision, Intellivision, Vectrex, PC-98, X68000, Atari 5200, MSX2,
    Amstrad CPC. Keyed art sources *(built, not yet tried with real keys)*:
@@ -163,9 +163,10 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     anything else; originals (and other verified copies in Source) go to
     `.romforge-trash/<batch>/` next to them only when everything in them
     was written, never with Keep originals. Journaled; undo removes the new
-    files and moves the originals back. Not yet: `.nfo` (only
-    `.romforge.md`), GDI/Dreamcast and `.img`/`.ccd` discs, emptying the
-    trash from the app, multi-disc `.m3u`.
+    files and moves the originals back. Since built: emptying the trash
+    from the app (milestone 16) and multi-disc `.m3u` playlists (milestone
+    14, 5). Not yet: `.nfo` (only `.romforge.md`), GDI/Dreamcast and
+    `.img`/`.ccd` discs.
 11. **More free sources** (tier 1 of house rule 10: free, no account, no
     key; reviewed 2026-10-17), in this order:
     1. *libretro, more of it*: `Named_Logos` from the thumbnail server
@@ -211,7 +212,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     into `databases/` next to the library. Enrich then fills only empty
     fields (and libretro's `???`): OpenVGDB by SHA1, then LaunchBox by exact
     title on the system's LaunchBox platforms (new `launchbox` column in
-    `systems.rs`, accents folded, alternate names, exactly one game or
+    `systems/table.rs`, accents folded, alternate names, exactly one game or
     nothing); LaunchBox images come after libretro and before the keyed
     sources, the game's region first. Each field and image keeps its source
     (`game_meta.source`, migration 13), shown in Details and noted in
@@ -417,7 +418,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          4-letter code inside the serial);
        - titles alike to the file name or the header title, on the row's
          systems (its own; else the ID's kind via the new `ident` column
-         in `systems.rs`, then the extension).
+         in `systems/table.rs`, then the extension).
 
        Each candidate is weighed on name, header title (compared run
        together and as a prefix, since headers squash and cut titles),
@@ -739,7 +740,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        and ScummVM games get description, genre, year, developer and
        publisher from those files. Never used to verify (ScummVM.dat's
        own hashes are of `.scummvm` text files).
-    As built: `loose_sets` in `systems.rs` (PC-88 `m3u`, PC-98 `cmd`, X1
+    As built: `loose_sets` in `systems/table.rs` (PC-88 `m3u`, PC-98 `cmd`, X1
     and FM-7 none); a set's folder is journaled (`setdir`) and removed by
     undo once empty. `scummvm read` also runs `--detect --recursive` once
     per scanned folder (`scummvm_ids`, by path and file fingerprint);
@@ -774,8 +775,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     takes about 2 s (debug build) on every scan.
 
 15. **Packages** (decided 2026-10-18; *built* the same day:
-    `tauri.conf.json` bundles, `.github/workflows/release.yml`; no release
-    tagged yet). romforge starts host
+    `tauri.conf.json` bundles, `.github/workflows/release.yml`; released
+    from v0.1.0, 2026-10-18). romforge starts host
     programs (RetroArch, ScummVM, MAME, `flatpak run`), reads and moves
     files on any drive, and needs WebKitGTK (134 MiB installed on Arch).
     So:
@@ -794,16 +795,18 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
       builds the app without bundling.
     As built and tried locally: `.deb` and `.rpm` 14.9 MiB each (app,
     `romforge-cli`, desktop entry, icons, licence; they depend on the
-    system's WebKitGTK and GTK, and recommend only RetroArch and ScummVM,
-    since apt and dnf install recommended packages by default and Tauri
-    has no "suggests"); AppImage 105 MiB (app only). The release job
+    system's WebKitGTK and GTK, and recommend only RetroArch, ScummVM,
+    gtk-layer-shell and GStreamer's good and libav plugins (music), since
+    apt and dnf install recommended packages by default and Tauri has no
+    "suggests"); AppImage 105 MiB (app only). The release job
     writes the AUR's `romforge-bin` PKGBUILD (repackaging the `.deb`, all
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
-    **Open:** the first tagged release (the workflow has not run on
-    GitHub yet); pushing `romforge-bin` to the AUR (the owner's account);
-    Debian's and Fedora's package names for the recommended emulators are
-    unchecked.
+    Every tag from v0.1.0 to v0.6.1 was built and released by the
+    workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
+    (the owner's account); Debian's and Fedora's package names for the
+    recommended packages are unchecked (Fedora's libav plugin may be
+    `gstreamer1-plugin-libav` or RPM Fusion's `gstreamer1-libav`).
 
 16. **Trash, two matching fixes, deterministic zips** (decided
     2026-10-18; *built* the same day, tested on scratch folders).
@@ -862,7 +865,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
        set's CHD folder moves with it.
     The scan hashes every member of a zip or 7z named after an arcade set
     (arcade ROMs have no telling extensions).
-    As built: `arcade` and `urls` columns in `systems.rs` (Arcade, MAME
+    As built: `arcade` and `urls` columns in `systems/table.rs` (Arcade, MAME
     2003-Plus, FBNeo); the DAT parser reads MAME's `<mame>` / `<machine>`
     (devices skipped), `<disk>` (a ROM with `disk`, migration 30) and
     `optional`; `files.chd_sha1` from each CHD's header; via `confirmed`
@@ -895,7 +898,7 @@ Milestone 5 already launches. `launch.rs` finds RetroArch (on `PATH` or
 the Flatpak `org.libretro.RetroArch`) and its cores, and 16 standalone
 emulators (`KNOWN_EMULATORS`; milestone 14 added DOSBox Staging, DOSBox-X,
 ScummVM and MAME), using the `cores` and `emulators` columns of
-`systems.rs`. It builds a command line and spawns it; a Flatpak emulator is
+`systems/table.rs`. It builds a command line and spawns it; a Flatpak emulator is
 given the game's folder for that run. What is missing:
 - romforge does not own any emulator's config, so each one opens with its
   own UI, windowed, with its own save folders and hotkeys;
@@ -957,9 +960,10 @@ name or `<name>*.AppImage`, any case, newest name first);
 `RomForge/Emulators/cores/` is searched before the system's cores.
 `Library::env()` builds this for the CLI and the app.
 The console emulators' flags followed the same day, read from each
-one's source at its release (see 1.3). Not yet: the per-emulator quit
-method (with 1.6), and the path setting in the app (the Emulators page,
-milestone 21).
+one's source at its release (see 1.3). Since built: the per-emulator
+quit (stage 2, step 3: RetroArch's UDP `QUIT`, the others' own hotkey
+bindings or SIGTERM; `launch/controls.rs`) and the path setting in the
+app (Emulator Settings' **Program**, milestone 21).
 
 #### 1.2 RomForge folder grows
 
@@ -1045,9 +1049,11 @@ The files are written when the game starts (`spawn`), never by a plan or
 `--dry-run`, which prints them. A Flatpak RetroArch is also given the
 RomForge folder for that run. Without a RomForge folder RetroArch starts
 as it is set up.
+Since built (stage 2, step 3, `launch/controls.rs`):
+`network_cmd_enable` on a free port per game, and RetroArch's own pad
+hotkeys (the menu toggle included) unbound, romforge's L3+R3 opening the
+menu instead.
 Not yet:
-- `network_cmd_enable` (an open UDP port) waits for 1.6, which uses it;
-- the menu toggle stays bound until 1.6 gives a controller exit;
 - a new copy starts from RetroArch's built-in defaults: whether
   controller autoconfig and assets still resolve is to check on a real
   start (else seed those paths, or import the user's config once);
@@ -1156,8 +1162,9 @@ RetroDECK's `bios.json` is GPL-3.0: not used.
   `play_sessions` (migration 38) by system key and title; Details shows
   "Played 3.2 h · 5 times · last 19 Oct 2026". CLI: `launch --wait`
   records it too.
-- **Not yet:** the emulators' own quit commands (RetroArch's UDP `QUIT`,
-  hotkey chords) and a controller combo to quit, with stage 2.
+- **Since built** (stage 2, step 3): the emulators' own quit commands
+  (RetroArch's UDP `QUIT`, DuckStation's and PCSX2's hotkey bindings),
+  the hotkey chords, and Select+Start to quit on the pad.
 
 ### Stage 2: controllers and a fullscreen mode (researched and decided 2026-10-20)
 
@@ -2530,8 +2537,6 @@ on someone else:
 - Online lookups for files that stay unknown: RetroAchievements hashes
   (login token), ScreenScraper (keys); Hasheous needs neither, see
   milestone 11.
-- Favourites (play history: milestone 18, 1.6).
-
 - Redump update check without re-downloading (Redump has no version index).
 - The regions seed from remustwo for 1G1R (clone lists: 12.2).
 - RAR support needs a free pure-Rust decoder; none known yet.

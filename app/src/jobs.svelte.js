@@ -87,8 +87,10 @@ export async function edit(label, cmd, args = {}, { onWait = () => {} } = {}) {
   try {
     return await invoke(cmd, args);
   } catch (e) {
+    if (!String(e).startsWith(BUSY)) throw e;
     const holder = jobs.active;
-    if (!String(e).startsWith(BUSY) || !holder) throw e;
+    // The job holding the library ended in the meantime: try once more.
+    if (!holder) return invoke(cmd, args);
     const plain = (l) => l.replace(/…$/, "");
     const job = queued(`${plain(label)}, after ${plain(holder.label).toLowerCase()}…`, cmd, args, null, true);
     jobs.queue.unshift(job);
@@ -144,7 +146,7 @@ export function stop() {
 // How far the whole queue is, 0..1.
 export const overall = () => of(jobs);
 
-listen("job-progress", (e) => {
+const unProgress = listen("job-progress", (e) => {
   const p = e.payload;
   const a = jobs.active;
   if (a?.id !== p.job) return;
@@ -152,3 +154,5 @@ listen("job-progress", (e) => {
   a.total = p.total;
   a.detail = p.detail;
 });
+// A hot reload replaces this module: drop the old listener.
+import.meta.hot?.dispose(() => unProgress.then((f) => f()));

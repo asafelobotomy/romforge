@@ -3,6 +3,7 @@
   import { open as pickFile } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { basename } from "./lib.js";
+  import { displayTitle } from "./labels.js";
   import { run } from "./jobs.svelte.js";
 
   // Milestone 19: apply a translation or hack you fetched to the selected
@@ -86,7 +87,7 @@
 {#if open && row}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (open = false)}>
     <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="patch-title">
-      <h2 id="patch-title">Patch {row.label ?? row.title}</h2>
+      <h2 id="patch-title">Patch {displayTitle(row)}</h2>
       <p class="hint">
         A translation or hack makes a new copy of the game, listed as a version of it; your copy stays as it is. romforge
         doesn't download patches: find one, save it, then pick it here (IPS, BPS, UPS, PPF, xdelta, or a zip holding one).

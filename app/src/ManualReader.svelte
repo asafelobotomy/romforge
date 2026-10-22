@@ -93,8 +93,19 @@
     typed = page;
   });
 
+  // Opening counts: a manual still loading when another is asked for is
+  // dropped (and its document freed), never shown over the newer one.
+  let opening = 0;
+  let loaded = null;
+  $effect(() => () => {
+    loaded?.destroy();
+    loaded = null;
+  });
   async function open(url) {
+    const mine = ++opening;
     doc = null;
+    loaded?.destroy();
+    loaded = null;
     problem = "";
     search = null;
     try {
@@ -103,16 +114,21 @@
       const data = await res.arrayBuffer();
       if (data.byteLength < 5) throw new Error("empty file");
       const d = await pdfjs.getDocument({ data }).promise;
+      if (mine !== opening) return void d.destroy();
+      loaded = d;
       pages = d.numPages;
       page = Math.min(Math.max(1, start), pages);
       doc = d;
     } catch (e) {
-      problem = `This PDF couldn't be opened (${e?.message ?? e}).`;
+      if (mine === opening) problem = `This PDF couldn't be opened (${e?.message ?? e}).`;
     }
   }
 
+  let marking = 0;
   async function loadMarks(id) {
-    marks = id ? ((await invoke("manual_marks", { rowId: id }).catch(() => [])) ?? []) : [];
+    const mine = ++marking;
+    const got = id ? ((await invoke("manual_marks", { rowId: id }).catch(() => [])) ?? []) : [];
+    if (mine === marking) marks = got;
   }
   const fail = (e) => (error = String(e).replace(/^(launch|settings): /, ""));
   async function addMark(m) {
@@ -230,7 +246,7 @@
     <p class="hint">{problem}</p>
   {:else}
     <div class="body">
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
       <div class="view" bind:clientWidth={width} bind:clientHeight={height} tabindex="0" role="document" aria-label="Manual" onkeydown={keys}>
         <div class="sheets" class:fitpage={fit === "page"}>
           {#if doc && width}

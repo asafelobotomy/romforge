@@ -1,7 +1,4 @@
-use std::io::Read;
 use std::path::Path;
-
-use sha1::{Digest as _, Sha1};
 
 /// The error [`move_file`] returns when the file is in its new place but
 /// the original couldn't be removed: both exist and hold the same bytes.
@@ -170,16 +167,18 @@ pub(crate) fn copy_checked(from: &Path, to: &Path) -> std::io::Result<()> {
     result
 }
 
-fn sha1_file(path: &Path) -> std::io::Result<[u8; 20]> {
-    let mut f = std::fs::File::open(path)?;
-    let mut h = Sha1::new();
-    let mut buf = vec![0u8; 1 << 16];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
+fn sha1_file(path: &Path) -> std::io::Result<String> {
+    crate::cleanup::sha1_of(std::io::BufReader::new(std::fs::File::open(path)?))
+}
+
+/// The empty folders above `path`, removed one by one up to the first
+/// that isn't empty, or that `stop` says stays (it is never removed).
+pub(crate) fn remove_empty_parents(path: &Path, stop: impl Fn(&Path) -> bool) {
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if stop(d) || std::fs::remove_dir(d).is_err() {
             break;
         }
-        h.update(&buf[..n]);
+        dir = d.parent();
     }
-    Ok(h.finalize().into())
 }

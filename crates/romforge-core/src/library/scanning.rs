@@ -154,6 +154,9 @@ impl Library {
         // Files hashed in this scan: only they are looked up in the DATs again.
         let mut hashed_ids: std::collections::HashSet<i64> = Default::default();
         let mut cleared: std::collections::HashSet<String> = Default::default();
+        // Folders the walk couldn't read: what is known under them is kept
+        // (seen), as an unreadable file keeps its row.
+        let mut unreadable_dirs: Vec<String> = Vec::new();
 
         let mut report = ScanReport {
             root: root.clone(),
@@ -247,6 +250,9 @@ impl Library {
                 // A plain file that couldn't be read keeps its old row (a
                 // flaky disk shouldn't forget it); it is read again next time.
                 let unreadable = entry.member.is_empty() && entry.hashes.is_err();
+                if unreadable && !path_str.is_empty() {
+                    unreadable_dirs.push(format!("{}/", path_str.trim_end_matches('/')));
+                }
                 if !unreadable
                     && cleared.insert(path_str.clone())
                     && let Err(e) = drop_path.execute([&path_str])
@@ -344,7 +350,9 @@ impl Library {
                 .prepare("SELECT DISTINCT path FROM files WHERE root_id = ?1")?
                 .query_map([id], |r| r.get(0))?
                 .collect::<Result<_, _>>()?;
-            for path in ours.iter().filter(|p| !seen.contains(*p)) {
+            let kept =
+                |p: &str| seen.contains(p) || unreadable_dirs.iter().any(|d| p.starts_with(d.as_str()));
+            for path in ours.iter().filter(|p| !kept(p)) {
                 tx.execute(
                     "DELETE FROM files WHERE path = ?1 AND root_id = ?2",
                     params![path, id],

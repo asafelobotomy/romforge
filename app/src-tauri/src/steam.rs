@@ -5,30 +5,32 @@ use romforge_core::steam::{self, Status, SteamPlan};
 
 use crate::db::{Res, blocking};
 
-fn root() -> Result<std::path::PathBuf, romforge_core::Error> {
-    steam::roots()
-        .into_iter()
-        .next()
-        .ok_or_else(|| romforge_core::Error::Settings("Steam isn't installed here".into()))
-}
-
 #[tauri::command]
 pub async fn steam_status() -> Res<Status> {
     blocking(|| Ok(steam::status())).await
 }
 
 /// What adding romforge for `account` would write (the dry run).
+fn plan(account: &str) -> Result<SteamPlan, romforge_core::Error> {
+    let (root, account) = steam::resolve(Some(account))?;
+    steam::plan(&root, &account, &steam::this_exe()?)
+}
+
 #[tauri::command]
 pub async fn steam_plan(account: String) -> Res<SteamPlan> {
-    blocking(move || steam::plan(&root()?, &account, &steam::this_exe()?)).await
+    blocking(move || plan(&account)).await
 }
 
 #[tauri::command]
 pub async fn steam_add(account: String) -> Res<()> {
-    blocking(move || steam::apply(&steam::plan(&root()?, &account, &steam::this_exe()?)?)).await
+    blocking(move || steam::apply(&plan(&account)?)).await
 }
 
 #[tauri::command]
 pub async fn steam_remove(account: String) -> Res<bool> {
-    blocking(move || steam::remove(&root()?, &account)).await
+    blocking(move || {
+        let (root, account) = steam::resolve(Some(&account))?;
+        steam::remove(&root, &account)
+    })
+    .await
 }

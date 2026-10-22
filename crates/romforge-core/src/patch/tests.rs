@@ -234,3 +234,19 @@ fn apply_file_never_overwrites() {
     apply_file(&ips(0, b"HI"), &source, &out).unwrap();
     assert_eq!(&std::fs::read(&out).unwrap()[..2], b"HI");
 }
+
+/// An IPS on a disc image bigger than the in-memory limit is refused by
+/// its size, before anything is read.
+#[test]
+fn apply_file_refuses_a_big_image_for_in_memory_formats() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, out) = (dir.path().join("a.iso"), dir.path().join("b.iso"));
+    // Sparse: nothing is written, the size is all that counts.
+    std::fs::File::create(&source)
+        .unwrap()
+        .set_len(super::MAX_SIZE + 1)
+        .unwrap();
+    let e = apply_file(&ips(0, b"HI"), &source, &out).unwrap_err();
+    assert!(e.to_string().contains("at most 64 MiB"), "{e}");
+    assert!(!out.exists());
+}

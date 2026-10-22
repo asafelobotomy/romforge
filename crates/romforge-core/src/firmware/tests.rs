@@ -49,6 +49,25 @@ fn the_list_is_read_leniently() {
 }
 
 #[test]
+fn a_path_that_leaves_the_bios_folder_is_dropped() {
+    let doc = serde_json::json!({"items": [{"id": "x", "profile": {"files": [
+        {"name": "ok.bin", "path": "sub/ok.bin", "standalone_path": "GC/USA/IPL.bin"},
+        {"name": "../escape.bin"},
+        {"name": "/etc/passwd"},
+        {"name": "a.bin", "path": "../../a.bin"},
+        {"name": "b.bin", "path": "/abs/b.bin"},
+        {"name": "c.bin", "standalone_path": "x/../../c.bin"},
+        {"name": "d.bin", "path": "..\\d.bin"},
+        {"name": "e.bin", "path": "./e.bin"},
+        {"name": ""}
+    ]}}]})
+    .to_string();
+    let (profiles, _) = data::parse(doc.as_bytes()).unwrap();
+    let names: Vec<&str> = profiles[0].files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["ok.bin"]);
+}
+
+#[test]
 fn bios_files_are_checked_where_each_emulator_finds_them() {
     let t = tempfile::tempdir().unwrap();
     let home = Home::create(t.path()).unwrap();

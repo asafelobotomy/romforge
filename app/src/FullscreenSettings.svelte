@@ -5,6 +5,10 @@
   // and background music (stage 2, step 6), part of the dialog's draft
   // (saved with Save).
   let { draft = $bindable() } = $props();
+  // The core's choices (settings::ATTRACT_MINUTES, SCREENSAVER_MINUTES; it
+  // takes no others): settings_info doesn't send them yet.
+  const ATTRACT = [0, 3, 5, 10];
+  const SAVER = [0, 10, 30];
 
   async function browse() {
     const dir = await pickFolder({ directory: true, multiple: false, defaultPath: draft.music_dir ?? undefined, title: "Music for the fullscreen mode" });
@@ -17,11 +21,11 @@
   <div class="grid">
     <label for="fs-attract">Attract mode after</label>
     <select id="fs-attract" bind:value={draft.attract_minutes}>
-      {#each [0, 3, 5, 10] as n}<option value={n}>{n ? `${n} minutes` : "Never"}</option>{/each}
+      {#each ATTRACT as n}<option value={n}>{n ? `${n} minutes` : "Never"}</option>{/each}
     </select>
     <label for="fs-saver">Screensaver after that</label>
     <select id="fs-saver" bind:value={draft.screensaver_minutes} disabled={!draft.attract_minutes}>
-      {#each [0, 10, 30] as n}<option value={n}>{n ? `${n} minutes` : "Never"}</option>{/each}
+      {#each SAVER as n}<option value={n}>{n ? `${n} minutes` : "Never"}</option>{/each}
     </select>
   </div>
   <p class="hint">Attract mode shows your games in turn, full screen; the screensaver then dims it. Any button wakes it, on the game it was showing.</p>

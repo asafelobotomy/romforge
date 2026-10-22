@@ -27,15 +27,19 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         show_missing_versions: get("show_missing_versions")?.as_deref() == Some("1"),
         platform_icons: get("platform_icons")?.unwrap_or_default(),
         threads: get("threads")?.and_then(|v| v.parse().ok()).unwrap_or(0),
-        list_age_days: get("list_age_days")?.and_then(|v| v.parse().ok()).unwrap_or(30),
-        while_playing: get("while_playing")?.unwrap_or_else(|| "tray".into()),
+        list_age_days: get("list_age_days")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_list_age),
+        while_playing: get("while_playing")?.unwrap_or_else(default_while_playing),
         start_fullscreen: get("start_fullscreen")?.as_deref() == Some("1"),
         attract_minutes: get("attract_minutes")?.and_then(|v| v.parse().ok()).unwrap_or(0),
         screensaver_minutes: get("screensaver_minutes")?
             .and_then(|v| v.parse().ok())
             .unwrap_or(0),
         music_dir: get("music_dir")?.map(PathBuf::from),
-        music_volume: get("music_volume")?.and_then(|v| v.parse().ok()).unwrap_or(40),
+        music_volume: get("music_volume")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_volume),
         music_shuffle: get("music_shuffle")?.as_deref() != Some("0"),
         regions: get("regions")?
             .map(|v| {

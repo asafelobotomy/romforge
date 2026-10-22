@@ -315,18 +315,7 @@ pub(super) fn art_path(
 
 /// A picture, unless its host rate-limited this run (any worker); one that
 /// does now is added. `None`: not there, or not a picture.
-fn image(url: &str, halted: &Mutex<HashSet<String>>) -> Result<Option<Vec<u8>>, Error> {
-    let host = fetch::host_of(url).to_owned();
-    if halted.lock().unwrap_or_else(|e| e.into_inner()).contains(&host) {
-        return Err(Error::Http(format!(
-            "{host}: rate limiting, not asked again this run"
-        )));
-    }
-    let r = fetch::request(&fetch::Request::image(url));
-    if let Err(e) = &r
-        && fetch::is_rate_limited(e)
-    {
-        halted.lock().unwrap_or_else(|e| e.into_inner()).insert(host);
-    }
-    Ok(r?.filter(|d| image_ext(d).is_some()))
+fn image(url: &str, mut halted: &Mutex<HashSet<String>>) -> Result<Option<Vec<u8>>, Error> {
+    let r = super::halting(&fetch::Request::image(url), &mut halted)?;
+    Ok(r.filter(|d| image_ext(d).is_some()))
 }

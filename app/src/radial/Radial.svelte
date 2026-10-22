@@ -9,13 +9,17 @@
   let slot = $state(null);
   let slots = $state([]);
   let can = $state(null);
+  let button = $state("");
 
   async function load() {
     const now = await invoke("now_playing").catch(() => null);
     const v = await invoke("hotkeys_view", { emulators: now ? [now.emulator] : [] }).catch(() => null);
     if (!v) return;
     slots = v.radial;
-    can = v.support[0]?.actions ?? null;
+    // What the ring can do in this emulator (its own bindings answer the
+    // chords, not the ring).
+    can = v.support[0]?.ring ?? null;
+    button = v.radial_button;
   }
   load();
 
@@ -40,7 +44,7 @@
     {#each slots as s, i}
       <div class="slot" class:on={slot === i} class:off={can && !can.includes(s.action)} style="--i: {i}">{s.label}</div>
     {/each}
-    <div class="hub">{slot === null ? "Pick with the right stick" : "Let go of L3"}</div>
+    <div class="hub">{slot === null ? "Pick with the right stick" : `Let go of ${button}`}</div>
   </div>
 {/if}
 

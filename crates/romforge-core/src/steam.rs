@@ -25,7 +25,9 @@ use vdf::{Map, Value};
 
 /// The shortcut's name in Steam's library.
 pub const APP_NAME: &str = "romforge";
-/// Its tag, which finds it again (whatever its Exe has become).
+/// Its tag: with [`APP_NAME`], it finds the shortcut again (whatever its
+/// Exe has become). Neither alone: a user's own collection may be called
+/// "romforge" too.
 const TAG: &str = "romforge";
 /// The backup of `shortcuts.vdf` from before romforge last changed it.
 pub const BACKUP: &str = "shortcuts.vdf.romforge-backup";
@@ -101,12 +103,46 @@ fn entries(top: &Map) -> Vec<Map> {
     }
 }
 
-/// A shortcut romforge made: its tag, else its name and Exe.
-fn is_ours(e: &Map, exe: Option<&str>) -> bool {
+/// A shortcut romforge made: its name and its tag.
+fn is_ours(e: &Map) -> bool {
     let tagged = matches!(vdf::get(e, "tags"), Some(Value::Map(t)) if t.iter().any(|(_, v)| *v == Value::Str(TAG.into())));
-    tagged
-        || (vdf::get_str(e, "AppName") == Some(APP_NAME)
-            && exe.is_none_or(|x| vdf::get_str(e, "Exe") == Some(x)))
+    tagged && vdf::get_str(e, "AppName") == Some(APP_NAME)
+}
+
+/// romforge's shortcut among `all`, if there is one; more than one is
+/// refused (romforge can't tell which to change).
+fn ours(all: &[Map], account: &str) -> Result<Option<Map>, Error> {
+    let mut found = all.iter().filter(|e| is_ours(e));
+    let first = found.next().cloned();
+    if found.next().is_some() {
+        return Err(Error::Settings(format!(
+            "Steam user {account} has more than one shortcut named {APP_NAME} with the {TAG} tag: \
+             take out all but one in Steam, then try again"
+        )));
+    }
+    Ok(first)
+}
+
+/// The Steam to use and the account in it: `user` (an account number or
+/// a name, as `users` gives them), else the most recent one.
+pub fn resolve(user: Option<&str>) -> Result<(PathBuf, String), Error> {
+    let root = roots()
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Settings("Steam isn't installed here (no Steam folder found)".into()))?;
+    let users = users(&root);
+    let account = match user {
+        Some(u) => users
+            .iter()
+            .find(|x| x.account == u || x.name == u)
+            .map(|x| x.account.clone())
+            .ok_or_else(|| Error::Settings(format!("no Steam user {u:?} here")))?,
+        None => users
+            .first()
+            .map(|u| u.account.clone())
+            .ok_or_else(|| Error::Settings("no Steam user has signed in here yet".into()))?,
+    };
+    Ok((root, account))
 }
 
 /// The exe Steam should start: the AppImage when romforge is one (it is
@@ -136,7 +172,7 @@ pub fn this_exe() -> Result<PathBuf, Error> {
 /// What adding romforge to the Steam in `root` for `account` would write
 /// (nothing is written).
 pub fn plan(root: &Path, account: &str, exe: &Path) -> Result<SteamPlan, Error> {
-    let shortcuts = root.join("userdata").join(account).join("config/shortcuts.vdf");
+    let shortcuts = shortcuts_of(root, account);
     if !root.join("userdata").join(account).is_dir() {
         return Err(Error::Settings(format!(
             "no Steam user {account} in {}",
@@ -146,7 +182,7 @@ pub fn plan(root: &Path, account: &str, exe: &Path) -> Result<SteamPlan, Error> 
     let exe_q = quoted(exe);
     let id = app_id(&exe_q, APP_NAME);
     let all = entries(&load(&shortcuts)?);
-    let replaces = all.iter().any(|e| is_ours(e, None));
+    let replaces = ours(&all, account)?.is_some();
     let g = grid(root, account);
     let mut files = vec![shortcuts.clone()];
     files.extend(ART.iter().map(|(suffix, _)| g.join(format!("{id}{suffix}"))));
@@ -154,7 +190,7 @@ pub fn plan(root: &Path, account: &str, exe: &Path) -> Result<SteamPlan, Error> 
     Ok(SteamPlan {
         root: root.to_path_buf(),
         account: account.to_owned(),
-        others: all.iter().filter(|e| !is_ours(e, None)).count(),
+        others: all.iter().filter(|e| !is_ours(e)).count(),
         shortcuts,
         exe: exe_q,
         launch_options: "--fullscreen".into(),
@@ -207,6 +243,7 @@ fn apply_unless(p: &SteamPlan, busy: bool) -> Result<(), Error> {
     let start_dir = Path::new(exe_path).parent().map(quoted).unwrap_or_default();
     let top = load(&p.shortcuts)?;
     let old = entries(&top);
+    let before = ours(&old, &p.account)?;
     let g = grid(&p.root, &p.account);
     let icon = g.join(format!("{}_icon.png", p.app_id));
     let int = |k: &str, v: u32| (k.to_owned(), Value::Int(v));
@@ -236,7 +273,7 @@ fn apply_unless(p: &SteamPlan, busy: bool) -> Result<(), Error> {
     let mut out = Vec::new();
     let mut placed = false;
     for e in old {
-        if is_ours(&e, None) {
+        if is_ours(&e) {
             if !placed {
                 out.push(mine.clone());
                 placed = true;
@@ -252,6 +289,12 @@ fn apply_unless(p: &SteamPlan, busy: bool) -> Result<(), Error> {
     for (suffix, bytes) in ART {
         crate::atomic::write(&g.join(format!("{}{suffix}", p.app_id)), bytes)?;
     }
+    // A new Exe is a new id: the old id's art goes.
+    if let Some(Value::Int(id)) = before.as_ref().and_then(|e| vdf::get(e, "appid"))
+        && *id != p.app_id
+    {
+        remove_art(&g, *id);
+    }
     let t = template_path(&p.root);
     if let Some(dir) = t.parent() {
         std::fs::create_dir_all(dir)?;
@@ -261,29 +304,43 @@ fn apply_unless(p: &SteamPlan, busy: bool) -> Result<(), Error> {
 }
 
 /// Take romforge out of the Steam in `root` for `account`: its shortcut,
-/// its art and the template. Returns whether there was a shortcut.
+/// its art, and the template once no account has romforge any more.
+/// Returns whether there was a shortcut (none: nothing is touched).
 pub fn remove(root: &Path, account: &str) -> Result<bool, Error> {
     remove_unless(root, account, running())
 }
 
+fn shortcuts_of(root: &Path, account: &str) -> PathBuf {
+    root.join("userdata").join(account).join("config/shortcuts.vdf")
+}
+
+fn remove_art(grid: &Path, id: u32) {
+    for (suffix, _) in ART {
+        let _ = std::fs::remove_file(grid.join(format!("{id}{suffix}")));
+    }
+}
+
 fn remove_unless(root: &Path, account: &str, busy: bool) -> Result<bool, Error> {
     refuse_while_running(busy)?;
-    let path = root.join("userdata").join(account).join("config/shortcuts.vdf");
+    let path = shortcuts_of(root, account);
     let top = load(&path)?;
     let all = entries(&top);
-    let (ours, rest): (Vec<Map>, Vec<Map>) = all.into_iter().partition(|e| is_ours(e, None));
-    for e in &ours {
-        if let Some(Value::Int(id)) = vdf::get(e, "appid") {
-            for (suffix, _) in ART {
-                let _ = std::fs::remove_file(grid(root, account).join(format!("{id}{suffix}")));
-            }
-        }
-    }
-    let _ = std::fs::remove_file(template_path(root));
-    if ours.is_empty() {
+    let Some(mine) = ours(&all, account)? else {
         return Ok(false);
-    }
+    };
+    let rest: Vec<Map> = all.into_iter().filter(|e| !is_ours(e)).collect();
     save(&path, top, rest)?;
+    if let Some(Value::Int(id)) = vdf::get(&mine, "appid") {
+        remove_art(&grid(root, account), *id);
+    }
+    // The template is Steam's, shared by every account here.
+    let elsewhere = users(root)
+        .iter()
+        .filter(|u| u.account != account)
+        .any(|u| load(&shortcuts_of(root, &u.account)).is_ok_and(|top| entries(&top).iter().any(is_ours)));
+    if !elsewhere {
+        let _ = std::fs::remove_file(template_path(root));
+    }
     Ok(true)
 }
 
@@ -308,9 +365,8 @@ pub fn status() -> Status {
             users
                 .iter()
                 .filter_map(|u| {
-                    let path = r.join("userdata").join(&u.account).join("config/shortcuts.vdf");
-                    let all = entries(&load(&path).ok()?);
-                    let e = all.into_iter().find(|e| is_ours(e, None))?;
+                    let all = entries(&load(&shortcuts_of(r, &u.account)).ok()?);
+                    let e = all.into_iter().find(is_ours)?;
                     Some((
                         u.account.clone(),
                         vdf::get_str(&e, "Exe").unwrap_or_default().to_owned(),

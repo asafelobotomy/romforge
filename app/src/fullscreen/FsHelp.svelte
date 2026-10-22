@@ -2,15 +2,16 @@
   // The help bar along the bottom of the fullscreen mode, always on: what
   // each button does on this screen, as a pad's buttons once one was seen,
   // else as keys.
+  import { KEY_LABELS } from "./fsnav.js";
+
   let { items, pad = false } = $props();
 
   const PAD = { accept: "Ⓐ", back: "Ⓑ", north: "Ⓨ", west: "Ⓧ", menu: "☰ Start", context: "⧉ Select", page: "LB / RB", move: "✛", side: "◀ ▶" };
-  const KEYS = { accept: "Enter", back: "Esc", north: "O", west: "F", menu: "Tab", context: "Space", page: "PgUp / PgDn", move: "Arrows", side: "◀ ▶" };
 </script>
 
 <footer class="help" data-fs-help>
   {#each items as [button, label]}
-    <span class="item"><kbd>{(pad ? PAD : KEYS)[button] ?? button}</kbd> {label}</span>
+    <span class="item"><kbd>{(pad ? PAD : KEY_LABELS)[button] ?? button}</kbd> {label}</span>
   {/each}
 </footer>
 

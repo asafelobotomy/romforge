@@ -16,6 +16,7 @@ use crate::Error;
 
 mod detail;
 mod folders;
+mod grouped;
 mod kinds;
 mod links;
 mod patches;

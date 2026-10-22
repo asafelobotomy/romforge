@@ -7,16 +7,18 @@ and what is still open.
 
 - [Command line: quick start](#command-line-quick-start)
 - [How identification works](#how-identification-works)
-- [Organize](#organize-dry-run-apply-undo) · [Metadata and art](#metadata-and-art) · [Launch](#launch)
-- [The RomForge folder](#the-romforge-folder)
+- [Organize](#organize-dry-run-apply-undo) · [Metadata and art](#metadata-and-art) · [Launch](#launch) · [Emulators](#emulator-settings-cores-and-installs)
+- [The RomForge folder](#the-romforge-folder) · [BIOS files](#bios-files) · [Manuals](#manuals)
 - [DOS, ScummVM and Japanese computers](#dos-scummvm-and-japanese-computers) · [Arcade](#arcade-mame-and-fbneo) · [Patches](#patches-translations-and-hacks)
 - [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo)
 - [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes) · [Steam and the Steam Deck](#steam-and-the-steam-deck)
 - [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
 
-Scanning and identifying only read your files. Only `organize apply` moves
-and renames them, and only `cleanup apply` and `import --apply` repack them
-(into the RomForge folder), each after a dry run and journaled for undo.
+Scanning and identifying only read your files. Only the apply commands
+write: `organize apply` moves and renames them; `cleanup apply`, `import
+--apply` and `convert --apply` repack them; `patch --apply` writes a
+patched copy and `firmware import --apply` copies BIOS files. Each shows
+its plan first (without `--apply`) and is journaled for undo.
 
 ## Command line: quick start
 
@@ -39,11 +41,11 @@ matched       roms/archives/Mixed.7z#Test MD.md  Test MD
 candidate     roms/gb/CRC Only.gb  CRC Only
 duplicate     roms/gb/Test GB.gb  Test GB
 unknown       roms/unknown.bin
-scanned 17 entries (19.8 KiB) in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate, 0 manual, 0 sheet; skipped 12 non-ROM files; skipped 1 symlinked folder
+scanned 17 entries (19.8 KiB) in …/fixtures: 14 matched, 1 candidate, 1 unknown, 0 wrong_system, 1 duplicate, 0 manual, 0 sheet; skipped 14 non-ROM files (.dat 8, .xdelta 2, .mkv 1, .nfo 1, .txt 1, .url 1); skipped 1 symlinked folder
 ```
 
 Only files whose extension some system uses (the `extensions` column in
-`crates/romforge-core/src/systems.rs`) are hashed, plus `.zip`/`.7z`; the
+`crates/romforge-core/src/systems/table.rs`) are hashed, plus `.zip`/`.7z`; the
 same rule applies to archive members, so a `.url` or `.nfo` in a zip is
 skipped. `--all-files` hashes everything. The folder you name may be a
 symlink, but symlinked folders inside it are never followed. Files and
@@ -76,7 +78,9 @@ latest versions.
 
 Use `--system NES` (keys: `romforge-cli dat systems`) or `--dat ID` to say
 what a folder should contain; without it, every DAT is tried. Without
-`ROMFORGE_DB` the database lives at `~/.local/share/romforge/romforge.db`.
+`--db` or `ROMFORGE_DB` the database is the RomForge folder's (once `home
+create` made one), else `$XDG_DATA_HOME/romforge/romforge.db`
+(`~/.local/share/romforge/romforge.db`).
 
 Rescans are incremental: a file whose size and modification time haven't
 changed since it was hashed keeps its hashes (`--rehash` reads everything
@@ -166,8 +170,9 @@ romforge-cli info "Super Mario World"
 From [libretro-database](https://github.com/libretro/libretro-database)
 (genre, developer, publisher, franchise, release date, players) and
 [thumbnails.libretro.com](https://thumbnails.libretro.com) (box art, title
-screens, snaps), for games you have complete. Art is cached under
-`$ROMFORGE_CACHE` (default `~/.cache/romforge`); a second run asks for
+screens, snaps), for games you have complete. Art goes into the RomForge
+folder's `Media/<System>/<kind>/` when there is one, else under
+`$ROMFORGE_CACHE/art` (default `~/.cache/romforge`); a second run asks for
 nothing new. `--refresh` fetches again.
 
 ## Launch
@@ -189,6 +194,33 @@ Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
 
+## Emulator settings, cores and installs
+
+```bash
+romforge-cli emulator settings                         # global and per-emulator values
+romforge-cli emulator set global fullscreen false
+romforge-cli emulator set duckstation program /opt/DuckStation.AppImage
+romforge-cli emulator cores --refresh                  # the cores romforge's platforms use
+romforge-cli emulator get-core snes9x                  # into RomForge/Emulators/cores/
+romforge-cli emulator remove-core snes9x --yes
+romforge-cli emulator install duckstation [--apply]    # from Flathub
+romforge-cli emulator import-setup pcsx2 [--apply | --undo]
+```
+
+**Emulator Settings** (toolbar) has a Global tab for every emulator at
+once (fullscreen, game pad hotkeys) and a tab per installed emulator,
+which takes the global value unless it sets its own, plus its own
+**Program**, extra arguments and config settings (RetroArch's video
+driver, VSync, ...). RetroArch's tab lists its cores: where
+each is installed, its licence (non-commercial ones are flagged and asked
+about), and what the libretro buildbot has; a download goes into
+`RomForge/Emulators/cores/`, which romforge looks in first. An emulator
+that isn't installed can be installed from Flathub into your own Flatpak
+installation (`flatpak install --user`, no password). **Import my existing
+setup** copies what an emulator keeps in its usual folders (memory cards,
+saves, controller mappings, settings) into romforge's copy for it; undo
+takes it back. romforge never ships an emulator or a core.
+
 ## The RomForge folder
 
 Everything romforge keeps can live in one portable folder, always named
@@ -199,8 +231,16 @@ RomForge/
   romforge.db                the library
   Games/<System>/<Title>.zip cartridges (art and details inside, in romforge/)
   Games/<System>/<Title>.chd discs, with a folder of the same name beside it
-  Media/<System>/<kind>/     art
-  Databases/                 OpenVGDB, LaunchBox (downloaded by you)
+  Media/<System>/<kind>/     art (and manual/ for manuals)
+  Databases/                 OpenVGDB, LaunchBox, ScummVM's list (made or downloaded by you)
+  Emulators/                 AppImages you put there; cores/ (downloaded cores)
+  Emulators/config/<emu>/    romforge's own copy of each emulator's config
+  Bios/                      BIOS files (Bios/RetroArch/ is RetroArch's system folder)
+  Saves/<System>/            SRAM and memory cards
+  States/<System>/           save states
+  Screenshots/<System>/
+  Themes/<id>/               your fullscreen themes
+  .romforge                  the marker: this folder is a RomForge folder
   .romforge-staging/  .romforge-trash/
 ```
 
@@ -242,6 +282,52 @@ games` prints the same tree. Move the folder from Settings (**Move…**) or by h
 romforge opens it in a new place it rewrites the paths it stores. With a
 RomForge folder, Organize hands over to Import (its earlier batches can
 still be undone).
+
+## BIOS files
+
+```bash
+romforge-cli firmware download                 # RetroBIOS's list of what each emulator loads
+romforge-cli firmware check [--system "PlayStation"] [--all]
+romforge-cli firmware import ~/bios ~/bios.zip  # the plan: what goes where
+romforge-cli firmware import ~/bios --apply     # copies; never replaces a file
+romforge-cli firmware undo --yes                # takes the last import back
+romforge-cli firmware install-ps3 [--apply]     # Bios/rpcs3/PS3UPDAT.PUP into RPCS3
+```
+
+The **BIOS** page (at the foot of the platform list) shows, per system,
+the files its emulators load, from [RetroBIOS](https://abdess.github.io/retrobios)'s
+list (MIT; only the list is fetched, never a BIOS file), against what is in
+`RomForge/Bios/`: `Bios/RetroArch/` for RetroArch's cores, `Bios/<emulator>/`
+for the others. A file is *accepted* when its size and SHA1 or MD5 are
+ones the emulator's code accepts; that says the emulator takes it, not
+that it is a verified dump. A file with no hash in the list can only be
+*present*. Drop folders, files, zips or 7z on the page (or `firmware
+import`): each file is matched by its contents and copied where every
+emulator that wants it looks; a file whose name fits but whose hash isn't
+known is placed only when you tick it (`--also NAME`).
+
+## Manuals
+
+```bash
+romforge-cli manual show "Super Metroid"       # yours, or whether Vimm's Lair has one
+romforge-cli manual find "Super Metroid"       # archive.org's scans, numbered
+romforge-cli manual get "Super Metroid" --pick 2
+romforge-cli manual download "Super Metroid" --dpi 150   # Vimm's Lair's scan
+romforge-cli manual add "Super Metroid" ~/manual.pdf
+romforge-cli manual remove "Super Metroid" --yes
+```
+
+A game's **Manual** tab finds its manual: a PDF of yours (picked or
+dropped on the tab), archive.org's scans under the game's name
+(retrokit-manuals, Kirkland's Manual Labor), or Vimm's Lair's scan, found
+through Hasheous by the game's hash. Each is downloaded only when you
+click it, and kept as `Media/<System>/manual/<Title>.pdf` (the art cache
+without a RomForge folder). Manuals are copyrighted scans; romforge ships
+none. The reader (pdf.js) shows a page or a spread, fit to width or page,
+with zoom, thumbnails, search, and highlights and notes kept for the game.
+A scanned manual can be read by OCR (Tesseract, in the app); a language's
+file is downloaded from Tesseract's `tessdata_fast` when first used, into
+`~/.cache/romforge/ocr/`, and what it reads is kept for search.
 
 ## DOS, ScummVM and Japanese computers
 
@@ -291,7 +377,7 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   own `--detect` only looks at folders.
 - **Disk sets.** When every disk of a set ("Disk 1 of 4", "Disc 2") is
   imported, a `<Set>.m3u` lists them next to the files, and Play starts
-  the playlist so the emulator can swap disks. Undo removes it. The floppy
+  the playlist so the emulator can swap disks. Undo sets it aside with the rest. The floppy
   computers' cores open a set's disks themselves and read no zips, so for
   PC-88, PC-98, X1 and FM-7 a set is kept unzipped in
   `Games/<System>/<Set>/` with the playlist its core reads: `.m3u` for
@@ -378,7 +464,7 @@ compression too), or a zip holding one (its readme is kept with the copy).
 - The copy goes into `Games/<System>/` as "<Game> [Translation: <tag>]"
   (or Hack; `:` becomes `-` in the file name), lists as a version of the
   game, says which patch made it, and is "identified by you", never
-  verified, unless a hack DAT lists it. `cleanup undo` removes it.
+  verified, unless a hack DAT lists it. `cleanup undo` sets it aside in the trash.
 
 ## Cleanup and rename (dry run, apply, undo)
 
@@ -397,13 +483,17 @@ Source when no Library is set): a zip for cartridges, holding the ROMs and
 a `romforge/` folder with the art and `<name>.romforge.md`; a CHD for discs
 (`.bin` tracks or one `.iso`), with the art and details in a folder of the
 same name next to it. ROM data is streamed from the old file or zip; only
-7z members and big zip members are unpacked, into the staging folder. Each
+7z members, and big zip members packed other than stored or deflated, are
+unpacked, into the staging folder. Each
 new file is read back and every ROM re-hashed before anything else
 happens, and nothing is ever overwritten. Without Keep originals, the old
 files (and other verified copies in Source) then move to `.romforge-trash/`
 next to them, but only when everything in them was repacked; an archive
-holding anything else stays. `undo` deletes the new files and puts the
-originals back. Refresh never scans `.romforge-trash`. **Empty trash** (in
+holding anything else stays, as do originals that another game not in
+the batch still needs (an arcade BIOS or parent set). `undo` takes the
+newest batch back: its new files go to the trash (`undo-<batch>/`, until
+the trash is emptied) and the originals return. Batches are undone newest
+first, and none before an emptied batch can be. Refresh never scans `.romforge-trash`. **Empty trash** (in
 the Import / Cleanup dialog, or `cleanup empty-trash`) deletes those
 originals for good, all of them or only batches older than N days; those
 batches can't be undone after, and their new files stay.
@@ -419,11 +509,13 @@ A scan lists the files it skipped for their extension, by kind (`.txt 5,
 ## Desktop app
 
 Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
-(`webkit2gtk-4.1`). It uses the same database as the CLI. The layout follows
-tinyMediaManager: a toolbar, platforms down the left, one row per game with columns
-for what has been gathered (identified, metadata, box art, title screen,
-snap), and a detail panel with Details, Development, Series, Versions and
-Links tabs.
+(`webkit2gtk-4.1`), and libudev for game pads (`libudev-dev` on Debian and
+Ubuntu, `systemd-libs` on Arch). CI installs `libwebkit2gtk-4.1-dev
+libayatana-appindicator3-dev librsvg2-dev libudev-dev`. It uses the same
+database as the CLI. The layout follows tinyMediaManager: a toolbar,
+platforms down the left, one row per game with columns for what has been
+gathered (identified, metadata, box art, title screen, snap), and a detail
+panel with Details, Manual, Development, Series, Versions and Links tabs.
 
 The toolbar:
 
@@ -444,8 +536,19 @@ The toolbar:
   throwaway copy of the library and lists what it holds (verified,
   candidate, unknown; what's new), then scans it for real or not as you
   say.
+- **Rename & Cleanup** shows the plan first (Undo and Empty trash are
+  there too). **Rename & Cleanup [apply now]** on the ▾ menu does the
+  whole job at once: every identified game renamed by its DAT, repacked
+  (zip, or CHD for discs) and moved into RomForge (or the Library), or
+  replaced in place, as Settings says.
+- **Convert** turns identified disc images into CHD where they are, under
+  their own names, for platforms whose emulators read CHD (never GameCube,
+  Wii or Xbox): it shows what it would do first, every CHD is checked
+  against the disc's hashes, and the originals go as Settings says (to the
+  trash, or kept). `romforge-cli convert [--apply]`.
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
-  Cleanup, Display, Sources, Credits), **Play**. Play shows a splash
+  Cleanup, Display, Sources, Steam, Credits), **Emulator Settings** (see
+  [Emulators](#emulator-settings-cores-and-installs)), **Play**. Play shows a splash
   until the emulator is up; then romforge goes to the system tray
   (Settings → **While a game plays**: tray, minimise, or keep open). Its
   tray menu has **Show romforge** and **Stop**; when the game ends,
@@ -467,11 +570,13 @@ The toolbar:
   (romforge reads them itself; the emulators' own pad hotkeys are off):
   Select+Start quits, Select+R1 saves a state, Select+L1 loads it, L3+R3
   opens the emulator's menu, Select+R2 held fast-forwards and Select+L2
-  held rewinds. Hold L3 for two seconds and a ring of these actions
-  shows over the game: point at one with the right stick and let go of L3
-  (or press A; B cancels). Quit works for every emulator; RetroArch,
+  held rewinds. Hold L3 for two seconds and a ring of the one-shot
+  actions (quit, save, load, the menu) shows over the game: point at one
+  with the right stick and let go of L3 (or press A; B cancels). The ring
+  dims what romforge can't do itself in that emulator (DuckStation's and
+  PCSX2's own bindings answer the chords, not the ring). Quit works for every emulator; RetroArch,
   DuckStation and PCSX2 get the rest (PCSX2 has no rewind; rewind needs
-  turning on in RetroArch's or DuckStation's settings). Emulator Settings
+  turning on: Emulator Settings → Rewind for RetroArch, DuckStation's own settings). Emulator Settings
   → **Hotkeys** lists them and what each installed emulator gets, and the
   Global tab's **Game pad hotkeys** turns them off. The ring draws over a
   fullscreen game where the desktop has layer-shell (KDE Plasma, wlroots)
@@ -510,19 +615,7 @@ bold), fetched once into the cache; Settings → Display picks **Controller
 icons** (the default) or **System icons** from RetroArch's own icon sets,
 or **Platform logos** from Wikidata (Wikimedia Commons, on a light tile).
 A platform without one keeps a coloured badge.
-- **Rename & Cleanup** shows the plan first (Undo and Empty trash are
-  there too). **Rename & Cleanup [apply now]** on the ▾ menu does the
-  whole job at once: every identified game renamed by its DAT, repacked
-  (zip, or CHD for discs) and moved into RomForge (or the Library), or
-  replaced in place, as Settings says.
-- **Convert** turns identified disc images into CHD where they are, under
-  their own names, for platforms whose emulators read CHD (never GameCube,
-  Wii or Xbox): it shows what it would do first, every CHD is checked
-  against the disc's hashes, and the originals go as Settings says (to the
-  trash, or kept). `romforge-cli convert [--apply]`. **Versions** lists every version of the game in your library
-(other regions, editions, translations, hacks, patch files) under the same
-headings as the list, as a list or as box art, 3D boxes or banners.
-DATs and Organize are at the foot of the platform list.
+DATs, BIOS and Organize are at the foot of the platform list.
 
 **Search** (toolbar, or `romforge-cli search queue|find|name|forget|wikidata`)
 goes through what needs you, one game at a time: files no hash identified
@@ -593,24 +686,40 @@ overviews, studios, genres, release dates, players, community ratings,
 Wikipedia and video links, and LaunchBox's 3D boxes, logos and fanart.
 Details shows where an overview came from.
 
+```bash
+romforge-cli databases list                     # what is downloaded, and when
+romforge-cli databases download launchbox       # or openvgdb
+romforge-cli databases import openvgdb ~/Downloads/openvgdb.zip   # one you downloaded
+romforge-cli databases remove launchbox --yes
+```
+
+**Manual** finds, keeps and reads the game's manual; see [Manuals](#manuals).
+
 **Development** groups what is known into Studios, Credits, Release and
 Identification (status, DATs, Wikidata item), leaving out anything empty.
 Studios and people Wikidata names are cards with the studio's logo or the
 person's photo from Wikimedia Commons (fetched by Enrich as small
 thumbnails, kept with the art; each links to its Commons page for its
 author and licence, and the card to the Wikidata item).
+
 **Series** lists each title once, with badges for the platforms you have it
 on: the numbered entries (Wikidata's series order) apart from the other
 games, or, without a series, the libretro franchise; games you have open
 with a click.
 
+**Versions** lists every version of the game in your library (other
+regions, editions, translations, hacks, patch files) under the same
+headings as the list, as a list or as box art, 3D boxes or banners.
+
+**Links** separates the game's own pages (from Wikidata IDs) from plain
+site searches. libretro's `???` for an unknown value is hidden, and
+"Nintendo ???" shows as "Nintendo (unconfirmed)".
+
 **Sorting**: every list sorts by its column headings (click again to
 reverse): the games (title, platform, release year, status; a game's
 versions sort the same way under their headings), the series, the DATs and
 their games, Organize's moves and Import's games. Each list remembers its
-sort. `romforge-cli games --sort year --desc` does the same. **Links** separates the game's own pages (from Wikidata IDs)
-from plain site searches. libretro's `???` for an unknown value is hidden,
-and "Nintendo ???" shows as "Nintendo (unconfirmed)".
+sort. `romforge-cli games --sort year --desc` does the same.
 
 Big libraries stay quick: the list is rebuilt only when something it
 shows changed (a fingerprint of those tables, checked after each write),
@@ -622,10 +731,10 @@ load thumbnails at the size they draw, made on first view and kept in
 parts; made again when a picture changes, and safe to delete); Details
 shows the full pictures.
 
-The toolbar shows romforge's logo (Settings → Display picks synthwave,
-pastel, gummy, space or sprinkles); the app's icon is the RF monogram
-(`app/src-tauri/icons/romforge.svg`, and `romforge-small.svg` for 32 and
-64 px; render the PNGs with `rsvg-convert`).
+The toolbar shows romforge's wordmark, pixel lettering drawn as SVG
+(`app/src/Wordmark.svelte`); the app's icon is "ROM" on an anvil, 32×32
+pixel art (`app/src-tauri/icons/romforge.svg`; render the bundle's PNGs
+from it with `rsvg-convert`).
 
 **Settings** (toolbar, or `romforge-cli settings`): a **Source** folder of
 unprocessed ROMs, an optional **Library** folder that Rename & Cleanup
@@ -792,8 +901,11 @@ Each [release](https://github.com/asafelobotomy/romforge/releases) has:
 
 - `romforge_<version>_amd64.deb` (Debian, Ubuntu) and
   `romforge-<version>-1.x86_64.rpm` (Fedora, openSUSE): the app and
-  `romforge-cli`, using the system's WebKitGTK; RetroArch, ScummVM and
-  gtk-layer-shell are recommended;
+  `romforge-cli`, using the system's WebKitGTK; RetroArch, ScummVM,
+  gtk-layer-shell and GStreamer's good and libav plugins (for music in
+  the fullscreen mode) are recommended. The rpm's package names are
+  Fedora's; on openSUSE some may differ (the tray's libayatana package
+  included), so install those by hand if zypper can't find them;
 - a `PKGBUILD` for `romforge-bin` (Arch, Manjaro; build it with
   `makepkg -si`), with the emulators as optional dependencies;
 - `romforge_<version>_amd64.AppImage`: one portable file for any distro
@@ -804,7 +916,8 @@ Each [release](https://github.com/asafelobotomy/romforge/releases) has:
 There is no Flatpak: romforge starts the emulators installed on your
 system and works with files on any drive, which a Flatpak's sandbox
 doesn't allow. A release is made by pushing a tag `vX.Y.Z` matching the
-version in `Cargo.toml` and `tauri.conf.json` (`.github/workflows/release.yml`).
+version in `Cargo.toml`, `tauri.conf.json` and `app/package.json`
+(`.github/workflows/release.yml`, which runs the tests first).
 To build the packages yourself: `cd app && npm ci && npx tauri build`
 (they land in `target/release/bundle/`).
 
@@ -815,10 +928,16 @@ To build the packages yourself: `cd app && npm ci && npx tauri build`
   `search`, `suggest`, `names`, `titles`, `ident`, `patch`, `wikidata`,
   `extdb`, `artsources`, `home` (the RomForge folder), `layout` (every
   file and folder name romforge writes), `scummvm`, `patcher` (patched
-  copies),
-  `settings`, `report`, `db` (schema and migrations); one table of systems (`systems.rs`), one of copier
-  headers and byte orders (`headers.rs`), one of game ID readers
-  (`ident.rs`)
+  copies), `vcdiff` (xdelta's extras), `settings`, `report`, `db` (schema
+  and migrations), `library` (the `Library` methods the shells call),
+  `job` and `parallel` (long jobs: progress, stop, threads), `thumbs`
+  (picture-view thumbnails), `firmware` (BIOS files), `manual` (manuals
+  and OCR words), `emusettings` (Emulator Settings), `obtain` (cores and
+  Flathub installs), `controller` and `hotkeys` (game pads and the hotkey
+  chords), `music`, `themes`, `user_games` (favourites, the emulator
+  picked per game), `steam`; one table of systems (`systems/table.rs`),
+  one of copier headers and byte orders (`headers.rs`), one of game ID
+  readers (`ident.rs`), one of hotkeys (`hotkeys.rs`)
 - `crates/romforge-cli` — thin CLI
 - `app/` — Tauri 2 + Svelte shell
 - `fixtures/` — tiny generated test files and DATs. Regenerate with
@@ -830,7 +949,13 @@ MIT (see [LICENSE](LICENSE)). The systems table is adapted from
 [remustwo](https://github.com/asafelobotomy/remustwo) (MIT). The DJW and
 FGK decoders in `vcdiff.rs` are ported from
 [xdelta3](https://github.com/jmacd/xdelta) (Copyright Joshua MacDonald,
-[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)). The genre icons
+[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)). The app bundles
+[pdf.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`, Mozilla,
+Apache-2.0) for the manual reader, and
+[tesseract.js](https://github.com/naptha/tesseract.js) and
+`tesseract.js-core` (Apache-2.0; Tesseract itself is Apache-2.0) for OCR;
+Tesseract's language files (`tessdata_fast`, Apache-2.0) are downloaded
+when used, never shipped. The genre icons
 in Details and the sidebar's All games and Unidentified icons
 (`app/src/gameIcons.js`) are from
 [game-icons.net](https://game-icons.net) by Lorc, Delapouite, Skoll and Sbed,

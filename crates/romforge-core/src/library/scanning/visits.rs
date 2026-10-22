@@ -36,11 +36,7 @@ pub(super) fn skipped(
             .or_insert_with(|| SkippedKind {
                 ext,
                 count: 1,
-                example: if member.is_empty() {
-                    path.display().to_string()
-                } else {
-                    format!("{}#{member}", path.display())
-                },
+                example: crate::report::display_path(&path.display().to_string(), &member),
             });
     }
 }

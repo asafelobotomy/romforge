@@ -25,6 +25,7 @@ mod disc;
 mod found;
 mod naming;
 mod pair;
+mod paired;
 mod plan;
 mod read;
 #[cfg(test)]

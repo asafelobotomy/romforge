@@ -233,3 +233,22 @@ fn symlinked_files_stay() {
         plan.skipped
     );
 }
+
+/// With a RomForge folder, a plan made elsewhere can't be applied either:
+/// Import does Organize's job there.
+#[test]
+fn organize_apply_is_refused_in_a_romforge_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = romforge_core::home::Home::create(tmp.path()).unwrap();
+    let mut lib = romforge_core::Library::open(home.db()).unwrap();
+    let plan = romforge_core::organize::Plan {
+        moves: vec![romforge_core::organize::Move {
+            from: tmp.path().join("a.gb"),
+            to: home.games().join("a.gb"),
+            system: "gb".into(),
+            game: "a".into(),
+        }],
+        skipped: vec![],
+    };
+    assert!(lib.organize_apply(&plan, &home.games()).is_err());
+}

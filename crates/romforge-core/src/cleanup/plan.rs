@@ -10,9 +10,11 @@ use crate::{Error, settings, systems};
 
 use super::apply::disk_of;
 use super::chd::loose_cue;
-use super::items::{archive_names, folder_item, safe_member_name, set_item};
+use super::items::{folder_item, safe_member_name, set_item};
 use super::parts::{named_parts, verified_parts};
 use super::{CleanupPlan, Format, How, Item, Part, Source};
+
+mod originals;
 
 pub(super) fn plan_as(
     conn: &Connection,
@@ -75,7 +77,9 @@ pub(super) fn plan_as(
     }
     let mut taken: BTreeSet<PathBuf> = BTreeSet::new();
     let mut items = Vec::new();
-    for row in v.rows {
+    // Rows with nothing of their own to take: (row id, its files).
+    let mut covered: Vec<(String, Vec<PathBuf>)> = Vec::new();
+    for row in v.rows.clone() {
         if only.is_some_and(|ids| !ids.contains(&row.id)) {
             continue;
         }
@@ -107,13 +111,18 @@ pub(super) fn plan_as(
         }
         if system.arcade {
             match set_item(conn, &row, system, &dest, &source, games.as_deref(), &mut taken)? {
-                Ok(Some(mut it)) => {
-                    if !s.keep_originals {
-                        it.trash = it.parts.iter().map(|p| p.path.clone()).collect();
+                // Its files go to the trash as any original does, below:
+                // a BIOS or parent zip other games still need stays.
+                Ok(Some(it)) => items.push(it),
+                // Every file of it taken by games before it (a BIOS): it
+                // counts as in the batch if they all are.
+                Ok(None) => {
+                    let mut paths = Vec::new();
+                    for f in row.file_ids() {
+                        paths.push(PathBuf::from(path_of.query_row([f], |r| r.get::<_, String>(0))?));
                     }
-                    items.push(it);
+                    covered.push((row.id.clone(), paths));
                 }
-                Ok(None) => {}
                 Err(why) => plan.skipped.push((row.title.clone(), why)),
             }
             continue;
@@ -152,7 +161,7 @@ pub(super) fn plan_as(
         }
         let parts = match row.status {
             RowStatus::Verified => verified_parts(conn, system.id, &row.title, &source)?,
-            _ => named_parts(conn, &row.id, &source)?,
+            _ => named_parts(conn, &v, &row.id, &source)?,
         };
         let Some((parts, copies)) = parts else {
             plan.skipped
@@ -340,61 +349,12 @@ pub(super) fn plan_as(
         });
     }
 
-    // Originals: trashed only when everything in them is taken by the batch
-    // (an archive's own member list decides, not just what was scanned).
-    let mut used: HashMap<PathBuf, BTreeSet<String>> = HashMap::new();
-    for it in items
-        .iter()
-        .filter(|it| it.folder.is_none() && it.format != Format::Set)
-    {
-        for p in it.parts.iter().chain(&it.copies).chain(&it.sheet) {
-            used.entry(p.path.clone()).or_default().insert(p.member.clone());
-        }
-    }
-    let batch: BTreeSet<String> = items.iter().map(|it| it.row_id.clone()).collect();
     let mut files_at = conn.prepare("SELECT file_id FROM files WHERE path = ?1")?;
-    for it in items
-        .iter_mut()
-        .filter(|it| it.folder.is_none() && it.format != Format::Set)
-    {
-        let paths: BTreeSet<&PathBuf> = it
-            .parts
-            .iter()
-            .chain(&it.copies)
-            .chain(&it.sheet)
-            .map(|p| &p.path)
-            .collect();
-        for p in paths {
-            if !in_source(p) {
-                continue;
-            }
-            let taken = &used[p];
-            let all = if taken.contains("") {
-                true // a plain file
-            } else {
-                archive_names(p).is_ok_and(|names| names.iter().all(|n| taken.contains(n)))
-            };
-            // Any of its files in a game outside the batch (a mere
-            // duplicate copy doesn't count) keeps it.
-            let needed_elsewhere = files_at
-                .query_map([p.to_string_lossy()], |r| r.get::<_, i64>(0))?
-                .collect::<Result<Vec<i64>, _>>()?
-                .iter()
-                .flat_map(|f| rows_of.get(f).into_iter().flatten())
-                .any(|(id, _, status)| !batch.contains(id) && *status != RowStatus::Duplicate);
-            if all && !needed_elsewhere {
-                it.trash.push(p.clone());
-            } else {
-                it.kept.push(p.clone());
-            }
-        }
-    }
-    // An archive shared by two games in the batch is trashed once, by the
-    // last of them (after both are written).
-    let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
-    for it in items.iter_mut().rev() {
-        it.trash.retain(|p| seen.insert(p.clone()));
-    }
+    originals::mark(&mut items, &covered, &rows_of, &in_source, |p| {
+        Ok(files_at
+            .query_map([p.to_string_lossy()], |r| r.get::<_, i64>(0))?
+            .collect::<Result<Vec<i64>, _>>()?)
+    })?;
     plan.items = items;
     Ok(plan)
 }

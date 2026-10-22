@@ -88,8 +88,9 @@ const REGION_CODE = {
   scandinavia: null, world: null,
 };
 
-function flagOf(code) {
-  if (!/^[A-Z]{2}$/.test(code)) return null;
+/// A two-letter country code ("JP") as its flag emoji, or null.
+export function flagOf(code) {
+  if (!code || !/^[A-Z]{2}$/.test(code)) return null;
   return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }
 

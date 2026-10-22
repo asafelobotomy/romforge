@@ -21,11 +21,8 @@ impl Library {
         let dir = self
             .extdb_dir()
             .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM list".into()))?;
-        std::fs::create_dir_all(&dir)?;
         let path = dir.join(layout::SCUMMVM_LIST);
-        let tmp = dir.join(layout::part(layout::SCUMMVM_LIST));
-        std::fs::write(&tmp, list)?;
-        std::fs::rename(&tmp, &path)?;
+        crate::atomic::write(&path, list)?;
         let games = scummvm::refresh(&self.conn, Some(&path))?;
         Ok(ScummvmList {
             entries,
@@ -50,10 +47,7 @@ impl Library {
         let dir = self
             .extdb_dir()
             .ok_or_else(|| Error::Settings("an in-memory library keeps no ScummVM titles".into()))?;
-        std::fs::create_dir_all(&dir)?;
-        let tmp = dir.join(layout::part(layout::SCUMMVM_TITLES));
-        std::fs::write(&tmp, dat)?;
-        std::fs::rename(&tmp, dir.join(layout::SCUMMVM_TITLES))?;
+        crate::atomic::write(&dir.join(layout::SCUMMVM_TITLES), dat)?;
         let list = dir.join(layout::SCUMMVM_LIST);
         scummvm::refresh(&self.conn, Some(&list))?;
         Ok(n)

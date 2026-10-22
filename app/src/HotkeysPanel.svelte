@@ -31,8 +31,8 @@
         </tr>
       {/each}
       <tr>
-        <td class="chord"><kbd>L3</kbd> held {v.radial_hold_secs} s</td>
-        <td>A ring of actions over the game ({v.radial.map((s) => s.label).join(", ")}): the right stick picks, letting go of L3 does it.</td>
+        <td class="chord"><kbd>{v.radial_button}</kbd> held {v.radial_hold_secs} s</td>
+        <td>A ring of actions over the game ({v.radial.map((s) => s.label).join(", ")}): the right stick picks, letting go of {v.radial_button} does it.</td>
       </tr>
     </tbody>
   </table>

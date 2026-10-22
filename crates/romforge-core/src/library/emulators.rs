@@ -78,8 +78,22 @@ impl Library {
         obtain::refresh_cores(&dir)
     }
 
-    /// Download a core into the RomForge folder's `Emulators/cores/`.
-    pub fn download_core(&self, core: &str) -> Result<String, Error> {
+    /// Download a core into the RomForge folder's `Emulators/cores/`. A
+    /// core whose licence forbids commercial use is refused unless
+    /// `accept_non_commercial` (the user has been shown it and agreed).
+    pub fn download_core(&self, core: &str, accept_non_commercial: bool) -> Result<String, Error> {
+        if !accept_non_commercial
+            && let Some(c) = self
+                .emulator_cores()?
+                .cores
+                .iter()
+                .find(|c| c.name == core && c.non_commercial)
+        {
+            return Err(Error::Launch(format!(
+                "{core}'s licence ({}) forbids commercial use; it is downloaded only once that is accepted",
+                c.license
+            )));
+        }
         let (home, dir) = self.firmware_dirs()?;
         obtain::download_core(&dir, home, core)
     }

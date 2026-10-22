@@ -57,18 +57,23 @@ pub fn apply(conn: &mut Connection, plan: &PatchPlan, staging_root: &Path) -> Re
                 write_cartridge(plan, &p, &staging, &part)
             }
         })
-        // Never over a file that appeared meanwhile.
-        .and_then(|made| cleanup::place(&part, &plan.target).map(|()| made));
+        // Journaled before it is in place (a crash in between leaves a row
+        // undo drops, never a file nothing knows about), and never over a
+        // file that appeared meanwhile.
+        .and_then(|made| {
+            cleanup::journal_output(conn, batch, &plan.target, "file")?;
+            cleanup::place(&part, &plan.target).map(|()| made)
+        });
     let _ = std::fs::remove_dir_all(&staging);
     let (sha1, size) = match made {
         Ok(x) => x,
         Err(e) => {
             let _ = std::fs::remove_file(&part);
+            conn.execute("DELETE FROM cleanup_outputs WHERE batch_id = ?1", [batch])?;
             conn.execute("DELETE FROM cleanup_batches WHERE batch_id = ?1", [batch])?;
             return Err(e);
         }
     };
-    cleanup::journal_output(conn, batch, &plan.target, "file")?;
     let tx = conn.transaction()?;
     tx.execute(
         concat!(
@@ -121,6 +126,14 @@ fn write_cartridge(
     let rom = &plan.parts[plan.rom];
     let mut data = Vec::new();
     cleanup::open_part(rom, staging)?.read_to_end(&mut data)?;
+    // IPS and PPF carry no check of their own: the ROM must be the one
+    // the plan saw.
+    if data.len() as u64 != rom.size || cleanup::sha1_of(&data[..])? != rom.sha1 {
+        return Err(Error::Cleanup(format!(
+            "{} changed since the plan; plan again",
+            rom.path.display()
+        )));
+    }
     let patched = patch_rom(&p.data, &data, plan.form)
         .ok_or_else(|| Error::Cleanup(format!("{} doesn't apply to {}", p.name, plan.base)))?;
     if patched == data {
@@ -159,12 +172,20 @@ fn write_cartridge(
     cleanup::write_extras(&mut zip, &extras)?;
     zip.finish()?.sync_all()?;
     let sha1 = cleanup::sha1_of(&patched[..])?;
+    // Read back: every ROM, the patched one and the others as they were.
     let mut back = zip::ZipArchive::new(std::io::BufReader::new(std::fs::File::open(out)?))?;
-    if cleanup::sha1_of(back.by_name(&member)?)? != sha1 {
-        return Err(Error::Cleanup(format!(
-            "{}: doesn't read back as written",
-            out.display()
-        )));
+    for (i, part) in plan.parts.iter().enumerate() {
+        let (name, want) = if i == plan.rom {
+            (&member, &sha1)
+        } else {
+            (&part.name, &part.sha1)
+        };
+        if cleanup::sha1_of(back.by_name(name)?)? != *want {
+            return Err(Error::Cleanup(format!(
+                "{}: {name} doesn't read back as written",
+                out.display()
+            )));
+        }
     }
     Ok((sha1, patched.len() as u64))
 }

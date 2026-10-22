@@ -35,7 +35,8 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                 .flat_map(|v| parse_ignore(&v))
                 .collect();
             let mut dirs = Directions::default();
-            let mut right = (0.0f32, 0.0f32);
+            // Each pad's right stick (by its id).
+            let mut right: std::collections::HashMap<usize, (f32, f32)> = Default::default();
             loop {
                 if let Some(ev) = g.next_event_blocking(Some(Duration::from_millis(30))) {
                     let pads: Vec<PadId> = g
@@ -52,11 +53,18 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                     let now = Instant::now();
                     match ev.event {
                         EventType::Connected if listened => on(PadEvent::Connected { name }),
-                        EventType::Disconnected => on(PadEvent::Disconnected { name }),
+                        EventType::Disconnected => {
+                            right.remove(&id);
+                            on(PadEvent::Disconnected { name, pad: id })
+                        }
                         _ if !listened => {}
                         EventType::ButtonPressed(b, _) => {
                             if let Some(button) = PadButton::from_gilrs(&format!("{b:?}")) {
-                                on(PadEvent::Button { button, down: true });
+                                on(PadEvent::Button {
+                                    pad: id,
+                                    button,
+                                    down: true,
+                                });
                             }
                             if let Some(a) = action_of(&format!("{b:?}")) {
                                 let a = if Directions::is_direction(a) {
@@ -69,7 +77,11 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                         }
                         EventType::ButtonReleased(b, _) => {
                             if let Some(button) = PadButton::from_gilrs(&format!("{b:?}")) {
-                                on(PadEvent::Button { button, down: false });
+                                on(PadEvent::Button {
+                                    pad: id,
+                                    button,
+                                    down: false,
+                                });
                             }
                             if let Some(a) =
                                 action_of(&format!("{b:?}")).filter(|a| Directions::is_direction(*a))
@@ -83,12 +95,14 @@ pub fn listen(mut on: impl FnMut(PadEvent) + Send + 'static) -> Result<(), Error
                             }
                         }
                         EventType::AxisChanged(axis @ (Axis::RightStickX | Axis::RightStickY), v, _) => {
+                            let right = right.entry(id).or_default();
                             if axis == Axis::RightStickX {
                                 right.0 = v;
                             } else {
                                 right.1 = v;
                             }
                             on(PadEvent::Stick {
+                                pad: id,
                                 x: right.0,
                                 y: right.1,
                             });

@@ -1,4 +1,4 @@
-//! The library list, a game's details, and starting a game.
+//! The library list, a game's details and the platforms.
 
 use romforge_core::view::{GameDetail, LibraryView};
 use romforge_core::{DatGame, Summary};

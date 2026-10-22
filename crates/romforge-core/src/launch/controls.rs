@@ -67,12 +67,47 @@ pub fn route(emulator: &str, a: Action) -> Route {
 pub fn note(emulator: &str) -> Option<&'static str> {
     Some(match family(emulator) {
         "retroarch" => {
-            "Rewind works once Rewind is on in RetroArch's settings. The game also sees the chord's buttons."
+            "Rewind works once Rewind is on in Emulator Settings. The game also sees the chord's buttons."
         }
         "duckstation" => "Rewind works once Rewind is on in DuckStation's settings.",
         "pcsx2" => "PCSX2 has no rewind.",
         _ => return None,
     })
+}
+
+/// How long a quit sent over the command channel gets before romforge
+/// asks the usual way (SIGTERM) too.
+const QUIT_HEARD: Duration = Duration::from_secs(3);
+
+/// Do a hotkey's action (a [`crate::hotkeys::HotkeyEvent::Start`]) in the
+/// game `s` runs, by its [`route`]: a command over `remote` (its channel,
+/// if it has one), a quit, or nothing (the emulator's own binding does
+/// it). A quit the emulator didn't hear (or is still asking about) is then
+/// asked the usual way, and stopped hard after `grace`: this blocks for a
+/// quit, so call it on a thread of its own.
+pub fn act(s: &super::Session, remote: Option<&Remote>, action: Action, grace: Duration) {
+    match route(&s.playing.emulator, action) {
+        Route::Command => match remote {
+            Some(r) => {
+                let sent = r.start(action).is_ok();
+                if action == Action::Quit {
+                    if sent {
+                        std::thread::sleep(QUIT_HEARD);
+                    }
+                    let _ = s.stop(grace);
+                }
+            }
+            // No channel (no RomForge folder): quit still works.
+            None if action == Action::Quit => {
+                let _ = s.stop(grace);
+            }
+            None => {}
+        },
+        Route::Stop => {
+            let _ = s.stop(grace);
+        }
+        Route::Bound | Route::None => {}
+    }
 }
 
 fn family(emulator: &str) -> &str {

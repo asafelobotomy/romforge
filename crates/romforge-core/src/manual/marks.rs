@@ -81,7 +81,7 @@ pub fn marks(conn: &Connection, system: &str, game: &str) -> Result<Vec<Mark>, E
 
 /// Keep a mark; returns its id.
 pub fn add_mark(conn: &Connection, system: &str, game: &str, m: &NewMark) -> Result<i64, Error> {
-    let bad = |s: &str| Err(Error::Launch(s.into()));
+    let bad = |s: &str| Err(Error::Manual(s.into()));
     if m.page == 0 {
         return bad("a mark needs a page");
     }
@@ -99,7 +99,7 @@ pub fn add_mark(conn: &Connection, system: &str, game: &str, m: &NewMark) -> Res
     if m.kind == MarkKind::Highlight && m.text.trim().is_empty() {
         return bad("a highlight needs some text");
     }
-    let rects = serde_json::to_string(&m.rects).map_err(|e| Error::Launch(e.to_string()))?;
+    let rects = serde_json::to_string(&m.rects).map_err(|e| Error::Manual(e.to_string()))?;
     conn.execute(
         concat!(
             "INSERT INTO manual_marks (system, game, page, kind, text, rects, color, note, created_at)
@@ -124,7 +124,7 @@ pub fn add_mark(conn: &Connection, system: &str, game: &str, m: &NewMark) -> Res
 /// Change a mark's note (and colour).
 pub fn edit_mark(conn: &Connection, id: i64, note: &str, color: &str) -> Result<(), Error> {
     if !COLORS.contains(&color) {
-        return Err(Error::Launch("no such mark colour".into()));
+        return Err(Error::Manual("no such mark colour".into()));
     }
     conn.execute(
         "UPDATE manual_marks SET note = ?2, color = ?3 WHERE mark_id = ?1",

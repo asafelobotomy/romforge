@@ -9,7 +9,6 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use super::{Need, identify, queue};
-use crate::suggest::Band;
 use crate::{Error, view};
 
 /// What became of one row.
@@ -57,7 +56,7 @@ pub fn accept(
             why_not: None,
         };
         match item.and_then(|q| q.suggestion.as_ref()) {
-            Some(s) if s.band <= Band::Suggested => {
+            Some(s) if s.band.acceptable() => {
                 let title = s
                     .derived
                     .as_ref()

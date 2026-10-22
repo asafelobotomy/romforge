@@ -3,9 +3,12 @@
 //! templates; EmuDeck installs its own there). Laid out after the
 //! structure of Valve's "Gamepad with Mouse Trackpad": an Xbox pad, since
 //! romforge reads the pad itself, the right trackpad as a mouse, and the
-//! back buttons as romforge's hotkeys: L4 Select+Start (quit), R4 L3 (hold
-//! it for the radial menu), L5 Select, R5 Start. Several `binding` lines in
-//! one activator press their buttons together.
+//! back buttons as romforge's hotkeys, from its table
+//! ([`crate::hotkeys`]): L4 presses Quit's chord, R4 the radial menu's
+//! button (held, it opens the ring), L5 Select, R5 Start. Several
+//! `binding` lines in one activator press their buttons together.
+
+use crate::hotkeys::{Action, HOTKEYS, PadButton, RADIAL_BUTTON, chord_label};
 
 /// The file's name in `controller_base/templates/`.
 pub const FILE: &str = "romforge_steamdeck.vdf";
@@ -27,11 +30,42 @@ fn group(id: u32, mode: &str, inputs: &[String], settings: &str) -> String {
     )
 }
 
+/// A button as a Steam Input `xinput_button` names it (the triggers are
+/// axes there, not buttons).
+fn xinput(b: PadButton) -> Option<&'static str> {
+    use PadButton::*;
+    Some(match b {
+        South => "A",
+        East => "B",
+        North => "Y",
+        West => "X",
+        Back => "SELECT",
+        Start => "START",
+        LeftShoulder => "SHOULDER_LEFT",
+        RightShoulder => "SHOULDER_RIGHT",
+        LeftStick => "JOYSTICK_LEFT",
+        RightStick => "JOYSTICK_RIGHT",
+        DPadUp => "DPAD_UP",
+        DPadDown => "DPAD_DOWN",
+        DPadLeft => "DPAD_LEFT",
+        DPadRight => "DPAD_RIGHT",
+        LeftTrigger | RightTrigger => return None,
+    })
+}
+
 /// The template's text.
 pub fn text() -> String {
+    let quit: Vec<&str> = HOTKEYS
+        .iter()
+        .find(|h| h.action == Action::Quit)
+        .map(|h| h.chord.iter().filter_map(|b| xinput(*b)).collect())
+        .unwrap_or_default();
+    let radial = xinput(RADIAL_BUTTON).unwrap_or("JOYSTICK_LEFT");
     let mut out = String::from(
-        "\"controller_mappings\"\n{\n\t\"version\"\t\t\"3\"\n\t\"revision\"\t\t\"1\"\n\t\"title\"\t\t\"romforge (Deck)\"\n\t\"description\"\t\t\"romforge's layout: a gamepad (romforge reads it itself), the right trackpad as mouse, L4 quits a game (Select+Start), R4 held opens the radial menu (L3), L5 Select, R5 Start.\"\n\t\"creator\"\t\t\"\"\n\t\"progenitor\"\t\t\"\"\n\t\"url\"\t\t\"\"\n\t\"export_type\"\t\t\"\"\n\t\"controller_type\"\t\t\"controller_neptune\"\n\t\"major_revision\"\t\t\"1\"\n\t\"minor_revision\"\t\t\"0\"\n\t\"actions\"\n\t{\n\t\t\"Preset_1000001\"\n\t\t{\n\t\t\t\"title\"\t\t\"Default\"\n\t\t\t\"legacy_set\"\t\t\"1\"\n\t\t}\n\t}\n\t\"action_layers\"\n\t{\n\t}\n",
-    );
+        "\"controller_mappings\"\n{\n\t\"version\"\t\t\"3\"\n\t\"revision\"\t\t\"1\"\n\t\"title\"\t\t\"romforge (Deck)\"\n\t\"description\"\t\t\"romforge's layout: a gamepad (romforge reads it itself), the right trackpad as mouse, L4 quits a game (QUIT_CHORD), R4 held opens the radial menu (RADIAL_BUTTON), L5 Select, R5 Start.\"\n\t\"creator\"\t\t\"\"\n\t\"progenitor\"\t\t\"\"\n\t\"url\"\t\t\"\"\n\t\"export_type\"\t\t\"\"\n\t\"controller_type\"\t\t\"controller_neptune\"\n\t\"major_revision\"\t\t\"1\"\n\t\"minor_revision\"\t\t\"0\"\n\t\"actions\"\n\t{\n\t\t\"Preset_1000001\"\n\t\t{\n\t\t\t\"title\"\t\t\"Default\"\n\t\t\t\"legacy_set\"\t\t\"1\"\n\t\t}\n\t}\n\t\"action_layers\"\n\t{\n\t}\n",
+    )
+    .replace("QUIT_CHORD", &chord_label(Action::Quit))
+    .replace("RADIAL_BUTTON", RADIAL_BUTTON.label());
     out += &group(
         0,
         "four_buttons",
@@ -77,8 +111,8 @@ pub fn text() -> String {
             press("button_menu", &["SELECT"]),
             press("left_bumper", &["SHOULDER_LEFT"]),
             press("right_bumper", &["SHOULDER_RIGHT"]),
-            press("button_back_left_upper", &["SELECT", "START"]),
-            press("button_back_right_upper", &["JOYSTICK_LEFT"]),
+            press("button_back_left_upper", &quit),
+            press("button_back_right_upper", &[radial]),
             press("button_back_left", &["SELECT"]),
             press("button_back_right", &["START"]),
         ],

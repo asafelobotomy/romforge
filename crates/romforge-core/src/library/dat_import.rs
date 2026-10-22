@@ -46,9 +46,9 @@ impl Library {
         // old one, and folders scoped to it follow along. No-Intro and Redump both name a DAT
         // "Sony - PlayStation Portable", so a download never replaces a
         // same-named DAT from elsewhere.
-        let existing: Option<(i64, String)> = {
+        let existing: Option<(i64, String, Option<i64>)> = {
             let mut stmt = tx.prepare(
-                "SELECT dat_id, source_sha256, source_path FROM dats
+                "SELECT dat_id, source_sha256, source_path, system_id FROM dats
                  WHERE source_sha256 = ?2 OR name = ?1
                  ORDER BY source_sha256 = ?2 DESC, dat_id",
             )?;
@@ -57,26 +57,31 @@ impl Library {
                     r.get::<_, i64>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, String>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
                 ))
             })?;
             let family = fetch::source_family(source);
             let mut found = None;
             for row in rows {
-                let (id, sha, path) = row?;
+                let (id, sha, path, system_id) = row?;
                 if sha == sha256 || fetch::source_family(&path) == family {
-                    found = Some((id, sha));
+                    found = Some((id, sha, system_id));
                     break;
                 }
             }
             found
         };
-        if let Some((old_id, old_sha)) = &existing
+        // The same file for another system (given by hand) is imported
+        // again for it, replacing the old one, so its folders and serials
+        // follow.
+        if let Some((old_id, old_sha, old_system)) = &existing
             && *old_sha == sha256
+            && (system_key.is_none() || system.map(|s| s.id) == *old_system)
         {
             return Ok(ImportedDat {
                 dat_id: *old_id,
                 name: dat.name,
-                system: system.map(|s| s.key),
+                system: old_system.and_then(systems::by_id).map(|s| s.key),
                 header_hint: dat.header_hint,
                 games: dat.games.len(),
                 roms: dat.games.iter().map(|g| g.roms.len()).sum(),
@@ -106,7 +111,7 @@ impl Library {
             ],
         )?;
         let dat_id = tx.last_insert_rowid();
-        let replaced = existing.map(|(id, _)| id);
+        let replaced = existing.map(|(id, _, _)| id);
         if let Some(old_id) = replaced {
             tx.execute(
                 "UPDATE scan_roots SET dat_id = ?1 WHERE dat_id = ?2",

@@ -15,7 +15,7 @@ use super::parts::open_part;
 use super::{Item, Part};
 
 /// A reader that hashes what passes through it.
-pub(super) struct Sha1Read<R> {
+struct Sha1Read<R> {
     inner: R,
     sha1: sha1::Sha1,
 }
@@ -31,13 +31,7 @@ impl<R: Read> Read for Sha1Read<R> {
 
 /// The SHA1 of a whole stream.
 pub(crate) fn sha1_of(r: impl Read) -> std::io::Result<String> {
-    use sha1::Digest as _;
-    let mut h = Sha1Read {
-        inner: r,
-        sha1: sha1::Sha1::new(),
-    };
-    std::io::copy(&mut h, &mut std::io::sink())?;
-    Ok(hex(&h.sha1.finalize()))
+    copy_hashed(r, &mut std::io::sink())
 }
 
 /// Copy `r` into `w`, returning the SHA1 of what was copied.

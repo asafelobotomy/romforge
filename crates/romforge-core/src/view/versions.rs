@@ -45,7 +45,7 @@ pub(super) fn group_versions(conn: &Connection, rows: &mut Vec<GameRow>, listing
     let mut parent_of = conn.prepare(
         "SELECT g.cloneof FROM games g JOIN dats d ON d.dat_id = g.dat_id
          WHERE g.name = ?2 AND d.system_id = ?1 AND g.cloneof IS NOT NULL AND g.cloneof <> ''
-         LIMIT 1",
+         ORDER BY g.dat_id, g.game_id LIMIT 1",
     )?;
     // What a translation, hack or patch row is made from.
     let base_of = |r: &GameRow| -> Option<(String, Relation)> {

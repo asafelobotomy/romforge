@@ -198,6 +198,12 @@ const PATH_COLUMNS: &[(&str, &str)] = &[
     ("organize_moves", "dst"),
     ("patch_files", "path"),
     ("wikidata_pictures", "path"),
+    ("manuals", "path"),
+    ("firmware_outputs", "path"),
+    ("setup_import_files", "path"),
+    ("setup_import_files", "backup"),
+    // An emulator set up by hand may be a program in the folder.
+    ("emulators", "program"),
     ("settings", "value"),
 ];
 
@@ -379,7 +385,9 @@ pub fn create_or_adopt(
     })
 }
 
+mod recover;
 mod tree;
+pub use recover::{db_after_create, db_after_move};
 pub(crate) use tree::{merge_tree, move_tree};
 
 #[cfg(test)]

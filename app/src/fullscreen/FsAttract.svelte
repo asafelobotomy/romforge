@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { artSrc } from "../lib.js";
   import { listLabel } from "../listLabel.js";
 
@@ -24,8 +25,10 @@
     n++;
     shown(g);
   }
+  // `next` reads and writes state: untracked, or the effect would re-run
+  // itself without end.
   $effect(() => {
-    next();
+    untrack(next);
     const t = setInterval(next, 8000);
     return () => clearInterval(t);
   });

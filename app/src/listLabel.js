@@ -2,7 +2,8 @@
 // name (no region/language brackets); versions under it show region,
 // language, translation or hack — as flags by default, or as text.
 
-import { regionFlags } from "./facts.js";
+import { flagOf, regionFlags } from "./facts.js";
+import { displayTitle } from "./labels.js";
 
 /// ISO 639-ish codes in DAT names → a country for a flag emoji.
 const LANG_FLAG = {
@@ -63,11 +64,6 @@ const LANG_FLAG = {
   vie: "VN",
 };
 
-function flagOf(code) {
-  if (!code || !/^[A-Z]{2}$/.test(code)) return null;
-  return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
-}
-
 /// A name's languages as flags (or null when unknown), with the written code.
 export function languageFlags(n) {
   if (!n?.languages?.length) return [];
@@ -106,7 +102,7 @@ function bits(n) {
 export function listLabel(r, flags = true) {
   if (r?.head) return r.label;
   const n = r?.name;
-  const clean = n?.title || r?.label || r?.title || "";
+  const clean = displayTitle(r);
   if (r?.main || !r?.category) return clean;
 
   switch (r.category) {

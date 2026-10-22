@@ -17,8 +17,15 @@ impl ArtRoots {
     pub fn of(lib: &Library) -> Vec<PathBuf> {
         let mut roots = vec![default_cache_dir()];
         roots.extend(lib.home().map(Home::media));
-        // Canonical where they exist already (a folder made later still counts).
-        roots.into_iter().map(|r| r.canonicalize().unwrap_or(r)).collect()
+        // Made first, so each is canonical (`/home` may be a link to
+        // `/var/home`, and served paths are compared canonical).
+        roots
+            .into_iter()
+            .map(|r| {
+                let _ = std::fs::create_dir_all(&r);
+                r.canonicalize().unwrap_or(r)
+            })
+            .collect()
     }
 
     pub fn set(&self, lib: &Library) {
@@ -37,13 +44,12 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
     // cross-origin to art://, so CORS headers are required; <img> does not
     // need them. Without Allow-Origin, WebKit fails the fetch as "Load failed".
     let respond = |status: u16, mime: &str, body: Vec<u8>| {
-        tauri::http::Response::builder()
-            .status(status)
-            .header("Content-Type", mime)
-            .header("Cache-Control", "no-cache")
-            .header("Access-Control-Allow-Origin", "*")
-            .body(body)
-            .unwrap_or_default()
+        let headers = [
+            ("Content-Type", mime),
+            ("Cache-Control", "no-cache"),
+            ("Access-Control-Allow-Origin", "*"),
+        ];
+        response(status, &headers, body)
     };
     let not_found = || respond(404, "application/octet-stream", Vec::new());
     let mime = |p: &Path| match p
@@ -87,6 +93,20 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
     }
 }
 
+/// A scheme's answer (`art://`, `theme://`, `music://`).
+pub(crate) fn response(
+    status: u16,
+    headers: &[(&str, &str)],
+    body: Vec<u8>,
+) -> tauri::http::Response<Vec<u8>> {
+    let mut b = tauri::http::Response::builder().status(status);
+    for (k, v) in headers {
+        b = b.header(*k, *v);
+    }
+    b.body(body).unwrap_or_default()
+}
+
+/// A URI path with its `%XX` escapes decoded.
 pub(crate) fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());

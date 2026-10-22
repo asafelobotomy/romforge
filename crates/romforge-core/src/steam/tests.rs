@@ -131,6 +131,10 @@ fn romforge_is_added_once_and_removed_leaving_the_rest() {
     apply_unless(&moved, false).unwrap();
     let all = entries(&vdf::read(&std::fs::read(&file).unwrap()).unwrap());
     assert_eq!(all.len(), 2);
+    assert!(
+        !grid(&root, "1234").join(format!("{}p.png", p.app_id)).exists(),
+        "the old id's art goes with it"
+    );
 
     assert!(remove_unless(&root, "1234", false).unwrap());
     let all = entries(&vdf::read(&std::fs::read(&file).unwrap()).unwrap());
@@ -162,4 +166,83 @@ fn steam_running_is_seen_in_proc() {
     std::fs::create_dir_all(t.path().join("456")).unwrap();
     std::fs::write(t.path().join("456/comm"), "steam\n").unwrap();
     assert!(find::running_in(t.path()));
+}
+
+#[test]
+fn binary_vdf_keeps_strings_that_are_not_utf8_and_refuses_deep_nesting() {
+    let mut bytes = b"\x00shortcuts\x00\x00\x30\x00\x01Exe\x00/games/caf\xe9\x00\x08\x08\x08".to_vec();
+    let m = vdf::read(&bytes).unwrap();
+    assert_eq!(vdf::write(&m), bytes, "byte for byte");
+    let Some(Value::Map(s)) = vdf::get(&m, "shortcuts") else {
+        panic!()
+    };
+    let Some(Value::Map(e)) = vdf::get(s, "0") else {
+        panic!()
+    };
+    assert_eq!(vdf::get(e, "Exe"), Some(&Value::Raw(b"/games/caf\xe9".to_vec())));
+    bytes = Vec::new();
+    for _ in 0..100 {
+        bytes.extend_from_slice(b"\x00k\x00");
+    }
+    assert!(vdf::read(&bytes).is_err(), "too deep");
+    let text = "\"a\" {".repeat(100);
+    assert!(vdf::read_text(&text).is_err());
+}
+
+/// A shortcut of the user's own tagged "romforge" (a collection) as `name`.
+fn tagged(name: &str) -> Map {
+    vec![
+        ("appid".into(), Value::Int(app_id("\"/x\"", name))),
+        ("AppName".into(), Value::Str(name.into())),
+        ("Exe".into(), Value::Str("\"/x\"".into())),
+        (
+            "tags".into(),
+            Value::Map(vec![("0".into(), Value::Str(TAG.into()))]),
+        ),
+    ]
+}
+
+fn write_shortcuts(root: &Path, account: &str, list: Vec<Map>) {
+    let dir = root.join("userdata").join(account).join("config");
+    std::fs::create_dir_all(&dir).unwrap();
+    let numbered = list
+        .into_iter()
+        .enumerate()
+        .map(|(i, e)| (i.to_string(), Value::Map(e)))
+        .collect();
+    let top: Map = vec![("shortcuts".into(), Value::Map(numbered))];
+    std::fs::write(dir.join("shortcuts.vdf"), vdf::write(&top)).unwrap();
+}
+
+#[test]
+fn only_romforge_s_own_shortcut_is_ours_and_two_are_refused() {
+    let (_t, root) = steam();
+    write_shortcuts(&root, "1234", vec![tagged("Some Game")]);
+    let exe = Path::new("/opt/romforge/romforge.AppImage");
+    let p = plan(&root, "1234", exe).unwrap();
+    assert!(!p.replaces, "a collection called romforge isn't romforge");
+    assert_eq!(p.others, 1);
+    assert!(!remove_unless(&root, "1234", false).unwrap());
+
+    write_shortcuts(&root, "1234", vec![tagged(APP_NAME), tagged(APP_NAME)]);
+    let err = plan(&root, "1234", exe).unwrap_err().to_string();
+    assert!(err.contains("more than one"), "{err}");
+    assert!(remove_unless(&root, "1234", false).is_err());
+}
+
+#[test]
+fn the_template_stays_while_another_account_has_romforge() {
+    let (_t, root) = steam();
+    std::fs::create_dir_all(root.join("userdata/999/config")).unwrap();
+    let exe = Path::new("/opt/romforge/romforge.AppImage");
+    for account in ["1234", "999"] {
+        apply_unless(&plan(&root, account, exe).unwrap(), false).unwrap();
+    }
+    let template = root.join("controller_base/templates").join(template::FILE);
+    assert!(remove_unless(&root, "1234", false).unwrap());
+    assert!(template.is_file(), "999 still uses it");
+    assert!(!remove_unless(&root, "1234", false).unwrap());
+    assert!(template.is_file(), "nothing to take out: nothing touched");
+    assert!(remove_unless(&root, "999", false).unwrap());
+    assert!(!template.exists(), "the last one takes it");
 }

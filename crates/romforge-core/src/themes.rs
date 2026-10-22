@@ -78,6 +78,9 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
         .filter_map(Result::ok)
         .filter(|e| e.path().is_dir())
         .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+        // Dot-folders are the downloader's own (`.download-*`, `.check-*`,
+        // `.old-*`, left by a crash), never a theme.
+        .filter(|id| !id.starts_with('.'))
         .collect();
     users.sort();
     for id in users {
@@ -95,25 +98,38 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
 
 /// The usable theme `id`, if there is one.
 pub fn find(dir: Option<&Path>, id: &str) -> Option<Manifest> {
-    list(dir)
-        .into_iter()
-        .find(|e| e.id == id && e.usable())
-        .and_then(|e| e.manifest)
+    usable(dir, id).map(|(m, _)| m)
+}
+
+/// The usable theme `id` and its CSS as checked (only its own folder is
+/// read, once: what is served is what was checked). As [`list`] has it: a
+/// built-in id is the built-in theme.
+fn usable(dir: Option<&Path>, id: &str) -> Option<(Manifest, String)> {
+    if let Some((_, json, css)) = BUILTIN.iter().find(|(b, ..)| *b == id) {
+        return check(id, Ok((json.to_string(), css.to_string(), 0))).ok();
+    }
+    if !slug(id) {
+        return None;
+    }
+    check(id, read(&dir?.join(id))).ok()
+}
+
+/// A theme's files checked: its manifest and its CSS.
+fn check(id: &str, files: Result<(String, String, u64), String>) -> Result<(Manifest, String), String> {
+    let (json, css, size) = files?;
+    if size > MAX_TOTAL {
+        return Err(format!("{} MB in all; at most {}", size >> 20, MAX_TOTAL >> 20));
+    }
+    if css.len() as u64 > MAX_CSS {
+        return Err(format!("theme.css is over {} KB", MAX_CSS >> 10));
+    }
+    let m = parse(&json, id)?;
+    check_css(&css)?;
+    Ok((m, css))
 }
 
 fn entry(id: &str, builtin: bool, files: Result<(String, String, u64), String>) -> Entry {
-    let checked = files.and_then(|(json, css, size)| {
-        if size > MAX_TOTAL {
-            return Err(format!("{} MB in all; at most {}", size >> 20, MAX_TOTAL >> 20));
-        }
-        if css.len() as u64 > MAX_CSS {
-            return Err(format!("theme.css is over {} KB", MAX_CSS >> 10));
-        }
-        let m = parse(&json, id)?;
-        check_css(&css)?;
-        Ok(m)
-    });
-    match checked {
+    match check(id, files).map(|(m, _)| m) {
         Ok(m) => Entry {
             id: id.to_owned(),
             builtin,
@@ -168,14 +184,7 @@ pub fn file(dir: Option<&Path>, id: &str, path: &str) -> Option<(Vec<u8>, &'stat
         return None;
     }
     if path == "theme.css" {
-        let entry = list(dir).into_iter().find(|e| e.id == id)?;
-        if !entry.usable() {
-            return None;
-        }
-        let css = match BUILTIN.iter().find(|(b, ..)| *b == id) {
-            Some((.., css)) if entry.builtin => css.to_string(),
-            _ => std::fs::read_to_string(dir?.join(id).join("theme.css")).ok()?,
-        };
+        let (_, css) = usable(dir, id)?;
         return Some((scoped(&css).into_bytes(), mime));
     }
     // Pictures and fonts: user themes only (the built-in ones have none).

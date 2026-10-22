@@ -279,3 +279,37 @@ fn every_stored_path_heals() {
         new.media().join("q.png")
     );
 }
+
+/// Every column that holds a path is rewritten when the folder moves: a
+/// new table with a `path` (or similar) column must be listed too.
+#[test]
+fn every_path_column_heals() {
+    let conn = crate::db::open_in_memory().unwrap();
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let path_like = |c: &str| {
+        c == "path"
+            || c.ends_with("_path")
+            || ["backup", "original", "trashed", "dest", "src", "dst"].contains(&c)
+    };
+    for t in tables {
+        let cols: Vec<String> = conn
+            .prepare(&format!("SELECT name FROM pragma_table_info('{t}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for c in cols.iter().filter(|c| path_like(c)) {
+            assert!(
+                PATH_COLUMNS.contains(&(t.as_str(), c.as_str())),
+                "{t}.{c} is not in PATH_COLUMNS"
+            );
+        }
+    }
+}

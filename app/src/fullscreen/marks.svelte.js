@@ -9,8 +9,8 @@ export const marks = $state({ favourites: new Set(), played: new Map() });
 export async function loadMarks() {
   const m = await invoke("marks").catch(() => null);
   if (!m) return;
-  marks.favourites = new Set(m.favourites.map(([s, t]) => `${s}\t${t}`));
-  marks.played = new Map(m.played.map((p) => [`${p.system}\t${p.title}`, p]));
+  marks.favourites = new Set(m.favourites.map(([system, title]) => gameKey({ system, title })));
+  marks.played = new Map(m.played.map((p) => [gameKey(p), p]));
 }
 
 export const isFavourite = (r) => !!r && marks.favourites.has(gameKey(r));

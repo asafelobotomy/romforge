@@ -10,9 +10,10 @@
 //! 2. the Vimm's Lair Manual Project, found through Hasheous by the game's
 //!    SHA1 (`api/v1/Lookup/ByHash/sha1/<sha1>`, no key or account; the
 //!    attribute `VIMMManualId`; by hash, so house rule 8 holds), and
-//!    downloaded only when the user clicks for it, one at a time
-//!    (their robots.txt asks for no bulk bots; the request uses a browser
-//!    User-Agent, matching their own download form).
+//!    downloaded only when the user clicks for it, one at a time, never
+//!    crawled (`dl.vimm.net`'s robots.txt disallows every robot; vimm.net's
+//!    allows all). The request deliberately uses a browser User-Agent,
+//!    matching their own download form (`manual/vimm.rs` says why).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -94,7 +95,7 @@ pub fn add_manual(
     let mut head = [0u8; 4];
     std::fs::File::open(pdf)?.read_exact(&mut head).ok();
     if !is_pdf(&head) {
-        return Err(Error::Launch(format!("{} isn't a PDF", pdf.display())));
+        return Err(Error::Manual(format!("{} isn't a PDF", pdf.display())));
     }
     let dest = manual_path(media, system, game);
     if let Some(dir) = dest.parent() {
@@ -158,7 +159,7 @@ pub fn lookup_vimm(
 ) -> Result<Option<String>, Error> {
     let mut found = None;
     for sha1 in sha1s {
-        if let Some(body) = crate::fetch::get_optional(&format!("{HASHEOUS}{sha1}"))?
+        if let Some(body) = crate::fetch::get_small_optional(&format!("{HASHEOUS}{sha1}"))?
             && let Some(id) = vimm_id_in(&body)
         {
             found = Some(id);
@@ -188,7 +189,7 @@ pub fn download_vimm(
 ) -> Result<PathBuf, Error> {
     let id = manual(conn, system, game)?
         .vimm_id
-        .ok_or_else(|| Error::Launch(format!("no Vimm's Lair manual is known for {game}")))?;
+        .ok_or_else(|| Error::Manual(format!("no Vimm's Lair manual is known for {game}")))?;
     let bytes = vimm::fetch_pdf(&id, dpi)?;
     std::fs::create_dir_all(staging)?;
     let tmp = staging.join(format!("manual-{id}.pdf"));

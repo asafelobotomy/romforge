@@ -1,4 +1,5 @@
 <script>
+  import { onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { artSrc } from "./lib.js";
   import SettingsDialog from "./SettingsDialog.svelte";
@@ -297,13 +298,14 @@
 
   // Game pads: the fullscreen mode's when it is on, else the library's.
   const padLibrary = (a) => desktopPad(a, { view, rows, row, busy, platforms: lib.platforms, platform, setPlatform: (p) => (platform = p), pick, play, listKeys, settings, emulators });
-  listen("pad", (e) => {
+  const unPad = listen("pad", (e) => {
     const p = e.payload;
     if (p.kind === "connected") note = `Game pad connected: ${p.name}`;
     else if (p.kind === "disconnected") note = `Game pad disconnected: ${p.name}`;
     else if (!playing && fs.on) ((fs.padSeen = true), fs.pad?.(p.action));
     else if (!playing) padAction(p.action, padLibrary);
   });
+  onDestroy(() => unPad.then((f) => f()));
 
   load();
   // Details' empty boxes: read at start and whenever Settings closes (the

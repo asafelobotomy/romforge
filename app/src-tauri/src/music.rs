@@ -26,20 +26,18 @@ pub async fn music_tracks(db: tauri::State<'_, Db>) -> Res<Vec<String>> {
 }
 
 pub fn serve(request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    let respond = |status: u16, headers: &[(&str, String)], body: Vec<u8>| {
-        let mut b = tauri::http::Response::builder()
-            .status(status)
-            .header("Accept-Ranges", "bytes")
-            .header("Access-Control-Allow-Origin", "*")
-            .header(
+    let respond = |status: u16, more: &[(&str, &str)], body: Vec<u8>| {
+        let mut headers = vec![
+            ("Accept-Ranges", "bytes"),
+            ("Access-Control-Allow-Origin", "*"),
+            (
                 "Access-Control-Expose-Headers",
                 "Content-Range, Content-Length, Accept-Ranges",
-            )
-            .header("Cache-Control", "no-store");
-        for (k, v) in headers {
-            b = b.header(*k, v);
-        }
-        b.body(body).unwrap_or_default()
+            ),
+            ("Cache-Control", "no-store"),
+        ];
+        headers.extend_from_slice(more);
+        crate::art::response(status, &headers, body)
     };
     let not_found = || respond(404, &[], Vec::new());
     let Some(dir) = DIR.read().unwrap_or_else(|e| e.into_inner()).clone() else {
@@ -53,37 +51,62 @@ pub fn serve(request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<V
         return not_found();
     };
     let len = file.metadata().map(|m| m.len()).unwrap_or(0);
-    // `Range: bytes=a-b` (one range; the player asks for no more).
-    let range = request
+    let asked = request
         .headers()
         .get("range")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("bytes="))
-        .and_then(|v| v.split_once('-'))
-        .and_then(|(a, b)| {
-            let start: u64 = a.parse().ok()?;
-            let end = if b.is_empty() {
-                len.saturating_sub(1)
-            } else {
-                b.parse().ok()?
-            };
-            (start <= end && end < len).then_some((start, end))
-        });
-    let (start, end, status) = match range {
+        .and_then(|v| range(v, len));
+    let (start, end, status) = match asked {
         // At most 8 MB a ranged response: the player asks again for more.
-        Some((s, e)) => (s, e.min(s + (8 << 20) - 1), 206),
+        Some(Some((s, e))) => (s, e.min(s + (8 << 20) - 1), 206),
+        Some(None) => {
+            let all = format!("bytes */{len}");
+            return respond(416, &[("Content-Range", &all)], Vec::new());
+        }
         None => (0, len.saturating_sub(1), 200),
     };
     let mut body = vec![0; if len == 0 { 0 } else { (end + 1 - start) as usize }];
     if len > 0 && (file.seek(SeekFrom::Start(start)).is_err() || file.read_exact(&mut body).is_err()) {
         return not_found();
     }
-    let mut headers = vec![
-        ("Content-Type", kind.to_owned()),
-        ("Content-Length", body.len().to_string()),
-    ];
+    let (size, at) = (body.len().to_string(), format!("bytes {start}-{end}/{len}"));
+    let mut headers = vec![("Content-Type", kind), ("Content-Length", size.as_str())];
     if status == 206 {
-        headers.push(("Content-Range", format!("bytes {start}-{end}/{len}")));
+        headers.push(("Content-Range", at.as_str()));
     }
     respond(status, &headers, body)
+}
+
+/// `Range: bytes=a-b`, `a-` or `-n` (one range; the player asks for no
+/// more) of a `len`-byte file: `None` when it isn't one to read (the whole
+/// file is sent), `Some(None)` when it asks for bytes past the end.
+fn range(header: &str, len: u64) -> Option<Option<(u64, u64)>> {
+    let (a, b) = header.trim().strip_prefix("bytes=")?.split_once('-')?;
+    let (a, b) = (a.trim(), b.trim());
+    if a.is_empty() {
+        let n: u64 = b.parse().ok()?;
+        return Some((n > 0 && len > 0).then(|| (len.saturating_sub(n), len - 1)));
+    }
+    let start: u64 = a.parse().ok()?;
+    let end = if b.is_empty() { u64::MAX } else { b.parse().ok()? };
+    if start > end {
+        return None;
+    }
+    Some((start < len).then(|| (start, end.min(len - 1))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::range;
+
+    #[test]
+    fn ranges() {
+        assert_eq!(range("bytes=0-9", 100), Some(Some((0, 9))));
+        assert_eq!(range("bytes=90-", 100), Some(Some((90, 99))));
+        assert_eq!(range("bytes=90-500", 100), Some(Some((90, 99))));
+        assert_eq!(range("bytes=-10", 100), Some(Some((90, 99))));
+        assert_eq!(range("bytes=100-", 100), Some(None), "past the end: 416");
+        assert_eq!(range("bytes=5-1", 100), None, "not a range: the whole file");
+        assert_eq!(range("items=0-1", 100), None);
+    }
 }

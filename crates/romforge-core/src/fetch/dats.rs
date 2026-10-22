@@ -26,6 +26,11 @@ pub struct DatBytes {
 /// `.dat`/`.xml` member (sorted by name) for a zip. Read from memory, never
 /// extracted.
 pub fn dats_in(bytes: &[u8]) -> Result<Vec<DatBytes>, Error> {
+    dats_in_capped(bytes, MAX_UNPACKED_TOTAL)
+}
+
+/// [`dats_in`], refusing a zip whose DATs together pass `cap` bytes.
+pub(super) fn dats_in_capped(bytes: &[u8], cap: u64) -> Result<Vec<DatBytes>, Error> {
     if !bytes.starts_with(b"PK\x03\x04") {
         return Ok(vec![DatBytes {
             member: None,
@@ -34,12 +39,20 @@ pub fn dats_in(bytes: &[u8]) -> Result<Vec<DatBytes>, Error> {
     }
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
     let mut out = Vec::new();
+    let mut total = 0u64;
     for i in 0..zip.len() {
         let mut member = zip.by_index(i)?;
         let name = member.name()?.into_owned();
         let lower = name.to_ascii_lowercase();
         if member.is_file() && (lower.ends_with(".dat") || lower.ends_with(".xml")) {
             let buf = read_member(&mut member)?;
+            total += buf.len() as u64;
+            if total > cap {
+                return Err(Error::Dat(format!(
+                    "the zip's DATs come to more than {} MiB together",
+                    cap >> 20
+                )));
+            }
             out.push(DatBytes {
                 member: Some(name),
                 bytes: buf,

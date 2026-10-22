@@ -33,7 +33,8 @@ impl Library {
                 Err(e) => Err(e.to_string()),
             });
         }
-        let report = self.scan_with(root, Scope::All, opts, progress)?;
+        let scope = self.kept_scope(root)?;
+        let report = self.scan_with(root, scope, opts, progress)?;
         Ok(FolderScan {
             report,
             became_source,
@@ -73,15 +74,15 @@ impl Library {
             let mut copy = Library::open(&tmp)?;
             // The library's own lists (ScummVM's), read where they are.
             copy.databases = self.extdb_dir();
-            let report = copy.scan_with(&root, Scope::All, opts, progress)?;
+            let scope = self.kept_scope(&root)?;
+            let report = copy.scan_with(&root, scope, opts, progress)?;
             let under: std::collections::HashSet<i64> = copy
                 .conn
                 .prepare("SELECT file_id, path FROM files")?
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
-                .filter_map(|r| r.ok())
-                .filter(|(_, p)| Path::new(p).starts_with(&root))
-                .map(|(id, _)| id)
-                .collect();
+                .filter(|r| r.as_ref().map_or(true, |(_, p)| Path::new(p).starts_with(&root)))
+                .map(|r| r.map(|(id, _)| id))
+                .collect::<Result<_, _>>()?;
             let mut games: Vec<PreviewGame> = view::library(&copy.conn)?
                 .rows
                 .into_iter()
@@ -104,6 +105,25 @@ impl Library {
         })();
         clear(&tmp);
         result
+    }
+
+    /// The scope Scan folder uses for `root`: the one it (or the deepest
+    /// scanned folder holding it) was scanned with, so a folder scanned for
+    /// one system or DAT isn't widened by scanning it again; else all DATs.
+    fn kept_scope(&self, root: &Path) -> Result<Scope, Error> {
+        let Ok(root) = std::fs::canonicalize(root) else {
+            return Ok(Scope::All);
+        };
+        let mut known: Vec<(String, Option<i64>, Option<i64>)> = self
+            .conn
+            .prepare("SELECT path, system_id, dat_id FROM scan_roots")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        known.retain(|(p, _, _)| root.starts_with(p));
+        Ok(known
+            .into_iter()
+            .max_by_key(|(p, _, _)| p.len())
+            .map_or(Scope::All, |(_, s, d)| Scope::from_columns(s, d)))
     }
 
     /// Rescan every folder romforge knows (the Source and Library folders of
@@ -143,7 +163,7 @@ impl Library {
         mut progress: impl FnMut(crate::job::Step),
     ) -> Result<(crate::ListsReport, Vec<RefreshResult>), Error> {
         use crate::job::Step;
-        let before = super::lists::systems_in_use(&self.conn)?;
+        let before = super::lists::systems_with_files(&self.conn)?;
         let mut report = self.update_lists(lists, |s| {
             progress(Step::new(0, 1000, format!("Lists: {}", s.detail)))
         })?;

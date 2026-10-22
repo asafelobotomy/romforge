@@ -4,7 +4,8 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { ask, open as pick } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { artSrc } from "./lib.js";
+  import { artSrc, size } from "./lib.js";
+  import { displayTitle } from "./labels.js";
   // pdf.js is big: the reader loads the first time a manual is opened.
   const reader = () => import("./ManualReader.svelte");
 
@@ -71,7 +72,7 @@
   // Downloads are jobs in the queue (footer); the game may have changed
   // by the time one is done.
   async function download() {
-    const [id, title] = [row.id, row.label ?? row.title];
+    const [id, title] = [row.id, displayTitle(row)];
     busy = "download";
     const done = await run(`Downloading the manual of ${title}…`, "download_manual", { rowId: id, dpi }, { key: `manual:${id}` });
     busy = "";
@@ -80,7 +81,7 @@
   }
 
   async function take(offer) {
-    const [id, title] = [row.id, row.label ?? row.title];
+    const [id, title] = [row.id, displayTitle(row)];
     busy = offer.url;
     const done = await run(`Downloading the manual of ${title}…`, "download_manual_offer", { rowId: id, offer }, { key: `manual:${id}` });
     busy = "";
@@ -131,8 +132,8 @@
   });
 
   const vimmPage = (id) => `https://vimm.net/manual/${id}`;
-  const mb = (n) => (n ? ` · ${(n / 1e6).toFixed(1)} MB` : "");
-  const name = $derived(row.title.split(" (")[0]);
+  const mb = (n) => (n ? ` · ${size(n)}` : "");
+  const name = $derived(displayTitle(row).split(" (")[0]);
   const elsewhere = $derived([
     ["archive.org", `https://archive.org/search?query=${encodeURIComponent(`"${name}" manual`)}`],
     ["VideoGameManual.com", "https://www.videogamemanual.com/"],

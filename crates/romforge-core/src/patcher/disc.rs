@@ -150,13 +150,13 @@ fn unpack_chd(chd: &Path, staging: &Path) -> Result<Vec<Part>, Error> {
     let mut out: Vec<Part> = Vec::new();
     let mut cue = String::new();
     let mut current = std::io::BufWriter::new(std::fs::File::create(dir.join("current"))?);
-    let mut hasher = Sha1Sum::default();
+    let mut hasher = sha1::Sha1::default();
     let mut size = 0u64;
     crate::disc::read_chd(chd, &mut |o| {
         match o {
             crate::disc::ChdOut::Data(d) => {
                 current.write_all(d)?;
-                hasher.update(d);
+                sha1::Digest::update(&mut hasher, d);
                 size += d.len() as u64;
             }
             crate::disc::ChdOut::End(name, track) => {
@@ -183,7 +183,7 @@ fn unpack_chd(chd: &Path, staging: &Path) -> Result<Vec<Part>, Error> {
                     path,
                     member: String::new(),
                     size: std::mem::take(&mut size),
-                    sha1: std::mem::take(&mut hasher).finish(),
+                    sha1: crate::hash::hex(&sha1::Digest::finalize(std::mem::take(&mut hasher))),
                 });
             }
         }
@@ -204,20 +204,4 @@ fn unpack_chd(chd: &Path, staging: &Path) -> Result<Vec<Part>, Error> {
         });
     }
     Ok(out)
-}
-
-/// A running SHA1.
-#[derive(Default)]
-struct Sha1Sum(sha1::Sha1);
-
-impl Sha1Sum {
-    fn update(&mut self, d: &[u8]) {
-        use sha1::Digest as _;
-        self.0.update(d);
-    }
-
-    fn finish(self) -> String {
-        use sha1::Digest as _;
-        crate::hash::hex(&self.0.finalize())
-    }
 }

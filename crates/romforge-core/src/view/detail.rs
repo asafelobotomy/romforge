@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::links::{links, patch_links, shown_value};
 use super::{Credit, Derived, GameDetail, LibraryView, Relation, RowFile, RowStatus, SeriesEntry, library};
@@ -70,25 +70,27 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
              JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size
              WHERE f.file_id = ?1 AND m.base IS NOT NULL",
         )?;
-        row.file_ids.iter().find_map(|id| {
-            stmt.query_row([id], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                    r.get::<_, Option<String>>(3)?,
-                ))
-            })
-            .ok()
-            .and_then(|(base, rel, tag, by)| {
-                proof = by;
-                Some(Derived {
-                    relation: Relation::parse(&rel)?,
-                    base,
-                    tag,
+        let mut found = None;
+        for id in &row.file_ids {
+            let named = stmt
+                .query_row([id], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                    ))
                 })
-            })
-        })
+                .optional()?;
+            if let Some((base, rel, tag, by)) = named
+                && let Some(relation) = Relation::parse(&rel)
+            {
+                proof = by;
+                found = Some(Derived { relation, base, tag });
+                break;
+            }
+        }
+        found
     } else {
         None
     };
@@ -156,11 +158,7 @@ pub fn detail_in(conn: &Connection, view: &LibraryView, id: &str) -> Result<Game
             let path: String = r.get(0)?;
             let member: String = r.get(1)?;
             Ok(RowFile {
-                path: if member.is_empty() {
-                    path
-                } else {
-                    format!("{path}#{member}")
-                },
+                path: crate::report::display_path(&path, &member),
                 status: r.get(2)?,
                 size: r.get(3)?,
                 sha1: r.get(4)?,

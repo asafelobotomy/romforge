@@ -13,8 +13,7 @@
   let ticked = $state({});
   let error = $state("");
 
-  const STRONG = ["patch_of", "likely_crc", "likely_compressed", "likely_modified", "suggested"];
-  const strong = (it) => it.suggestion && STRONG.includes(it.suggestion.band);
+  const strong = (it) => it.acceptable;
   const label = (s) => s.derived ? `${s.derived.relation} of ${s.title}${s.derived.tag ? ` (${s.derived.tag})` : ""}` : s.title;
   const n = $derived(items.filter((it) => ticked[it.row_id]).length);
 

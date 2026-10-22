@@ -1,5 +1,6 @@
 <script>
   import Wordmark from "./Wordmark.svelte";
+  import { duration } from "./labels.js";
 
   // The splash while a game starts (milestone 18, 1.6): the ROMFORGE
   // wordmark at the top, the game's box in the middle, turning slowly, and
@@ -11,7 +12,6 @@
   // (`seconds` played this time); the platform's colour (`accent`) runs
   // along the foot. `data-fs-splash` and `data-fs-platform` are for themes.
   let { title, emulator, platform = "", box3d = null, boxart = null, logo = null, system = "", accent = "", kind = "start", seconds = 0 } = $props();
-  const minutes = (s) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 
   // Flat box art's proportions, once it has loaded (a DVD case until then).
   let ratio = $state(0.7);
@@ -45,7 +45,7 @@
       <span class="platform">{platform}</span>
     {/if}
     {#if kind === "exit"}
-      <p>Back from <strong>{title}</strong>{seconds >= 10 ? ` · played ${minutes(seconds)} this time` : ""}</p>
+      <p>Back from <strong>{title}</strong>{seconds >= 10 ? ` · played ${duration(seconds)} this time` : ""}</p>
     {:else}
       <p><strong>{title}</strong> · starting {emulator}…</p>
     {/if}

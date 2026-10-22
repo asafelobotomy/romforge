@@ -104,17 +104,13 @@
     themes: () => theme.view,
     theme: (s) => void pickTheme(s),
     // Get themes: fetched, then shown (the menu says so meanwhile).
-    store: () => {
-      invoke("themes_available")
-        .then((a) => (menu = storeMenu(act, a)))
-        .catch(() => (menu = storeMenu(act, null)));
-      return { title: "Get themes", index: 0, items: [{ label: "Fetching the list…", run: () => undefined }] };
-    },
+    store: () => later("Get themes", "Fetching the list…", () => invoke("themes_available").then((a) => storeMenu(act, a), () => storeMenu(act, null))),
     install: (t) => {
       run(`Getting the ${t.name} theme…`, "theme_install", { id: t.id }).then(async (done) => {
         if (done === null) return;
         await loadThemes();
-        menu = ask(`${t.name} is in. Use it now?`, () => act.useTheme(t.id));
+        // Only if nothing else is open by now (it may have taken minutes).
+        if (!menu && !playing) menu = ask(`${t.name} is in. Use it now?`, () => act.useTheme(t.id));
       });
     },
     useTheme: (id) => void pickTheme({ ...theme.view.selection, theme: id, scheme: "", layout: "" }),
@@ -131,14 +127,23 @@
     toggleMusic: () => toggleMusic(),
     volume: (v) => setVolume(v),
     // The emulator for this game: fetched, then a menu of the installed ones.
-    emulator: (g) => {
-      invoke("game_emulator", { system: g.system, title: g.title })
-        .then((e) => (menu = emulatorMenu(act, g, e)))
-        .catch(() => (menu = null));
-      return { title: "Emulator", index: 0, items: [{ label: "Looking…", run: () => undefined }] };
-    },
+    emulator: (g) =>
+      later("Emulator", "Looking…", () => invoke("game_emulator", { system: g.system, title: g.title }).then((e) => emulatorMenu(act, g, e))),
     setEmulator: (g, name) => void invoke("set_game_emulator", { system: g.system, title: g.title, name }).catch(() => {}),
   };
+  // A menu that has to fetch first: a placeholder now, the menu once
+  // `load` answers, but only if the placeholder is still the one open (B,
+  // or another menu, meanwhile wins). Pressing the placeholder keeps it.
+  let waits = 0;
+  function later(title, waiting, load) {
+    const id = ++waits;
+    const holder = { title, index: 0, waiting: id, items: [{ label: waiting, run: () => menu }] };
+    load()
+      .then((m) => menu?.waiting === id && (menu = m))
+      .catch(() => menu?.waiting === id && (menu = null));
+    return holder;
+  }
+
   function start(g) {
     if (!g?.playable) return;
     const p = g.pictures ?? {};
@@ -246,13 +251,19 @@
     return () => (fs.pad = null);
   });
 
+  // Quit's chord, from romforge's hotkeys table.
+  let quitChord = $state("");
+  invoke("hotkeys_view", { emulators: [] })
+    .then((v) => (quitChord = v.quit_chord))
+    .catch(() => {});
+
   let help = $derived(
     menu
       ? [["move", "Move"], ["accept", "Choose"], ["back", "Close"]]
       : screen === "search"
         ? [["move", "Move"], ["accept", "Type"], ["north", "Space"], ["back", "Delete"], ["menu", "Results"]]
       : screen === "game"
-        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["west", "Favourite"], ["north", "Options"], ["back", "Back"], ["Select+Start", "Quits a game"]]
+        ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["west", "Favourite"], ["north", "Options"], ["back", "Back"], ...(quitChord ? [[quitChord, "Quits a game"]] : [])]
         : focus === "carousel"
           ? [["side", "Platform"], ["accept", "Games"], ["back", "Desktop"], ["menu", "Menu"]]
           : [["accept", "Open"], ["west", isFavourite(game) ? "Unfavourite" : "Favourite"], ["north", "Options"], ["context", "More"], ["back", "Platforms"], ["menu", "Menu"]],

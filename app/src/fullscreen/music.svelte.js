@@ -5,7 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 // unless turned off) while the mode is open; paused while a game runs.
 // One <audio>, through WebKitGTK's own player: a track it can't play is
 // skipped.
-export const music = $state({ tracks: [], at: -1, playing: false, volume: 40, title: "" });
+
+// The volume until Settings says otherwise (as the core's default).
+const VOLUME = 40;
+export const music = $state({ tracks: [], at: -1, playing: false, volume: VOLUME, title: "" });
 
 let audio = null;
 let order = [];
@@ -50,27 +53,38 @@ async function play(i) {
 }
 
 // The mode opened: read the folder and start.
+// Each start and stop counts: a start whose answers come after the mode
+// closed (stopMusic ran meanwhile) plays nothing.
+let generation = 0;
+
 export async function startMusic() {
+  const mine = ++generation;
   const [tracks, s] = await Promise.all([invoke("music_tracks").catch(() => []), invoke("get_settings").catch(() => ({}))]);
+  if (mine !== generation) return;
   stopMusic();
+  generation = mine;
   music.tracks = tracks;
-  music.volume = s?.music_volume ?? 40;
+  music.volume = s?.music_volume ?? VOLUME;
   if (!tracks.length) return;
   order = s?.music_shuffle === false ? [...tracks.keys()] : shuffle(tracks.length);
-  audio = new Audio();
-  audio.volume = music.volume / 100;
-  audio.addEventListener("ended", () => play(music.at + 1));
-  audio.addEventListener("error", () => ++fails < music.tracks.length && setTimeout(() => play(music.at + 1), 300));
+  const el = new Audio();
+  audio = el;
+  el.volume = music.volume / 100;
+  // Only this player's own events (stopping one fires `error` on it).
+  el.addEventListener("ended", () => el === audio && play(music.at + 1));
+  el.addEventListener("error", () => el === audio && ++fails < music.tracks.length && setTimeout(() => play(music.at + 1), 300));
   music.playing = true;
   play(0);
 }
 
 export function stopMusic() {
-  if (audio) {
-    audio.pause();
-    audio.src = "";
-  }
+  generation++;
+  const el = audio;
   audio = null;
+  if (el) {
+    el.pause();
+    el.src = "";
+  }
   if (url) URL.revokeObjectURL(url);
   url = null;
   fails = 0;

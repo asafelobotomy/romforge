@@ -5,14 +5,14 @@
 //! (`launch::controls`); emulators' own pad hotkeys are off.
 //!
 //! Select is the hotkey button. Fast forward and rewind last while their
-//! chord is held. Holding L3 alone for [`RADIAL_HOLD`] opens a ring of
-//! actions ([`RADIAL`]) the right stick picks from; letting go of L3 does
-//! the one it points at.
+//! chord is held. Holding L3 ([`RADIAL_BUTTON`]) alone for [`RADIAL_HOLD`]
+//! opens a ring of the one-shot actions ([`RADIAL`]) the right stick picks
+//! from; letting go of L3 does the one it points at.
 //!
 //! [`Chords`] is a pure state machine (no pad, no clock of its own), so it
 //! is tested without one.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 /// A pad button, by SDL GameController's names (South is A on an Xbox pad,
@@ -155,17 +155,15 @@ pub const HOTKEYS: &[Hotkey] = &[
     },
 ];
 
-/// The radial menu's actions, clockwise from the top.
-pub const RADIAL: &[Action] = &[
-    Action::Quit,
-    Action::SaveState,
-    Action::FastForward,
-    Action::Menu,
-    Action::Rewind,
-    Action::LoadState,
-];
+/// The radial menu's actions, clockwise from the top: one-shot actions
+/// only (a held one would have no chord to let go of, so it would never
+/// stop).
+pub const RADIAL: &[Action] = &[Action::Quit, Action::SaveState, Action::Menu, Action::LoadState];
 
-/// How long L3 is held alone before the radial menu opens.
+/// The button held alone to open the radial menu.
+pub const RADIAL_BUTTON: PadButton = LeftStick;
+
+/// How long [`RADIAL_BUTTON`] is held alone before the radial menu opens.
 pub const RADIAL_HOLD: Duration = Duration::from_secs(2);
 
 /// What [`Chords`] makes of the pad.
@@ -188,14 +186,17 @@ pub enum HotkeyEvent {
     RadialClose,
 }
 
-/// The pad's held buttons, the held hotkeys running, and the radial menu.
+/// Each pad's held buttons (by the pad's id), the held hotkeys running
+/// (with the pad holding each), and the radial menu (with the pad that
+/// opened it). A chord is a chord on one pad: two pads' buttons never
+/// make one together.
 #[derive(Debug, Default)]
 pub struct Chords {
-    held: BTreeSet<PadButton>,
-    running: Vec<Action>,
-    l3_since: Option<Instant>,
-    /// Open, with the slot pointed at.
-    radial: Option<Option<usize>>,
+    held: BTreeMap<usize, BTreeSet<PadButton>>,
+    running: Vec<(usize, Action)>,
+    l3_since: Option<(usize, Instant)>,
+    /// Open by this pad, with the slot pointed at.
+    radial: Option<(usize, Option<usize>)>,
 }
 
 impl Chords {
@@ -208,46 +209,81 @@ impl Chords {
         self.radial.is_some()
     }
 
-    pub fn press(&mut self, b: PadButton, now: Instant) -> Vec<HotkeyEvent> {
-        self.held.insert(b);
-        if let Some(slot) = self.radial {
+    pub fn press(&mut self, pad: usize, b: PadButton, now: Instant) -> Vec<HotkeyEvent> {
+        let held = self.held.entry(pad).or_default();
+        held.insert(b);
+        let alone = held.len() == 1;
+        if let Some((owner, slot)) = self.radial {
             return match b {
-                South => self.choose(slot),
-                East => self.close(),
+                South if owner == pad => self.choose(slot),
+                East if owner == pad => self.close(),
                 _ => Vec::new(),
             };
         }
-        self.l3_since = (b == LeftStick && self.held.len() == 1).then_some(now);
+        if b == RADIAL_BUTTON && alone {
+            self.l3_since = Some((pad, now));
+        } else if self.l3_since.is_some_and(|(p, _)| p == pad) {
+            self.l3_since = None;
+        }
+        let held = &self.held[&pad];
         // The chord this press completes; of several, the longest.
         let done = HOTKEYS
             .iter()
-            .filter(|h| h.chord.contains(&b) && h.chord.iter().all(|c| self.held.contains(c)))
+            .filter(|h| h.chord.contains(&b) && h.chord.iter().all(|c| held.contains(c)))
             .max_by_key(|h| h.chord.len());
         let Some(h) = done else { return Vec::new() };
         if h.hold {
-            if self.running.contains(&h.action) {
+            if self.running.iter().any(|(_, a)| *a == h.action) {
                 return Vec::new();
             }
-            self.running.push(h.action);
+            self.running.push((pad, h.action));
         }
         vec![HotkeyEvent::Start { action: h.action }]
     }
 
-    pub fn release(&mut self, b: PadButton) -> Vec<HotkeyEvent> {
-        self.held.remove(&b);
+    pub fn release(&mut self, pad: usize, b: PadButton) -> Vec<HotkeyEvent> {
+        if let Some(held) = self.held.get_mut(&pad) {
+            held.remove(&b);
+        }
         let mut out = Vec::new();
-        if b == LeftStick {
-            self.l3_since = None;
-            if let Some(slot) = self.radial {
+        if b == RADIAL_BUTTON {
+            if self.l3_since.is_some_and(|(p, _)| p == pad) {
+                self.l3_since = None;
+            }
+            if let Some((owner, slot)) = self.radial
+                && owner == pad
+            {
                 out.extend(self.choose(slot));
             }
         }
+        out.extend(self.stop_let_go());
+        out
+    }
+
+    /// A pad went away: what it held is let go (a held hotkey stops, its
+    /// radial menu closes without choosing).
+    pub fn disconnect(&mut self, pad: usize) -> Vec<HotkeyEvent> {
+        self.held.remove(&pad);
+        if self.l3_since.is_some_and(|(p, _)| p == pad) {
+            self.l3_since = None;
+        }
+        let mut out = Vec::new();
+        if self.radial.is_some_and(|(owner, _)| owner == pad) {
+            out.extend(self.close());
+        }
+        out.extend(self.stop_let_go());
+        out
+    }
+
+    /// Stop the held hotkeys whose chord their pad no longer holds.
+    fn stop_let_go(&mut self) -> Vec<HotkeyEvent> {
+        let mut out = Vec::new();
         let held = &self.held;
-        self.running.retain(|a| {
-            let still = HOTKEYS
-                .iter()
-                .find(|h| h.action == *a)
-                .is_some_and(|h| h.chord.iter().all(|c| held.contains(c)));
+        self.running.retain(|(pad, a)| {
+            let still = HOTKEYS.iter().find(|h| h.action == *a).is_some_and(|h| {
+                held.get(pad)
+                    .is_some_and(|held| h.chord.iter().all(|c| held.contains(c)))
+            });
             if !still {
                 out.push(HotkeyEvent::Stop { action: *a });
             }
@@ -256,25 +292,30 @@ impl Chords {
         out
     }
 
-    /// The right stick's position (x right, y up; -1..1).
-    pub fn stick(&mut self, x: f32, y: f32) -> Vec<HotkeyEvent> {
-        let Some(old) = self.radial else { return Vec::new() };
+    /// A pad's right stick position (x right, y up; -1..1). Only the pad
+    /// that opened the radial menu points in it.
+    pub fn stick(&mut self, pad: usize, x: f32, y: f32) -> Vec<HotkeyEvent> {
+        let Some((owner, old)) = self.radial.filter(|(owner, _)| *owner == pad) else {
+            return Vec::new();
+        };
         let slot = slot_at(x, y, old);
         if slot == old {
             return Vec::new();
         }
-        self.radial = Some(slot);
+        self.radial = Some((owner, slot));
         vec![HotkeyEvent::RadialSlot { slot }]
     }
 
-    /// Time passing: the radial menu opens once L3 has been held alone
-    /// long enough.
+    /// Time passing: the radial menu opens once [`RADIAL_BUTTON`] has been
+    /// held alone long enough.
     pub fn tick(&mut self, now: Instant) -> Vec<HotkeyEvent> {
         match self.l3_since {
-            Some(t)
-                if self.radial.is_none() && self.held.len() == 1 && now.duration_since(t) >= RADIAL_HOLD =>
+            Some((pad, t))
+                if self.radial.is_none()
+                    && self.held.get(&pad).is_some_and(|h| h.len() == 1)
+                    && now.duration_since(t) >= RADIAL_HOLD =>
             {
-                self.radial = Some(None);
+                self.radial = Some((pad, None));
                 vec![HotkeyEvent::RadialOpen]
             }
             _ => Vec::new(),
@@ -311,80 +352,8 @@ fn slot_at(x: f32, y: f32, was: Option<usize>) -> Option<usize> {
     Some(((angle / std::f32::consts::TAU * n).round() as usize) % RADIAL.len())
 }
 
-/// What an emulator does of the hotkeys: Quit for every emulator
-/// (romforge asks it to quit), the rest where `launch::controls` can make
-/// it do them.
-pub fn support(emulator: &str) -> Vec<Action> {
-    HOTKEYS
-        .iter()
-        .map(|h| h.action)
-        .filter(|a| crate::launch::controls::route(emulator, *a) != crate::launch::controls::Route::None)
-        .collect()
-}
-
-/// The hotkeys for the Hotkeys tab: each chord as button labels, the
-/// radial menu's ring, and what each of `emulators` gets.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct HotkeysView {
-    pub hotkeys: Vec<HotkeyRow>,
-    pub radial: Vec<RadialSlot>,
-    pub radial_hold_secs: u64,
-    pub support: Vec<SupportRow>,
-}
-
-/// A slot of the radial menu's ring.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct RadialSlot {
-    pub action: Action,
-    pub label: &'static str,
-}
-
-/// What one emulator gets.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct SupportRow {
-    pub emulator: String,
-    pub actions: Vec<Action>,
-    pub note: Option<&'static str>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct HotkeyRow {
-    pub action: Action,
-    pub label: &'static str,
-    pub chord: Vec<&'static str>,
-    pub hold: bool,
-}
-
-pub fn view<'a>(emulators: impl IntoIterator<Item = &'a str>) -> HotkeysView {
-    let label = |a: Action| HOTKEYS.iter().find(|h| h.action == a).map_or("", |h| h.label);
-    HotkeysView {
-        hotkeys: HOTKEYS
-            .iter()
-            .map(|h| HotkeyRow {
-                action: h.action,
-                label: h.label,
-                chord: h.chord.iter().map(|b| b.label()).collect(),
-                hold: h.hold,
-            })
-            .collect(),
-        radial: RADIAL
-            .iter()
-            .map(|a| RadialSlot {
-                action: *a,
-                label: label(*a),
-            })
-            .collect(),
-        radial_hold_secs: RADIAL_HOLD.as_secs(),
-        support: emulators
-            .into_iter()
-            .map(|e| SupportRow {
-                emulator: e.to_owned(),
-                actions: support(e),
-                note: crate::launch::controls::note(e),
-            })
-            .collect(),
-    }
-}
+mod view;
+pub use view::*;
 
 #[cfg(test)]
 mod tests;

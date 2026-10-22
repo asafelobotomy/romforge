@@ -82,6 +82,10 @@ pub enum Error {
     UnknownDat(i64),
     #[error("download: {0}")]
     Http(String),
+    /// A server asking to be left alone (429/503 with a long wait, a
+    /// used-up quota), or a host that did earlier in the run.
+    #[error("download: {0}")]
+    RateLimited(String),
     #[error("no DAT source is known for {0}")]
     NoDownload(&'static str),
     #[error("organize: {0}")]
@@ -90,6 +94,8 @@ pub enum Error {
     Chd(String),
     #[error("launch: {0}")]
     Launch(String),
+    #[error("manual: {0}")]
+    Manual(String),
     #[error("settings: {0}")]
     Settings(String),
     #[error("search: {0}")]

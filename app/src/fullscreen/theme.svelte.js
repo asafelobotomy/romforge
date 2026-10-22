@@ -11,6 +11,8 @@ export const theme = $state({
   applied: null,
   // themes_view: the themes, the pick, the text sizes, the folder.
   view: null,
+  // Counts the theme's stylesheet loads (its CSS may set variables too).
+  cssLoads: 0,
 });
 
 export async function loadThemes() {
@@ -29,6 +31,44 @@ export async function pickTheme(selection) {
   if (v) theme.view = v;
 }
 
+// A scheme's or layout's key as words: "high-contrast" → "High contrast".
+export const nice = (s) => s.charAt(0).toUpperCase() + s.slice(1).replaceAll("-", " ");
+
+// The themes that can be picked (a refused one isn't listed), named, and
+// the change to a selection that picks one (its own colours and layout).
+export function themeList(view) {
+  return (view?.themes ?? [])
+    .filter((t) => t.manifest && !t.problem)
+    .map((t) => ({ id: t.id, label: t.manifest.name + (t.builtin ? "" : t.downloaded ? " (downloaded)" : " (yours)") }));
+}
+export const withTheme = (id) => ({ theme: id, scheme: "", layout: "" });
+
+// What a theme pick offers (`view`: themes_view), the same in Settings and
+// the fullscreen mode's Start → Theme: the usable themes, the picked one's
+// colours (with the system's first when it has light and dark), layouts,
+// text sizes and options, each with its current value. `withOption`
+// gives the change to a selection. Null without a manifest.
+export function themeChoices(view) {
+  const sel = view?.selection;
+  const m = sel && view.themes.find((t) => t.id === sel.theme && t.manifest)?.manifest;
+  if (!m) return null;
+  const names = Object.keys(m.schemes);
+  const follows = names.includes("light") && names.includes("dark");
+  const mine = sel.options?.[sel.theme] ?? {};
+  return {
+    manifest: m,
+    themes: themeList(view),
+    schemes: [...(follows ? [{ value: "", label: "With the system" }] : []), ...names.map((s) => ({ value: s, label: nice(s) }))],
+    scheme: sel.scheme || (follows ? "" : names[0]),
+    layouts: [m.layout, ...(m.layouts ?? []).filter((l) => l !== m.layout)].map((l) => ({ value: l, label: nice(l) })),
+    layout: sel.layout || m.layout,
+    textSizes: view.text_sizes,
+    textSize: sel.text_size,
+    options: (m.options ?? []).map((o) => ({ key: o.key, label: o.label, choices: o.choices, value: mine[o.key] ?? o.choices[0].value })),
+    withOption: (key, value) => ({ options: { ...sel.options, [sel.theme]: { ...mine, [key]: value } } }),
+  };
+}
+
 const LINK = "romforge-fs-theme";
 
 // The theme's stylesheet in the page (one at a time), or none.
@@ -39,10 +79,18 @@ export function themeLink(applied) {
     link = document.createElement("link");
     link.id = LINK;
     link.rel = "stylesheet";
+    link.onload = () => theme.cssLoads++;
     document.head.appendChild(link);
   }
   const href = `theme://localhost/${encodeURIComponent(applied.theme)}/theme.css?v=${applied.stamp}`;
   if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+}
+
+// The scheme `applied` shows (the system's light or dark when none is
+// picked) and the variables its scheme and options set.
+export function themeVars(applied, dark) {
+  const scheme = applied.scheme ?? (dark ? "dark" : "light");
+  return { scheme, vars: { ...(applied.schemes[scheme] ?? {}), ...applied.vars } };
 }
 
 // The variables and attributes for `applied` on `node` (the root), the
@@ -51,8 +99,7 @@ export function applyTheme(node, applied, dark) {
   for (const name of [...node.style]) if (name.startsWith("--fs-")) node.style.removeProperty(name);
   for (const a of [...node.attributes]) if (a.name.startsWith("data-fs-opt-")) node.removeAttribute(a.name);
   if (!applied) return;
-  const scheme = applied.scheme ?? (dark ? "dark" : "light");
-  const vars = { ...(applied.schemes[scheme] ?? {}), ...applied.vars };
+  const { scheme, vars } = themeVars(applied, dark);
   for (const [k, v] of Object.entries(vars)) node.style.setProperty(k, v);
   node.style.setProperty("--fs-scale", String(applied.scale));
   for (const [k, v] of Object.entries(applied.attrs)) node.setAttribute(`data-fs-opt-${k}`, v);

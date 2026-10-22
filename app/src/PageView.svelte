@@ -19,7 +19,8 @@
   let size = $state({ w: 0, h: 0 });
   let pending = $state(null);
   let note = $state("");
-  let pick = $state(color);
+  // The colour a new mark takes: the reader's, until one is picked here.
+  let pick = $derived(color);
   let drag = $state(null);
   let reading = $state(false);
   let task = null;
@@ -36,6 +37,8 @@
     layer?.cancel();
     pending = null;
     const p = await d.getPage(page);
+    // A newer draw started while the page loaded: it draws, not this one.
+    if (me !== drawn) return;
     const base = p.getViewport({ scale: 1 });
     const scale = (how === "width" ? w / base.width : Math.min(w / base.width, h / base.height)) * z;
     const view = p.getViewport({ scale });
@@ -51,6 +54,7 @@
       return; // A newer draw took over.
     }
     let content = await p.getTextContent();
+    if (me !== drawn) return;
     const scan = !content.items.some((i) => i.str?.trim());
     onscan?.(page, scan);
     if (scan && rowId && lang) {

@@ -23,7 +23,7 @@ type Seen = (Stamp, Arc<Members>, Md5s);
 /// Whether a file is an archive whose members are read here.
 pub fn is_archive(path: &Path) -> bool {
     path.extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("zip") || e.eq_ignore_ascii_case("7z"))
+        .is_some_and(|e| crate::scan::is_archive(&e.to_string_lossy().to_ascii_lowercase()))
 }
 
 /// The game of `entries` an archive holds (in any folder of it), if any:

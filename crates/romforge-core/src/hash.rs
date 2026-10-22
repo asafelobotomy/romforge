@@ -1,6 +1,8 @@
 //! Streaming CRC32 / MD5 / SHA1 over the raw data and the normalized data
 //! (header stripped, byte order fixed; see `headers.rs`) in one pass.
-//! Nothing is buffered beyond a chunk (16 KiB more for `.smd` blocks).
+//! Nothing is buffered beyond a chunk (16 KiB more for `.smd` blocks),
+//! except the first [`ident::PREFIX_LEN`] bytes (1 MiB) kept to read a
+//! disc's or cartridge's own ID from.
 
 use std::io::{self, Read};
 

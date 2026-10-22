@@ -1,16 +1,19 @@
 //! One item of a cleanup: what the database is needed for (before and
 //! after) on the calling thread, the writing itself on a worker.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
+use crate::hash::{Hashes, hash_stream};
+use crate::view::LibraryView;
 use crate::{Error, layout};
 
 use super::super::items::write_set;
-use super::super::parts::extras;
+use super::super::parts::{extras, open_part};
 use super::super::write::{copy_folder, place, write_folder_zip, write_loose, write_zip};
-use super::super::{Format, Item};
+use super::super::{Format, Item, Part};
 use super::{journal_output, journal_tree};
 
 /// Sets and loose games write through the database as they go: they stay
@@ -35,7 +38,12 @@ pub(super) struct Written {
 }
 
 /// Checks and reads for an item written on a worker.
-pub(super) fn prepare(conn: &Connection, item: &Item, staging: PathBuf) -> Result<Prepared, Error> {
+pub(super) fn prepare(
+    conn: &Connection,
+    view: &LibraryView,
+    item: &Item,
+    staging: PathBuf,
+) -> Result<Prepared, Error> {
     if item.target.exists() {
         return Err(Error::Cleanup(format!(
             "{} already exists",
@@ -53,7 +61,7 @@ pub(super) fn prepare(conn: &Connection, item: &Item, staging: PathBuf) -> Resul
     let part = dir.join(layout::part(&name));
     Ok(Prepared {
         staging,
-        extras: extras(conn, &item.row_id)?,
+        extras: extras(conn, view, &item.row_id)?,
         dir,
         name,
         part,
@@ -114,6 +122,11 @@ pub(super) fn write(item: &Item, p: &Prepared) -> Result<Written, Error> {
     }
     if let Err(e) = place(part, &item.target) {
         let _ = std::fs::remove_file(part);
+        // The sidecar just put in place is this attempt's own: it goes too,
+        // or a later attempt would find it there.
+        if let Some(side) = &item.sidecar {
+            let _ = std::fs::remove_dir_all(side);
+        }
         return Err(e);
     }
     Ok(Written {
@@ -122,19 +135,56 @@ pub(super) fn write(item: &Item, p: &Prepared) -> Result<Written, Error> {
     })
 }
 
-/// Journal what a worker put in place, so undo can take it back.
-pub(super) fn journal(conn: &Connection, batch: i64, item: &Item, w: &Written) -> Result<(), Error> {
+/// Journal what a worker is about to put in place, before it does: a
+/// crash in between leaves rows undo can act on (a row for nothing is
+/// dropped; a folder still marked `dir` goes to the trash whole), never a
+/// file nothing knows about.
+pub(super) fn journal_intent(conn: &Connection, batch: i64, item: &Item) -> Result<(), Error> {
     if item.format == Format::Dir {
-        return journal_tree(conn, batch, &item.target);
+        return journal_output(conn, batch, &item.target, "dir");
     }
-    if let (true, Some(side)) = (w.sidecar, &item.sidecar) {
-        journal_tree(conn, batch, side)?;
+    journal_output(conn, batch, &item.target, "file")?;
+    if let Some(side) = &item.sidecar {
+        journal_output(conn, batch, side, "dir")?;
     }
-    journal_output(conn, batch, &item.target, "file")
+    Ok(())
+}
+
+/// The intent rows of an item that wasn't written after all.
+pub(super) fn forget_intent(conn: &Connection, batch: i64, item: &Item) -> Result<(), Error> {
+    for p in std::iter::once(&item.target).chain(&item.sidecar) {
+        conn.execute(
+            "DELETE FROM cleanup_outputs WHERE batch_id = ?1 AND path = ?2",
+            params![batch, p.to_string_lossy()],
+        )?;
+    }
+    Ok(())
+}
+
+/// Journal what a worker put in place, so undo can take it back: a folder
+/// it wrote (a folder game, a sidecar) with what is in it, so undo takes
+/// just that and leaves anything added since.
+pub(super) fn journal(conn: &Connection, batch: i64, item: &Item, w: &Written) -> Result<(), Error> {
+    let dir = match (&item.format, w.sidecar, &item.sidecar) {
+        (Format::Dir, _, _) => &item.target,
+        (_, true, Some(side)) => side,
+        _ => return Ok(()),
+    };
+    conn.execute(
+        "UPDATE cleanup_outputs SET kind = 'setdir' WHERE batch_id = ?1 AND path = ?2",
+        params![batch, dir.to_string_lossy()],
+    )?;
+    journal_tree(conn, batch, dir)
 }
 
 /// A set or loose game, written (and journaled) as it goes.
-pub(super) fn write_here(conn: &Connection, batch: i64, item: &Item, staging: &Path) -> Result<bool, Error> {
+pub(super) fn write_here(
+    conn: &Connection,
+    view: &LibraryView,
+    batch: i64,
+    item: &Item,
+    staging: &Path,
+) -> Result<bool, Error> {
     if item.target.exists() {
         return Err(Error::Cleanup(format!(
             "{} already exists",
@@ -154,7 +204,7 @@ pub(super) fn write_here(conn: &Connection, batch: i64, item: &Item, staging: &P
         return Ok(false);
     }
     let written =
-        extras(conn, &item.row_id).and_then(|extras| write_loose(conn, batch, item, &extras, staging));
+        extras(conn, view, &item.row_id).and_then(|extras| write_loose(conn, batch, item, &extras, staging));
     if let Err(e) = written {
         if new_dir && std::fs::remove_dir(dir).is_ok() {
             conn.execute(
@@ -167,8 +217,117 @@ pub(super) fn write_here(conn: &Connection, batch: i64, item: &Item, staging: &P
     Ok(false)
 }
 
+/// A game already in `games` (Games/): before its copies outside go, its
+/// target must still be there and every ROM of them still held there,
+/// read now and checked by size and SHA1.
+pub(super) fn still_held(conn: &Connection, item: &Item, games: &Path, staging: &Path) -> Result<(), Error> {
+    if !item.target.is_file() {
+        return Err(Error::Cleanup(format!(
+            "{} is gone since the plan; its copies stay",
+            item.target.display()
+        )));
+    }
+    let mut at = conn.prepare_cached("SELECT path, member FROM files WHERE sha1 = ?1 AND size = ?2")?;
+    let mut chds: HashMap<PathBuf, Vec<(String, Hashes)>> = HashMap::new();
+    for c in item
+        .copies
+        .iter()
+        .filter(|p| !p.name.to_lowercase().ends_with(".cue"))
+    {
+        let held: Vec<(String, String)> = at
+            .query_map(params![c.sha1, c.size], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let ok = held
+            .into_iter()
+            .filter(|(path, _)| Path::new(path).starts_with(games))
+            .any(|(path, member)| {
+                let path = PathBuf::from(path);
+                let same = |h: &Hashes| h.raw.sha1 == c.sha1 && h.raw.size == c.size;
+                if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("chd")) {
+                    let members = chds
+                        .entry(path.clone())
+                        .or_insert_with(|| crate::disc::chd_members(&path).unwrap_or_default());
+                    return members
+                        .iter()
+                        .any(|(n, h)| (member.is_empty() || *n == member) && same(h));
+                }
+                let part = Part {
+                    member,
+                    path,
+                    ..c.clone()
+                };
+                open_part(&part, staging)
+                    .and_then(|r| Ok(hash_stream(r, c.size)?))
+                    .is_ok_and(|h| same(&h))
+            });
+        if !ok {
+            return Err(Error::Cleanup(format!(
+                "{} no longer holds {} as planned; its copies stay",
+                games.display(),
+                c.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl Prepared {
     pub(super) fn staging(&self) -> &Path {
         &self.staging
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A disc whose CHD can't go in place (something appeared there)
+    /// leaves no sidecar behind either.
+    #[test]
+    fn a_failed_place_takes_its_sidecar_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let iso = dir.path().join("Game.iso");
+        let data: Vec<u8> = (0..2048u32 * 4).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&iso, &data).unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let target = out.join("Game.chd");
+        std::fs::write(&target, b"appeared meanwhile").unwrap();
+        let item = Item {
+            row_id: "r".into(),
+            title: "Game".into(),
+            system: "ps2".into(),
+            format: Format::ChdDvd,
+            target: target.clone(),
+            sidecar: Some(out.join("Game")),
+            parts: vec![Part {
+                name: "Game.iso".into(),
+                path: iso,
+                member: String::new(),
+                size: data.len() as u64,
+                sha1: crate::cleanup::sha1_of(&data[..]).unwrap(),
+            }],
+            trash: vec![],
+            kept: vec![],
+            copies: vec![],
+            sheet: None,
+            existing: false,
+            folder: None,
+            code: None,
+        };
+        let p = Prepared {
+            staging: dir.path().join("staging"),
+            dir: out.clone(),
+            name: "Game.chd".into(),
+            part: out.join(layout::part("Game.chd")),
+            extras: vec![("Game.romforge.md".into(), b"# Game".to_vec())],
+        };
+        assert!(write(&item, &p).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"appeared meanwhile");
+        let left: Vec<_> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["Game.chd"], "no sidecar, no part file");
     }
 }

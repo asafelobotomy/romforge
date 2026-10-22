@@ -9,7 +9,7 @@ use crate::args::Command;
 pub fn run(lib: &mut Library, command: Command) -> Result<()> {
     match command {
         Command::Games { platform, sort, desc } => {
-            use romforge_core::view::{Category, GameRow, SortBy};
+            use romforge_core::view::{GameRow, SortBy};
             let by = SortBy::parse(&sort).ok_or_else(|| {
                 anyhow::anyhow!("--sort takes title, platform, year or status, not {sort:?}")
             })?;
@@ -26,26 +26,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             };
             // A game's original, then its versions under their headings.
-            for r in v.rows.iter().filter(|r| {
-                r.main
-                    && platform
-                        .as_deref()
-                        .is_none_or(|p| r.system.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(p)))
-            }) {
+            for r in v.main_rows(platform.as_deref()) {
                 line(r, "");
-                let Some(group) = &r.group else {
-                    continue;
-                };
                 let mut patches = false;
-                for c in Category::ORDER {
-                    let of: Vec<&GameRow> = v
-                        .rows
-                        .iter()
-                        .filter(|m| m.group.as_ref() == Some(group) && m.category == Some(c))
-                        .collect();
-                    if of.is_empty() {
-                        continue;
-                    }
+                for (c, of) in v.versions_of(r) {
                     let indent = if c.is_patch() {
                         if !patches {
                             println!("{:<28} - Patches", "");

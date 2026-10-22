@@ -2,6 +2,7 @@
   import { thumbSrc, artSrc } from "../lib.js";
   import { listLabel } from "../listLabel.js";
   import { theme } from "./theme.svelte.js";
+  import { gameKey } from "./fshome.js";
 
   // The list layout: a platform's games as one column of titles, the
   // focused one's box art large beside it. Only the rows in view are
@@ -37,7 +38,7 @@
         <li>
           <button class="row" class:sel={i === index} class:focus={focused && i === index} data-fs-row={r.id} data-fs-selected={i === index ? "" : undefined} onclick={() => (i === index ? open() : pick(i))}>
             <span data-fs-title>{listLabel(r)}</span>
-            {#if fav.has(`${r.system}\t${r.title}`)}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+            {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
             {#if r.year}<span class="year">{r.year}</span>{/if}
           </button>
         </li>

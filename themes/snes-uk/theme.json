@@ -27,7 +27,7 @@
       "--fs-text": "#e4e4ea",
       "--fs-muted": "#9a9aa8",
       "--fs-accent": "#7f97e3",
-      "--fs-accent-text": "#111111",
+      "--fs-accent-text": "#ffffff",
       "--fs-line": "#ffffff1f",
       "--fs-focus": "#7f97e3"
     }
@@ -37,7 +37,7 @@
       "key": "corners",
       "label": "Card corners",
       "choices": [
-        { "value": "round", "label": "Round", "vars": { "--fs-radius": "0.8vh" } },
+        { "value": "round", "label": "Round", "vars": { "--fs-radius": "1vh" } },
         { "value": "square", "label": "Square", "vars": { "--fs-radius": "0" } }
       ]
     },

@@ -6,17 +6,18 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use romforge_core::controller::PadEvent;
 use romforge_core::hotkeys::{Action, Chords, HotkeyEvent};
 use romforge_core::launch::Session;
-use romforge_core::launch::controls::{self, Remote, Route};
+use romforge_core::launch::controls::{self, Remote};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::play::Now;
 
-/// The chords' state (one pad listener, one of these), whether the hotkeys
+/// The chords' state (one pad listener, one of these; each pad's buttons
+/// kept apart in it), whether the hotkeys
 /// are on for the game running (read when it started), and the command
 /// channel of the game running (by its pid).
 #[derive(Default)]
@@ -45,9 +46,18 @@ pub fn pad(app: &AppHandle, e: &PadEvent) {
     };
     let now = Instant::now();
     let events = match *e {
-        PadEvent::Button { button, down: true } => chords.press(button, now),
-        PadEvent::Button { button, down: false } => chords.release(button),
-        PadEvent::Stick { x, y } => chords.stick(x, y),
+        PadEvent::Button {
+            pad,
+            button,
+            down: true,
+        } => chords.press(pad, button, now),
+        PadEvent::Button {
+            pad,
+            button,
+            down: false,
+        } => chords.release(pad, button),
+        PadEvent::Stick { pad, x, y } => chords.stick(pad, x, y),
+        PadEvent::Disconnected { pad, .. } => chords.disconnect(pad),
         PadEvent::Tick => chords.tick(now),
         _ => Vec::new(),
     };
@@ -95,43 +105,17 @@ fn remote(watcher: &Watcher, s: &Session) -> Option<Arc<Remote>> {
     }
 }
 
-/// Do a hotkey's action in the running game.
+/// Do a hotkey's action in the running game (`controls::act` decides how),
+/// off the pad's thread.
 fn start(watcher: &Watcher, s: &Arc<Session>, action: Action) {
-    let quit = |s: Arc<Session>| {
-        std::thread::spawn(move || s.stop(crate::play::GRACE));
-    };
-    match controls::route(&s.playing.emulator, action) {
-        Route::Command => {
-            let Some(r) = remote(watcher, s) else {
-                // No channel (no RomForge folder): quit still works.
-                if action == Action::Quit {
-                    quit(s.clone());
-                }
-                return;
-            };
-            let s = s.clone();
-            std::thread::spawn(move || {
-                let sent = r.start(action).is_ok();
-                // A quit it didn't hear (or is still asking about): asked
-                // the usual way.
-                if action == Action::Quit {
-                    if sent {
-                        std::thread::sleep(Duration::from_secs(3));
-                    }
-                    if s.is_running() {
-                        let _ = s.stop(crate::play::GRACE);
-                    }
-                }
-            });
-        }
-        Route::Stop => quit(s.clone()),
-        Route::Bound | Route::None => {}
-    }
+    let r = remote(watcher, s);
+    let s = s.clone();
+    std::thread::spawn(move || controls::act(&s, r.as_deref(), action, crate::play::GRACE));
 }
 
 /// The Hotkeys tab: the table, the radial ring, and what each of these
 /// emulators gets.
 #[tauri::command]
-pub fn hotkeys_view(emulators: Vec<String>) -> romforge_core::hotkeys::HotkeysView {
-    romforge_core::hotkeys::view(emulators.iter().map(String::as_str))
+pub async fn hotkeys_view(emulators: Vec<String>) -> Result<romforge_core::hotkeys::HotkeysView, String> {
+    crate::db::blocking(move || Ok(romforge_core::hotkeys::view(emulators.iter().map(String::as_str)))).await
 }

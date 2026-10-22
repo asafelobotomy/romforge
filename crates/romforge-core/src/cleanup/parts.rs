@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
@@ -114,10 +114,11 @@ pub(crate) fn verified_parts(
 /// ("Track 2" before "Track 10") as there is no DAT to give it.
 pub(crate) fn named_parts(
     conn: &Connection,
+    view: &view::LibraryView,
     row_id: &str,
     source: &Source,
 ) -> Result<Option<PartsAndCopies>, Error> {
-    let d = view::detail(conn, row_id)?;
+    let d = view::detail_in(conn, view, row_id)?;
     let mut all: Vec<Part> = d
         .files
         .iter()
@@ -195,7 +196,11 @@ pub(crate) fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Er
                 m.read_to_end(&mut buf)?;
                 return Ok(Box::new(std::io::Cursor::new(buf)));
             }
-            // A big member (a disc track) is unpacked to staging instead.
+            // A big member (a disc track) streams from the zip itself when
+            // stored or deflated; another method is unpacked to staging.
+            if let Some(r) = stream_member(&part.path, &m)? {
+                return Ok(r);
+            }
             std::fs::create_dir_all(staging)?;
             let out = staging.join(format!("{}.part", part.sha1));
             std::io::copy(&mut m, &mut File::create(&out)?)?;
@@ -235,9 +240,35 @@ pub(crate) fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Er
     }
 }
 
+/// A zip member's data read straight from its place in the file (its own
+/// handle, so no borrow of the archive): stored as is, or inflated.
+/// `None` for any other method, or an encrypted member.
+pub(super) fn stream_member<R: Read>(
+    zip: &Path,
+    m: &zip::read::ZipFile<'_, R>,
+) -> Result<Option<Box<dyn Read>>, Error> {
+    let Some(start) = m.data_start().filter(|_| !m.encrypted()) else {
+        return Ok(None);
+    };
+    let open = || -> std::io::Result<_> {
+        let mut f = File::open(zip)?;
+        f.seek(SeekFrom::Start(start))?;
+        Ok(BufReader::new(f).take(m.compressed_size()))
+    };
+    Ok(match m.compression() {
+        zip::CompressionMethod::Stored => Some(Box::new(open()?)),
+        zip::CompressionMethod::Deflated => Some(Box::new(flate2::read::DeflateDecoder::new(open()?))),
+        _ => None,
+    })
+}
+
 /// What goes in the `romforge/` folder (or sidecar): (file name, bytes).
-pub(super) fn extras(conn: &Connection, row_id: &str) -> Result<Vec<(String, Vec<u8>)>, Error> {
-    let d = view::detail(conn, row_id)?;
+pub(super) fn extras(
+    conn: &Connection,
+    view: &view::LibraryView,
+    row_id: &str,
+) -> Result<Vec<(String, Vec<u8>)>, Error> {
+    let d = view::detail_in(conn, view, row_id)?;
     let mut out = vec![(
         format!("{}{}", sanitize(&d.row.title), layout::DETAILS_SUFFIX),
         details_md(&d).into_bytes(),

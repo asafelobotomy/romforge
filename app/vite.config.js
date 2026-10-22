@@ -6,5 +6,5 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   // Two pages: the app, and the radial menu's overlay window.
-  build: { rollupOptions: { input: { main: "index.html", overlay: "overlay.html" } } },
+  build: { rolldownOptions: { input: { main: "index.html", overlay: "overlay.html" } } },
 });

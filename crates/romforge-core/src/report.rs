@@ -10,11 +10,13 @@ use crate::identify::Status;
 
 /// The match kinds that verify (house rule 8: size + SHA1, or size + MD5;
 /// `confirmed`: an arcade ROM known only by CRC32 whose file's SHA1 fits
-/// the same ROM in another DAT), as an SQL set: `m.via IN strong!()`. A
-/// CRC32 hit (`crc32`) or a fitting sheet (`sheet`) never does.
+/// the same ROM in an arcade DAT; `disk`: an arcade DAT's disk by the
+/// SHA1 a CHD's header keeps, the only hash a disk has), as an SQL set:
+/// `m.via IN strong!()`. A CRC32 hit (`crc32`) or a fitting sheet
+/// (`sheet`) never does.
 macro_rules! strong {
     () => {
-        "('sha1', 'md5', 'confirmed')"
+        "('sha1', 'md5', 'confirmed', 'disk')"
     };
 }
 
@@ -28,8 +30,9 @@ macro_rules! holding {
 }
 pub(crate) use {holding, strong};
 
-/// ROMs that a matched (or duplicate) file hit by size + SHA1/MD5 inside
-/// that file's scan scope.
+/// ROMs that a matched (or duplicate) file hit strongly ([`strong!`]:
+/// size + SHA1/MD5, a confirmed arcade ROM, a disk) inside that file's
+/// scan scope.
 pub(crate) const HAD: &str = concat!(
     "
     had AS (
@@ -150,11 +153,22 @@ impl LibraryFile {
     }
 }
 
-fn display_path(path: &str, member: &str) -> String {
+/// `path` for a plain file, `path#member` for an archive member.
+pub(crate) fn display_path(path: &str, member: &str) -> String {
     if member.is_empty() {
         path.to_owned()
     } else {
         format!("{path}#{member}")
+    }
+}
+
+/// A file's place, where its game's other files are: the archive it is in,
+/// or the folder holding it.
+pub(crate) fn place_of<'a>(path: &'a str, member: &str) -> Option<&'a str> {
+    if member.is_empty() {
+        path.rsplit_once('/').map(|(dir, _)| dir)
+    } else {
+        Some(path)
     }
 }
 
@@ -354,6 +368,8 @@ pub fn files(conn: &Connection, filter: &LibraryFilter) -> Result<Vec<LibraryFil
     Ok(out)
 }
 
+/// The systems with imported DATs, and how many each has (not the systems
+/// you have files for: see `library::lists::systems_with_files`).
 pub fn systems_in_use(conn: &Connection) -> Result<Vec<SystemInfo>, Error> {
     let mut stmt = conn.prepare(
         "SELECT s.system_id, s.key, s.name, count(d.dat_id)

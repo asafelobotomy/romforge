@@ -2,6 +2,7 @@
 //! runs, stopped by asking it to quit first, its play time recorded when
 //! it ends ("game-ended" tells the page).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -17,6 +18,17 @@ pub struct Now(pub Mutex<Option<Arc<Session>>>);
 /// How long a game gets to quit on its own before it is stopped hard.
 pub(crate) const GRACE: Duration = Duration::from_secs(10);
 
+/// A game is being started (between the check and the session being
+/// kept): a second Play meanwhile is refused, not started beside it.
+static STARTING: AtomicBool = AtomicBool::new(false);
+
+struct Starting;
+impl Drop for Starting {
+    fn drop(&mut self) {
+        STARTING.store(false, Ordering::SeqCst);
+    }
+}
+
 #[tauri::command]
 /// Start one library row (exactly its files).
 pub async fn launch(
@@ -30,6 +42,10 @@ pub async fn launch(
     {
         return Err(format!("{} is still running: stop it first", s.playing.game));
     }
+    if STARTING.swap(true, Ordering::SeqCst) {
+        return Err("a game is starting: wait for it".into());
+    }
+    let _starting = Starting;
     let (spec, hotkeys) = read(&db, move |lib| {
         Ok((lib.launch_row(&lib.env()?, &row_id, None)?, lib.hotkeys_on()?))
     })
@@ -41,15 +57,22 @@ pub async fn launch(
     let session = Arc::new(blocking(move || Session::start(&spec)).await?);
     let playing = session.playing.clone();
     *now.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());
-    let write = db.write.clone();
+    let (write, read, detached) = (db.write.clone(), db.read.clone(), db.detached.clone());
     std::thread::spawn(move || {
         let ended = session.wait();
-        {
+        // Play time on a connection of its own, so a long job holding
+        // `write` (Enrich, a scan) doesn't keep the window away. If the
+        // database is busy that long (a scan), it is kept once `write` is
+        // free instead, after the window is back.
+        let quick = crate::db::apart(&read, &detached, |at| {
+            romforge_core::Library::edit(at, |lib| lib.record_play(&ended).map(drop))
+        });
+        crate::tray::game_ended(&app);
+        let _ = app.emit("game-ended", &ended);
+        if quick.is_err() {
             let mut lib = write.lock().unwrap_or_else(|e| e.into_inner());
             let _ = lib.record_play(&ended);
         }
-        crate::tray::game_ended(&app);
-        let _ = app.emit("game-ended", &ended);
     });
     Ok(playing)
 }

@@ -23,6 +23,8 @@ mod keys;
 pub use keys::*;
 mod store;
 pub use store::*;
+mod regions;
+pub use regions::parse_regions;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
@@ -118,6 +120,11 @@ pub const WHILE_PLAYING: &[&str] = &["tray", "minimise", "stay"];
 
 fn default_list_age() -> u32 {
     30
+}
+
+/// `[0, 10, 30]` as "0, 10, 30", for the errors.
+fn list(choices: &[u32]) -> String {
+    choices.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
 }
 
 fn default_true() -> bool {
@@ -278,11 +285,21 @@ impl Settings {
             start_fullscreen: self.start_fullscreen,
             attract_minutes: match self.attract_minutes {
                 n if ATTRACT_MINUTES.contains(&n) => n,
-                n => return bad(format!("attract mode after {n} minutes: one of 0, 3, 5, 10")),
+                n => {
+                    return bad(format!(
+                        "attract mode after {n} minutes: one of {}",
+                        list(ATTRACT_MINUTES)
+                    ));
+                }
             },
             screensaver_minutes: match self.screensaver_minutes {
                 n if SCREENSAVER_MINUTES.contains(&n) => n,
-                n => return bad(format!("screensaver after {n} minutes: one of 0, 10, 30")),
+                n => {
+                    return bad(format!(
+                        "screensaver after {n} minutes: one of {}",
+                        list(SCREENSAVER_MINUTES)
+                    ));
+                }
             },
             music_dir: match &self.music_dir {
                 Some(p) if p.as_os_str().is_empty() => None,

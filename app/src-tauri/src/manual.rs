@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use romforge_core::manual::ManualInfo;
 
-use crate::db::{Db, Res, edit, read, read_net, with};
+use crate::db::{Db, Res, blocking, edit, read, read_net, write_net};
 
 #[tauri::command]
 pub async fn manual_info(db: tauri::State<'_, Db>, row_id: String) -> Res<ManualInfo> {
@@ -31,7 +31,8 @@ pub async fn manual_offers(
     read_net(&db, move |lib| lib.manual_offers(&row_id)).await
 }
 
-/// Download the manual the user picked.
+/// Download the manual the user picked: on its own connection
+/// ([`write_net`]), so `write` stays free while it downloads.
 #[tauri::command]
 pub async fn download_manual_offer(
     app: tauri::AppHandle,
@@ -41,13 +42,14 @@ pub async fn download_manual_offer(
     job: Option<u64>,
 ) -> Res<PathBuf> {
     let job = crate::jobs::Job::start(&app, job);
-    with(&db, move |lib| {
+    write_net(&db, move |lib| {
         job.watch("manual", || lib.download_manual_offer(&row_id, &offer))
     })
     .await
 }
 
-/// Download it from Vimm's Lair: only ever on the user's click.
+/// Download it from Vimm's Lair: only ever on the user's click (on its
+/// own connection, as [`download_manual_offer`]).
 #[tauri::command]
 pub async fn download_manual(
     app: tauri::AppHandle,
@@ -57,7 +59,7 @@ pub async fn download_manual(
     job: Option<u64>,
 ) -> Res<PathBuf> {
     let job = crate::jobs::Job::start(&app, job);
-    with(&db, move |lib| {
+    write_net(&db, move |lib| {
         job.watch("manual", || lib.download_manual(&row_id, dpi))
     })
     .await
@@ -130,21 +132,22 @@ pub async fn manual_ocr_texts(
 
 /// The OCR languages, which are downloaded, and the folder they're in.
 #[tauri::command]
-pub fn ocr_languages() -> (Vec<romforge_core::manual::OcrLang>, PathBuf) {
-    let cache = romforge_core::enrich::default_cache_dir();
-    (
-        romforge_core::manual::ocr_langs(&cache),
-        romforge_core::manual::ocr_dir(&cache),
-    )
+pub async fn ocr_languages() -> Res<(Vec<romforge_core::manual::OcrLang>, PathBuf)> {
+    blocking(|| {
+        let cache = romforge_core::enrich::default_cache_dir();
+        Ok((
+            romforge_core::manual::ocr_langs(&cache),
+            romforge_core::manual::ocr_dir(&cache),
+        ))
+    })
+    .await
 }
 
 /// Download an OCR language (on the user's asking).
 #[tauri::command]
 pub async fn ocr_download(code: String) -> Res<PathBuf> {
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         romforge_core::manual::download_ocr_lang(&romforge_core::enrich::default_cache_dir(), &code)
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
 }

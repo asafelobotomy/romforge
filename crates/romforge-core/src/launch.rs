@@ -57,7 +57,8 @@ pub struct LaunchSpec {
     pub args: Vec<String>,
     /// Set in the emulator's environment.
     pub env: Vec<(String, String)>,
-    /// romforge's config for the emulator, written by [`spawn`] first.
+    /// romforge's config for the emulator, written first by
+    /// [`Session::start`] (or [`spawn`]).
     pub prepare: Prepare,
 }
 
@@ -245,7 +246,7 @@ fn is_executable(p: &Path) -> bool {
 ///
 /// `env` is set for the emulator: in the process for a program, as
 /// `--env=` for a Flatpak (which sets its own XDG folders otherwise). The
-/// third part is what [`spawn`] sets.
+/// third part is what the process gets ([`Session::start`], [`spawn`]).
 fn command(
     runner: &Runner,
     args: Vec<String>,
@@ -282,20 +283,42 @@ pub(crate) struct Vars<'a> {
 }
 
 /// An emulator's arguments for a game: `{rom}` the file, `{dir}` its
-/// folder, `{set}` the set's name, `{core}` the RetroArch core.
+/// folder, `{set}` the set's name, `{core}` the RetroArch core, `{config}`
+/// romforge's config folder, `{system}` the system. One pass: a value that
+/// itself holds a placeholder's text (a ROM named `{set}.zip`) stays as it is.
 fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
+    let rom = v.rom.to_string_lossy();
     let dir = v.rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
     let core = v.core.map(|c| c.to_string_lossy()).unwrap_or_default();
     let config = v.config.map(|c| c.to_string_lossy()).unwrap_or_default();
+    let vars: [(&str, &str); 6] = [
+        ("{rom}", &rom),
+        ("{dir}", &dir),
+        ("{set}", v.set),
+        ("{core}", &core),
+        ("{config}", &config),
+        ("{system}", v.system),
+    ];
     args.iter()
         .map(|a| {
-            a.as_ref()
-                .replace("{rom}", &v.rom.to_string_lossy())
-                .replace("{dir}", &dir)
-                .replace("{set}", v.set)
-                .replace("{core}", &core)
-                .replace("{config}", &config)
-                .replace("{system}", v.system)
+            let mut rest = a.as_ref();
+            let mut out = String::with_capacity(rest.len());
+            while let Some(i) = rest.find('{') {
+                out.push_str(&rest[..i]);
+                rest = &rest[i..];
+                match vars.iter().find(|(k, _)| rest.starts_with(k)) {
+                    Some((k, value)) => {
+                        out.push_str(value);
+                        rest = &rest[k.len()..];
+                    }
+                    None => {
+                        out.push('{');
+                        rest = &rest[1..];
+                    }
+                }
+            }
+            out.push_str(rest);
+            out
         })
         .collect()
 }
@@ -323,11 +346,6 @@ impl Env {
     /// How `e` would be started, if it is installed.
     pub fn find(&self, e: &KnownEmulator) -> Option<String> {
         self.known(e).map(|r| describe(&r))
-    }
-
-    /// Whether RetroArch's core `name` is installed.
-    pub fn core_installed(&self, name: &str) -> bool {
-        self.core(name).is_some()
     }
 
     /// Where RetroArch's core `name` is found.

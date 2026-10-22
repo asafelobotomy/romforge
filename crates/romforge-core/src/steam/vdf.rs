@@ -4,7 +4,9 @@
 //!
 //! Binary: a value is a type byte, its key (UTF-8, `00`-ended), then the
 //! value: `00` a map (values until `08`), `01` a string (`00`-ended), `02`
-//! a little-endian 32-bit int. The file is one map.
+//! a little-endian 32-bit int. The file is one map. A string that isn't
+//! UTF-8 (another tool's shortcut) is kept as its bytes ([`Value::Raw`]),
+//! so a rewrite leaves it as it was; a key that isn't is refused.
 
 use crate::Error;
 
@@ -13,6 +15,8 @@ use crate::Error;
 pub enum Value {
     Map(Map),
     Str(String),
+    /// A string that isn't UTF-8, byte for byte.
+    Raw(Vec<u8>),
     Int(u32),
 }
 
@@ -23,6 +27,8 @@ const MAP: u8 = 0x00;
 const STR: u8 = 0x01;
 const INT: u8 = 0x02;
 const END: u8 = 0x08;
+/// How deep maps may nest (Steam's go three deep).
+const MAX_DEPTH: usize = 32;
 
 fn bad(why: &str) -> Error {
     Error::Settings(format!("shortcuts.vdf: {why}"))
@@ -31,21 +37,26 @@ fn bad(why: &str) -> Error {
 /// Parse a whole binary VDF file (its top map). An empty file is an empty map.
 pub fn read(bytes: &[u8]) -> Result<Map, Error> {
     let mut at = 0;
-    let map = map(bytes, &mut at, true)?;
+    let map = map(bytes, &mut at, 0)?;
     Ok(map)
 }
 
-fn cstr(b: &[u8], at: &mut usize) -> Result<String, Error> {
+/// A `00`-ended string's bytes.
+fn cbytes(b: &[u8], at: &mut usize) -> Result<Vec<u8>, Error> {
     let end = b[*at..]
         .iter()
         .position(|&c| c == 0)
         .ok_or_else(|| bad("a string isn't ended"))?;
-    let s = String::from_utf8_lossy(&b[*at..*at + end]).into_owned();
+    let s = b[*at..*at + end].to_vec();
     *at += end + 1;
     Ok(s)
 }
 
-fn map(b: &[u8], at: &mut usize, top: bool) -> Result<Map, Error> {
+fn map(b: &[u8], at: &mut usize, depth: usize) -> Result<Map, Error> {
+    if depth > MAX_DEPTH {
+        return Err(bad("maps nest too deep"));
+    }
+    let top = depth == 0;
     let mut out = Map::new();
     loop {
         let Some(&t) = b.get(*at) else {
@@ -60,10 +71,13 @@ fn map(b: &[u8], at: &mut usize, top: bool) -> Result<Map, Error> {
         if t == END {
             return Ok(out);
         }
-        let key = cstr(b, at)?;
+        let key = String::from_utf8(cbytes(b, at)?).map_err(|_| bad("a key isn't UTF-8"))?;
         let value = match t {
-            MAP => Value::Map(map(b, at, false)?),
-            STR => Value::Str(cstr(b, at)?),
+            MAP => Value::Map(map(b, at, depth + 1)?),
+            STR => match String::from_utf8(cbytes(b, at)?) {
+                Ok(s) => Value::Str(s),
+                Err(e) => Value::Raw(e.into_bytes()),
+            },
             INT => {
                 let v = b.get(*at..*at + 4).ok_or_else(|| bad("an int is cut short"))?;
                 *at += 4;
@@ -86,7 +100,7 @@ fn put_map(out: &mut Vec<u8>, m: &Map) {
     for (k, v) in m {
         let t = match v {
             Value::Map(_) => MAP,
-            Value::Str(_) => STR,
+            Value::Str(_) | Value::Raw(_) => STR,
             Value::Int(_) => INT,
         };
         out.push(t);
@@ -96,6 +110,10 @@ fn put_map(out: &mut Vec<u8>, m: &Map) {
             Value::Map(inner) => put_map(out, inner),
             Value::Str(s) => {
                 out.extend_from_slice(s.as_bytes());
+                out.push(0);
+            }
+            Value::Raw(s) => {
+                out.extend_from_slice(s);
                 out.push(0);
             }
             Value::Int(i) => out.extend_from_slice(&i.to_le_bytes()),
@@ -164,10 +182,13 @@ pub fn read_text(text: &str) -> Result<Map, Error> {
         }
     }
     let mut at = 0;
-    text_map(&tokens, &mut at)
+    text_map(&tokens, &mut at, 0)
 }
 
-fn text_map(t: &[Option<String>], at: &mut usize) -> Result<Map, Error> {
+fn text_map(t: &[Option<String>], at: &mut usize, depth: usize) -> Result<Map, Error> {
+    if depth > MAX_DEPTH {
+        return Err(Error::Settings("vdf: maps nest too deep".into()));
+    }
     let mut out = Map::new();
     while let Some(tok) = t.get(*at) {
         *at += 1;
@@ -179,7 +200,7 @@ fn text_map(t: &[Option<String>], at: &mut usize) -> Result<Map, Error> {
         match t.get(*at) {
             Some(None) => {
                 *at += 1;
-                out.push((key, Value::Map(text_map(t, at)?)));
+                out.push((key, Value::Map(text_map(t, at, depth + 1)?)));
             }
             Some(Some(v)) if v != "\u{0}}" => {
                 *at += 1;

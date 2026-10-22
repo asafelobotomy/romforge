@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { edit } from "./jobs.svelte.js";
   import { artSrc } from "./lib.js";
+  import { displayTitle } from "./labels.js";
 
   // Details' art picker: every picture of one kind (fanart for now) the
   // sources have for the game, to replace the one shown. The pick is kept
@@ -40,7 +41,7 @@
     failure = "";
     busy = `Saving the ${label.toLowerCase()}…`;
     const r = row;
-    const name = r.label ?? r.title;
+    const name = displayTitle(r);
     // Behind a scan or the like it waits its turn: the picker closes.
     let waiting = false;
     const onWait = (why) => {
@@ -65,7 +66,7 @@
 {#if open && row}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && !busy && (open = false)}>
     <div class="dialog picker" role="dialog" aria-modal="true" aria-labelledby="art-title">
-      <h2 id="art-title">{label} for {row.label ?? row.title}</h2>
+      <h2 id="art-title">{label} for {displayTitle(row)}</h2>
       {#if current}
         <div class="now">
           <img src={current} alt="The {label.toLowerCase()} now" />

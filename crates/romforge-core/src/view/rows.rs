@@ -7,6 +7,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::folders::{folder_games, unknown_sheets};
 use super::{FileRec, GameRow, RowStatus, game_id};
+use crate::identify::Status;
 use crate::report::{GAME_HAVE, HAD, IS_HAVE};
 use crate::{Error, systems};
 
@@ -253,46 +254,23 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
                     )
                 }
             };
-            let status = match f.status.as_str() {
-                "matched" => RowStatus::Incomplete,
-                "candidate" => RowStatus::Candidate,
-                "wrong_system" => RowStatus::WrongSystem,
-                "duplicate" => RowStatus::Duplicate,
-                _ => RowStatus::Unknown,
+            // Exhaustive, so a new file status can't fall into Unknown
+            // unseen. A sheet only fits a game's tracks (a suggestion); a
+            // file the owner named is theirs (never verified either way).
+            let status = match Status::parse(&f.status) {
+                Some(Status::Matched) => RowStatus::Incomplete,
+                Some(Status::Candidate | Status::Sheet) => RowStatus::Candidate,
+                Some(Status::WrongSystem) => RowStatus::WrongSystem,
+                Some(Status::Duplicate) => RowStatus::Duplicate,
+                Some(Status::Manual) => RowStatus::ByYou,
+                Some(Status::Unknown) | None => RowStatus::Unknown,
             };
-            let sys = system_id.and_then(systems::by_id);
-            let key = system_id.map(|s| (s, title.clone()));
-            rows.entry(format!("f:{}", f.id)).or_insert(GameRow {
-                id: format!("f:{}", f.id),
-                title,
-                system: sys.map(|s| s.key.to_owned()),
-                system_name: sys.map(|s| s.name.to_owned()),
-                status,
-                cue_differs: false,
-                cue_fits: false,
-                files: 0,
-                size: 0,
-                metadata: key.as_ref().is_some_and(|k| meta.contains(k)),
-                art: key.and_then(|k| art.get(&k).cloned()).unwrap_or_default(),
-                playable: false,
-                group: None,
-                main: true,
-                versions: 1,
-                folder: None,
-                label: None,
-                name: Default::default(),
-                category: None,
-                edition: None,
-                year: None,
-                pictures: BTreeMap::new(),
-                box_aspect: 72,
-                packed: false,
-                likely_system: None,
-                unmatched: false,
-                base_id: None,
-                system_id,
-                file_ids: Vec::new(),
-                patch_of: None,
+            let id = format!("f:{}", f.id);
+            rows.entry(id.clone()).or_insert_with(|| {
+                let mut r = game_row(system_id, &title);
+                // A lone file is no complete game, whatever its title.
+                (r.id, r.status, r.cue_differs, r.cue_fits) = (id, status, false, false);
+                r
             })
         };
         row.files += 1;

@@ -87,15 +87,20 @@ fn now(conn: &Connection) -> Result<String, Error> {
     Ok(conn.query_row(concat!("SELECT ", crate::db::now!()), [], |r| r.get(0))?)
 }
 
-/// The systems you have files for (keys): files matched to a game, named
-/// by you, ScummVM games, folders scanned for one system, and files whose
-/// extension only one system uses (before any of its DATs is in).
-pub(crate) fn systems_in_use(conn: &Connection) -> Result<BTreeSet<&'static str>, Error> {
+/// The systems you have files for (keys): files matched to a game (by a
+/// strong hash, in their folder's scope), named by you, ScummVM games,
+/// folders scanned for one system, and files whose extension only one
+/// system uses (before any of its DATs is in). Not
+/// [`crate::report::systems_in_use`], the systems with DATs.
+pub(crate) fn systems_with_files(conn: &Connection) -> Result<BTreeSet<&'static str>, Error> {
     let mut ids: BTreeSet<i64> = BTreeSet::new();
     for sql in [
-        "SELECT DISTINCT d.system_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id
-           JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id
-         WHERE d.system_id IS NOT NULL",
+        concat!(
+            "SELECT DISTINCT d.system_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id
+               JOIN games g ON g.game_id = r.game_id JOIN dats d ON d.dat_id = g.dat_id
+             WHERE d.system_id IS NOT NULL AND m.out_of_scope = 0 AND m.via IN ",
+            crate::report::strong!()
+        ),
         "SELECT DISTINCT system_id FROM manual_ids",
         "SELECT DISTINCT system_id FROM folder_games",
         "SELECT DISTINCT system_id FROM scan_roots WHERE system_id IS NOT NULL",
@@ -165,7 +170,7 @@ impl Library {
         };
         progress(Step::new(0, 0, "checking lists"));
         self.local_lists(&env, opts, &mut report, &mut progress)?;
-        let keys = systems_in_use(&self.conn)?;
+        let keys = systems_with_files(&self.conn)?;
         self.online_lists(&keys, opts, &mut report, &mut progress)?;
         Ok(report)
     }
@@ -186,7 +191,7 @@ impl Library {
         if launch::installed(&env, "scummvm") {
             self.detect_new_roots(&env, report);
         }
-        let new: BTreeSet<&'static str> = systems_in_use(&self.conn)?
+        let new: BTreeSet<&'static str> = systems_with_files(&self.conn)?
             .into_iter()
             .filter(|k| !before.contains(k))
             .collect();

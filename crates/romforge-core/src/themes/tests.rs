@@ -48,6 +48,10 @@ fn css_that_reaches_out_is_refused() {
         ("} body { display: none }", "no {"),
         ("a { color: red", "isn't closed"),
         ("a { b: expression(alert(1)) }", "expression"),
+        // A brace inside an unquoted url() is part of the url to the
+        // browser, so it would close the @scope: refused.
+        ("a{background:url({)} } body{display:none}", "in the theme"),
+        ("a{background:url( img/x.png;})}", "in the theme"),
     ] {
         let e = check_css(css).unwrap_err();
         assert!(e.contains(why), "{css}: {e}");
@@ -154,4 +158,19 @@ fn the_pick_fits_the_themes_there_are() {
     let a = applied(None, &odd);
     assert_eq!(a.scheme.as_deref(), Some("dmg"));
     assert_eq!(a.attrs.get("art").map(String::as_str), Some("tinted"));
+}
+
+#[test]
+fn the_downloader_s_dot_folders_are_not_themes_and_served_css_is_checked_css() {
+    let t = tempfile::tempdir().unwrap();
+    theme(t.path(), ".download-mine", &manifest("mine", ""), "");
+    theme(t.path(), "mine", &manifest("mine", ""), "a { color: red }");
+    let all = list(Some(t.path()));
+    assert!(!all.iter().any(|e| e.id.starts_with('.')), "a crash's leftovers");
+    let (css, _) = file(Some(t.path()), "mine", "theme.css").unwrap();
+    assert_eq!(String::from_utf8(css).unwrap(), scoped("a { color: red }"));
+    std::fs::write(t.path().join("mine/theme.css"), "@import 'x.css';").unwrap();
+    assert!(file(Some(t.path()), "mine", "theme.css").is_none());
+    let (css, _) = file(Some(t.path()), DEFAULT, "theme.css").unwrap();
+    assert!(!css.is_empty(), "a built-in one");
 }

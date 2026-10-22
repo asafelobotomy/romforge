@@ -69,11 +69,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 s.staging_dir = set(p);
             }
             if let Some(r) = regions {
-                s.regions = r
-                    .split(',')
-                    .map(|r| r.trim().to_owned())
-                    .filter(|r| !r.is_empty())
-                    .collect();
+                s.regions = settings::parse_regions(&r);
             }
             if let Some(n) = threads {
                 s.threads = n;

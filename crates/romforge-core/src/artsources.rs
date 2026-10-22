@@ -1,6 +1,7 @@
 //! Milestone 9, second stage: art from sources that need the owner's keys
 //! (house rule 10: ScreenScraper is tier 2, SteamGridDB and IGDB tier 3).
-//! They only fill art libretro doesn't have.
+//! They only fill art libretro and the downloaded LaunchBox database don't
+//! have (they are asked after both).
 //!
 //! - ScreenScraper looks a game up by its ROM's hashes (the strongest
 //!   match): 2D and 3D box, wheel logo, fanart, title screen, screenshot.

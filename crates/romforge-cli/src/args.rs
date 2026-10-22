@@ -50,11 +50,11 @@ pub enum Command {
         rehash: bool,
     },
     /// The RomForge folder that holds everything: games, art, databases
-    /// and the library itself (milestone 13)
+    /// and the library itself
     #[command(subcommand)]
     Home(HomeCommand),
     /// Move the identified games of a scanned folder into the RomForge
-    /// folder's Games/, repacked one file each (milestone 13)
+    /// folder's Games/, repacked one file each
     ///
     /// Shows the plan and moves nothing unless --apply. Naming a folder
     /// rescans it into the library first (hashes only; ROM files stay put).
@@ -71,7 +71,7 @@ pub enum Command {
     },
     /// Apply a translation or hack you fetched (IPS, BPS, UPS, PPF, xdelta,
     /// or a zip holding one) to a game: a new copy, listed as a version of
-    /// it, the original untouched (milestone 19)
+    /// it, the original untouched
     ///
     /// Shows what it would do unless --apply. Without PATCH: the patches a
     /// scan found for the game, and where to look for one.
@@ -92,14 +92,14 @@ pub enum Command {
         #[arg(long)]
         apply: bool,
     },
-    /// ScummVM games: named by ScummVM's own detection list (milestone 14)
+    /// ScummVM games: named by ScummVM's own detection list
     #[command(subcommand)]
     Scummvm(ScummvmCommand),
-    /// Rename and move identified files into a tidy folder (milestone 2)
+    /// Rename and move identified files into a tidy folder
     #[command(subcommand)]
     Organize(OrganizeCommand),
     /// Repack identified games from the Source folder as one file each,
-    /// named by the DAT, with art and details inside (milestone 10)
+    /// named by the DAT, with art and details inside
     ///
     /// Cartridges become zips, discs CHDs with a sidecar folder, in the
     /// Library folder (else Source). Without "keep originals" the old files
@@ -117,13 +117,13 @@ pub enum Command {
         #[arg(short, long)]
         verbose: bool,
     },
-    /// Third-party game databases you download yourself (milestone 11):
+    /// Third-party game databases you download yourself:
     /// OpenVGDB and the LaunchBox Games Database. Free, but published
     /// without a licence, so romforge doesn't ship them; Enrich uses them to
     /// fill what the open sources leave empty.
     #[command(subcommand, alias = "db")]
     Databases(DatabasesCommand),
-    /// Fetch metadata and art for the games you have (milestone 3)
+    /// Fetch metadata and art for the games you have
     ///
     /// From libretro's database and thumbnail server; art is saved under
     /// $ROMFORGE_CACHE (default ~/.cache/romforge), never next to ROMs.
@@ -171,11 +171,11 @@ pub enum Command {
     #[command(subcommand)]
     Manual(ManualCommand),
     /// romforge in Steam: one shortcut (fullscreen mode), its art and a
-    /// Steam Deck controller template (stage 2, step 7). Steam must be closed
+    /// Steam Deck controller template. Steam must be closed
     #[command(subcommand)]
     Steam(SteamCommand),
     /// The fullscreen mode's themes: yours, and the community's from the
-    /// romforge-themes index (stage 2, step 5)
+    /// romforge-themes index
     #[command(subcommand)]
     Themes(ThemesCommand),
     /// Show or change your Source / Library folders and cleanup options
@@ -268,7 +268,7 @@ pub enum Command {
         #[arg(long)]
         desc: bool,
     },
-    /// Identify what hashes couldn't, and settle Wikidata matches (milestone 8)
+    /// Identify what hashes couldn't, and settle Wikidata matches
     #[command(subcommand)]
     Search(SearchCommand),
     /// Show file statuses and have/missing per DAT

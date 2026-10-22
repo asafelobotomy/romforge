@@ -24,12 +24,9 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                 None => None,
             };
             let (path, member): (String, String) = (r.get(12)?, r.get(13)?);
-            let place = if member.is_empty() {
-                path.rsplit_once('/')
-                    .map_or(String::new(), |(dir, _)| dir.to_owned())
-            } else {
-                path
-            };
+            let place = crate::report::place_of(&path, &member)
+                .unwrap_or_default()
+                .to_owned();
             Ok(FileRow {
                 file_id: r.get(0)?,
                 chd_sha1: r.get(14)?,
@@ -122,18 +119,21 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             for (digest, stripped) in digests.filter(|(d, _)| d.size > 0) {
                 let roms = lookup(tx, digest)?;
                 let vias: Vec<Option<Via>> = roms.iter().map(|r| compare(digest, r)).collect();
-                // Its SHA1 fits a ROM of some DAT (size and CRC32 with it).
-                let sha1_fits = vias.contains(&Some(Via::Sha1));
+                let arcade = |r: &RomRow| {
+                    r.system_id
+                        .and_then(crate::systems::by_id)
+                        .is_some_and(|s| s.arcade)
+                };
+                // Its SHA1 fits a ROM of an arcade DAT (MAME's) with the
+                // same size and CRC32 (house rule 8: the SHA1 must be the
+                // same ROM's, not any ROM's).
+                let sha1_fits = roms.iter().zip(&vias).any(|(r, v)| {
+                    *v == Some(Via::Sha1) && r.crc32.as_deref() == Some(digest.crc32.as_str()) && arcade(r)
+                });
                 for (rom, via) in roms.iter().zip(vias) {
                     let via = match via {
                         Some(Via::Crc32)
-                            if sha1_fits
-                                && rom.sha1.is_none()
-                                && rom.md5.is_none()
-                                && rom
-                                    .system_id
-                                    .and_then(crate::systems::by_id)
-                                    .is_some_and(|s| s.arcade) =>
+                            if sha1_fits && rom.sha1.is_none() && rom.md5.is_none() && arcade(rom) =>
                         {
                             Some(Via::Confirmed)
                         }
@@ -159,7 +159,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
                         hits.push(Hit {
                             rom_id: rom.rom_id,
                             game_id: rom.game_id,
-                            via: Via::Sha1,
+                            via: Via::Disk,
                             stripped: false,
                             in_scope: file.scope.contains(&rom),
                         });

@@ -1,7 +1,7 @@
 <script>
   import { size } from "./lib.js";
   import { genres, esrb, regionFlags, stars } from "./facts.js";
-  import { artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
+  import { displayTitle, artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
   import { ui } from "./ui.svelte.js";
 
   // Details' first tab: the pictures, an infobox of facts, the overview,
@@ -45,7 +45,7 @@
     {:else if canPick(row)}
       <button class="emptypick logo-pick" onclick={() => artPicker.openPicker(row, "logo", "Logo", null)}>No logo yet: find one…</button>
     {:else}
-      <p class="ibtitle">{row.label ?? row.title}</p>
+      <p class="ibtitle">{displayTitle(row)}</p>
     {/if}
     <dl class="facts info">
       {#if f.releaseyear}<div class="fact"><dt>Released</dt><dd>{released(f)}</dd></div>{/if}

@@ -101,15 +101,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         }
         Command::Emulator(EmulatorCommand::Set { emulator, key, value }) => {
             let mut s = lib.emulator_settings()?.values;
-            let values = if emulator.eq_ignore_ascii_case("global") {
-                &mut s.global
-            } else {
-                s.emulators.entry(emulator.to_ascii_lowercase()).or_default()
-            };
-            match &value {
-                Some(v) => values.insert(key.clone(), v.clone()),
-                None => values.remove(&key),
-            };
+            s.set(&emulator, &key, value.clone());
             lib.save_emulator_settings(&s)?;
             match value {
                 Some(v) => println!("{emulator} {key} = {v}"),
@@ -164,13 +156,16 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         }
         Command::Emulator(EmulatorCommand::GetCore { core, yes }) => {
             let list = lib.emulator_cores()?;
-            if let Some(c) = list.cores.iter().find(|c| c.name == core) {
+            let shown = list.cores.iter().find(|c| c.name == core);
+            if let Some(c) = shown {
                 println!("{}: licence {}", c.display_name, c.license);
-                if c.non_commercial && !yes {
-                    bail!("{core}'s licence forbids commercial use; run again with --yes to accept it");
-                }
             }
-            let date = lib.download_core(&core)?;
+            let date = lib.download_core(&core, yes).map_err(|e| match shown {
+                Some(c) if c.non_commercial && !yes => {
+                    anyhow::anyhow!("{e} (run again with --yes to accept it)")
+                }
+                _ => e.into(),
+            })?;
             println!("{core} ({date}) downloaded into the RomForge folder's Emulators/cores");
         }
         Command::Emulator(EmulatorCommand::RemoveCore { core, yes }) => {

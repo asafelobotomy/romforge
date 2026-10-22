@@ -1,13 +1,17 @@
 //! Milestone 3: metadata and art for the games you have, cached locally.
 //!
-//! Both come from libretro, needing no account:
+//! In house rule 10's order, open sources first:
 //! - metadata from libretro-database's `metadat/<field>/<system>.dat`
 //!   (genre, developer, publisher, franchise, release year and month, max
-//!   players; some entries also carry a description or serial);
+//!   players; some entries also carry a description or serial), then
+//!   Wikidata ([`crate::wikidata`]), then what both left empty from the
+//!   databases the user downloaded, OpenVGDB and LaunchBox
+//!   ([`crate::extdb`]);
 //! - art from `thumbnails.libretro.com/<system>/Named_<kind>s/<game>.png`
 //!   (box art, title screens, in-game snaps), saved under the cache folder;
-//!   what libretro lacks (and hero, logo, icon, 3D box) from the keyed
-//!   sources in `artsources.rs`, when the owner entered keys.
+//!   what libretro lacks from LaunchBox's pictures, then from the keyed
+//!   sources in `artsources.rs` (also hero, logo, icon, 3D box), when the
+//!   owner entered keys.
 //!
 //! Records are matched to a game by its exact DAT name, else by the CRC32
 //! of one of its ROMs within that system's file. Only games with a matched
@@ -22,6 +26,7 @@ use crate::{Error, dat, fetch, systems};
 
 mod art;
 mod choices;
+mod chosen;
 mod icons;
 mod info;
 mod meta;

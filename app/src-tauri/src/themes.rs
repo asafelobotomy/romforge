@@ -34,33 +34,38 @@ fn previews() -> PathBuf {
 /// `theme://localhost/.preview/<file>`.
 pub fn serve(uri_path: &str) -> tauri::http::Response<Vec<u8>> {
     let respond = |status: u16, mime: &str, body: Vec<u8>| {
-        tauri::http::Response::builder()
-            .status(status)
-            .header("Content-Type", mime)
-            .header("Cache-Control", "no-store")
-            .header("X-Content-Type-Options", "nosniff")
-            .body(body)
-            .unwrap_or_default()
+        let headers = [
+            ("Content-Type", mime),
+            ("Cache-Control", "no-store"),
+            ("X-Content-Type-Options", "nosniff"),
+        ];
+        crate::art::response(status, &headers, body)
     };
-    let path = uri_path.trim_start_matches('/');
+    let not_found = || respond(404, "text/plain", Vec::new());
+    let path = crate::art::percent_decode(uri_path);
+    let path = path.trim_start_matches('/');
     if let Some(name) = path.strip_prefix(".preview/") {
+        // The name is checked before anything is read.
         let plain = !name.is_empty()
             && name.ends_with(".png")
             && name
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-.".contains(&b))
             && !name.contains("..");
-        return match std::fs::read(previews().join(name)).ok().filter(|_| plain) {
-            Some(body) => respond(200, "image/png", body),
-            None => respond(404, "text/plain", Vec::new()),
+        if !plain {
+            return not_found();
+        }
+        return match std::fs::read(previews().join(name)) {
+            Ok(body) => respond(200, "image/png", body),
+            Err(_) => not_found(),
         };
     }
     let Some((id, file)) = path.split_once('/') else {
-        return respond(404, "text/plain", Vec::new());
+        return not_found();
     };
     match themes::file(dir().as_deref(), id, file) {
         Some((body, mime)) => respond(200, mime, body),
-        None => respond(404, "text/plain", Vec::new()),
+        None => not_found(),
     }
 }
 
@@ -96,18 +101,21 @@ pub async fn theme_set(db: tauri::State<'_, Db>, selection: Selection) -> Res<Ap
 
 /// When theme `id` last changed, for live reload.
 #[tauri::command]
-pub fn theme_stamp(id: String) -> u64 {
-    themes::stamp(dir().as_deref(), &id)
+pub async fn theme_stamp(id: String) -> Res<u64> {
+    blocking(move || Ok(themes::stamp(dir().as_deref(), &id))).await
 }
 
 /// Open the folder for the user's themes (made first).
 #[tauri::command]
-pub fn themes_folder(app: tauri::AppHandle) -> Res<()> {
+pub async fn themes_folder(app: tauri::AppHandle) -> Res<()> {
     let d = dir().ok_or("no library folder")?;
-    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
-    app.opener()
-        .open_path(d.to_string_lossy(), None::<&str>)
-        .map_err(|e| e.to_string())
+    blocking(move || Ok(std::fs::create_dir_all(&d).map(|()| d)?))
+        .await
+        .and_then(|d| {
+            app.opener()
+                .open_path(d.to_string_lossy(), None::<&str>)
+                .map_err(|e| e.to_string())
+        })
 }
 
 /// A community theme and what it is here.

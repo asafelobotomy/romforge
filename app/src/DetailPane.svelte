@@ -5,7 +5,7 @@
   import SeriesTab from "./SeriesTab.svelte";
   import VersionsTab from "./VersionsTab.svelte";
   import LinksTab from "./LinksTab.svelte";
-  import { statusLabel } from "./labels.js";
+  import { displayTitle, statusLabel } from "./labels.js";
   import { ui } from "./ui.svelte.js";
 
   // Details of the picked game: its name, status and what can be done
@@ -18,7 +18,7 @@
     <div class="empty"><p>Pick a game to see its details.</p></div>
   {:else}
     <div class="dhead">
-      <h1>{row.name?.title || row.label || row.title}</h1>
+      <h1>{displayTitle(row)}</h1>
       {#if row.label && row.label !== row.title}<p class="meta">Set <code>{row.title}</code></p>{:else if row.name?.title && row.name.title !== row.title}<p class="meta" title={row.title}>{row.title}</p>{/if}
       <p class="meta">
         {row.system_name ?? "Unidentified"} · <span class="badge {row.status}">{statusLabel[row.status]}</span>

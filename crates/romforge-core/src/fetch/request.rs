@@ -156,36 +156,15 @@ pub fn download_to(
     if let Some(dir) = to.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let mut out = std::io::BufWriter::new(std::fs::File::create(&part)?);
-    let mut body = response.body_mut().as_reader();
-    let mut buf = vec![0u8; 256 * 1024];
-    let mut done = 0u64;
-    loop {
-        let n = match body.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => {
-                drop(out);
-                let _ = std::fs::remove_file(&part);
-                return Err(err(e.to_string()));
-            }
-        };
-        done += n as u64;
-        if done > max {
-            drop(out);
+    let out = std::io::BufWriter::new(std::fs::File::create(&part)?);
+    let body = response.body_mut().as_reader();
+    let done = match write_body(body, out, max, total, &mut progress, &err) {
+        Ok(done) => done,
+        Err(e) => {
             let _ = std::fs::remove_file(&part);
-            return Err(err(format!("more than the {max} bytes allowed")));
+            return Err(e);
         }
-        std::io::Write::write_all(&mut out, &buf[..n])?;
-        progress(done, total);
-        if !super::watch::report(done, total) {
-            drop(out);
-            let _ = std::fs::remove_file(&part);
-            return Err(Error::Cancelled);
-        }
-    }
-    std::io::Write::flush(&mut out)?;
-    drop(out);
+    };
     if total.is_some_and(|t| t != done) {
         let _ = std::fs::remove_file(&part);
         return Err(err(format!(
@@ -194,6 +173,38 @@ pub fn download_to(
         )));
     }
     std::fs::rename(&part, to)?;
+    Ok(done)
+}
+
+/// [`download_to`]'s copy from `body` into `out`; the caller removes the
+/// part file when this fails.
+fn write_body(
+    mut body: impl Read,
+    mut out: impl std::io::Write,
+    max: u64,
+    total: Option<u64>,
+    progress: &mut impl FnMut(u64, Option<u64>),
+    err: &impl Fn(String) -> Error,
+) -> Result<u64, Error> {
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut done = 0u64;
+    loop {
+        let n = match body.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => return Err(err(e.to_string())),
+        };
+        done += n as u64;
+        if done > max {
+            return Err(err(format!("more than the {max} bytes allowed")));
+        }
+        out.write_all(&buf[..n])?;
+        progress(done, total);
+        if !super::watch::report(done, total) {
+            return Err(Error::Cancelled);
+        }
+    }
+    out.flush()?;
     Ok(done)
 }
 
@@ -225,6 +236,7 @@ fn agent() -> &'static ureq::Agent {
 fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Error> {
     let url = req.url;
     let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
+    let limited = |m: String| Error::RateLimited(format!("{}: {m}", short(url)));
     let agent = agent();
     for attempt in 0.. {
         wait_for_host(url);
@@ -261,7 +273,7 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
                 .unwrap_or(5);
             if wait > 30 || attempt >= 2 {
                 let minutes = wait.div_ceil(60);
-                return Err(err(format!(
+                return Err(limited(format!(
                     "HTTP {status}: the server is rate limiting; it asks to wait {} before trying again",
                     if wait > 90 {
                         format!("{minutes} minutes")
@@ -270,13 +282,14 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
                     }
                 )));
             }
-            std::thread::sleep(Duration::from_secs(wait));
+            // Every worker waits it out, not only this one.
+            hold_host(url, Duration::from_secs(wait));
             continue;
         }
         // ScreenScraper's daily quota (430) and its limit on unknown ROMs
         // (431): nothing more today.
         if status == 430 || status == 431 {
-            return Err(err(format!(
+            return Err(limited(format!(
                 "HTTP {status}: the server is rate limiting; its quota for today is used up"
             )));
         }
@@ -293,7 +306,7 @@ fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq::Body>>, Er
 
 /// Whether an error from [`request`] is a server asking to be left alone.
 pub fn is_rate_limited(e: &Error) -> bool {
-    e.to_string().contains("rate limiting")
+    matches!(e, Error::RateLimited(_))
 }
 
 /// Percent-encode one URL path segment.
@@ -325,10 +338,23 @@ pub fn decode_segment(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// When each host may be asked next.
+static NEXT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+/// Ask `url`'s host nothing more for `wait` (it said so with a 429 or 503),
+/// whichever worker asks next.
+fn hold_host(url: &str, wait: Duration) {
+    let host = host_of(url).to_owned();
+    let mut next = NEXT.lock().unwrap_or_else(|e| e.into_inner());
+    let next = next.get_or_insert_with(HashMap::new);
+    let until = Instant::now() + wait;
+    let at = next.entry(host).or_insert(until);
+    *at = (*at).max(until);
+}
+
 /// Wait until `url`'s host may be asked again. The slot is taken under the
 /// lock and waited for outside it, so one slow host never holds up others.
 pub(super) fn wait_for_host(url: &str) {
-    static NEXT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
     let host = host_of(url).to_owned();
     let at = {
         let mut next = NEXT.lock().unwrap_or_else(|e| e.into_inner());

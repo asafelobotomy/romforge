@@ -46,6 +46,10 @@ pub struct QueueItem {
     /// For [`Need::Identify`]: the strongest suggestion, with its evidence
     /// (never a match).
     pub suggestion: Option<crate::suggest::Suggestion>,
+    /// The suggestion is strong enough to accept ([`Band::acceptable`]).
+    ///
+    /// [`Band::acceptable`]: crate::suggest::Band::acceptable
+    pub acceptable: bool,
 }
 
 /// Rows of `v` (the library's list, [`view::listing`]) that need the owner,
@@ -95,6 +99,7 @@ pub fn queue(
                 status: r.status,
                 need: Need::Identify,
                 wikidata: None,
+                acceptable: suggestion.as_ref().is_some_and(|s| s.band.acceptable()),
                 suggestion,
             });
         } else if r.status != RowStatus::Derivative
@@ -110,6 +115,7 @@ pub fn queue(
                 need: Need::Wikidata,
                 wikidata: Some(st.clone()),
                 suggestion: None,
+                acceptable: false,
             });
         }
     }

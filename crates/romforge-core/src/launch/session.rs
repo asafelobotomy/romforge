@@ -103,15 +103,25 @@ impl Session {
     /// Ask it to quit (SIGTERM), and kill it only if it hasn't after
     /// `grace`. Returns whether it had to be killed.
     pub fn stop(&self, grace: Duration) -> Result<bool, Error> {
-        if !self.is_running() {
-            return Ok(false);
-        }
-        #[cfg(unix)]
-        // SAFETY: `kill` takes a pid and a signal and touches no memory; the
-        // process is ours and not reaped (checked just above), so the pid
-        // is still its own.
-        unsafe {
-            libc::kill(self.playing.pid as libc::pid_t, libc::SIGTERM);
+        {
+            // The child's lock is held from the check to the signal, so the
+            // thread in `wait` can't reap it (and its pid be given to
+            // another process) in between.
+            let mut guard = self.child.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(child) = guard.as_mut() else {
+                return Ok(false);
+            };
+            if !matches!(child.try_wait(), Ok(None)) {
+                return Ok(false);
+            }
+            #[cfg(unix)]
+            // SAFETY: `kill` takes a pid and a signal and touches no memory;
+            // the process is ours and not reaped (checked just above, with
+            // the lock that reaping needs held until after the signal), so
+            // the pid is still its own.
+            unsafe {
+                libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+            }
         }
         let until = Instant::now() + grace;
         while Instant::now() < until {

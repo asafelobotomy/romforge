@@ -16,6 +16,7 @@ use rusqlite::{Connection, params};
 use crate::launch::{self, Env, KNOWN_EMULATORS, KnownEmulator, LaunchOptions, RETROARCH};
 use crate::{Error, systems};
 
+mod scope;
 mod table;
 pub use table::*;
 use table::{applies, setting};
@@ -184,7 +185,8 @@ fn value<'a>(s: &'a EmulatorSettings, e: &KnownEmulator, key: &str) -> Option<&'
 /// Whether romforge's game pad hotkeys are on (the global setting; on
 /// unless turned off).
 pub fn hotkeys_on(s: &EmulatorSettings) -> bool {
-    s.global.get("hotkeys").map(String::as_str) != Some("false")
+    let set = s.global.get("hotkeys").map(String::as_str);
+    set.or_else(|| setting("hotkeys").map(|d| d.default)) == Some("true")
 }
 
 /// Put what `s` sets into `env`, for [`launch`] to start emulators by.

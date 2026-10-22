@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use romforge_core::firmware::{FirmwareReport, ImportPlan, Imported};
 
-use crate::db::{Db, Res, read, with};
+use crate::db::{Db, Res, read, read_net, with};
 
 #[tauri::command]
 pub async fn firmware_report(db: tauri::State<'_, Db>) -> Res<FirmwareReport> {
@@ -19,7 +19,7 @@ pub async fn firmware_download(
     job: Option<u64>,
 ) -> Res<usize> {
     let job = crate::jobs::Job::start(&app, job);
-    read(&db, move |lib| {
+    read_net(&db, move |lib| {
         job.watch("RetroBIOS list", || lib.firmware_download())
     })
     .await
@@ -48,7 +48,7 @@ pub async fn firmware_undo(db: tauri::State<'_, Db>) -> Res<usize> {
 /// Install the PS3 firmware from Bios/rpcs3/ into RPCS3.
 #[tauri::command]
 pub async fn install_ps3_firmware(db: tauri::State<'_, Db>) -> Res<String> {
-    read(&db, move |lib| {
+    read_net(&db, move |lib| {
         lib.install_ps3_firmware().map(|p| p.display().to_string())
     })
     .await

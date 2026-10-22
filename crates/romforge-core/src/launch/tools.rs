@@ -51,14 +51,58 @@ fn run_known(
         .ok_or_else(|| Error::Launch(format!("{shown} isn't installed (on PATH or as a Flatpak)")))?;
     let grants: Vec<PathBuf> = grant.map(Path::to_path_buf).into_iter().collect();
     let (program, args, env) = command(&runner, args.to_vec(), &grants, &[]);
-    let out = std::process::Command::new(&program)
-        .args(&args)
+    let mut cmd = std::process::Command::new(&program);
+    cmd.args(&args)
         .envs(env)
         .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+        .stderr(std::process::Stdio::null());
+    let out =
+        output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
     Ok((program, out))
+}
+
+/// How long a helper run (a list, a version) gets before it is stopped:
+/// MAME's whole `-listxml` or ScummVM detecting a big folder takes a
+/// while, a hung one takes for ever.
+const RUN_LIMIT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Run `cmd` to completion with its output read, killing it if it hasn't
+/// ended within `limit` (a `TimedOut` error then).
+pub(super) fn output_within(
+    mut cmd: std::process::Command,
+    limit: std::time::Duration,
+) -> std::io::Result<std::process::Output> {
+    use std::io::Read;
+    let mut child = cmd.stdout(std::process::Stdio::piped()).spawn()?;
+    let mut stdout = child.stdout.take();
+    // Read as it comes, so a long output doesn't fill the pipe and stall it.
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(s) = stdout.as_mut() {
+            let _ = s.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let until = std::time::Instant::now() + limit;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= until {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("no answer after {} s: stopped", limit.as_secs()),
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    Ok(std::process::Output {
+        status,
+        stdout: reader.join().unwrap_or_default(),
+        stderr: Vec::new(),
+    })
 }
 
 /// Whether the known emulator `name` is installed (Settings path, `PATH`,

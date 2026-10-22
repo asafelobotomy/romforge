@@ -38,9 +38,13 @@ pub fn parse_cue(text: &str) -> Vec<SheetFile> {
     let mut out = Vec::new();
     for line in text.lines() {
         let line = line.trim();
-        let Some(rest) = line.strip_prefix("FILE ").or_else(|| line.strip_prefix("file ")) else {
+        // `FILE` in any case, then any whitespace (a tab too).
+        let Some((keyword, rest)) = line.split_once(char::is_whitespace) else {
             continue;
         };
+        if !keyword.eq_ignore_ascii_case("FILE") {
+            continue;
+        }
         let rest = rest.trim();
         let name = if let Some(q) = rest.strip_prefix('"') {
             q.split('"').next().unwrap_or_default().to_owned()
@@ -335,6 +339,10 @@ mod tests {
         let cue = "REM x\nFILE \"Game (Track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\nFILE Game2.bin BINARY\n";
         let names: Vec<String> = parse_cue(cue).into_iter().map(|f| f.name).collect();
         assert_eq!(names, ["Game (Track 1).bin", "Game2.bin"]);
+        // Any case, any whitespace after the keyword.
+        let cue = "File\t\"A.bin\" BINARY\nfIlE  B.bin BINARY\nFILES x.bin BINARY\n";
+        let names: Vec<String> = parse_cue(cue).into_iter().map(|f| f.name).collect();
+        assert_eq!(names, ["A.bin", "B.bin"]);
     }
 
     #[test]

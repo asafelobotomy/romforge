@@ -71,8 +71,8 @@ struct Ours {
 /// Fetch the buildbot's list and the core info into `db_dir`.
 pub fn refresh_cores(db_dir: &Path) -> Result<usize, Error> {
     let arch = arch().ok_or_else(|| Error::Launch("the buildbot has no cores for this processor".into()))?;
-    let index = crate::fetch::get(&format!("{BUILDBOT}/nightly/linux/{arch}/latest/.index-extended"))?;
-    let info = crate::fetch::get(&format!("{BUILDBOT}/assets/frontend/info.zip"))?;
+    let index = crate::fetch::get_small(&format!("{BUILDBOT}/nightly/linux/{arch}/latest/.index-extended"))?;
+    let info = crate::fetch::get_small(&format!("{BUILDBOT}/assets/frontend/info.zip"))?;
     zip::ZipArchive::new(std::io::Cursor::new(&info))?;
     std::fs::create_dir_all(db_dir)?;
     crate::atomic::write(&db_dir.join(index_file(arch)), &index)?;

@@ -148,8 +148,9 @@ pub fn enrich(
         };
         let tx = conn.transaction()?;
         {
-            let mut current =
-                tx.prepare("SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3")?;
+            let mut current = tx.prepare(
+                "SELECT value, source FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
+            )?;
             let mut put = tx.prepare(
                 "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
@@ -172,14 +173,14 @@ pub fn enrich(
                         continue;
                     }
                     let value = values.iter().cloned().collect::<Vec<_>>().join(", ");
-                    // Fill what libretro left empty (or marked unknown); Wikidata's
-                    // own fields are always its.
+                    // Wikidata's own fields are always its; shared ones only
+                    // fill what libretro left empty (or marked unknown).
                     let shared = matches!(field.as_str(), "developer" | "publisher" | "genre");
                     if shared {
-                        let had: Option<String> = current
-                            .query_row(params![system_id, title, field], |r| r.get(0))
+                        let had: Option<(String, Option<String>)> = current
+                            .query_row(params![system_id, title, field], |r| Ok((r.get(0)?, r.get(1)?)))
                             .optional()?;
-                        if had.is_some_and(|h| !junk(&h)) {
+                        if !takes_over(had.as_ref()) {
                             continue;
                         }
                     }
@@ -278,4 +279,17 @@ pub fn enrich(
         }
     }
     Ok(report)
+}
+
+/// Whether Wikidata's value replaces a shared field's `had` (value,
+/// source): when there is none, it is junk, or it came from a downloaded
+/// database (OpenVGDB, LaunchBox), a later tier than Wikidata (house
+/// rule 10). libretro's (source NULL) stands.
+pub(super) fn takes_over(had: Option<&(String, Option<String>)>) -> bool {
+    match had {
+        None => true,
+        Some((value, source)) => {
+            junk(value) || source.as_deref().and_then(crate::extdb::ExtDb::parse).is_some()
+        }
+    }
 }

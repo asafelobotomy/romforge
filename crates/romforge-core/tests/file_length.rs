@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 const MAX_LINES: usize = 400;
 const EXEMPT: &[&str] = &["crates/romforge-core/src/systems/table.rs"];
-const ROOTS: &[&str] = &["crates", "app/src", "app/src-tauri/src"];
-const KINDS: &[&str] = &["rs", "svelte", "js", "css"];
+const ROOTS: &[&str] = &["crates", "app/src", "app/src-tauri/src", "app/test", "themes"];
+/// Code files outside those folders.
+const FILES: &[&str] = &["app/vite.config.js", "app/src-tauri/build.rs"];
+const KINDS: &[&str] = &["rs", "svelte", "js", "mjs", "css"];
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -35,6 +37,11 @@ fn no_code_file_is_over_400_lines() {
     let mut files = Vec::new();
     for root in ROOTS {
         walk(&repo.join(root), &mut files);
+    }
+    for file in FILES {
+        let path = repo.join(file);
+        assert!(path.is_file(), "{file} is still there");
+        files.push(path);
     }
     assert!(files.len() > 50, "the walk found the code");
     let mut over: Vec<String> = files

@@ -51,17 +51,21 @@ pub enum PadEvent {
     Connected {
         name: String,
     },
+    /// A pad went away (`pad`: its id, as [`PadEvent::Button`] gives it).
     Disconnected {
         name: String,
+        pad: usize,
     },
-    /// A button going down or up, as it is (for hotkey chords,
-    /// [`crate::hotkeys::Chords`]).
+    /// A button going down or up on pad `pad`, as it is (for hotkey
+    /// chords, [`crate::hotkeys::Chords`]).
     Button {
+        pad: usize,
         button: crate::hotkeys::PadButton,
         down: bool,
     },
-    /// The right stick's position (x right, y up; -1..1).
+    /// Pad `pad`'s right stick position (x right, y up; -1..1).
     Stick {
+        pad: usize,
         x: f32,
         y: f32,
     },

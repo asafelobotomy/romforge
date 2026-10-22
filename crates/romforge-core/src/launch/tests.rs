@@ -160,3 +160,35 @@ fn find_rules_in_order() {
     // RomForge's cores come before the system's.
     assert_eq!(env.core_dirs[0], t.join("RomForge/Emulators/cores"));
 }
+
+#[test]
+fn placeholders_are_filled_once() {
+    let vars = Vars {
+        rom: Path::new("/r/{set} {dir}.zip"),
+        set: "{system}",
+        core: None,
+        config: None,
+        system: "GBA",
+    };
+    assert_eq!(
+        fill(&["{rom}", "{set}-{system}", "{nope} {"], &vars),
+        ["/r/{set} {dir}.zip", "{system}-GBA", "{nope} {"],
+        "text from a value isn't filled again"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_helper_run_that_hangs_is_stopped() {
+    let t = std::time::Instant::now();
+    let mut slow = std::process::Command::new("sh");
+    slow.args(["-c", "sleep 30"]);
+    let err = tools::output_within(slow, std::time::Duration::from_millis(200)).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+    assert!(t.elapsed() < std::time::Duration::from_secs(10));
+    let mut quick = std::process::Command::new("sh");
+    quick.args(["-c", "echo hi"]);
+    let out = tools::output_within(quick, std::time::Duration::from_secs(10)).unwrap();
+    assert!(out.status.success());
+    assert_eq!(out.stdout, b"hi\n");
+}

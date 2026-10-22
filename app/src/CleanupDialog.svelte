@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
   import { sorted, remembered, remember } from "./sort.js";
-  import { basename } from "./lib.js";
+  import { basename, size } from "./lib.js";
   import { run } from "./jobs.svelte.js";
 
   // `call` is the app's invoke that reports errors on the status line;
@@ -39,10 +39,8 @@
     trash = null;
     open = false;
     const r = await run("Emptying the trash…", "empty_trash", {}, { key: "empty_trash" });
-    if (r) note = `Deleted ${r.files} originals (${mib(r.bytes)}) from ${r.batches.length} batches; those can no longer be undone` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
+    if (r) note = `Deleted ${r.files} originals (${size(r.bytes)}) from ${r.batches.length} batches; those can no longer be undone` + (r.failed.length ? `; failed: ${r.failed.join("; ")}` : "");
   }
-
-  const mib = (n) => (n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GiB` : `${(n / (1 << 20)).toFixed(1)} MiB`);
 
   export async function openCleanup(folder = null, how = "cleanup", ids = null) {
     from = folder;
@@ -187,7 +185,7 @@
         {/if}
         {#if trash}
           {#if trash.files}
-            <span class="hint" role="status">Delete {trash.files} originals ({mib(trash.bytes)}) from {trash.batches.length} batches for good? They can't be undone after.</span>
+            <span class="hint" role="status">Delete {trash.files} originals ({size(trash.bytes)}) from {trash.batches.length} batches for good? They can't be undone after.</span>
             <button onclick={emptyTrash} disabled={!!busy}>Yes, empty the trash</button>
             <button onclick={() => (trash = null)} disabled={!!busy}>Cancel</button>
           {:else}

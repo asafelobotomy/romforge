@@ -1,4 +1,5 @@
-//! Migrations 36 to 51 (see `MIGRATIONS`).
+//! Migrations from 36 on (36 to 42 so far; the file is named for the range
+//! it will hold, up to 51; see `MIGRATIONS`).
 
 pub(super) const MIGRATIONS_36_51: &[&str] = &[
     // 36: BIOS import journal (milestone 20): the files each import made,

@@ -53,6 +53,12 @@ pub enum Band {
 }
 
 impl Band {
+    /// Strong enough to name a game with one click ("Accept"): every band
+    /// down to [`Band::Suggested`]; a [`Band::Possible`] is picked by hand.
+    pub fn acceptable(self) -> bool {
+        self <= Band::Suggested
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Band::PatchOf => "Proven patch of it",

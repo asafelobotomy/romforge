@@ -110,7 +110,7 @@ pub fn find(
                         "{api}?action=wbsearchentities&format=json&language=en&uselang=en&type=item&limit=20&search={}",
                         crate::fetch::encode_segment(&text)
                     );
-                    parse_entity_search(&crate::fetch::get(&url)?, &text, system.as_deref())?
+                    parse_entity_search(&crate::fetch::get_small(&url)?, &text, system.as_deref())?
                 }
             };
             // The candidates Enrich found equally good come too.
@@ -158,7 +158,7 @@ fn search_on_platforms(
             "{api}?action=query&list=search&format=json&srlimit=20&srsearch={}",
             crate::fetch::encode_segment(&sr)
         );
-        for id in parse_page_ids(&crate::fetch::get(&url)?)? {
+        for id in parse_page_ids(&crate::fetch::get_small(&url)?)? {
             if !ids.iter().any(|x| x == &id) {
                 ids.push(id);
             }
@@ -171,7 +171,7 @@ fn search_on_platforms(
         "{api}?action=wbgetentities&format=json&props=labels|descriptions&languages=en|mul&ids={}",
         ids.join("|")
     );
-    parse_entities(&crate::fetch::get(&url)?, text, system, &ids)
+    parse_entities(&crate::fetch::get_small(&url)?, text, system, &ids)
 }
 
 /// A DAT name as Wikidata would label it: [`view::search_title`] (no tags,

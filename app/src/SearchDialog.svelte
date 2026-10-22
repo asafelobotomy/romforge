@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { edit, run as runJob } from "./jobs.svelte.js";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { artSrc } from "./lib.js";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library.
@@ -232,7 +233,7 @@
           {/each}
         </div>
         <div class="sposter">
-          {#if preview?.image}<img src={preview.image} alt="Box art of {preview.title}" />{:else}<span class="hint">{chosen ? (preview ? "No box art" : "…") : ""}</span>{/if}
+          {#if preview?.image}<img src={artSrc(preview.image)} alt="Box art of {preview.title}" />{:else}<span class="hint">{chosen ? (preview ? "No box art" : "…") : ""}</span>{/if}
         </div>
         <div class="sinfo">
           {#if chosen}

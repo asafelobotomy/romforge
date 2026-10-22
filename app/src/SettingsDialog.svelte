@@ -51,27 +51,9 @@
     moving = false;
   }
 
-  // Settings panel: a working copy, saved on "Save".
-  let draft = $state({
-    source_dir: null,
-    library_dir: null,
-    keep_originals: false,
-    in_place: false,
-    staging_dir: null,
-    keys: {},
-    show_empty_media: false,
-    region_flags: true,
-    show_missing_versions: false,
-    threads: 0,
-    list_age_days: 30,
-    while_playing: "tray",
-    start_fullscreen: false,
-    attract_minutes: 0,
-    screensaver_minutes: 0,
-    music_dir: null,
-    music_volume: 40,
-    music_shuffle: true,
-  });
+  // Settings panel: a working copy (get_settings, when it opens), saved
+  // on "Save".
+  let draft = $state(null);
   // Rename & Cleanup's behaviour: the two settings it is made of.
   const modeOf = (d) => (d.in_place ? "replace" : d.keep_originals ? "keep" : "trash");
   function setMode(m) {
@@ -127,7 +109,7 @@
   }
 </script>
 
-{#if open}
+{#if open && draft}
   <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && (open = false)}>
     <div class="dialog tall" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <h2 id="settings-title">Settings</h2>
@@ -348,6 +330,11 @@
           through Wikidata; each picture's own page (linked under it in Development) gives its author and licence.
           Game facts from libretro, Wikidata and the sources set above. romforge's pixel wordmark and app icon are its own pixel
           art. romforge is MIT licensed.
+        </p>
+        <p class="hint">
+          Manuals are shown with {@render link("https://github.com/mozilla/pdf.js", "pdf.js")} and their scanned pages made searchable with
+          {@render link("https://github.com/naptha/tesseract.js", "tesseract.js")} and Tesseract's language data, all licensed
+          {@render link("https://www.apache.org/licenses/LICENSE-2.0", "Apache-2.0")}.
         </p>
       </section>
       {/if}

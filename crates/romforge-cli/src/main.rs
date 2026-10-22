@@ -40,8 +40,15 @@ fn main() -> Result<()> {
                 None => home.clone(),
             };
             let art = enrich::default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
-            let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &db, &art)
-                .with_context(|| format!("setting up the RomForge folder in {}", parent.display()))?;
+            let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &db, &art);
+            if done.is_err() {
+                match romforge_core::home::db_after_create(parent, &db, &done) {
+                    Some(at) => eprintln!("the library is at {}", at.display()),
+                    None => eprintln!("the library couldn't be found again"),
+                }
+            }
+            let done =
+                done.with_context(|| format!("setting up the RomForge folder in {}", parent.display()))?;
             let new = done.home();
             match &done {
                 Created::Existing { .. } => println!("{} is already a RomForge folder", new.root().display()),
@@ -62,7 +69,12 @@ fn main() -> Result<()> {
             let Some(old) = &home else {
                 bail!("no RomForge folder yet (`romforge-cli home create <parent>`)");
             };
-            let new = romforge_core::home::relocate(old, new_parent)?;
+            let moved = romforge_core::home::relocate(old, new_parent);
+            if moved.is_err() {
+                let at = romforge_core::home::db_after_move(old, &moved);
+                eprintln!("the library is still at {}", at.display());
+            }
+            let new = moved?;
             new.remember()?;
             // Opening it once fixes the paths it stores.
             Library::open(new.db())?;

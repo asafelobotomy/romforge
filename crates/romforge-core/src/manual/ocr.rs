@@ -73,15 +73,15 @@ pub fn ocr_langs(cache: &Path) -> Vec<OcrLang> {
 /// Download a language's file (on the user's asking). Returns its path.
 pub fn download_ocr_lang(cache: &Path, code: &str) -> Result<PathBuf, Error> {
     if !OCR_LANGS.iter().any(|(c, _)| *c == code) {
-        return Err(Error::Launch(format!("no OCR language {code:?}")));
+        return Err(Error::Manual(format!("no OCR language {code:?}")));
     }
     let bytes = crate::fetch::request(&crate::fetch::Request {
         max_body: Some(64 << 20),
         ..crate::fetch::Request::get(&format!("{TESSDATA}{code}.traineddata"))
     })?
-    .ok_or_else(|| Error::Launch(format!("no Tesseract data for {code}")))?;
+    .ok_or_else(|| Error::Manual(format!("no Tesseract data for {code}")))?;
     if bytes.len() < 100_000 {
-        return Err(Error::Launch(format!("{code}.traineddata came back too small")));
+        return Err(Error::Manual(format!("{code}.traineddata came back too small")));
     }
     let path = ocr_dir(cache).join(format!("{code}.traineddata"));
     crate::atomic::write(&path, &bytes)?;
@@ -121,9 +121,9 @@ pub fn save_ocr(
             .any(|v| !v.is_finite() || !(-0.01..=1.01).contains(v))
     });
     if page == 0 || bad {
-        return Err(Error::Launch("OCR words outside their page".into()));
+        return Err(Error::Manual("OCR words outside their page".into()));
     }
-    let json = serde_json::to_string(words).map_err(|e| Error::Launch(e.to_string()))?;
+    let json = serde_json::to_string(words).map_err(|e| Error::Manual(e.to_string()))?;
     conn.execute(
         concat!(
             "INSERT INTO manual_ocr (system, game, page, lang, words, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ",

@@ -39,6 +39,7 @@ use crate::systems::System;
 
 mod dats;
 mod request;
+mod small;
 mod sources;
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,7 @@ mod watch;
 
 pub use dats::*;
 pub use request::*;
+pub use small::*;
 pub use sources::*;
 pub use watch::watching;
 
@@ -70,3 +72,6 @@ const MAX_BODY: u64 = 512 << 20;
 
 /// No DAT unpacks to this; it stops a zip bomb.
 const MAX_UNPACKED: u64 = 1 << 30;
+/// All of a zip's DATs together (TOSEC's pack unpacks to about 1 GiB):
+/// every member is held in memory at once.
+const MAX_UNPACKED_TOTAL: u64 = 4 << 30;

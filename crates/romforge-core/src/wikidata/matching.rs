@@ -120,7 +120,7 @@ fn is_edition(part: &str) -> bool {
 
 pub(super) fn sparql(endpoint: &str, query: &str) -> Result<Vec<HashMap<String, String>>, Error> {
     let url = format!("{endpoint}?format=json&query={}", fetch::encode_segment(query));
-    let body = fetch::get(&url)?;
+    let body = fetch::get_small(&url)?;
     parse_results(&body)
 }
 

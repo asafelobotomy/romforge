@@ -7,7 +7,7 @@ use romforge_core::enrich::default_cache_dir;
 use romforge_core::home::Home;
 
 use crate::art::ArtRoots;
-use crate::db::{Db, Res, db_path, read};
+use crate::db::{Db, Res, blocking, db_path, read};
 
 #[derive(serde::Serialize)]
 pub struct HomeInfo {
@@ -24,7 +24,7 @@ pub async fn home_info(db: tauri::State<'_, Db>) -> Res<HomeInfo> {
     read(&db, |lib| {
         Ok(HomeInfo {
             root: lib.home().map(|h| h.root().to_owned()),
-            existing: lib.home().is_none() && lib.library_view()?.rows.len() + lib.summary()?.dats.len() > 0,
+            existing: lib.home().is_none() && !lib.is_empty()?,
             suggested: std::env::var_os("HOME").map(PathBuf::from),
         })
     })
@@ -39,48 +39,25 @@ pub async fn home_create(
     roots: tauri::State<'_, ArtRoots>,
     parent: String,
 ) -> Res<PathBuf> {
-    let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
-    let detached = db.detached.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
-        // Background fetches on their own connection finish first.
-        let _alone = detached.write().unwrap_or_else(|e| e.into_inner());
-        let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
-        let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
-        let current = w.home().cloned();
+    detached(&db, &roots, move |current, _| {
         let old = db_path();
-        // Both connections close before the database moves.
-        *w = Library::open_in_memory()?;
-        *r = Library::open_in_memory()?;
-        let done = romforge_core::home::create_or_adopt(
-            Path::new(&parent),
-            current.as_ref(),
-            &old,
-            &default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR),
-        );
-        // Where the library is now: in the folder, unless that failed (then
-        // where it was, or in the folder if it moved before the failure).
-        let at = match &done {
-            Ok(d) => Some(d.home().db()),
-            Err(_) if old.is_file() => Some(old.clone()),
-            Err(_) => Home::in_parent(Path::new(&parent))
-                .map(|h| h.db())
-                .filter(|p| p.is_file()),
-        };
-        let Some(at) = at else {
+        let parent = Path::new(&parent);
+        let art = default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
+        let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &old, &art);
+        let Some(at) = romforge_core::home::db_after_create(parent, &old, &done) else {
             return Err(romforge_core::Error::Settings(format!(
                 "{}; the library couldn't be found again: restart romforge",
                 done.err().map_or_else(String::new, |e| e.to_string())
             )));
         };
-        reopen(&mut w, &mut r, &at, &old)?;
-        roots.set(&w);
-        let done = done?;
-        done.home().remember()?;
-        Ok(done.home().root().to_owned())
+        let finish = move || {
+            let done = done?;
+            done.home().remember()?;
+            Ok(done.home().root().to_owned())
+        };
+        Ok((at, old, Box::new(finish) as Finish))
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
 }
 
 /// Move the RomForge folder into `parent`: both connections close, the
@@ -91,29 +68,56 @@ pub async fn home_move(
     roots: tauri::State<'_, ArtRoots>,
     parent: String,
 ) -> Res<PathBuf> {
+    detached(&db, &roots, move |current, was| {
+        let Some(old) = current else {
+            let no = || Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
+            return Ok((was.clone(), was, Box::new(no) as Finish));
+        };
+        let moved = romforge_core::home::relocate(&old, Path::new(&parent));
+        let at = romforge_core::home::db_after_move(&old, &moved);
+        let finish = move || {
+            let new = moved?;
+            new.remember()?;
+            Ok(new.root().to_owned())
+        };
+        Ok((at, old.db(), Box::new(finish) as Finish))
+    })
+    .await
+}
+
+/// What a move says once both connections are open again.
+type Finish = Box<dyn FnOnce() -> Result<PathBuf, romforge_core::Error> + Send>;
+
+/// Run `change` (given the RomForge folder in use and where the database
+/// is) with no connection open on the database: the background ones done
+/// first, both of the app's in memory meanwhile. It moves the database
+/// and says where it is now, where it was, and what to answer; both
+/// connections then open there ([`reopen`]) and the art roots follow.
+async fn detached(
+    db: &tauri::State<'_, Db>,
+    roots: &tauri::State<'_, ArtRoots>,
+    change: impl FnOnce(Option<Home>, PathBuf) -> Result<(PathBuf, PathBuf, Finish), romforge_core::Error>
+    + Send
+    + 'static,
+) -> Res<PathBuf> {
     let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
     let detached = db.detached.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, romforge_core::Error> {
+    blocking(move || {
         // Background fetches on their own connection finish first.
         let _alone = detached.write().unwrap_or_else(|e| e.into_inner());
         let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
         let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(old) = w.home().cloned() else {
-            return Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
-        };
+        // Both connections close before the database moves.
+        let current = w.home().cloned();
+        let was = w.path().map_or_else(db_path, Path::to_owned);
         *w = Library::open_in_memory()?;
         *r = Library::open_in_memory()?;
-        let moved = romforge_core::home::relocate(&old, Path::new(&parent));
-        let at = moved.as_ref().map_or_else(|_| old.db(), |h| h.db());
-        reopen(&mut w, &mut r, &at, &old.db())?;
+        let (at, fallback, finish) = change(current, was)?;
+        reopen(&mut w, &mut r, &at, &fallback)?;
         roots.set(&w);
-        let new = moved?;
-        new.remember()?;
-        Ok(new.root().to_owned())
+        finish()
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
 }
 
 /// Open both connections on `at`, else back on `fallback` (where the

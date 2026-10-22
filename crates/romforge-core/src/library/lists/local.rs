@@ -19,14 +19,24 @@ impl Library {
         let have = self
             .extdb_dir()
             .is_some_and(|d| d.join(layout::SCUMMVM_LIST).is_file());
-        let made_by = stamp(&self.conn, "list:scummvm").ok().flatten();
+        // A stamp that can't be read: the list is made again.
+        let made_by = match stamp(&self.conn, "list:scummvm") {
+            Ok(v) => v,
+            Err(e) => {
+                report.problems.push(format!("ScummVM's list: {e}"));
+                None
+            }
+        };
         if have && made_by.as_deref() == Some(version.as_str()) {
             return self.detect_new_roots(env, report);
         }
         match self.scummvm_read(env) {
             Ok(r) => {
-                let _ = set_stamp(&self.conn, "list:scummvm", &version);
-                let _ = self.remember_roots();
+                if let Err(e) =
+                    set_stamp(&self.conn, "list:scummvm", &version).and_then(|()| self.remember_roots())
+                {
+                    report.problems.push(format!("ScummVM's list: {e}"));
+                }
                 report
                     .updated
                     .push(format!("ScummVM's list ({version}: {} games here)", r.games));
@@ -38,12 +48,15 @@ impl Library {
     /// ScummVM's --detect for the scanned folders it was never asked about
     /// (the engines its list leaves out).
     pub(super) fn detect_new_roots(&mut self, env: &launch::Env, report: &mut ListsReport) {
-        let asked: BTreeSet<String> = stamp(&self.conn, "list:scummvm-roots")
-            .ok()
-            .flatten()
+        let (asked, roots) = match stamp(&self.conn, "list:scummvm-roots")
+            .and_then(|asked| Ok((asked, scummvm::top_roots(&self.conn)?)))
+        {
+            Ok(x) => x,
+            Err(e) => return report.problems.push(format!("ScummVM --detect: {e}")),
+        };
+        let asked: BTreeSet<String> = asked
             .map(|v| v.lines().map(str::to_owned).collect())
             .unwrap_or_default();
-        let roots = scummvm::top_roots(&self.conn).unwrap_or_default();
         let new: Vec<_> = roots
             .into_iter()
             .filter(|r| !asked.contains(&*r.to_string_lossy()))
@@ -68,7 +81,9 @@ impl Library {
             Ok(_) => {}
             Err(e) => report.problems.push(format!("ScummVM --detect: {e}")),
         }
-        let _ = self.remember_roots();
+        if let Err(e) = self.remember_roots() {
+            report.problems.push(format!("ScummVM --detect: {e}"));
+        }
     }
 
     fn remember_roots(&self) -> Result<(), Error> {

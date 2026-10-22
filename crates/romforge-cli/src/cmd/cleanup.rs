@@ -2,7 +2,7 @@
 
 use anyhow::{Result, bail};
 
-use romforge_core::{Library, Scope};
+use romforge_core::{Library, Scope, cleanup};
 
 use crate::args::Command;
 use crate::print::{bytes, print_cleanup};
@@ -40,22 +40,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 println!("nothing to import ({} skipped)", plan.skipped.len());
                 return Ok(());
             }
-            let total = plan.items.len();
-            let r = lib.cleanup_apply(&plan, |n, title| eprintln!("[{}/{total}] {title}", n + 1))?;
-            for (t, e) in &r.failed {
-                eprintln!("error: {t}: {e}");
-            }
-            println!(
-                "batch #{}: imported {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
-                r.batch_id,
-                r.done,
-                r.trashed,
-                r.failed.len(),
-                r.batch_id
-            );
-            if !r.failed.is_empty() {
-                bail!("{} games failed", r.failed.len());
-            }
+            apply_plan(lib, &plan, "imported", "games")?;
         }
         Command::Convert { apply, verbose } => {
             let plan = lib.convert_plan(None)?;
@@ -72,24 +57,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 println!("nothing to convert ({} skipped)", plan.skipped.len());
                 return Ok(());
             }
-            let total = plan.items.len();
-            let r = lib.cleanup_apply(&plan, |n, title| {
-                eprintln!("[{}/{total}] {title}", n + 1);
-            })?;
-            for (t, e) in &r.failed {
-                eprintln!("error: {t}: {e}");
-            }
-            println!(
-                "batch #{}: converted {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
-                r.batch_id,
-                r.done,
-                r.trashed,
-                r.failed.len(),
-                r.batch_id
-            );
-            if !r.failed.is_empty() {
-                bail!("{} discs failed", r.failed.len());
-            }
+            apply_plan(lib, &plan, "converted", "discs")?;
         }
         Command::Cleanup(CleanupCommand::Plan { verbose }) => {
             let plan = lib.cleanup_plan(None)?;
@@ -107,24 +75,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 println!("nothing to write ({} skipped)", plan.skipped.len());
                 return Ok(());
             }
-            let total = plan.items.len();
-            let r = lib.cleanup_apply(&plan, |n, title| {
-                eprintln!("[{}/{total}] {title}", n + 1);
-            })?;
-            for (t, e) in &r.failed {
-                eprintln!("error: {t}: {e}");
-            }
-            println!(
-                "batch #{}: wrote {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
-                r.batch_id,
-                r.done,
-                r.trashed,
-                r.failed.len(),
-                r.batch_id
-            );
-            if !r.failed.is_empty() {
-                bail!("{} games failed", r.failed.len());
-            }
+            apply_plan(lib, &plan, "wrote", "games")?;
         }
         Command::Cleanup(CleanupCommand::Undo { batch }) => {
             let u = lib.cleanup_undo(batch)?;
@@ -195,6 +146,29 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             }
         }
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// Carry out `plan` with a line per game, then say what was done
+/// (`verb`: imported, converted, wrote); fails when any of its `what`
+/// (games, discs) failed.
+fn apply_plan(lib: &mut Library, plan: &cleanup::CleanupPlan, verb: &str, what: &str) -> Result<()> {
+    let total = plan.items.len();
+    let r = lib.cleanup_apply(plan, |n, title| eprintln!("[{}/{total}] {title}", n + 1))?;
+    for (t, e) in &r.failed {
+        eprintln!("error: {t}: {e}");
+    }
+    println!(
+        "batch #{}: {verb} {}, trashed {} originals, failed {} (undo with `cleanup undo --batch {}`)",
+        r.batch_id,
+        r.done,
+        r.trashed,
+        r.failed.len(),
+        r.batch_id
+    );
+    if !r.failed.is_empty() {
+        bail!("{} {what} failed", r.failed.len());
     }
     Ok(())
 }

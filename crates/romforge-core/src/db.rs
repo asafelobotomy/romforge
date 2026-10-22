@@ -138,7 +138,9 @@ CREATE INDEX files_root ON files(root_id);
 CREATE TABLE matches (
     file_id INTEGER NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
     rom_id  INTEGER NOT NULL REFERENCES roms(rom_id) ON DELETE CASCADE,
-    -- 'sha1', 'md5' or 'crc32'; 'sheet' for a rewritten cue sheet (migration 18)
+    -- 'sha1', 'md5' or 'crc32'; 'sheet' for a rewritten cue sheet (migration 18);
+    -- 'confirmed' for a CRC32-only arcade ROM whose SHA1 fits MAME's same ROM,
+    -- 'disk' for an arcade disk by its CHD's SHA1 (see report::strong!)
     via     TEXT NOT NULL,
     -- 1 when the stripped (headerless) hashes matched
     stripped INTEGER NOT NULL,

@@ -15,10 +15,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - name: Licences (house rule 9)
+      # Advisories aren't checked: unmaintained crates Tauri pulls in (GTK 3
+      # bindings, zbus) fail them with no upgrade to take.
+      - name: Licences (house rule 9) and bans
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check licenses
+          command: check licenses bans
       - name: Quick start from the guide
         run: |
           export ROMFORGE_DB="$RUNNER_TEMP/quickstart.db"
@@ -47,6 +49,7 @@ jobs:
       # The fullscreen mode's focus moves (Node's own test runner).
       - run: node --test "test/*.test.mjs"
         working-directory: app
-      - run: cargo clippy -p romforge-app -- -D warnings
+      - run: cargo clippy -p romforge-app --all-targets -- -D warnings
+      - run: cargo test -p romforge-app
       - run: npx tauri build --no-bundle
         working-directory: app

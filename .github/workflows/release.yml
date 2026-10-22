@@ -21,6 +21,7 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           grep -q "^version = \"$v\"" Cargo.toml || { echo "Cargo.toml isn't $v"; exit 1; }
           grep -q "\"version\": \"$v\"" app/src-tauri/tauri.conf.json || { echo "tauri.conf.json isn't $v"; exit 1; }
+          grep -q "\"version\": \"$v\"" app/package.json || { echo "app/package.json isn't $v"; exit 1; }
           echo "VERSION=$v" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -32,6 +33,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev patchelf
       - run: npm ci
         working-directory: app
+      # The app crate embeds the built web UI, so build it before testing.
+      - run: npm run build
+        working-directory: app
+      - run: cargo test --workspace --locked
       - name: Build the packages (the CLI is built first, by beforeBuildCommand)
         working-directory: app
         env:
@@ -60,9 +65,11 @@ jobs:
           optdepends=('retroarch: play games (with its cores)'
                       'libretro-scummvm: ScummVM games in RetroArch'
                       'scummvm: ScummVM games, and naming them'
-                      'mame: FM-7 and FM Towns games'
+                      'mame: Arcade, FM-7 and FM Towns games'
                       'flatpak: DOSBox Staging or DOSBox-X from Flathub'
-                      'gtk-layer-shell: the radial menu over a fullscreen game')
+                      'gtk-layer-shell: the radial menu over a fullscreen game'
+                      'gst-plugins-good: music in the fullscreen mode (MP3, FLAC, WAV)'
+                      'gst-libav: music in M4A/AAC')
           provides=('romforge')
           conflicts=('romforge')
           source=("\$pkgname-\$pkgver.deb::https://github.com/asafelobotomy/romforge/releases/download/v\$pkgver/romforge_\${pkgver}_amd64.deb"

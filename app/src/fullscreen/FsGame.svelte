@@ -1,6 +1,6 @@
 <script>
   import { genres } from "../facts.js";
-  import { released, played } from "../labels.js";
+  import { displayTitle, released, played } from "../labels.js";
 
   // A game's own page in the fullscreen mode: its fanart dimmed behind,
   // the box, the logo (else the title), facts, the overview, and its
@@ -19,14 +19,14 @@
       {#if art.box3d || art.boxart}
         <img src={art.box3d || art.boxart} alt="" />
       {:else}
-        <span class="nobox" data-fs-title>{game.name?.title || game.title}</span>
+        <span class="nobox" data-fs-title>{displayTitle(game)}</span>
       {/if}
     </div>
     <div class="text">
       {#if art.logo}
-        <img class="logo" src={art.logo} alt={game.name?.title || game.title} />
+        <img class="logo" src={art.logo} alt={displayTitle(game)} />
       {:else}
-        <h1 data-fs-title>{game.name?.title || game.label || game.title}</h1>
+        <h1 data-fs-title>{displayTitle(game)}</h1>
       {/if}
       <p class="meta">{[game.system_name, released(f) || game.year, f.users && `${f.users} players`].filter(Boolean).join(" · ")}</p>
       {#if f.genre}

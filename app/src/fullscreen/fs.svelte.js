@@ -19,6 +19,9 @@ async function windowFullscreen(on) {
 }
 
 export function enter() {
+  // A desktop field keeping the focus would take the keys (the filter,
+  // hidden behind the mode).
+  document.activeElement?.blur?.();
   fs.on = true;
   windowFullscreen(true);
 }
@@ -31,12 +34,6 @@ export function leave() {
 export function toggle() {
   if (fs.on) leave();
   else enter();
-}
-
-// The window fullscreen again (after a game: a window shown again may come
-// back windowed).
-export function again() {
-  if (fs.on) windowFullscreen(true);
 }
 
 // Remembered between runs: the last platform and game, the art kind, the

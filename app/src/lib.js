@@ -1,7 +1,11 @@
 // Helpers more than one screen needs.
 
+// A file size in binary units: "512 B", "3.5 KiB", "1.2 MiB", "4.7 GiB".
 export function size(n) {
-  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MiB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${n} B`;
+  if (n >= 2 ** 30) return `${(n / 2 ** 30).toFixed(1)} GiB`;
+  if (n >= 2 ** 20) return `${(n / 2 ** 20).toFixed(1)} MiB`;
+  if (n >= 2 ** 10) return `${(n / 2 ** 10).toFixed(1)} KiB`;
+  return `${n} B`;
 }
 
 // The last part of a path, Windows' or anyone else's.

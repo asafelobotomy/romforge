@@ -1,5 +1,6 @@
 <script>
   import { edit, run } from "./jobs.svelte.js";
+  import { size } from "./lib.js";
   import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
   import CoresPanel from "./CoresPanel.svelte";
   import HotkeysPanel from "./HotkeysPanel.svelte";
@@ -75,7 +76,6 @@
     }
     setupBusy = false;
   }
-  const kib = (b) => (b >= 1 << 20 ? `${(b / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(b / 1024)} KB`);
 
   // Install an emulator from Flathub, then look again.
   let installing = $state("");
@@ -180,7 +180,7 @@
             {#if e.existing.sources.length}
               <p class="hint">
                 romforge starts {e.label} from its own folder, so what's in its usual one isn't seen there: {e.existing.files}
-                file{e.existing.files === 1 ? "" : "s"} ({kib(e.existing.bytes)}) in {e.existing.sources.map((s) => s.from).join(", ")}.
+                file{e.existing.files === 1 ? "" : "s"} ({size(e.existing.bytes)}) in {e.existing.sources.map((s) => s.from).join(", ")}.
                 Importing copies them across (memory cards, saves, controller mappings, settings; caches stay behind). Your
                 files aren't touched, and nothing already in romforge's folder is replaced except its settings file.
               </p>

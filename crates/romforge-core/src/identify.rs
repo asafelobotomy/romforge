@@ -2,7 +2,11 @@
 //!
 //! - size + SHA1, or size + MD5 when the DAT has no SHA1 → a real hit;
 //! - size + CRC32 when the DAT has neither SHA1 nor MD5 → a candidate only;
-//! - a stronger hash that disagrees rules the ROM out, whatever the CRC says.
+//! - a stronger hash that disagrees rules the ROM out, whatever the CRC says;
+//! - an arcade ROM with only a CRC32 (FBNeo's) whose file's SHA1 fits the
+//!   same ROM (size and CRC32) in an arcade DAT (MAME's) → `confirmed`, a
+//!   real hit;
+//! - a CHD whose header SHA1 is an arcade DAT's disk → `disk`, a real hit.
 //!
 //! Every hit is recorded; nothing is picked with `LIMIT 1`.
 

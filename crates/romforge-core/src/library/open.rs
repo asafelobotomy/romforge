@@ -33,6 +33,13 @@ impl Library {
         Self::open_at(path.as_ref(), true)
     }
 
+    /// A second connection beside the one the app keeps (network reads and
+    /// writes off its locks): it never runs the catch-up identify, which
+    /// belongs to the main connection (a DAT batch may be running on it).
+    pub fn open_beside(path: impl AsRef<Path>) -> Result<Self, Error> {
+        Self::open_at(path.as_ref(), false)
+    }
+
     /// `catch_up`: run an identify a DAT batch left due (not for a
     /// connection opened beside the batch itself, [`Library::edit`]).
     pub(super) fn open_at(path: &Path, catch_up: bool) -> Result<Self, Error> {
@@ -74,17 +81,33 @@ impl Library {
     /// files, then identify once at the end (also when `f` fails, since the
     /// DATs imported before the failure stay). Every import otherwise
     /// re-checks the whole library, which adds up over hundreds of DATs.
-    /// Batches nest; only the outermost one identifies.
+    /// Batches nest; only the outermost one identifies. When both `f` and
+    /// that identify fail, `f`'s error is the one returned.
     pub fn batch<T, E: From<Error>>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E> {
+        /// Leaves the batch however `f` ends (a panic too).
+        struct Depth<'a>(&'a mut Library);
+        impl Drop for Depth<'_> {
+            fn drop(&mut self) {
+                self.0.batch_depth -= 1;
+            }
+        }
         self.batch_depth += 1;
-        let result = f(self);
-        self.batch_depth -= 1;
+        let result = {
+            let depth = Depth(self);
+            f(&mut *depth.0)
+        };
         if self.batch_depth == 0 {
             // A TOSEC pack is shared within one batch only.
             fetch::forget_tosec_pack();
             // The marker stays in the database until identify succeeds.
-            if std::mem::take(&mut self.batch_dirty) || needs_identify(&self.conn)? {
-                self.identify()?;
+            let dirty = std::mem::take(&mut self.batch_dirty);
+            let identified = match needs_identify(&self.conn) {
+                Ok(due) if dirty || due => self.identify(),
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            };
+            if let Err(e) = identified {
+                return result.and(Err(e.into()));
             }
         }
         result

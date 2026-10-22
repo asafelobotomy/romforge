@@ -168,7 +168,7 @@ pub fn plan(
     let source = Source::Folder(PathBuf::new());
     let parts = match row.status {
         RowStatus::Verified => cleanup::verified_parts(conn, system.id, &row.title, &source)?,
-        _ => cleanup::named_parts(conn, &row.id, &source)?,
+        _ => cleanup::named_parts(conn, &v, &row.id, &source)?,
     }
     .map(|(p, _)| p)
     .ok_or_else(|| bad(format!("{}: no complete set of files to patch", row.title)))?;
@@ -194,6 +194,15 @@ pub fn plan(
             .first()
             .map(|i| &parts[*i])
             .ok_or_else(|| bad(format!("{}: no track", row.title)))?;
+        // Those are applied in memory: never to a whole disc image.
+        if !matches!(p.kind, Kind::Xdelta | Kind::Ppf) && !is_chd(&first.path) && first.size > patch::MAX_SIZE
+        {
+            return Err(bad(format!(
+                "a {} patch applies to files of at most 64 MiB; {} is bigger",
+                p.kind.name(),
+                first.name
+            )));
+        }
         let named = (p.kind == Kind::Xdelta)
             .then(|| crate::vcdiff::names(&p.data))
             .flatten()

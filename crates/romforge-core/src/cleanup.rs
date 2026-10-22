@@ -10,14 +10,16 @@
 //!   can't hold extra files).
 //!
 //! `<dest>` is the Library folder, else the Source folder. ROM data is
-//! streamed from the old file or archive straight into the new one; only
-//! tracks inside a 7z (one compressed stream) are unpacked, into the staging
-//! folder. Every new file is read back and its ROMs/tracks re-hashed against
+//! streamed from the old file or archive straight into the new one; only a
+//! 7z member (one compressed stream), or a big zip member packed with
+//! anything but store or deflate, is unpacked into the staging folder.
+//! Every new file is read back and its ROMs/tracks re-hashed against
 //! the originals before anything else happens. Without "keep originals" the
 //! originals then move to `.romforge-trash/<batch>/` next to them, and only
-//! when every file in them went into this batch. Every step is journaled so
-//! [`undo`] removes the new files and puts the originals back. Nothing is
-//! ever overwritten.
+//! when every file in them went into this batch and no other game needs
+//! them. Every step is journaled so [`undo`] (newest batch first) puts the
+//! originals back and moves the new files to the trash. Nothing is ever
+//! overwritten.
 
 use std::path::{Path, PathBuf};
 
@@ -26,8 +28,9 @@ use rusqlite::Connection;
 use crate::Error;
 use crate::home::Home;
 
-/// Zip members up to this size are read into memory; bigger ones are
-/// unpacked to staging.
+/// Zip members up to this size are read into memory; bigger ones stream
+/// from the zip (or, packed other than stored or deflated, are unpacked to
+/// staging).
 const IN_MEMORY: u64 = 64 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]

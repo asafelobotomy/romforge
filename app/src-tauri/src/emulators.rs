@@ -1,8 +1,10 @@
-//! Emulator Settings.
+//! Emulator Settings. Core downloads, installs and the core list's
+//! refresh run on a connection of their own ([`read_net`]): they take
+//! minutes, and `read` serves the library list meanwhile.
 
 use romforge_core::emusettings::{EmulatorSettings, EmulatorSettingsView};
 
-use crate::db::{Db, Res, edit, read, with};
+use crate::db::{Db, Res, edit, read, read_net, with};
 
 #[tauri::command]
 pub async fn get_emulator_settings(db: tauri::State<'_, Db>) -> Res<EmulatorSettingsView> {
@@ -32,7 +34,7 @@ pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> 
 
 #[tauri::command]
 pub async fn emulator_cores(db: tauri::State<'_, Db>, refresh: bool) -> Res<romforge_core::obtain::CoreList> {
-    read(&db, move |lib| {
+    read_net(&db, move |lib| {
         if refresh {
             lib.refresh_emulator_cores()?;
         }
@@ -41,23 +43,30 @@ pub async fn emulator_cores(db: tauri::State<'_, Db>, refresh: bool) -> Res<romf
     .await
 }
 
+/// `accept`: the user agreed to a non-commercial licence (the core
+/// refuses one without it).
 #[tauri::command]
 pub async fn download_core(
     app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     core: String,
+    accept: Option<bool>,
     job: Option<u64>,
 ) -> Res<String> {
     let job = crate::jobs::Job::start(&app, job);
-    read(&db, move |lib| job.watch(&core, || lib.download_core(&core))).await
+    let accept = accept.unwrap_or(false);
+    read_net(&db, move |lib| {
+        job.watch(&core, || lib.download_core(&core, accept))
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn remove_core(db: tauri::State<'_, Db>, core: String) -> Res<()> {
-    read(&db, move |lib| lib.remove_core(&core)).await
+    read_net(&db, move |lib| lib.remove_core(&core)).await
 }
 
 #[tauri::command]
 pub async fn install_emulator(db: tauri::State<'_, Db>, emulator: String) -> Res<String> {
-    read(&db, move |lib| lib.install_emulator(&emulator)).await
+    read_net(&db, move |lib| lib.install_emulator(&emulator)).await
 }

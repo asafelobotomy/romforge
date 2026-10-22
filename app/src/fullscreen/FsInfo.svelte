@@ -1,6 +1,6 @@
 <script>
   import { genres } from "../facts.js";
-  import { released, played } from "../labels.js";
+  import { displayTitle, released, played } from "../labels.js";
 
   // The focused game, beside the grid: its logo (else its title), the
   // platform and year, genre, players and play time. `detail` is the
@@ -13,9 +13,9 @@
 <aside class="info" data-fs-info aria-live="polite">
   {#if game}
     {#if logo}
-      <img class="logo" src={logo} alt={game.name?.title || game.title} />
+      <img class="logo" src={logo} alt={displayTitle(game)} />
     {:else}
-      <h2 data-fs-title>{game.name?.title || game.label || game.title}</h2>
+      <h2 data-fs-title>{displayTitle(game)}</h2>
     {/if}
     <p class="meta">{[game.system_name, released(f) || game.year].filter(Boolean).join(" · ")}</p>
     {#if f.genre}

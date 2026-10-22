@@ -212,3 +212,55 @@ fn requests_never_print_their_secrets() {
     assert_eq!(host_of("https://a.org:8080/x?y"), "a.org:8080");
     assert_eq!(host_of("http://a.org?q=1"), "a.org");
 }
+
+#[test]
+fn a_zip_of_dats_has_a_total_cap() {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.dat", "b.dat"] {
+        zip.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&[b'x'; 100]).unwrap();
+    }
+    let bytes = zip.finish().unwrap().into_inner();
+    assert_eq!(dats_in_capped(&bytes, 300).unwrap().len(), 2);
+    let e = dats_in_capped(&bytes, 150).unwrap_err();
+    assert!(e.to_string().contains("together"), "{e}");
+}
+
+#[test]
+fn a_busy_host_holds_every_worker() {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/x", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for (i, s) in listener.incoming().enumerate() {
+            let Ok(mut s) = s else { continue };
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut line = String::new();
+            while r.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            let head = if i == 0 {
+                "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2"
+            } else {
+                "HTTP/1.1 200 OK"
+            };
+            let _ = write!(s, "{head}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+    });
+    let first = {
+        let url = url.clone();
+        std::thread::spawn(move || get(&url))
+    };
+    std::thread::sleep(Duration::from_millis(500));
+    // Another worker asking the same host waits out the Retry-After too.
+    let started = Instant::now();
+    wait_for_host(&url);
+    assert!(
+        started.elapsed() >= Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    first.join().unwrap().unwrap();
+}

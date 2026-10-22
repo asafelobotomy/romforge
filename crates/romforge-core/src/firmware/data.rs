@@ -102,16 +102,30 @@ pub fn parse(bytes: &[u8]) -> Result<(Vec<Profile>, String), Error> {
     Ok((out, generated))
 }
 
+/// A file entry; `None` when it has no name, or when a name or path could
+/// leave the BIOS folder (absolute, `..`, a drive): the list is downloaded,
+/// and its paths are joined under the user's folders.
 fn file(v: &Value) -> Option<FileReq> {
     let name = v.get("name").and_then(Value::as_str)?.to_owned();
+    let path = v.get("path").and_then(Value::as_str).map(str::to_owned);
+    let standalone_path = v
+        .get("standalone_path")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if name.is_empty()
+        || !relative(&name)
+        || [&path, &standalone_path]
+            .into_iter()
+            .flatten()
+            .any(|p| !relative(p))
+    {
+        return None;
+    }
     let flag = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     Some(FileReq {
         name,
-        path: v.get("path").and_then(Value::as_str).map(str::to_owned),
-        standalone_path: v
-            .get("standalone_path")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        path,
+        standalone_path,
         required: flag("required"),
         hle: flag("hle_fallback"),
         size: v.get("size").and_then(Value::as_u64),
@@ -125,6 +139,15 @@ fn file(v: &Value) -> Option<FileReq> {
         regions: strings(v.get("region")),
         variant_group: v.get("variant_group").and_then(Value::as_str).map(str::to_owned),
     })
+}
+
+/// Whether `p` stays inside the folder it is joined to: only plain names
+/// (no root, `.`, `..` or drive), and no `\\` (a separator on Windows).
+fn relative(p: &str) -> bool {
+    !p.contains('\\')
+        && std::path::Path::new(p)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
 /// Strings in a value that is a string or a list of them.

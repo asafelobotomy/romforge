@@ -16,25 +16,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             refresh,
             no_wikidata,
         } => {
-            let mut kinds = Vec::new();
-            for a in art.iter().filter(|a| !a.eq_ignore_ascii_case("none")) {
-                match enrich::ArtKind::parse(a) {
-                    Some(k) => kinds.push(k),
-                    None => {
-                        bail!("unknown art kind {a:?} (boxart, title, snap, hero, logo, icon, box3d, none)")
-                    }
-                }
-            }
-            let opts = enrich::EnrichOptions {
-                art: kinds,
-                system,
-                refresh,
-                ..enrich::EnrichOptions::new(enrich::default_cache_dir())
-            };
-            let opts = enrich::EnrichOptions {
-                wikidata: if no_wikidata { None } else { opts.wikidata.clone() },
-                ..opts
-            };
+            let opts = enrich::EnrichOptions::chosen(system, Some(&art), !no_wikidata, refresh)?;
             let tty = std::io::stderr().is_terminal();
             let r = lib.enrich(&opts, |e| {
                 if tty {

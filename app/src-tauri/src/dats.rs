@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
 
-use crate::db::{Db, Res, blocking, read, with};
+use crate::db::{Db, Res, blocking, read, with, write_net};
 use crate::jobs::Job;
 
 #[derive(serde::Serialize)]
@@ -98,10 +98,11 @@ pub async fn download_dats(
 }
 
 /// Read ScummVM's detection list from the installed ScummVM, or from
-/// `file` (one saved with `scummvm --dump-all-detection-entries`).
+/// `file` (one saved with `scummvm --dump-all-detection-entries`). On its
+/// own connection ([`write_net`]): it downloads libretro's titles first.
 #[tauri::command]
 pub async fn scummvm_list(db: tauri::State<'_, Db>, file: Option<String>) -> Res<romforge_core::ScummvmList> {
-    with(&db, move |lib| {
+    write_net(&db, move |lib| {
         // libretro's names (its box art goes by them); without them,
         // ScummVM's own names stay.
         let _ = lib.scummvm_titles_download();

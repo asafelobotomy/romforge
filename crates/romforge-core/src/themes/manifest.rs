@@ -204,6 +204,36 @@ pub fn check_css(css: &str) -> Result<(), String> {
                 quote = Some(c);
                 text.push(c);
             }
+            // A url(...) is one token to the browser, braces and all: read
+            // it whole and allow only a plain relative path in it, so no
+            // brace hides inside (one would close the @scope it is served
+            // in).
+            '(' if text.to_ascii_lowercase().ends_with("url") => {
+                let mut inner = String::new();
+                loop {
+                    match chars.next() {
+                        Some(')') => break,
+                        Some(c) => inner.push(c),
+                        None => return Err("url( isn't closed".into()),
+                    }
+                }
+                let path = inner.trim();
+                let path = path
+                    .strip_prefix('"')
+                    .and_then(|p| p.strip_suffix('"'))
+                    .or_else(|| path.strip_prefix('\'').and_then(|p| p.strip_suffix('\'')))
+                    .unwrap_or(path);
+                let plain = !path.is_empty()
+                    && path
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._-/".contains(&b))
+                    && !path.starts_with('/')
+                    && !path.split('/').any(|p| p == "..");
+                if !plain {
+                    return Err(format!("theme.css: url({inner}) must be a file in the theme"));
+                }
+                text.push_str("(url)");
+            }
             '{' => {
                 depth += 1;
                 text.push(c);
@@ -237,17 +267,6 @@ pub fn check_css(css: &str) -> Result<(), String> {
         if lower.contains(bad) {
             return Err(format!("theme.css: {why}"));
         }
-    }
-    // Every url() is a plain relative path inside the theme.
-    let mut rest = lower.as_str();
-    while let Some(i) = rest.find("url(") {
-        rest = &rest[i + 4..];
-        let end = rest.find(')').ok_or("url( isn't closed")?;
-        let inner = rest[..end].trim().trim_matches(['"', '\'']);
-        if inner.contains(':') || inner.starts_with('/') || inner.split('/').any(|p| p == "..") {
-            return Err(format!("theme.css: url({inner}) must be a file in the theme"));
-        }
-        rest = &rest[end..];
     }
     Ok(())
 }

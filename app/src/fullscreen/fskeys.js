@@ -3,6 +3,8 @@
 // and down keep to the same place across rows of different lengths;
 // left and right wrap within a row.
 
+import { displayTitle } from "../labels.js";
+
 export const ROWS = [
   ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
   ["K", "L", "M", "N", "O", "P", "Q", "R", "S", "T"],
@@ -48,8 +50,8 @@ export function search(all, query, limit = 40) {
     return words.every((w) => t.includes(w));
   });
   const first = norm(query);
-  const starts = (r) => (norm(r.name?.title || r.title).startsWith(first) ? 0 : 1);
-  return hits.sort((a, b) => starts(a) - starts(b) || norm(a.name?.title || a.title).localeCompare(norm(b.name?.title || b.title))).slice(0, limit);
+  const starts = (r) => (norm(displayTitle(r)).startsWith(first) ? 0 : 1);
+  return hits.sort((a, b) => starts(a) - starts(b) || norm(displayTitle(a)).localeCompare(norm(displayTitle(b)))).slice(0, limit);
 }
 
 const norm = (s) =>

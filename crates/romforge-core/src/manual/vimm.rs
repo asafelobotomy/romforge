@@ -2,7 +2,10 @@
 //!
 //! Their PDF endpoint rejects romforge's User-Agent (HTTP 400). A browser
 //! UA plus a Referer of the manual's page matches what their own form
-//! sends. When their FPDF builder fails, pages from `image.php` are
+//! sends. Sending a browser UA here is deliberate (the owner's decision,
+//! to be kept): it is one download the user clicked for, as their own
+//! browser would make it, not a crawl; everywhere else romforge says who
+//! it is ([`fetch::USER_AGENT`]). When their FPDF builder fails, pages from `image.php` are
 //! wrapped into a PDF instead.
 
 use crate::Error;
@@ -39,7 +42,7 @@ pub(super) fn fetch_pdf(id: &str, dpi: u32) -> Result<Vec<u8>, Error> {
 }
 
 fn hand_download(page: &str) -> Error {
-    Error::Launch(format!(
+    Error::Manual(format!(
         "Vimm's Lair wouldn't send the PDF; open {page}, download it there, and drop it on the Manual tab"
     ))
 }
@@ -78,15 +81,15 @@ fn assemble_from_images(id: &str, referer: &str, dpi: u32, pages: u32) -> Result
     for p in 0..pages {
         let url = format!("{VIMM_PDF}image.php?type=manual&id={id}&page={p}&destDPI={dpi}");
         let Some(bytes) = get_bytes(&url, referer)? else {
-            return Err(Error::Launch("Vimm's Lair page image missing".into()));
+            return Err(Error::Manual("Vimm's Lair page image missing".into()));
         };
         let Some(dims) = jpeg_size(&bytes) else {
-            return Err(Error::Launch("Vimm's Lair page isn't a JPEG".into()));
+            return Err(Error::Manual("Vimm's Lair page isn't a JPEG".into()));
         };
         // Their "Error: Image not found." banner is a tiny PNG; reject
         // anything too small to be a manual scan.
         if dims.0 < 100 || dims.1 < 100 || bytes.len() < 2_000 {
-            return Err(Error::Launch("Vimm's Lair page image missing".into()));
+            return Err(Error::Manual("Vimm's Lair page image missing".into()));
         }
         jpegs.push((dims.0, dims.1, bytes));
     }
@@ -96,7 +99,7 @@ fn assemble_from_images(id: &str, referer: &str, dpi: u32, pages: u32) -> Result
 /// One JPEG page → one PDF page (DCTDecode; no re-encode).
 fn jpegs_to_pdf(pages: &[(u32, u32, Vec<u8>)]) -> Result<Vec<u8>, Error> {
     if pages.is_empty() {
-        return Err(Error::Launch("no pages to put in a PDF".into()));
+        return Err(Error::Manual("no pages to put in a PDF".into()));
     }
     let n = pages.len();
     let mut out = b"%PDF-1.4\n".to_vec();

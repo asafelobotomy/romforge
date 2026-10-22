@@ -16,7 +16,8 @@ pub(super) fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
         return Ok(());
     }
     // Hash-matched files beside it: in the same archive, or loose in the
-    // same folder.
+    // same folder (a range on `path`, which the (path, member) index serves:
+    // '0' comes right after '/').
     let mut beside_archive = tx.prepare(concat!(
         "SELECT file_id, member FROM files WHERE path = ?1 AND member <> ''
            AND status IN ",
@@ -26,7 +27,7 @@ pub(super) fn fit_sheets(tx: &Transaction) -> Result<(), Error> {
         "SELECT file_id, path FROM files WHERE member = '' AND status IN ",
         crate::report::holding!(),
         "
-           AND substr(path, 1, length(?1) + 1) = ?1 || '/' AND instr(substr(path, length(?1) + 2), '/') = 0"
+           AND path > ?1 || '/' AND path < ?1 || '0' AND instr(substr(path, length(?1) + 2), '/') = 0"
     ))?;
     let mut games_of = tx.prepare(concat!(
         "SELECT DISTINCT r.game_id FROM matches m JOIN roms r ON r.rom_id = m.rom_id

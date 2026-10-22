@@ -230,3 +230,16 @@ fn a_failed_picture_is_not_asked_for_every_run() {
     assert_eq!(hits.load(Ordering::SeqCst), 1, "asked once, then left alone");
     assert!(dir.path().join("Q1.failed").exists());
 }
+
+#[test]
+fn wikidata_replaces_the_downloaded_databases_not_libretro() {
+    let had = |v: &str, s: Option<&str>| (v.to_owned(), s.map(str::to_owned));
+    assert!(run::takes_over(None));
+    assert!(run::takes_over(Some(&had("???", None))), "junk");
+    assert!(
+        !run::takes_over(Some(&had("Nintendo", None))),
+        "libretro's stands"
+    );
+    assert!(run::takes_over(Some(&had("Nintendo", Some("launchbox")))));
+    assert!(run::takes_over(Some(&had("Nintendo", Some("openvgdb")))));
+}

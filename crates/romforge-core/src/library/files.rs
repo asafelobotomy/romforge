@@ -34,6 +34,11 @@ impl Library {
         cancel: &Cancel,
         progress: impl FnMut(usize, usize),
     ) -> Result<organize::Applied, Error> {
+        if self.home.is_some() {
+            return Err(Error::Organize(
+                "with a RomForge folder, Import does this; Organize only undoes earlier batches".into(),
+            ));
+        }
         organize::apply(&mut self.conn, plan, dest, cancel, progress)
     }
 
@@ -117,7 +122,7 @@ impl Library {
     /// Remove a cleanup batch's new files and put its originals back (the
     /// latest batch by default), then refresh.
     pub fn cleanup_undo(&mut self, batch_id: Option<i64>) -> Result<cleanup::CleanupUndone, Error> {
-        let u = cleanup::undo(&mut self.conn, batch_id)?;
+        let u = cleanup::undo(&mut self.conn, batch_id, self.home.as_ref())?;
         self.refresh(&ScanOptions::default(), |_, _| {})?;
         Ok(u)
     }

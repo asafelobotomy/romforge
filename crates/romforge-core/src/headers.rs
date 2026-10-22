@@ -146,11 +146,6 @@ pub fn detect(prefix: &[u8], size: u64) -> Option<&'static HeaderRule> {
         .find(|h| size > h.len as u64 && (h.detect)(prefix, size))
 }
 
-/// Whether an iNES header is NES 2.0 (byte 7, bits 2-3 == 0b10).
-pub fn is_nes2(prefix: &[u8]) -> bool {
-    prefix.starts_with(b"NES\x1a") && prefix.get(7).is_some_and(|b| b & 0x0c == 0x08)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,9 +159,6 @@ mod tests {
         let mut ines = [0u8; 128];
         ines[..4].copy_from_slice(b"NES\x1a");
         assert_eq!(kind(&ines, 16 + 1024), Some("ines"));
-        assert!(!is_nes2(&ines));
-        ines[7] = 0x08;
-        assert!(is_nes2(&ines));
 
         let mut fds = [0u8; 128];
         fds[..4].copy_from_slice(b"FDS\x1a");

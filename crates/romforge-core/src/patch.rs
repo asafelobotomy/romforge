@@ -59,7 +59,7 @@ pub struct Info {
 }
 
 /// Biggest source or target romforge applies a patch to (cartridges).
-const MAX_SIZE: u64 = 64 << 20;
+pub(crate) const MAX_SIZE: u64 = 64 << 20;
 
 /// Read a patch's header (and for BPS / UPS its footer, whose own CRC32
 /// must check out).

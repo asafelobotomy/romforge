@@ -23,13 +23,14 @@
   load();
 
   async function get(c) {
+    // romforge refuses a non-commercial core unless it was accepted here.
     if (c.non_commercial) {
       const ok = await ask(`${c.display_name}: its licence (${c.license}) forbids commercial use. Download it for your own use?`, { title: "Non-commercial core", kind: "warning" });
       if (!ok) return;
     }
     working = c.name;
     // A job in the queue (footer); its errors go to the status line.
-    const date = await run(`Downloading ${c.display_name}…`, "download_core", { core: c.name }, { key: `core:${c.name}` });
+    const date = await run(`Downloading ${c.display_name}…`, "download_core", { core: c.name, accept: c.non_commercial }, { key: `core:${c.name}` });
     if (date) note = `${c.display_name} (${date}) downloaded.`;
     working = "";
     await load();

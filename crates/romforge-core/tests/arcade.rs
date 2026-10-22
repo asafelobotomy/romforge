@@ -251,6 +251,41 @@ fn fbneo_sets_are_verified_through_mame() {
     assert_eq!(r.label.as_deref(), Some("Metal Slug - Super Vehicle-001"));
 }
 
+/// Only an arcade DAT's ROM confirms an FBNeo one: the same bytes listed
+/// with a SHA1 by a DAT of another system don't make a CRC32-only ROM a
+/// match (house rule 8).
+#[test]
+fn fbneo_is_not_confirmed_by_a_non_arcade_dat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sets = Sets::new();
+    let dir: PathBuf = tmp.path().join("arcade");
+    sets.write(&dir);
+    let mut lib = Library::open(tmp.path().join("lib.db")).unwrap();
+    lib.import_dat_bytes(sets.fbneo().as_bytes(), "fbneo.dat", Some("FBNeo"))
+        .unwrap();
+    let r = |n: &str, d: &[u8]| Sets::rom(n, d, true, "");
+    let other = format!(
+        "<?xml version=\"1.0\"?>\n<datafile><header><name>Nintendo - Game Boy</name></header>\n\
+         <game name=\"same bytes\"><description>same bytes</description>{}{}{}</game>\n</datafile>\n",
+        r("a.gb", &sets.bios),
+        r("b.gb", &sets.p1),
+        r("c.gb", &sets.s1),
+    );
+    lib.import_dat_bytes(other.as_bytes(), "gb.dat", Some("Game Boy"))
+        .unwrap();
+    lib.scan(&dir, Scope::All).unwrap();
+    let fb = lib
+        .library_view()
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.system.as_deref() == Some("FBNeo") && r.title == "mslug");
+    assert!(
+        fb.is_none_or(|r| r.status != RowStatus::Verified),
+        "a Game Boy DAT's SHA1 confirms no arcade ROM"
+    );
+}
+
 /// A game with a disk: its CHD (in a folder named after the set) is
 /// matched by the SHA1 its header keeps, and imported with the set.
 #[test]

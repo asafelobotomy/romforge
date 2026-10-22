@@ -66,6 +66,10 @@ fn write(patch: &[u8], source: &Path, out: &Path, made: &mut bool) -> Result<(),
             Ok(())
         }
         _ => {
+            // Checked before it is read: a disc image is never held whole.
+            if std::fs::metadata(source)?.len() > super::MAX_SIZE {
+                return Err(bad("IPS, BPS and UPS patches apply to files of at most 64 MiB"));
+            }
             let data = std::fs::read(source)?;
             let patched = apply(patch, &data).ok_or_else(|| bad("it doesn't fit this file"))?;
             let mut w = create(made)?;

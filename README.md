@@ -48,6 +48,11 @@ Download from the [latest release](https://github.com/asafelobotomy/romforge/rel
 Install **RetroArch** (with a few cores) and any standalone emulators you
 like; romforge finds them on its own, Flatpaks too.
 
+Steam Deck support, **Get themes…**, and the fullscreen extras (favourites,
+recently played, search, attract mode and music) are new since 0.6.1 and
+arrive in the next release (0.7); until then, [build from source](GUIDE.md#packages-and-building)
+to try them.
+
 ## Getting started
 
 1. **Open romforge.** On first run it offers to make a `RomForge` folder:
@@ -85,7 +90,7 @@ These hotkeys work in every supported emulator:
 | Select | R1 / L1 | Save / load a state |
 | Select | R2 / L2 (held) | Fast forward / rewind |
 | L3 | R3 | The emulator's menu |
-| L3 for 2 seconds | right stick | A ring of all of these, over the game |
+| L3 for 2 seconds | right stick | A ring of quit, save, load and the menu, over the game |
 
 Quit works everywhere. RetroArch, DuckStation and PCSX2 get the full set.
 

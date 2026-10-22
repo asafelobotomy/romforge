@@ -3,6 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { artSrc } from "./lib.js";
+  import { duration } from "./labels.js";
   import Splash from "./Splash.svelte";
 
   // A game while it runs (milestone 18, 1.6): a fullscreen splash with its
@@ -20,6 +21,11 @@
   let accents = {};
   invoke("all_systems")
     .then((all) => (accents = Object.fromEntries(all.map((s) => [s.key, s.accent]))))
+    .catch(() => {});
+  // The hotkeys' one-line reminder (from romforge's table).
+  let keysHint = $state("");
+  invoke("hotkeys_view", { emulators: [] })
+    .then((v) => (keysHint = v.hint))
     .catch(() => {});
   // The last game's art, for its exit splash.
   let lastArt = {};
@@ -61,17 +67,20 @@
     if (away && playing) invoke("tuck_away", { game: playing.game }).catch(() => {});
   }
 
-  const minutes = (s) => (s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
-
   // The emulator's window taking the focus means it's up.
   $effect(() => {
     let off = null;
-    win.onFocusChanged(({ payload: focused }) => !focused && hide(true)).then((f) => (off = f));
-    return () => off?.();
+    let gone = false;
+    win.onFocusChanged(({ payload: focused }) => !focused && hide(true)).then((f) => (gone ? f() : (off = f)));
+    return () => {
+      gone = true;
+      off?.();
+    };
   });
 
   $effect(() => {
     let off = null;
+    let gone = false;
     listen("game-ended", (e) => {
       const d = e.payload;
       hide();
@@ -84,11 +93,14 @@
       if (d.seconds < 10 && d.code !== 0 && d.code !== null) {
         error = `${d.playing.emulator} closed straight away (exit code ${d.code}); check its setup in Emulator Settings.`;
       } else {
-        note = `${d.playing.game}: played ${minutes(d.seconds)}.`;
+        note = `${d.playing.game}: played ${duration(d.seconds)}.`;
       }
       ended?.();
-    }).then((f) => (off = f));
-    return () => off?.();
+    }).then((f) => (gone ? f() : (off = f)));
+    return () => {
+      gone = true;
+      off?.();
+    };
   });
 
   // A game still running from before the page reloaded.
@@ -117,8 +129,8 @@
 {#if playing}
   <div class="playing" role="status">
     <span class="dot" aria-hidden="true"></span>
-    <span class="what">Playing <strong>{playing.game}</strong> · {playing.emulator} · {minutes(Math.max(0, Math.floor(now / 1000) - playing.started))}</span>
-    <span class="keys" title="romforge's game pad hotkeys (Emulator Settings → Hotkeys)">Select+Start quits · hold L3 for the menu</span>
+    <span class="what">Playing <strong>{playing.game}</strong> · {playing.emulator} · {duration(Math.max(0, Math.floor(now / 1000) - playing.started))}</span>
+    {#if keysHint}<span class="keys" title="romforge's game pad hotkeys (Emulator Settings → Hotkeys)">{keysHint}</span>{/if}
     <button onclick={stop} disabled={stopping} title="Asks the emulator to quit (it saves first); stops it only if it hasn't after 10 seconds">{stopping ? "Stopping…" : "Stop"}</button>
   </div>
 {/if}

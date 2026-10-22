@@ -90,3 +90,16 @@ fn sanitize_names() {
     assert_eq!(sanitize(" .. "), "_");
     assert_eq!(sanitize("Game."), "Game");
 }
+
+#[test]
+fn sanitize_avoids_windows_reserved_names_and_long_ones() {
+    assert_eq!(sanitize("CON"), "CON_");
+    assert_eq!(sanitize("nul.txt"), "nul_.txt");
+    assert_eq!(sanitize("COM1"), "COM1_");
+    assert_eq!(sanitize("COM0"), "COM0");
+    assert_eq!(sanitize("Contra (USA)"), "Contra (USA)");
+    assert_eq!(sanitize("a: b?"), "a- b-");
+    let long = "é".repeat(150);
+    let s = sanitize(&long);
+    assert!(s.len() <= 200 && s.chars().all(|c| c == 'é'), "{}", s.len());
+}

@@ -157,7 +157,7 @@ fn listing(cache: &Path, folder: &str) -> Result<Vec<(String, Option<u64>)>, Err
     let html = if fresh {
         std::fs::read_to_string(&kept)?
     } else {
-        let body = crate::fetch::get_optional(&format!("{RETROKIT}{folder}/{folder}-compressed.zip/"))?
+        let body = crate::fetch::get_small_optional(&format!("{RETROKIT}{folder}/{folder}-compressed.zip/"))?
             .unwrap_or_default();
         crate::atomic::write(&kept, &body)?;
         String::from_utf8_lossy(&body).into_owned()
@@ -208,8 +208,8 @@ fn kirkland(title: &str) -> Result<Vec<ManualOffer>, Error> {
         crate::fetch::percent_encode(&q)
     );
     let mut out = Vec::new();
-    for id in search_ids(&crate::fetch::get_optional(&url)?.unwrap_or_default()) {
-        let files = crate::fetch::get_optional(&format!("{METADATA}{id}/files"))?.unwrap_or_default();
+    for id in search_ids(&crate::fetch::get_small_optional(&url)?.unwrap_or_default()) {
+        let files = crate::fetch::get_small_optional(&format!("{METADATA}{id}/files"))?.unwrap_or_default();
         if let Some((name, size)) = item_pdf(&files) {
             out.push(ManualOffer {
                 source: "Kirkland's Manual Labor".into(),
@@ -256,7 +256,7 @@ pub fn download_offer(
     offer: &ManualOffer,
 ) -> Result<PathBuf, Error> {
     if !offer.url.starts_with(DOWNLOAD) {
-        return Err(Error::Launch(format!(
+        return Err(Error::Manual(format!(
             "not a manual romforge knows: {}",
             offer.url
         )));
@@ -267,7 +267,7 @@ pub fn download_offer(
     };
     let bytes = crate::fetch::request(&req)?.unwrap_or_default();
     if !super::is_pdf(&bytes) {
-        return Err(Error::Launch(format!("{} didn't send a PDF", offer.source)));
+        return Err(Error::Manual(format!("{} didn't send a PDF", offer.source)));
     }
     std::fs::create_dir_all(staging)?;
     let tmp = staging.join(format!("manual-{}.pdf", std::process::id()));

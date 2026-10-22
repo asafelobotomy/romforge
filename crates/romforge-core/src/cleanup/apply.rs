@@ -60,6 +60,8 @@ pub fn apply(
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let threads = crate::parallel::threads(s.threads);
     let items: Vec<(usize, &Item)> = plan.items.iter().enumerate().collect();
+    // Each game's details come from one view of the library, built once.
+    let view = crate::view::library(conn)?;
     // A few games per thread at a time: what they need from the database
     // (art and details) is read for one chunk only.
     for chunk in items.chunks(threads * 2) {
@@ -73,7 +75,9 @@ pub fn apply(
                 let turn = if !item::on_worker(item) {
                     Turn::Here(item)
                 } else {
-                    match item::prepare(conn, item, staging_root.join(n.to_string())) {
+                    let prepared = item::prepare(conn, &view, item, staging_root.join(n.to_string()))
+                        .and_then(|p| item::journal_intent(conn, batch_id, item).map(|()| p));
+                    match prepared {
                         Ok(p) => Turn::Worker(p, None),
                         Err(e) => Turn::Failed(e.to_string()),
                     }
@@ -95,8 +99,14 @@ pub fn apply(
             |_, (n, item, turn)| {
                 let result: Option<Result<bool, Error>> = match turn {
                     Turn::Here(i) if i.existing => {
-                        // Nothing to write; its copies go with the originals below.
-                        ok.push(i);
+                        // Nothing to write; its copies go with the originals
+                        // below, once it is checked still there.
+                        let staging = staging_root.join(n.to_string());
+                        match item::still_held(conn, i, &plan.dest, &staging) {
+                            Ok(()) => ok.push(i),
+                            Err(e) => report.failed.push((i.title.clone(), e.to_string())),
+                        }
+                        let _ = std::fs::remove_dir_all(&staging);
                         progress(n, &i.title);
                         return;
                     }
@@ -105,7 +115,7 @@ pub fn apply(
                         let r = if cancel.is_set() {
                             None
                         } else {
-                            Some(item::write_here(conn, batch_id, i, &staging))
+                            Some(item::write_here(conn, &view, batch_id, i, &staging))
                         };
                         let _ = std::fs::remove_dir_all(&staging);
                         r
@@ -113,9 +123,16 @@ pub fn apply(
                     Turn::Failed(e) => Some(Err(Error::Cleanup(e))),
                     Turn::Worker(p, w) => {
                         let _ = std::fs::remove_dir_all(p.staging());
-                        w.map(|w| {
-                            w.and_then(|w| item::journal(conn, batch_id, item, &w).map(|()| w.took_sheet))
-                        })
+                        match w {
+                            Some(Ok(w)) => {
+                                Some(item::journal(conn, batch_id, item, &w).map(|()| w.took_sheet))
+                            }
+                            // Not written: its intent rows go.
+                            w => match item::forget_intent(conn, batch_id, item) {
+                                Err(e) => Some(Err(e)),
+                                Ok(()) => w.map(|w| w.map(|w| w.took_sheet)),
+                            },
+                        }
                     }
                 };
                 match result {
@@ -152,7 +169,7 @@ pub fn apply(
     if !plan.keep_originals {
         for item in ok {
             for original in item.trash.iter().filter(|p| !failed_paths.contains(*p)) {
-                match trash(conn, batch_id, original, home) {
+                match trash(conn, batch_id, original, home, &batch_id.to_string()) {
                     Ok(()) => report.trashed += 1,
                     Err(e) => report
                         .failed
@@ -289,11 +306,11 @@ pub(super) fn write_playlists(conn: &Connection, batch: i64, written: &[&Item]) 
     Ok(n)
 }
 
-/// A folder this batch wrote, journaled with what is in it: the folders
-/// first (so undo, last first, empties them before removing them), then
-/// each file. Undo removes just these; anything put there since stays.
+/// What is in a folder this batch wrote (the folder itself is journaled
+/// already, before it): the folders first (so undo, last first, empties
+/// them before removing them), then each file. Undo removes just these;
+/// anything put there since stays.
 fn journal_tree(conn: &Connection, batch: i64, dir: &Path) -> Result<(), Error> {
-    journal_output(conn, batch, dir, "setdir")?;
     let mut files = Vec::new();
     for e in walkdir::WalkDir::new(dir).min_depth(1).sort_by_file_name() {
         let e = e.map_err(std::io::Error::from)?;
@@ -317,36 +334,49 @@ pub(crate) fn journal_output(conn: &Connection, batch: i64, path: &Path, kind: &
     Ok(())
 }
 
-/// `RomForge/.romforge-trash/<batch>/<the original's full path>`, or
-/// without a RomForge folder `<folder of original>/.romforge-trash/<batch>/<name>`.
-pub(super) fn trash(
-    conn: &Connection,
-    batch: i64,
-    original: &Path,
-    home: Option<&Home>,
-) -> Result<(), Error> {
-    let to = match home {
+/// `RomForge/.romforge-trash/<folder>/<the original's full path>`, or
+/// without a RomForge folder `<folder of original>/.romforge-trash/<folder>/<name>`.
+/// `folder` is the batch number (originals), or `undo-<batch>` (what an
+/// undo took away).
+pub(super) fn trash_path(original: &Path, home: Option<&Home>, folder: &str) -> PathBuf {
+    match home {
         Some(h) => {
             let rel: PathBuf = original
                 .components()
                 .filter(|c| matches!(c, std::path::Component::Normal(_)))
                 .collect();
-            h.trash().join(batch.to_string()).join(rel)
+            h.trash().join(folder).join(rel)
         }
         None => original
             .parent()
             .unwrap_or(Path::new("."))
             .join(layout::TRASH_DIR)
-            .join(batch.to_string())
+            .join(folder)
             .join(original.file_name().unwrap_or_default()),
-    };
+    }
+}
+
+/// Move `original` to [`trash_path`], journaled under `batch` (so emptying
+/// the trash finds it, and undo can put an original back).
+pub(super) fn trash(
+    conn: &Connection,
+    batch: i64,
+    original: &Path,
+    home: Option<&Home>,
+    folder: &str,
+) -> Result<(), Error> {
+    trash_to(conn, batch, original, &trash_path(original, home, folder))
+}
+
+/// Move `original` to `to` in the trash, journaled under `batch`.
+pub(super) fn trash_to(conn: &Connection, batch: i64, original: &Path, to: &Path) -> Result<(), Error> {
     // Journaled before it moves: a crash in between leaves a row undo can
     // act on, never a trashed file nothing knows about.
     conn.execute(
         "INSERT INTO cleanup_trash (batch_id, original, trashed) VALUES (?1, ?2, ?3)",
         params![batch, original.to_string_lossy(), to.to_string_lossy()],
     )?;
-    if let Err(e) = move_path(original, &to) {
+    if let Err(e) = move_path(original, to) {
         // Something is in the trash already (a move cut short after the
         // copy was in place): the row stays, so undo can put it back.
         if to.symlink_metadata().is_ok() {

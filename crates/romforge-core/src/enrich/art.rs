@@ -126,13 +126,36 @@ pub(super) fn get_image_halting(
     halting(&fetch::Request::image(url), halted)
 }
 
-fn halting(
-    req: &fetch::Request,
-    halted: &mut std::collections::HashSet<String>,
-) -> Result<Option<Vec<u8>>, Error> {
+/// The hosts that rate-limited this run: one worker's own, or shared.
+pub(super) trait Halted {
+    fn has(&self, host: &str) -> bool;
+    fn add(&mut self, host: String);
+}
+
+impl Halted for std::collections::HashSet<String> {
+    fn has(&self, host: &str) -> bool {
+        self.contains(host)
+    }
+    fn add(&mut self, host: String) {
+        self.insert(host);
+    }
+}
+
+impl Halted for &std::sync::Mutex<std::collections::HashSet<String>> {
+    fn has(&self, host: &str) -> bool {
+        self.lock().unwrap_or_else(|e| e.into_inner()).contains(host)
+    }
+    fn add(&mut self, host: String) {
+        self.lock().unwrap_or_else(|e| e.into_inner()).insert(host);
+    }
+}
+
+/// [`fetch::request`], unless `req`'s host rate-limited this run; a host
+/// that does now is added to `halted`.
+pub(super) fn halting(req: &fetch::Request, halted: &mut impl Halted) -> Result<Option<Vec<u8>>, Error> {
     let host = fetch::host_of(req.url).to_owned();
-    if halted.contains(&host) {
-        return Err(Error::Http(format!(
+    if halted.has(&host) {
+        return Err(Error::RateLimited(format!(
             "{host}: rate limiting, not asked again this run"
         )));
     }
@@ -140,7 +163,7 @@ fn halting(
     if let Err(e) = &r
         && fetch::is_rate_limited(e)
     {
-        halted.insert(host);
+        halted.add(host);
     }
     r
 }
@@ -158,14 +181,7 @@ pub(super) fn keep(
     source: &str,
     url: &str,
 ) -> Result<(), Error> {
-    let ext = image_ext(data).unwrap_or("png");
-    let path = opts
-        .art_dir
-        .clone()
-        .unwrap_or_else(|| opts.cache_dir.join(crate::layout::LOOSE_ART_DIR))
-        .join(system.key)
-        .join(kind.as_str())
-        .join(format!("{}.{ext}", cache_stem(game)));
+    let path = game::art_path(opts, system, game, kind, image_ext(data).unwrap_or("png"));
     save(&path, data).map_err(|e| Error::Http(format!("{}: {e}", path.display())))?;
     record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)?;
     conn.execute(

@@ -115,7 +115,8 @@ fn ext_of(name: &str) -> String {
         .unwrap_or_default()
 }
 
-fn is_archive(ext: &str) -> bool {
+/// Whether a (lower-case) extension is an archive's whose members are read.
+pub(crate) fn is_archive(ext: &str) -> bool {
     ext == "zip" || ext == "7z"
 }
 

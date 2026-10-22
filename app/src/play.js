@@ -1,9 +1,11 @@
+import { displayTitle } from "./labels.js";
+
 // Starting a game, the same from the desktop and the fullscreen mode:
 // never queued (a game starts at once, whatever job is running), then the
 // splash with the art there is (`art`: { box3d, boxart, platform }).
 export async function startGame(row, art, { call, nowPlaying, setNote }) {
   if (!row) return;
-  setNote(`Starting ${row.label ?? row.title}…`);
+  setNote(`Starting ${displayTitle(row)}…`);
   const r = await call("launch", { rowId: row.id });
   setNote("");
   if (!r) return;

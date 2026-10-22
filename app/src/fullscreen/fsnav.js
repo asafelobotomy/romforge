@@ -7,25 +7,35 @@
 // back, north, west, menu (Start), context (Select), page_up / page_down
 // (shoulders), first / last (triggers).
 
-// Keys standing in for a pad's buttons.
-const KEYS = {
-  ArrowUp: "up",
-  ArrowDown: "down",
-  ArrowLeft: "left",
-  ArrowRight: "right",
-  Enter: "accept",
-  Escape: "back",
-  Backspace: "back",
-  Tab: "menu",
-  " ": "context",
-  o: "north",
-  O: "north",
-  f: "west",
-  F: "west",
-  PageUp: "page_up",
-  PageDown: "page_down",
-  Home: "first",
-  End: "last",
+// Keys standing in for a pad's buttons: each action's keys, the first
+// being the one the help bar names (KEY_LABELS).
+const BINDINGS = {
+  up: ["ArrowUp"],
+  down: ["ArrowDown"],
+  left: ["ArrowLeft"],
+  right: ["ArrowRight"],
+  accept: ["Enter"],
+  back: ["Escape", "Backspace"],
+  menu: ["Tab"],
+  context: [" "],
+  north: ["o", "O"],
+  west: ["f", "F"],
+  page_up: ["PageUp"],
+  page_down: ["PageDown"],
+  first: ["Home"],
+  last: ["End"],
+};
+const KEYS = Object.fromEntries(Object.entries(BINDINGS).flatMap(([action, keys]) => keys.map((k) => [k, action])));
+
+// How the help bar names the keys: each action's, and the groups it shows
+// as one (page, move, side).
+const NAMES = { ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "◀", ArrowRight: "▶", Escape: "Esc", " ": "Space", o: "O", f: "F", PageUp: "PgUp", PageDown: "PgDn" };
+const named = (action) => NAMES[BINDINGS[action][0]] ?? BINDINGS[action][0];
+export const KEY_LABELS = {
+  ...Object.fromEntries(Object.keys(BINDINGS).map((a) => [a, named(a)])),
+  page: `${named("page_up")} / ${named("page_down")}`,
+  move: "Arrows",
+  side: `${named("left")} ${named("right")}`,
 };
 
 // The action a key press stands for, or null.

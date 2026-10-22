@@ -19,23 +19,14 @@ pub fn options(
     art: Option<Vec<String>>,
     wikidata: Option<bool>,
     overwrite: Option<bool>,
-) -> EnrichOptions {
-    let art = match art {
-        Some(ks) => ks.iter().filter_map(|k| ArtKind::parse(k)).collect(),
-        None => ArtKind::ALL.to_vec(),
-    };
-    let mut opts = EnrichOptions {
+) -> Res<EnrichOptions> {
+    EnrichOptions::chosen(
         system,
-        art,
-        refresh: overwrite.unwrap_or(false),
-        ..EnrichOptions::new(default_cache_dir())
-    };
-    match wikidata {
-        Some(false) => opts.wikidata = None,
-        Some(true) => opts.wikidata = Some(romforge_core::wikidata::ENDPOINT.to_owned()),
-        None => {}
-    }
-    opts
+        art.as_deref(),
+        wikidata.unwrap_or(true),
+        overwrite.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// The sidebar's platform icons (fetched once from retroarch-assets):
@@ -81,7 +72,7 @@ pub async fn enrich(
     job: Option<u64>,
 ) -> Res<EnrichReport> {
     let mut job = Job::start(&app, job);
-    let mut opts = options(system, art, wikidata, overwrite);
+    let mut opts = options(system, art, wikidata, overwrite)?;
     opts.cancel = job.cancel.clone();
     with(&db, move |lib| match &only {
         Some(ids) => lib.enrich_rows(&opts, ids, |e| report(&mut job, e)),
@@ -90,8 +81,8 @@ pub async fn enrich(
     .await
 }
 
-/// The pictures of `kind` the sources have for a row, each preview as a
-/// `data:` URL (Details' art picker).
+/// The pictures of `kind` the sources have for a row (Details' art
+/// picker); previews stay file paths, shown through `art://`.
 #[tauri::command]
 pub async fn art_choices(
     db: tauri::State<'_, Db>,
@@ -100,7 +91,6 @@ pub async fn art_choices(
 ) -> Res<romforge_core::enrich::ArtChoices> {
     let kind = ArtKind::parse(&kind).ok_or_else(|| format!("no art kind {kind:?}"))?;
     let opts = EnrichOptions::new(default_cache_dir());
-    // Previews stay file paths, shown through `art://`.
     read_net(&db, move |lib| lib.art_choices(&opts, &row_id, kind)).await
 }
 

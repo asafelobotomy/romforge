@@ -1,28 +1,12 @@
 //! `romforge-cli steam`: romforge in Steam (romforge_core::steam).
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use romforge_core::steam;
 
 use crate::subcommands::SteamCommand;
 
 fn root_and_user(user: Option<&str>) -> Result<(std::path::PathBuf, String)> {
-    let root = steam::roots()
-        .into_iter()
-        .next()
-        .context("Steam isn't installed here (no Steam folder found)")?;
-    let users = steam::users(&root);
-    let account = match user {
-        Some(u) => users
-            .iter()
-            .find(|x| x.account == u || x.name == u)
-            .map(|x| x.account.clone())
-            .with_context(|| format!("no Steam user {u:?} (see `romforge-cli steam status`)"))?,
-        None => users
-            .first()
-            .map(|u| u.account.clone())
-            .context("no Steam user has signed in here yet")?,
-    };
-    Ok((root, account))
+    steam::resolve(user).context("see `romforge-cli steam status`")
 }
 
 pub fn run(command: &SteamCommand) -> Result<()> {
@@ -69,9 +53,6 @@ pub fn run(command: &SteamCommand) -> Result<()> {
             }
             if *dry_run {
                 return Ok(());
-            }
-            if steam::running() {
-                bail!("Steam is running: close it first (it rewrites its shortcuts when it closes)");
             }
             steam::apply(&p)?;
             println!(

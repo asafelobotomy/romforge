@@ -4,7 +4,7 @@ use std::io::IsTerminal;
 
 use anyhow::{Result, bail};
 
-use romforge_core::{Library, LibraryFilter, ScanOptions, Scope, Status, systems};
+use romforge_core::{Library, ScanOptions, Scope, Status, systems};
 
 use crate::args::Command;
 use crate::print::{Progress, bytes, print_dats};
@@ -47,12 +47,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 };
                 eprintln!("error: {}{at}: {err}", path.display());
             }
+            let files = lib.files_under(&report.root)?;
             let root = report.root.to_string_lossy();
-            let files = lib.files(&LibraryFilter::default())?;
-            let files: Vec<_> = files
-                .iter()
-                .filter(|f| f.path.starts_with(root.as_ref()))
-                .collect();
             if !quiet {
                 for f in &files {
                     let shown = f.display_path();

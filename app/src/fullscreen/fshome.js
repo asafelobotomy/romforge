@@ -4,6 +4,8 @@
 // Pure, so it is tested in Node. A game is keyed by its system and title,
 // as favourites and play time are kept.
 
+import { displayTitle } from "../labels.js";
+
 export const gameKey = (r) => `${r.system}\t${r.title}`;
 
 // marks: { favourites: Set of keys, played: Map key → { seconds, sessions, last_played } }
@@ -22,7 +24,7 @@ export function virtualPlatforms(all, marks) {
 // How many Recently played and Most played list.
 export const RECENT = 50;
 
-const titleOf = (r) => (r.name?.title || r.label || r.title).toLowerCase();
+const titleOf = (r) => displayTitle(r).toLowerCase();
 
 // The games of platform `key`, in `sort` order ("title" or "year"); the
 // history lists keep their own order (latest, or longest played, first).

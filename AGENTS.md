@@ -23,13 +23,19 @@
    original goes, keep originals in a trash folder for undo, and never let
    extra files (art, `.nfo`, `.romforge.md`) shadow the ROM: they go in a
    `romforge/` folder inside the archive, the ROM stays at the top level.
+   Besides the emulators (and asking them for their own lists or
+   installers: ScummVM, MAME, RPCS3), the one program romforge runs is
+   `flatpak`, to start Flatpak emulators and to install emulators from
+   Flathub when the user asks (`obtain/flathub.rs`).
 8. **Matching is strict.** A match needs size + SHA1 or size + MD5. CRC32
    alone is only a candidate. Never fall back to a default system, never
    `LIMIT 1` over a hash that may belong to many games. A title the user
    picks by hand is its own status ("identified by you") and is never shown
    or counted as verified.
 9. **Licenses:** dependencies must be MIT, Apache-2.0, BSD, Zlib, ISC,
-   Unlicense or similar.
+   Unlicense or similar. MPL-2.0 is accepted only for the crates Tauri
+   itself pulls into the app, each named in `deny.toml`; never in
+   romforge-core or the CLI.
 10. **Data sources in order of preference.** (1) Free, no account and no
     key: libretro, Wikidata, plain search links. (2) Free key, no account:
     ScreenScraper with app credentials. (3) Free account and free key:
@@ -43,4 +49,4 @@
     included. A long module becomes a folder of child modules behind the
     same root file; a long component becomes smaller components. The one
     exemption is the systems table (`systems/table.rs`), which is data.
-    `tests/file_length.rs` enforces it.
+    `crates/romforge-core/tests/file_length.rs` enforces it.

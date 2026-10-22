@@ -31,7 +31,14 @@ pub(super) fn common_game(matched: &[&Member], is_archive: bool) -> Result<GameR
     }
 }
 
-/// A name safe as one path component on Linux, macOS and Windows.
+/// Longest name [`sanitize`] gives, in bytes: room left under the usual
+/// 255 for an extension and romforge's temporary `.<name>.romforge-part`.
+const MAX_NAME: usize = 200;
+
+/// A name safe as one path component on Linux, macOS and Windows: no
+/// separators or characters Windows refuses, no trailing dot or space, not
+/// a name Windows reserves (`CON`, `NUL`, `COM1`... get a `_`), and at most
+/// [`MAX_NAME`] bytes.
 pub(crate) fn sanitize(name: &str) -> String {
     let s: String = name
         .chars()
@@ -41,9 +48,28 @@ pub(crate) fn sanitize(name: &str) -> String {
             c => c,
         })
         .collect();
-    let s = s.trim().trim_end_matches('.').trim();
+    let mut s = s.trim().trim_end_matches('.').trim();
+    if s.len() > MAX_NAME {
+        let mut end = MAX_NAME;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        s = s[..end].trim_end().trim_end_matches('.').trim_end();
+    }
     if s.is_empty() || s == "." || s == ".." {
-        "_".into()
+        return "_".into();
+    }
+    let stem = s.split('.').next().unwrap_or(s).trim_end().to_ascii_uppercase();
+    let reserved = ["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0');
+    if reserved {
+        match s.split_once('.') {
+            Some((a, b)) => format!("{}_.{b}", a.trim_end()),
+            None => format!("{s}_"),
+        }
     } else {
         s.to_owned()
     }

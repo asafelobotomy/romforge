@@ -48,7 +48,7 @@ fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, Pat
 /// with `emulator` (a name from [`status`]) or the best installed one.
 pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -> Result<LaunchSpec, Error> {
     let found = candidates(conn, query)?;
-    let Some((game, system_key, _, _)) = found.first().cloned() else {
+    if found.is_empty() {
         // A game that is a folder (ScummVM, DOS) by its title.
         let rows = crate::view::library(conn)?.rows;
         let q = query.to_lowercase();
@@ -73,20 +73,29 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
             },
         };
     };
-    let titles: std::collections::BTreeSet<&str> = found.iter().map(|f| f.0.as_str()).collect();
-    if titles.len() > 1 && !titles.contains(query) {
-        let some: Vec<&str> = titles.iter().take(5).copied().collect();
-        return Err(Error::Launch(format!(
-            "{query:?} matches several games: {}",
-            some.join(" | ")
-        )));
+    // A game is a title on a system: the same title on two systems is two
+    // games, never one game with both's files.
+    let mut games: std::collections::BTreeSet<(&str, &str)> =
+        found.iter().map(|f| (f.0.as_str(), f.1.as_str())).collect();
+    if games.iter().any(|g| g.0 == query) {
+        games.retain(|g| g.0 == query);
     }
+    let (game, system_key) = match games.iter().collect::<Vec<_>>().as_slice() {
+        [one] => **one,
+        many => {
+            let some: Vec<String> = many.iter().take(5).map(|(t, s)| format!("{t} ({s})")).collect();
+            return Err(Error::Launch(format!(
+                "{query:?} matches several games: {}",
+                some.join(" | ")
+            )));
+        }
+    };
     let files: Vec<(PathBuf, String)> = found
         .iter()
-        .filter(|f| f.0 == game)
+        .filter(|f| f.0 == game && f.1 == system_key)
         .map(|f| (f.2.clone(), f.3.clone()))
         .collect();
-    start(conn, env, &game, &system_key, &files, emulator)
+    start(conn, env, game, system_key, &files, emulator)
 }
 
 /// Work out how to start one row of the library (as [`crate::view`] lists

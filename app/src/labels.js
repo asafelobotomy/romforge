@@ -28,6 +28,18 @@ export const mediaKinds = ["box3d", "title", "snap", "icon"];
 export const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB", launchbox: "LaunchBox" };
 export const extdbLabel = { openvgdb: "OpenVGDB", launchbox: "LaunchBox" };
 
+// The name a game is shown by everywhere: the clean title from its
+// parsed name, else the set's label, else the DAT title.
+export const displayTitle = (r) => r?.name?.title || r?.label || r?.title || "";
+
+// How long something ran: "45 s", "12 min", "3.2 h". `seconds: false`
+// rounds anything short to at least "1 min" (recorded play time).
+export function duration(s, { seconds = true } = {}) {
+  if (seconds && s < 90) return `${s} s`;
+  if (s < 5400) return `${Math.max(1, Math.round(s / 60))} min`;
+  return `${(s / 3600).toFixed(1)} h`;
+}
+
 // What the name says, as one line: "USA · En, Ja · Rev 1 · Beta".
 // `flags`: the regions are shown as flags, so leave them out.
 export function edition(n, flags = false) {
@@ -65,7 +77,7 @@ export function released(f) {
 
 // Play time romforge recorded: "3.2 h · 5 times · last 19 Oct 2026".
 export function played(p) {
-  const time = p.seconds < 5400 ? `${Math.max(1, Math.round(p.seconds / 60))} min` : `${(p.seconds / 3600).toFixed(1)} h`;
+  const time = duration(p.seconds, { seconds: false });
   const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
 }

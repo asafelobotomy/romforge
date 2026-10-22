@@ -1,8 +1,11 @@
 //! Tauri shell over romforge-core. Every command is a call into the core.
-//! Each runs on a blocking thread (never the main thread or an async
-//! worker), and commands that only read use a second connection: SQLite's
-//! WAL lets them go on while a scan, Enrich or a download writes. Reads
-//! that wait on the network open their own (`db::read_net`).
+//! Those that touch the database, files or the network run on a blocking
+//! thread (never the main thread or an async worker); the few left
+//! synchronous only read memory (`job_cancel`, `now_playing`...). Commands
+//! that only read use a second connection: SQLite's WAL lets them go on
+//! while a scan, Enrich or a download writes. Reads that wait on the
+//! network open their own (`db::read_net`). The `art://`, `theme://` and
+//! `music://` schemes answer on a few worker threads ([`ArtPool`]).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -15,7 +18,6 @@ mod enrich;
 mod firmware;
 mod home;
 mod hotkeys;
-mod images;
 mod jobs;
 mod library;
 mod manual;
@@ -41,12 +43,24 @@ use crate::db::{Db, db_path};
 
 fn main() {
     let path = db_path();
-    let open = || Library::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));
+    // A library that can't open is said in a dialog, then romforge ends
+    // (`setup`); meanwhile empty ones in memory stand in.
+    let opened = Library::open(&path).and_then(|w| Ok((w, Library::open(&path)?)));
+    let (write, read, failed) = match opened {
+        Ok((w, r)) => (w, r, None),
+        Err(e) => {
+            let stand_in = || Library::open_in_memory().expect("a library in memory");
+            let why = format!("romforge couldn't open its library {}:\n\n{e}", path.display());
+            eprintln!("romforge: {why}");
+            (stand_in(), stand_in(), Some(why))
+        }
+    };
     let db = Db {
-        write: Arc::new(Mutex::new(open())),
-        read: Arc::new(Mutex::new(open())),
+        write: Arc::new(Mutex::new(write)),
+        read: Arc::new(Mutex::new(read)),
         detached: Arc::new(RwLock::new(())),
     };
+    let pool = ArtPool::new();
     let roots = {
         let lib = db.read.lock().unwrap_or_else(|e| e.into_inner());
         themes::set_dir(&lib);
@@ -57,8 +71,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol("art", {
-            let roots = roots.clone();
-            let pool = ArtPool::new();
+            let (roots, pool) = (roots.clone(), pool.clone());
             move |_ctx, request, responder| {
                 let roots = roots.0.read().unwrap_or_else(|e| e.into_inner()).clone();
                 let path = request.uri().path().to_owned();
@@ -66,9 +79,15 @@ fn main() {
                 pool.run(move || responder.respond(serve_art(&roots, &path, query.as_deref())));
             }
         })
-        .register_uri_scheme_protocol("theme", |_ctx, request| themes::serve(request.uri().path()))
-        .register_asynchronous_uri_scheme_protocol("music", |_ctx, request, responder| {
-            std::thread::spawn(move || responder.respond(music::serve(&request)));
+        .register_asynchronous_uri_scheme_protocol("theme", {
+            let pool = pool.clone();
+            move |_ctx, request, responder| {
+                let path = request.uri().path().to_owned();
+                pool.run(move || responder.respond(themes::serve(&path)));
+            }
+        })
+        .register_asynchronous_uri_scheme_protocol("music", move |_ctx, request, responder| {
+            pool.run(move || responder.respond(music::serve(&request)));
         })
         .manage(db)
         .manage(roots)
@@ -78,7 +97,17 @@ fn main() {
         .manage(start::start_options(std::env::args().skip(1)))
         // Game pads, heard even while an emulator has the focus: "pad"
         // events for the page (no pads, or no access: the app works without).
-        .setup(|app| {
+        .setup(move |app| {
+            if let Some(why) = failed {
+                use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                let handle = app.handle().clone();
+                app.dialog()
+                    .message(why)
+                    .title("romforge")
+                    .kind(MessageDialogKind::Error)
+                    .show(move |_| handle.exit(1));
+                return Ok(());
+            }
             let handle = app.handle().clone();
             let listening = romforge_core::controller::listen(move |e| {
                 // Raw buttons, the stick and time are for the hotkeys; the
@@ -87,6 +116,11 @@ fn main() {
                 match e {
                     PadEvent::Button { .. } | PadEvent::Stick { .. } | PadEvent::Tick => {
                         hotkeys::pad(&handle, &e)
+                    }
+                    // A pad going lets go of what it held, then the page hears.
+                    PadEvent::Disconnected { .. } => {
+                        hotkeys::pad(&handle, &e);
+                        let _ = tauri::Emitter::emit(&handle, "pad", &e);
                     }
                     _ => {
                         let _ = tauri::Emitter::emit(&handle, "pad", &e);
@@ -200,7 +234,6 @@ fn main() {
             themes::theme_preview,
             start::start_options_now,
             start::quit,
-            search::search_choose,
             search::forget_identity,
             library::all_systems
         ])

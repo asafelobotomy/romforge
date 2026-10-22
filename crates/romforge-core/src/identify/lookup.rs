@@ -9,6 +9,9 @@ pub(super) enum Via {
     /// CRC32 fitting the file, whose SHA1 fits a ROM of the same size and
     /// CRC32 in another DAT (MAME's): size + SHA1 after all (milestone 17).
     Confirmed,
+    /// An arcade DAT's disk (MAME's `<disk>`), by the SHA1 a CHD's header
+    /// keeps: SHA1 alone, as disks have no size or CRC32 in the DAT.
+    Disk,
 }
 
 impl Via {
@@ -18,6 +21,7 @@ impl Via {
             "md5" => Some(Via::Md5),
             "crc32" => Some(Via::Crc32),
             "confirmed" => Some(Via::Confirmed),
+            "disk" => Some(Via::Disk),
             _ => None,
         }
     }
@@ -28,6 +32,7 @@ impl Via {
             Via::Md5 => "md5",
             Via::Crc32 => "crc32",
             Via::Confirmed => "confirmed",
+            Via::Disk => "disk",
         }
     }
 

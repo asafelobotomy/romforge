@@ -29,19 +29,12 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 if !found.is_empty() {
                     println!("patches for it:");
                     for p in found {
-                        let how = match p.paired_by.as_str() {
-                            "source" => "made from its ROM",
-                            "names" => "names its file",
-                            "beside" => "beside it, same name",
-                            "title" => "named after the game",
-                            "readme" => "its readme names the game",
-                            _ => "in its folder",
-                        };
                         println!(
-                            "  {} ({}, {}; {how})",
+                            "  {} ({}, {}; {})",
                             p.path.display(),
                             p.kind,
-                            p.relation.as_str()
+                            p.relation.as_str(),
+                            p.paired_how()
                         );
                     }
                 }

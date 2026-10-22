@@ -8,9 +8,9 @@ use romforge_core::home::Home;
 
 /// The library twice: `write` for commands that change it, `read` for
 /// those that only look (a second connection to the same database).
-/// `detached`: held shared by [`write_net`] and [`edit`] calls while
-/// their own connection is open, and exclusively by a move of the database
-/// (taken before `write` and `read`, in that order everywhere).
+/// `detached`: held shared by [`read_net`], [`write_net`] and [`edit`]
+/// calls while their own connection is open, and exclusively by a move of
+/// the database (taken before `write` and `read`, in that order everywhere).
 pub struct Db {
     pub write: Arc<Mutex<Library>>,
     pub read: Arc<Mutex<Library>>,
@@ -61,19 +61,17 @@ pub async fn read<T: Send + 'static>(
     on(&db.read, f).await
 }
 
-/// For reads that wait on the network (searches, previews, art choices,
-/// platform icons): their own short-lived connection, so `read` stays
-/// free for every other command meanwhile. It opens where `read` is (the
-/// RomForge folder's database, else [`db_path`]), looked up under `read`'s
-/// lock so a move of the RomForge folder is never half seen.
+/// For reads that wait on the network or run long (searches, previews,
+/// art choices, platform icons, core and BIOS-list downloads, installs):
+/// their own short-lived connection, so `read` stays free for every other
+/// command meanwhile. It opens where `read` is, holding `detached` so a
+/// move of the RomForge folder waits for it.
 pub async fn read_net<T: Send + 'static>(
     db: &tauri::State<'_, Db>,
     f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
 ) -> Res<T> {
-    let at = read(db, |lib| Ok(lib.home().map(Home::db)))
-        .await?
-        .unwrap_or_else(db_path);
-    blocking(move || f(&mut Library::open(&at)?)).await
+    let (read, detached) = (db.read.clone(), db.detached.clone());
+    blocking(move || apart(&read, &detached, |at| f(&mut Library::open_beside(at)?))).await
 }
 
 /// For writes that mostly wait on the network (Search's fetch after a
@@ -85,7 +83,7 @@ pub async fn write_net<T: Send + 'static>(
     f: impl FnOnce(&mut Library) -> Result<T, romforge_core::Error> + Send + 'static,
 ) -> Res<T> {
     let (read, detached) = (db.read.clone(), db.detached.clone());
-    blocking(move || apart(&read, &detached, |at| f(&mut Library::open(at)?))).await
+    blocking(move || apart(&read, &detached, |at| f(&mut Library::open_beside(at)?))).await
 }
 
 /// For quick edits (forget a match, pick art, save settings...): their
@@ -105,7 +103,7 @@ pub async fn edit<T: Send + 'static>(
 /// Run `f` with where the database is, holding `detached` so a move of
 /// it waits for `f`. The place is `read`'s (never asked of `write`, which
 /// a long job holds): both connections always open at the same place.
-fn apart<T>(
+pub(crate) fn apart<T>(
     read: &Mutex<Library>,
     detached: &RwLock<()>,
     f: impl FnOnce(&Path) -> Result<T, romforge_core::Error>,
