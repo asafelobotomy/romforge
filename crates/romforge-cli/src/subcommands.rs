@@ -371,3 +371,23 @@ pub enum ThemesCommand {
         check: bool,
     },
 }
+
+#[derive(Subcommand)]
+pub enum SteamCommand {
+    /// Steam's folder, its users, and whether romforge is in their library
+    Status,
+    /// Add romforge to Steam (or move its shortcut to this romforge)
+    Add {
+        /// Only show what would be written
+        #[arg(long)]
+        dry_run: bool,
+        /// The Steam account (a `userdata` folder) [default: the most recent]
+        #[arg(long)]
+        user: Option<String>,
+    },
+    /// Take romforge out of Steam (its shortcut, art and template)
+    Remove {
+        #[arg(long)]
+        user: Option<String>,
+    },
+}

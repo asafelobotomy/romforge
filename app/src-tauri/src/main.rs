@@ -28,6 +28,7 @@ mod scan;
 mod search;
 mod settings;
 mod start;
+mod steam;
 mod themes;
 mod tray;
 
@@ -190,6 +191,10 @@ fn main() {
             marks::game_emulator,
             marks::set_game_emulator,
             music::music_tracks,
+            steam::steam_status,
+            steam::steam_plan,
+            steam::steam_add,
+            steam::steam_remove,
             themes::theme_install,
             themes::theme_remove,
             themes::theme_preview,

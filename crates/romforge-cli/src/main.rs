@@ -79,6 +79,11 @@ fn main() -> Result<()> {
         _ => {}
     }
 
+    // Steam needs no library.
+    if let Command::Steam(c) = &cli.command {
+        return cmd::steam::run(c);
+    }
+
     // Making an index needs no library.
     if let Command::Themes(ThemesCommand::Index { repo, check }) = &cli.command {
         return cmd::themes::index(repo, *check);
@@ -122,6 +127,7 @@ fn main() -> Result<()> {
         c @ Command::Search(_) => cmd::search::run(&mut lib, c)?,
         c @ Command::Games { .. } => cmd::games::run(&mut lib, c)?,
         Command::Themes(c) => cmd::themes::run(&lib, c)?,
+        Command::Steam(_) => unreachable!("handled before the library opens"),
         Command::Home(_) => unreachable!("handled before the library opens"),
     }
     Ok(())

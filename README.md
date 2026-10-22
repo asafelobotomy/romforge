@@ -89,6 +89,15 @@ These hotkeys work in every supported emulator:
 
 Quit works everywhere. RetroArch, DuckStation and PCSX2 get the full set.
 
+## On a Steam Deck
+
+**Settings → Steam → Add to Steam…** puts romforge in your Steam library
+(close Steam first): it opens in the fullscreen mode, with its own art,
+and starts your games itself. A **romforge (Deck)** controller template
+comes with it; pick it once in romforge's controller settings in Steam.
+It maps the back buttons: L4 quits a game, R4 held opens the ring of
+hotkeys.
+
 ## Themes
 
 Pick the fullscreen look from **Start → Theme** or **Settings → Display**:

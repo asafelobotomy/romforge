@@ -6,6 +6,7 @@
   import { edit } from "./jobs.svelte.js";
   import ThemeSettings from "./ThemeSettings.svelte";
   import FullscreenSettings from "./FullscreenSettings.svelte";
+  import SteamSettings from "./SteamSettings.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -85,6 +86,7 @@
     ["cleanup", "Rename & Cleanup"],
     ["display", "Display"],
     ["sources", "Sources"],
+    ["steam", "Steam"],
     ["credits", "Credits"],
   ];
   let stab = $state("folders");
@@ -321,6 +323,8 @@
         </div>
         {#if scummvmNote}<p class="hint" role="status">{scummvmNote}</p>{/if}
       </section>
+      {:else if stab === "steam"}
+      <SteamSettings />
       {:else}
       <section class="setting credits">
         {#snippet link(url, text)}<button class="linkish" onclick={() => openUrl(url)}>{text}</button>{/snippet}

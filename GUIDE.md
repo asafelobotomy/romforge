@@ -11,7 +11,7 @@ and what is still open.
 - [The RomForge folder](#the-romforge-folder)
 - [DOS, ScummVM and Japanese computers](#dos-scummvm-and-japanese-computers) · [Arcade](#arcade-mame-and-fbneo) · [Patches](#patches-translations-and-hacks)
 - [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo)
-- [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes)
+- [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes) · [Steam and the Steam Deck](#steam-and-the-steam-deck)
 - [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
 
 Scanning and identifying only read your files. Only `organize apply` moves
@@ -753,6 +753,38 @@ file's path, size and SHA-256, under `themes/<id>/`. `romforge-cli themes
 index` writes it from the folders, refusing any theme romforge would refuse
 (its CI runs it with `--check`). `ROMFORGE_THEMES_INDEX` points romforge at
 another index: a URL, a `themes.json`, or a checkout's folder.
+
+## Steam and the Steam Deck
+
+romforge goes into Steam as one non-Steam game, started with
+`--fullscreen`: games are picked inside romforge, which starts each
+emulator as its own child (gamescope, Steam's Game Mode, loses windows a
+launcher hands off). **Settings → Steam** shows what it would write first:
+
+- the entry in `userdata/<account>/config/shortcuts.vdf` (your other
+  shortcuts kept as they are; the file is backed up to
+  `shortcuts.vdf.romforge-backup`), named romforge, starting the AppImage
+  when romforge runs as one, else `romforge-app`;
+- its art in `config/grid/` (portrait and wide capsules, hero, logo, icon),
+  romforge's own;
+- the **romforge (Deck)** template in `controller_base/templates/`: an Xbox
+  pad (romforge reads the pad itself), the right trackpad as mouse, L4
+  Select+Start (quit), R4 L3 (held: the ring of hotkeys), L5 Select, R5
+  Start. Pick it in romforge's controller settings in Steam.
+
+Steam rewrites its list of shortcuts when it closes, so nothing is written
+while it runs. Moving romforge (a new AppImage) and adding it again moves
+the one entry; **Remove from Steam** takes the entry, its art and the
+template out again.
+
+```bash
+romforge-cli steam status
+romforge-cli steam add --dry-run   # what it would write
+romforge-cli steam add [--user ACCOUNT]
+romforge-cli steam remove
+```
+
+`ROMFORGE_STEAM_ROOT` points romforge at another Steam folder (tests).
 
 ## Packages and building
 

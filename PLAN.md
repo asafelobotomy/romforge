@@ -1346,6 +1346,18 @@ themes. Researched online the same day (sources below); decided:
    ScummVM core before Import writes the `.scummvm` file), video snaps in
    attract mode.
 7. *Steam Deck:* `shortcuts.vdf` entry with art, Steam Input templates.
+   *(Built 2026-10-22.)* `steam.rs`: binary VDF read and write keeping
+   unknown keys, the id `crc32(Exe + AppName) | 0x80000000`, users from
+   `loginusers.vdf` (no `MostRecent` here: the newest `Timestamp`) and
+   `userdata/`, Steam running seen in `/proc` (nothing written then); one
+   romforge entry (tagged, replaced in place), our own art in `grid/`, a
+   `controller_neptune` template in `controller_base/templates/`.
+   Formats checked in Steam ROM Manager, BoilR / steam_shortcuts_util and
+   EmuDeck. Settings → Steam (dry run, Add, Remove) and `romforge-cli
+   steam`. Tried on a scratch Steam folder only. Not yet: the template on
+   a real Deck (the Select+Start chord from one back button is inferred),
+   assigning the template for the user (SRM's configset), the Flatpak
+   Steam's sandbox (it may need `flatpak-spawn --host`).
 
 Not yet sourced: video snaps (no current art source has videos;
 ScreenScraper does, keyed, so later as an art source); RetroAchievements

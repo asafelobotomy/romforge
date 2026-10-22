@@ -8,7 +8,7 @@ use romforge_core::organize;
 
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
-    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand, ThemesCommand,
+    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand, SteamCommand, ThemesCommand,
 };
 
 #[derive(Parser)]
@@ -170,6 +170,10 @@ pub enum Command {
     /// A game's manual (a PDF): yours, archive.org's or Vimm's Lair's scan
     #[command(subcommand)]
     Manual(ManualCommand),
+    /// romforge in Steam: one shortcut (fullscreen mode), its art and a
+    /// Steam Deck controller template (stage 2, step 7). Steam must be closed
+    #[command(subcommand)]
+    Steam(SteamCommand),
     /// The fullscreen mode's themes: yours, and the community's from the
     /// romforge-themes index (stage 2, step 5)
     #[command(subcommand)]

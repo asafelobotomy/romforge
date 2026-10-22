@@ -39,6 +39,7 @@ pub mod scan;
 pub mod scummvm;
 pub mod search;
 pub mod settings;
+pub mod steam;
 pub mod suggest;
 pub mod systems;
 pub mod themes;
