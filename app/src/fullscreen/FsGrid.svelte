@@ -13,9 +13,15 @@
   let w = $state(1200);
   let h = $state(600);
   let el = $state(null);
-  const GAP = 18;
+  // The focused card grows (scale 1.05) and wears a ring outside it
+  // (0.5vh offset + 0.5vh outline, more with a theme's shadow): ROOM keeps
+  // that inside the grid, clear of the platforms above, and GAP keeps it
+  // off the cards beside it. Both in vh, as the ring is.
+  let screenH = $state(typeof innerHeight === "number" ? innerHeight : 800);
+  let ROOM = $derived(Math.round(screenH * 0.03));
+  let GAP = $derived(Math.max(18, Math.round(screenH * 0.036)));
   let rowsShown = $derived(h > 760 ? 3 : 2);
-  let cardH = $derived(Math.max(120, (h - GAP * (rowsShown - 1)) / rowsShown));
+  let cardH = $derived(Math.max(120, (h - 2 * ROOM - GAP * (rowsShown - 1)) / rowsShown));
   // The card's shape is the theme's (--fs-card-ratio), read again as the
   // space or the theme changes (after its CSS has had a frame to apply).
   let frame = $state(0);
@@ -30,7 +36,7 @@
   });
   let cardW = $derived(cardH * ratio);
   $effect(() => {
-    cols = Math.max(1, Math.floor((w + GAP) / (cardW + GAP)));
+    cols = Math.max(1, Math.floor((w - 2 * ROOM + GAP) / (cardW + GAP)));
     rows = rowsShown;
   });
 
@@ -46,11 +52,13 @@
   const picture = (r) => r.pictures?.[art] ?? r.pictures?.boxart ?? null;
 </script>
 
+<svelte:window bind:innerHeight={screenH} />
+
 <div class="grid" data-fs-grid data-fs-focus={focused ? "grid" : undefined} bind:clientWidth={w} bind:clientHeight={h} bind:this={el}>
   {#if !games.length}
     <p class="none">No games on this platform yet.</p>
   {:else}
-    <div class="cards" style="--cols: {cols}; --card-h: {cardH}px; --card-w: {cardW}px; --gap: {GAP}px">
+    <div class="cards" style="--cols: {cols}; --card-h: {cardH}px; --card-w: {cardW}px; --gap: {GAP}px; --room: {ROOM}px">
       {#each shown as r, k (r.id)}
         {@const i = top * cols + k}
         {@const src = thumbSrc(picture(r), cardH)}
@@ -71,7 +79,7 @@
 
 <style>
   .grid { position: relative; min-height: 0; height: 100%; }
-  .cards { display: grid; grid-template-columns: repeat(var(--cols), var(--card-w)); grid-auto-rows: var(--card-h); gap: var(--gap); justify-content: center; }
+  .cards { display: grid; grid-template-columns: repeat(var(--cols), var(--card-w)); grid-auto-rows: var(--card-h); gap: var(--gap); justify-content: center; padding: var(--room); }
   .card { position: relative; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--fs-radius); background: none; cursor: pointer; transition: transform 0.15s ease; }
   .card img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: calc(var(--fs-radius) * 0.6); filter: drop-shadow(0 0.8vh 1.2vh color-mix(in srgb, var(--fs-shadow) 75%, transparent)); }
   .card.sel { transform: scale(1.05); }
