@@ -26,6 +26,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         region_flags: get("region_flags")?.as_deref() != Some("0"),
         show_missing_versions: get("show_missing_versions")?.as_deref() == Some("1"),
         platform_icons: get("platform_icons")?.unwrap_or_default(),
+        language: get("language")?.unwrap_or_default(),
         threads: get("threads")?.and_then(|v| v.parse().ok()).unwrap_or(0),
         list_age_days: get("list_age_days")?
             .and_then(|v| v.parse().ok())
@@ -106,6 +107,7 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 Some(if s.show_missing_versions { "1" } else { "0" }.to_owned()),
             ),
             ("regions", Some(s.regions.join(", ")).filter(|r| !r.is_empty())),
+            ("language", Some(s.language.clone()).filter(|l| !l.is_empty())),
             (
                 "threads",
                 Some(s.threads).filter(|&n| n > 0).map(|n| n.to_string()),

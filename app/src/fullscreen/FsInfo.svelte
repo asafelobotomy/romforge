@@ -1,5 +1,5 @@
 <script>
-  import { genres, esrb, stars, regionFlags } from "../facts.js";
+  import { genres, ratings, stars, regionFlags } from "../facts.js";
   import { displayTitle, released, played, edition } from "../labels.js";
 
   // The focused game, beside the grid (under the covers in cover flow):
@@ -15,7 +15,7 @@
   const on = (k) => shown.includes(k);
   let flags = $derived(on("edition") ? regionFlags(mine?.name) : []);
   let ed = $derived(on("edition") ? edition(mine?.name, true) : "");
-  let rating = $derived(f.esrb ? esrb(f.esrb) : null);
+  let rated = $derived(ratings(f));
   let score = $derived(f.community_rating ? stars(f.community_rating) : null);
   let meta = $derived(
     [on("platform") && ["platform", game?.system_name], on("released") && ["released", released(f) || game?.year]].filter((m) => m && m[1]),
@@ -50,7 +50,7 @@
       {#if on("modes") && f.game_mode}<div data-fs-detail="modes"><dt>Modes</dt><dd>{f.game_mode}</dd></div>{/if}
       {#if on("developer") && f.developer}<div data-fs-detail="developer"><dt>Developer</dt><dd>{f.developer}</dd></div>{/if}
       {#if on("publisher") && f.publisher}<div data-fs-detail="publisher"><dt>Publisher</dt><dd>{f.publisher}</dd></div>{/if}
-      {#if on("rating") && f.esrb}<div data-fs-detail="rating"><dt>Rating</dt><dd>{rating ? `ESRB ${rating.code}` : f.esrb}</dd></div>{/if}
+      {#if on("rating") && rated.length}<div data-fs-detail="rating"><dt>Rating</dt><dd>{rated.map((r) => `${r.board} ${r.code}`).join(" · ")}</dd></div>{/if}
       {#if on("community") && f.community_rating}
         <div data-fs-detail="community">
           <dt>Community</dt>
@@ -64,7 +64,10 @@
     {#if on("derived") && mine?.derived}
       <p class="meta" data-fs-detail="derived">{mine.derived.relation === "translation" ? "Translation of" : "Hack of"} {mine.derived.base}</p>
     {/if}
-    {#if on("overview") && f.description}<p class="overview" data-fs-detail="overview">{f.description}</p>{/if}
+    {#if on("overview") && f.description}
+      <p class="overview" data-fs-detail="overview">{f.description}</p>
+      {#if mine?.field_sources?.description === "wikipedia"}<p class="credit" data-fs-detail="credit">From Wikipedia ({f.description_licence ?? "CC BY-SA 4.0"})</p>{/if}
+    {/if}
     {#if !game.playable}<p class="note">{game.packed ? "Still in its archive: Import unpacks it." : "Not playable yet."}</p>{/if}
   {/if}
 </aside>
@@ -83,6 +86,7 @@
   dd { margin: 0; }
   .stars { position: relative; display: inline-block; color: color-mix(in srgb, var(--fs-muted) 45%, transparent); }
   .stars .on { position: absolute; inset: 0 auto 0 0; overflow: hidden; white-space: nowrap; color: var(--fs-accent); }
+  .credit { margin: 0.4vh 0 0; color: var(--fs-muted, var(--fs-text)); opacity: 0.7; font-size: calc(1.4vh * var(--fs-scale)); }
   .overview { margin: 0; color: var(--fs-text); font-size: calc(1.9vh * var(--fs-scale)); line-height: 1.4; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--fs-overview-lines, 6); overflow: hidden; }
   .note { margin: 0; color: var(--fs-warn); font-size: calc(1.9vh * var(--fs-scale)); }
 </style>

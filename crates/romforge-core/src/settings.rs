@@ -23,6 +23,8 @@ mod keys;
 pub use keys::*;
 mod store;
 pub use store::*;
+mod language;
+pub use language::LANGUAGES;
 mod regions;
 pub use regions::parse_regions;
 mod details;
@@ -66,6 +68,10 @@ pub struct Settings {
     /// first ("USA", "Europe", "Japan"...). Empty: [`crate::organize::DEFAULT_REGIONS`].
     #[serde(default)]
     pub regions: Vec<String>,
+    /// The language descriptions are fetched in ([`LANGUAGES`]); empty:
+    /// the system's ([`Settings::language`]).
+    #[serde(default)]
+    pub language: String,
     /// The sidebar's platform icons ([`crate::enrich::PLATFORM_ICON_THEMES`]:
     /// controllers, consoles or logos), or "none" for plain badges. Empty:
     /// "flatui", the controllers.
@@ -158,6 +164,7 @@ impl Default for Settings {
             region_flags: true,
             show_missing_versions: false,
             regions: Vec::new(),
+            language: String::new(),
             platform_icons: String::new(),
             threads: 0,
             list_age_days: default_list_age(),
@@ -349,6 +356,7 @@ impl Settings {
                 }
                 t.to_owned()
             },
+            language: language::cleaned(&self.language).map_err(Error::Settings)?,
             regions: self
                 .regions
                 .iter()

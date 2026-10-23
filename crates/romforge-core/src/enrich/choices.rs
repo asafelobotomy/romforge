@@ -64,17 +64,23 @@ pub fn art_choices(
             Err(e) => out.errors.push(format!("LaunchBox: {e}")),
         }
     }
-    let keys = crate::settings::load(conn)?.keys;
+    let settings = crate::settings::load(conn)?;
+    let keys = &settings.keys;
+    let prefs = settings.region_order();
     let mut session = crate::artsources::Session::default();
-    for provider in crate::artsources::Provider::available(&keys, system) {
+    for provider in crate::artsources::Provider::available(keys, system) {
         let job = crate::artsources::Job {
             system,
             title: lookup,
             rom: crate::artsources::rom_for(conn, system_id, lookup)?,
+            prefs: &prefs,
+            language: settings.language(),
+            year: None,
         };
-        match crate::artsources::lookup(provider, &keys, &opts.sources, &mut session, &job) {
+        match crate::artsources::lookup(provider, keys, &opts.sources, &mut session, &job) {
             Ok(f) => found.extend(
-                f.into_iter()
+                f.art
+                    .into_iter()
                     .filter(|i| i.kind == kind)
                     .map(|i| (provider.name().to_owned(), i)),
             ),
@@ -115,7 +121,7 @@ pub fn art_choices(
         let preview = match cached {
             Some(p) => p,
             None => match get_image_halting(
-                &crate::artsources::download_url(&source, show, &keys, &opts.sources),
+                &crate::artsources::download_url(&source, show, keys, &opts.sources),
                 &mut halted,
             ) {
                 Ok(Some(data)) => match image_ext(&data) {

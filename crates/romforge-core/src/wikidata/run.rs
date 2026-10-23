@@ -8,6 +8,7 @@ pub fn enrich(
     endpoint: &str,
     games: &BTreeMap<(i64, String), Vec<String>>,
     refresh: bool,
+    lang: &str,
     mut progress: impl FnMut(&'static str),
 ) -> Result<WikidataReport, Error> {
     let mut report = WikidataReport {
@@ -138,7 +139,7 @@ pub fn enrich(
         }
         progress("details");
         let qids: Vec<String> = chunk.iter().map(|m| m.2.clone()).collect();
-        let found = match details(endpoint, &qids) {
+        let found = match details(endpoint, &qids, lang) {
             Ok(f) => f,
             Err(e) => {
                 halted |= fetch::is_rate_limited(&e);
@@ -148,19 +149,23 @@ pub fn enrich(
         };
         let tx = conn.transaction()?;
         {
-            let mut current = tx.prepare(
-                "SELECT value, source FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
-            )?;
-            let mut put = tx.prepare(
-                "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
-            )?;
+            let put = |system_id: &i64, title: &str, field: &str, value: &str| {
+                crate::enrich::put_field(
+                    &tx,
+                    *system_id,
+                    title,
+                    field,
+                    value,
+                    crate::enrich::WIKIDATA,
+                    false,
+                )
+            };
             let mut drop_credits = tx.prepare("DELETE FROM credits WHERE system_id = ?1 AND title = ?2")?;
             let mut credit = tx.prepare(
                 "INSERT OR IGNORE INTO credits (system_id, title, field, qid, label) VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             for (system_id, title, qid) in chunk {
-                put.execute(params![system_id, title, "wikidata", qid])?;
+                put(system_id, title, "wikidata", qid)?;
                 let Some(fields) = found.get(qid) else { continue };
                 drop_credits.execute(params![system_id, title])?;
                 for (field, values) in fields {
@@ -172,22 +177,45 @@ pub fn enrich(
                         }
                         continue;
                     }
-                    let value = values.iter().cloned().collect::<Vec<_>>().join(", ");
-                    // Wikidata's own fields are always its; shared ones only
-                    // fill what libretro left empty (or marked unknown).
-                    let shared = matches!(field.as_str(), "developer" | "publisher" | "genre");
-                    if shared {
-                        let had: Option<(String, Option<String>)> = current
-                            .query_row(params![system_id, title, field], |r| Ok((r.get(0)?, r.get(1)?)))
-                            .optional()?;
-                        if !takes_over(had.as_ref()) {
+                    match field.as_str() {
+                        "release" => {
+                            let platforms = systems::by_id(*system_id).map_or(&[][..], |s| s.wikidata);
+                            let found = releases(values, platforms);
+                            crate::enrich::put_fields(
+                                &tx,
+                                *system_id,
+                                title,
+                                &found,
+                                crate::enrich::WIKIDATA,
+                            )?;
                             continue;
                         }
+                        "pegi" | "esrb" | "cero" | "usk" => {
+                            if let Some(r) = values.iter().find_map(|v| rating(field, v)) {
+                                put(system_id, title, field, &r)?;
+                            }
+                            continue;
+                        }
+                        // Only a title in another script (often the
+                        // Japanese one), not an English short form.
+                        "original_title" => {
+                            let own = values
+                                .iter()
+                                .find(|v| !v.is_ascii() && normalize(v) != normalize(title));
+                            if let Some(v) = own {
+                                put(system_id, title, field, v)?;
+                            }
+                            continue;
+                        }
+                        _ => {}
                     }
+                    let value = values.iter().cloned().collect::<Vec<_>>().join(", ");
                     if field == "series_qid" {
                         series.extend(values.iter().cloned());
                     }
-                    put.execute(params![system_id, title, field, value])?;
+                    // libretro's developer, publisher and genre stand;
+                    // the downloaded databases' give way (house rule 10).
+                    put(system_id, title, field, &value)?;
                 }
             }
         }
@@ -281,15 +309,30 @@ pub fn enrich(
     Ok(report)
 }
 
-/// Whether Wikidata's value replaces a shared field's `had` (value,
-/// source): when there is none, it is junk, or it came from a downloaded
-/// database (OpenVGDB, LaunchBox), a later tier than Wikidata (house
-/// rule 10). libretro's (source NULL) stands.
-pub(super) fn takes_over(had: Option<&(String, Option<String>)>) -> bool {
-    match had {
-        None => true,
-        Some((value, source)) => {
-            junk(value) || source.as_deref().and_then(crate::extdb::ExtDb::parse).is_some()
-        }
-    }
+/// Wikidata's publication dates (`<time>|<precision>|<place>|<platform>`)
+/// as release fields ([`crate::enrich::release_fields`]): each date only as
+/// precise as Wikidata says (9 a year, 10 a month, 11 a day), and only
+/// those of the system's `platforms` (or of none: a re-release on another
+/// platform is the same item's date too).
+pub(super) fn releases(values: &BTreeSet<String>, platforms: &[&str]) -> Vec<(&'static str, String)> {
+    let dates: Vec<(String, String)> = values
+        .iter()
+        .filter_map(|v| {
+            let mut parts = v.splitn(4, '|');
+            let (time, prec, place) = (parts.next()?, parts.next()?, parts.next().unwrap_or(""));
+            let platform = parts.next().unwrap_or("");
+            if !platform.is_empty() && !platforms.contains(&platform) {
+                return None;
+            }
+            let keep = match prec.trim().parse::<u8>().ok()? {
+                9 => 4,
+                10 => 7,
+                p if p >= 11 => 10,
+                _ => return None,
+            };
+            let date = time.trim_start_matches('+').get(..keep)?.to_owned();
+            Some((date, place.to_owned()))
+        })
+        .collect();
+    crate::enrich::release_fields(dates.iter().map(|(d, p)| (d.as_str(), p.as_str())))
 }

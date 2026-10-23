@@ -13,6 +13,8 @@
   let { open = $bindable(false), note = $bindable(""), showEmpty = $bindable(false), regionFlags = $bindable(true), homeRoot = $bindable(null), call, load } = $props();
   let moving = $state(false);
   let regionsText = $state("");
+  let languages = $state([]);
+  let systemLanguage = $state("en");
   let scummvmNote = $state("");
   let readingList = $state(false);
 
@@ -79,7 +81,10 @@
     if (!s) return;
     draft = s;
     regionsText = (s.regions ?? []).join(", ");
-    defaultStaging = (await call("settings_info"))?.default_staging ?? "";
+    const info = await call("settings_info");
+    defaultStaging = info?.default_staging ?? "";
+    languages = info?.languages ?? [];
+    systemLanguage = info?.system_language ?? "en";
     open = true;
   }
 
@@ -208,6 +213,16 @@
         <label for="regions">Preferred regions</label>
         <p class="hint">Every version of a game is kept and listed under one row; that row shows the version from the first region here that you have.</p>
         <input id="regions" bind:value={regionsText} placeholder="USA, World, Europe, Japan" />
+        <p class="hint">Enrich also takes pictures from these regions first.</p>
+      </section>
+
+      <section class="setting">
+        <label for="language">Descriptions in</label>
+        <p class="hint">Enrich reads a game's Wikipedia article (and ScreenScraper's synopsis) in this language, else in English.</p>
+        <select id="language" bind:value={draft.language}>
+          <option value="">The system's ({languages.find(([c]) => c === systemLanguage)?.[1] ?? systemLanguage})</option>
+          {#each languages as [code, name]}<option value={code}>{name}</option>{/each}
+        </select>
       </section>
 
       <section class="setting">

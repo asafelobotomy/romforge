@@ -5,8 +5,9 @@ use super::*;
 pub(super) fn details(
     endpoint: &str,
     qids: &[String],
+    lang: &str,
 ) -> Result<HashMap<String, BTreeMap<String, BTreeSet<String>>>, Error> {
-    let mut out = item_details(endpoint, qids)?;
+    let mut out = item_details(endpoint, qids, lang)?;
     let works: BTreeMap<String, String> = out
         .iter_mut()
         .filter_map(|(q, f)| Some((q.clone(), f.remove("work")?.pop_first()?)))
@@ -20,7 +21,7 @@ pub(super) fn details(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let mut of_work = item_details(endpoint, &wanted)?;
+    let mut of_work = item_details(endpoint, &wanted, lang)?;
     for (q, w) in works {
         let Some(from) = of_work.get_mut(&w) else { continue };
         from.remove("work");
@@ -46,9 +47,12 @@ pub(super) fn inherit(
     }
 }
 
+/// `lang`: the article in that language's Wikipedia too
+/// (`wikipedia_local`, as `<lang>:<title>`), for its description.
 fn item_details(
     endpoint: &str,
     qids: &[String],
+    lang: &str,
 ) -> Result<HashMap<String, BTreeMap<String, BTreeSet<String>>>, Error> {
     let values: String = qids.iter().map(|q| format!("wd:{q} ")).collect();
     let props: String = LABEL_FIELDS
@@ -64,7 +68,16 @@ fn item_details(
            UNION {{ ?g p:P179 ?st. ?st pq:P1545 ?v. BIND(\"series_ordinal\" AS ?p) }}
            UNION {{ ?a schema:about ?g; schema:isPartOf <https://en.wikipedia.org/>; schema:name ?v.
                     BIND(\"wikipedia\" AS ?p) }}
+           UNION {{ ?a schema:about ?g; schema:isPartOf <https://{lang}.wikipedia.org/>; schema:name ?v.
+                    BIND(\"wikipedia_local\" AS ?p) }}
            UNION {{ ?g wdt:P31 wd:{EDITION}; wdt:P629 ?v. BIND(\"work\" AS ?p) }}
+           UNION {{ ?g wdt:P1476 ?v. BIND(\"original_title\" AS ?p) }}
+           UNION {{ ?g p:P577 ?rs. ?rs psv:P577 [ wikibase:timeValue ?d; wikibase:timePrecision ?prec ].
+                    OPTIONAL {{ ?rs pq:P291 ?place. ?place rdfs:label ?pl. FILTER(lang(?pl) = \"en\") }}
+                    OPTIONAL {{ ?rs pq:P400 ?plat. }}
+                    BIND(\"release\" AS ?p)
+                    BIND(CONCAT(STR(?d), \"|\", STR(?prec), \"|\", COALESCE(?pl, \"\"), \"|\",
+                                COALESCE(STRAFTER(STR(?plat), \"http://www.wikidata.org/entity/\"), \"\")) AS ?v) }}
            SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"en,mul\". }}
          }}"
     );
@@ -85,7 +98,8 @@ fn item_details(
                 fields.entry("series_qid".into()).or_default().insert(v.clone());
                 ("series", label)
             }
-            "series_ordinal" | "wikipedia" => (p.as_str(), v.clone()),
+            "series_ordinal" | "wikipedia" | "original_title" | "release" => (p.as_str(), v.clone()),
+            "wikipedia_local" => ("wikipedia_local", format!("{lang}:{v}")),
             "work" => {
                 let fields = out.entry(g.clone()).or_default();
                 fields.entry("work".into()).or_default().insert(v.clone());

@@ -79,6 +79,26 @@ export function esrb(value) {
   return hit ? { code: hit[1], label: hit[2] } : null;
 }
 
+// Every age rating a game has, as badges: { board, code, label }.
+export function ratings(f) {
+  const out = [];
+  const e = esrb(f.esrb);
+  if (e) out.push({ board: "ESRB", ...e });
+  else if (f.esrb) out.push({ board: "ESRB", code: f.esrb, label: f.esrb });
+  for (const [k, board] of [["pegi", "PEGI"], ["usk", "USK"], ["cero", "CERO"]]) {
+    if (f[k]) out.push({ board, code: f[k], label: `${board} ${f[k]}` });
+  }
+  return out;
+}
+
+// Review scores: Edge out of 10, Famitsu out of 40.
+export function reviews(f) {
+  const out = [];
+  if (f.edge) out.push({ name: "Edge", score: `${f.edge}/10`, note: f.edge_issue ? `issue ${f.edge_issue}` : "" });
+  if (f.famitsu) out.push({ name: "Famitsu", score: `${f.famitsu}/40`, note: "" });
+  return out;
+}
+
 // Region names as written in DAT names -> two-letter codes, for those the
 // parsed codes don't line up with.
 const REGION_CODE = {

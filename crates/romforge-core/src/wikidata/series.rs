@@ -28,8 +28,3 @@ pub(super) fn series_members(endpoint: &str, series: &[String]) -> Result<Vec<Se
         })
         .collect())
 }
-
-/// A libretro value romforge treats as missing ("Nintendo ???").
-pub(super) fn junk(v: &str) -> bool {
-    v.trim().is_empty() || v.contains("???")
-}

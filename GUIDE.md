@@ -167,13 +167,26 @@ romforge-cli enrich --art boxart,snap
 romforge-cli info "Super Mario World"
 ```
 
-From [libretro-database](https://github.com/libretro/libretro-database)
-(genre, developer, publisher, franchise, release date, players) and
-[thumbnails.libretro.com](https://thumbnails.libretro.com) (box art, title
-screens, snaps), for games you have complete. Art goes into the RomForge
+For the games you have, in house rule 10's order (each source fills only
+what the ones before it left; `enrich::fields` keeps the order):
+
+1. [libretro-database](https://github.com/libretro/libretro-database), by
+   DAT name or CRC: genre, developer, publisher, franchise, release date,
+   players, ESRB, serial, origin, rumble and analog support, Edge and
+   Famitsu scores; and [thumbnails.libretro.com](https://thumbnails.libretro.com):
+   box art, title screen, snap and clear logo (another version's picture,
+   best of your Preferred regions first, when the game's own is missing).
+2. Wikidata (CC0), and Wikipedia (CC BY-SA 4.0) through the article
+   Wikidata links: see below.
+3. With keys, ScreenScraper (by the ROM's hashes), then SteamGridDB and
+   IGDB (by title).
+4. The databases you downloaded: OpenVGDB, then LaunchBox.
+
+Details names where each field came from. Art goes into the RomForge
 folder's `Media/<System>/<kind>/` when there is one, else under
 `$ROMFORGE_CACHE/art` (default `~/.cache/romforge`); a second run asks for
-nothing new. `--refresh` fetches again.
+nothing new, except what a newer romforge learnt to ask for
+(`enrich::ASK_AGAIN_SINCE`). `--refresh` fetches again.
 
 ## Launch
 
@@ -658,17 +671,26 @@ file shows the platform its extension points to ("SNES?") as a hint, never
 a match.
 
 **Enrich** also asks Wikidata (free, no account) for developer, publisher,
-country, director, composer, the series in order, and IDs that make the
-Links tab point at each game's own MobyGames, RetroAchievements, Wikipedia,
-IGDB and HowLongToBeat page.
+country, director, composer, the series in order, age ratings (PEGI, ESRB,
+CERO, USK), release dates by region, the original title, and IDs that make
+the Links tab point at each game's own MobyGames, RetroAchievements,
+Wikipedia, IGDB and HowLongToBeat page. The overview comes from the
+summary of the game's Wikipedia article, the one Wikidata links (never a
+title search), in Settings' "Descriptions in" language when that Wikipedia
+has it, else English; Details credits it ("from Wikipedia (CC BY-SA
+4.0)", with a link to the article).
 
-With keys in Settings, Enrich also fills art libretro lacks (fanart, logo,
-icon, 3D box, the box's spine and back, and any missing box art or
-screenshots) from ScreenScraper, then SteamGridDB, then IGDB, each only
-asked for what's still missing. A game ScreenScraper was asked about
-before spines and backs were fetched gets them on a refresh.
+With keys in Settings, Enrich also fills what libretro lacks from
+ScreenScraper, then SteamGridDB, then IGDB, each asked once per game:
+pictures (fanart, logo, icon, 3D box, the box's spine, back and whole
+cover, the cartridge or disc, the arcade marquee, and any missing box art
+or screenshots), and ScreenScraper's synopsis (in the language set),
+ratings, players, dates and genres, IGDB's summary and genres. ScreenScraper's
+pictures come in the game's own region first, then Preferred regions'.
 SteamGridDB's grids are never used as box art (they are Steam capsules),
-and IGDB images come at their largest sizes.
+its plain heroes come before blurred ones, largest first, IGDB images come
+up to 1080 pixels high, and IGDB tells same-named games apart by release
+year.
 
 **View** (beside the filter): the library as a **List**, or as pictures
 only (no titles; hover for the name) of **Box art**, **3D box** (box art
@@ -688,11 +710,11 @@ database and the keyed sources have for the game, previewed small; your
 pick is kept even when Enrich refreshes). Beside them, like an
 encyclopedia's infobox, a compact card with the logo and one row per
 fact; in a narrow panel it comes under the art. Facts are pictures where
-they can be: a genre icon each (its name on hover), the ESRB rating as a
-badge, region flags for the edition, the community rating as stars, and
+they can be: a genre icon each (its name on hover), age ratings as
+badges (ESRB, PEGI, USK, CERO), Edge and Famitsu scores, region flags for the edition, the community rating as stars, and
 the developer's and publisher's logos once Enrich has fetched them. Then
-the overview and Media (3D box, box back, box spine, title screen,
-in-game, icon). Every image
+the overview and Media (3D box, box back, box spine, whole cover,
+cartridge or disc, marquee, title screen, in-game, icon). Every image
 keeps its own aspect ratio and is never blown up; hovering gives its size
 in pixels and its source, and a click opens it full size (small
 screenshots scaled by whole steps, pixels kept sharp). Kinds with no art

@@ -13,8 +13,9 @@ use crate::artsources::{Provider, RomRef};
 /// What a worker needs for one game, read beforehand.
 pub(super) struct GameIn {
     pub game: String,
-    /// libretro's thumbnails to try, by kind.
-    libretro: Vec<(ArtKind, String)>,
+    /// libretro's thumbnails to try, by kind: the game's own, then its
+    /// other versions' (best region first).
+    libretro: Vec<(ArtKind, Vec<String>)>,
     /// Kinds libretro can't give (or didn't before): for the others.
     missing: Vec<ArtKind>,
     /// LaunchBox's pictures of the game (from the downloaded database).
@@ -22,6 +23,8 @@ pub(super) struct GameIn {
     /// Keyed sources to ask (not asked before, unless refreshing).
     providers: Vec<Provider>,
     rom: Option<RomRef>,
+    /// Its release year, if known (IGDB tells same-named games apart by it).
+    year: Option<i32>,
     /// Errors found while reading (LaunchBox's database).
     errors: Vec<String>,
     pub cached: usize,
@@ -40,6 +43,8 @@ pub(super) enum Got {
     NotOnLibretro(ArtKind),
     /// A keyed source was asked (remembered so it isn't asked again).
     Asked(Provider),
+    /// Fields of text a keyed source has for the game.
+    Fields(Provider, Vec<(&'static str, String)>),
     Error(String),
 }
 
@@ -54,6 +59,10 @@ pub(super) struct Shared<'a> {
     pub opts: &'a EnrichOptions,
     pub system: &'static systems::System,
     pub keys: &'a crate::settings::Keys,
+    /// Regions, best first (Settings).
+    pub prefs: &'a [String],
+    /// The language for text (Settings).
+    pub language: &'static str,
     /// Hosts and keyed sources that said "slow down": not asked again
     /// this run, by any worker.
     pub halted_hosts: &'a Mutex<HashSet<String>>,
@@ -69,9 +78,13 @@ pub(super) fn prepare(
     lr_name: Option<&str>,
     game: &str,
     keys: &crate::settings::Keys,
+    prefs: &[String],
     lbdb: &Option<Connection>,
 ) -> Result<GameIn, Error> {
     let lr_game = libretro_game(conn, system, system_id, game)?;
+    // Another version's picture when this one's is missing, best region
+    // first (a few: each is a request).
+    let others = super::super::regions::other_versions(conn, system_id, game, prefs, 3)?;
     let mut input = GameIn {
         game: game.to_owned(),
         libretro: Vec::new(),
@@ -79,15 +92,21 @@ pub(super) fn prepare(
         launchbox: Vec::new(),
         providers: Vec::new(),
         rom: None,
+        year: None,
         errors: Vec::new(),
         cached: 0,
     };
     for &kind in &opts.art {
+        // A miss from before the sources learnt more counts as not asked.
         let (known, chosen): (Option<Option<String>>, bool) = conn
             .query_row(
-                "SELECT path, chosen FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
-                params![system_id, game, kind.as_str()],
-                |r| Ok((Some(r.get(0)?), r.get(1)?)),
+                "SELECT path, chosen, checked_at < ?4 FROM art WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
+                params![system_id, game, kind.as_str(), ASK_AGAIN_SINCE],
+                |r| {
+                    let path: Option<String> = r.get(0)?;
+                    let old: bool = r.get(2)?;
+                    Ok(((path.is_some() || !old).then_some(path), r.get(1)?))
+                },
             )
             .optional()?
             .unwrap_or((None, false));
@@ -102,14 +121,20 @@ pub(super) fn prepare(
             .and_then(|n| thumbnail_url(&opts.thumbnails_base, n, kind, &lr_game))
             .filter(|_| opts.refresh || !matches!(known, Some(None)))
         {
-            Some(url) => input.libretro.push((kind, url)),
+            Some(url) => {
+                let mut urls = vec![url];
+                urls.extend(
+                    others.iter().filter_map(|o| {
+                        lr_name.and_then(|n| thumbnail_url(&opts.thumbnails_base, n, kind, o))
+                    }),
+                );
+                input.libretro.push((kind, urls));
+            }
             None => input.missing.push(kind),
         }
     }
-    if input.libretro.is_empty() && input.missing.is_empty() {
-        return Ok(input);
-    }
-    if let Some(lb) = lbdb {
+    let wants_art = !(input.libretro.is_empty() && input.missing.is_empty());
+    if wants_art && let Some(lb) = lbdb {
         match crate::extdb::launchbox_lookup(lb, system, game, &opts.launchbox_images) {
             Ok(Some(found)) => input.launchbox = found.images,
             Ok(None) => {}
@@ -118,16 +143,26 @@ pub(super) fn prepare(
     }
     for provider in Provider::available(keys, system) {
         let asked: bool = conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM art_lookup WHERE system_id = ?1 AND title = ?2 AND provider = ?3)",
-            params![system_id, game, provider.name()],
+            "SELECT EXISTS (SELECT 1 FROM art_lookup WHERE system_id = ?1 AND title = ?2 AND provider = ?3
+               AND checked_at >= ?4)",
+            params![system_id, game, provider.name(), ASK_AGAIN_SINCE],
             |r| r.get(0),
         )?;
-        if !asked || opts.refresh {
+        // One with text is asked once even when no picture is missing.
+        if (!asked || opts.refresh) && (wants_art || provider.has_text()) {
             input.providers.push(provider);
         }
     }
     if !input.providers.is_empty() {
         input.rom = crate::artsources::rom_for(conn, system_id, game)?;
+        input.year = conn
+            .query_row(
+                "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
+                params![system_id, game],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|y| y.trim().parse().ok());
     }
     Ok(input)
 }
@@ -142,6 +177,7 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
         launchbox,
         providers,
         rom,
+        year,
         errors,
         ..
     } = input;
@@ -165,19 +201,24 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
             }
         }
     };
-    for (kind, url) in libretro {
-        match image(&url, sh.halted_hosts) {
-            Ok(Some(data)) => {
-                if !take(kind, &data, "libretro", &url, &mut got) {
-                    missing.push(kind);
+    'kinds: for (kind, urls) in libretro {
+        for url in &urls {
+            match image(url, sh.halted_hosts) {
+                Ok(Some(data)) => {
+                    if !take(kind, &data, "libretro", url, &mut got) {
+                        missing.push(kind);
+                    }
+                    continue 'kinds;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    got.push(Got::Error(e.to_string()));
+                    continue 'kinds;
                 }
             }
-            Ok(None) => {
-                got.push(Got::NotOnLibretro(kind));
-                missing.push(kind);
-            }
-            Err(e) => got.push(Got::Error(e.to_string())),
         }
+        got.push(Got::NotOnLibretro(kind));
+        missing.push(kind);
     }
     // LaunchBox next (free, no key; downloaded by the user): only what is
     // still missing.
@@ -199,8 +240,8 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
     // token is cached for the whole process, so a session per game is enough.
     let mut session = crate::artsources::Session::default();
     for provider in providers {
-        if missing.is_empty() {
-            break;
+        if missing.is_empty() && !provider.has_text() {
+            continue;
         }
         if sh
             .halted
@@ -214,10 +255,16 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
             system: sh.system,
             title: &game,
             rom: rom.clone(),
+            prefs: sh.prefs,
+            language: sh.language,
+            year,
         };
         match crate::artsources::lookup(provider, sh.keys, &sh.opts.sources, &mut session, &job) {
             Ok(found) => {
-                for ArtFound { kind, url, .. } in found {
+                if !found.fields.is_empty() {
+                    got.push(Got::Fields(provider, found.fields));
+                }
+                for ArtFound { kind, url, .. } in found.art {
                     if !missing.contains(&kind) {
                         continue;
                     }
@@ -289,6 +336,9 @@ pub(super) fn record_out(
                     ),
                     params![system_id, out.game, provider.name()],
                 )?;
+            }
+            Got::Fields(provider, fields) => {
+                put_fields(conn, system_id, &out.game, fields, provider.name())?;
             }
             Got::Error(e) => report.errors.push(e.clone()),
         }

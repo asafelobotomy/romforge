@@ -68,10 +68,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             for g in found {
                 println!("{}  [{}]", g.title, g.system);
                 for (k, v) in &g.fields {
-                    println!("  {k:<12} {v}");
+                    println!("  {k:<20} {v}");
                 }
                 for (k, p) in &g.art {
-                    println!("  {:<12} {}", k.as_str(), p.display());
+                    println!("  {:<20} {}", k.as_str(), p.display());
                 }
             }
         }

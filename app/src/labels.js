@@ -24,11 +24,18 @@ export const artLabel = {
   icon: "Icon",
   spine: "Box spine",
   boxback: "Box back",
+  boxfull: "Full cover",
+  media: "Cartridge or disc",
+  marquee: "Marquee",
 };
 // Box art, fanart and logo have their own places; the rest sit under Media.
-export const mediaKinds = ["box3d", "boxback", "spine", "title", "snap", "icon"];
+export const mediaKinds = ["box3d", "boxback", "spine", "boxfull", "media", "marquee", "title", "snap", "icon"];
 export const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB", launchbox: "LaunchBox" };
-export const extdbLabel = { openvgdb: "OpenVGDB", launchbox: "LaunchBox" };
+// Where a field's value came from, as Details names it.
+export const extdbLabel = {
+  openvgdb: "OpenVGDB", launchbox: "LaunchBox", libretro: "libretro", wikidata: "Wikidata",
+  wikipedia: "Wikipedia", screenscraper: "ScreenScraper", igdb: "IGDB",
+};
 
 // The name a game is shown by everywhere: the clean title from its
 // parsed name, else the set's label, else the DAT title.

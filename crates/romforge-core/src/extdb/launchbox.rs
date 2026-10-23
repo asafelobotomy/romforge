@@ -311,6 +311,9 @@ pub fn launchbox_lookup(
         (ArtKind::Hero, &["Fanart - Background"]),
         (ArtKind::Logo, &["Clear Logo"]),
         (ArtKind::Icon, &["Icon"]),
+        (ArtKind::Boxfull, &["Box - Full"]),
+        (ArtKind::Media, &["Cart - Front", "Disc", "Cart - 3D"]),
+        (ArtKind::Marquee, &["Arcade - Marquee"]),
     ] {
         // Each type in order (a reconstructed box after the real ones),
         // each region-ranked.

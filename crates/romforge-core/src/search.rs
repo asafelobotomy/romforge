@@ -326,7 +326,8 @@ fn settle_for(
     )?;
     let mut one = BTreeMap::new();
     one.insert((sys.id, title.to_owned()), Vec::new());
-    let r = wikidata::enrich(conn, endpoint, &one, false, |_| {})?;
+    let lang = crate::settings::load(conn)?.language();
+    let r = wikidata::enrich(conn, endpoint, &one, false, lang, |_| {})?;
     if let Some(e) = r.errors.first() {
         return Err(Error::Search(format!(
             "saved, but fetching its details failed: {e}"

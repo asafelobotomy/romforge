@@ -58,7 +58,11 @@ pub(super) fn libretro_meta(
                 .or_else(|| crcs.iter().find_map(|c| by_crc.get(c.as_str())));
             if let Some(rec) = rec {
                 let f = found.entry(game).or_default();
-                f.extend(rec.fields.iter().cloned());
+                f.extend(
+                    rec.fields
+                        .iter()
+                        .map(|(k, v)| (libretro_field(k).to_owned(), v.clone())),
+                );
                 // Found by CRC under another name (No-Intro renamed
                 // it since): libretro's thumbnails go by that name.
                 if let Some(t) = rec.title.as_deref().filter(|t| *t != game.as_str()) {
@@ -69,13 +73,9 @@ pub(super) fn libretro_meta(
     }
     let tx = conn.transaction()?;
     {
-        let mut put = tx.prepare(
-            "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = NULL",
-        )?;
         for (game, fields) in &found {
             for (k, v) in fields {
-                put.execute(params![system_id, game, k, v])?;
+                put_field(&tx, *system_id, game, k, v, LIBRETRO, false)?;
             }
         }
         let mut checked = tx.prepare(concat!(
@@ -191,10 +191,11 @@ pub(super) fn games_without_meta(
     system_id: i64,
     games: &[(&String, &Vec<String>)],
 ) -> Result<bool, Error> {
-    let mut stmt = conn
-        .prepare_cached("SELECT EXISTS (SELECT 1 FROM meta_checked WHERE system_id = ?1 AND title = ?2)")?;
+    let mut stmt = conn.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM meta_checked WHERE system_id = ?1 AND title = ?2 AND checked_at >= ?3)",
+    )?;
     for (game, _) in games {
-        if !stmt.query_row(params![system_id, game], |r| r.get::<_, bool>(0))? {
+        if !stmt.query_row(params![system_id, game, ASK_AGAIN_SINCE], |r| r.get::<_, bool>(0))? {
             return Ok(true);
         }
     }

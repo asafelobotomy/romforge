@@ -29,6 +29,8 @@ mod images;
 mod matching;
 mod run;
 mod series;
+mod wikipedia;
+pub use wikipedia::{LICENCE, WIKIPEDIA, descriptions};
 #[cfg(test)]
 mod tests;
 
@@ -50,7 +52,43 @@ pub const LABEL_FIELDS: &[(&str, &str)] = &[
     ("P287", "designer"),
     ("P136", "genre"),
     ("P404", "game_mode"),
+    // Age ratings: their items' labels ("PEGI 12"), cut to the rating
+    // ([`rating`]).
+    ("P908", "pegi"),
+    ("P852", "esrb"),
+    ("P853", "cero"),
+    ("P914", "usk"),
 ];
+
+/// A rating item's label as the rating itself: "PEGI 12" → "12", "CERO
+/// A" → "A", ESRB's names → their letters ("Teen" → "T"); `None` for one
+/// that says nothing.
+pub fn rating(field: &str, label: &str) -> Option<String> {
+    let l = label.trim();
+    let rest = l
+        .strip_prefix("PEGI")
+        .or_else(|| l.strip_prefix("USK"))
+        .or_else(|| l.strip_prefix("CERO"))
+        .or_else(|| l.strip_prefix("ESRB"))
+        .unwrap_or(l)
+        .trim_matches(|c: char| c.is_whitespace() || c == ':' || c == '-');
+    let out = match field {
+        "esrb" => match rest.to_ascii_lowercase().as_str() {
+            "everyone 10+" | "e10+" => "E10+",
+            "everyone" | "e" | "kids to adults" | "k-a" => "E",
+            "teen" | "t" => "T",
+            "mature" | "mature 17+" | "m" => "M",
+            "adults only" | "ao" => "AO",
+            "early childhood" | "ec" => "EC",
+            "rating pending" | "rp" => "RP",
+            _ => return None,
+        }
+        .to_owned(),
+        "pegi" | "usk" => rest.chars().filter(char::is_ascii_digit).collect(),
+        _ => rest.chars().filter(|c| c.is_ascii_alphanumeric()).collect(),
+    };
+    (!out.is_empty()).then_some(out)
+}
 
 /// Label fields naming who made a game (studios and people), kept with
 /// their Wikidata items in `credits` for the Development tab's pictures.

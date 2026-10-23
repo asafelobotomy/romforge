@@ -1,6 +1,7 @@
 <script>
   import { size } from "./lib.js";
-  import { genres, esrb, regionFlags, stars } from "./facts.js";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { genres, ratings, reviews, regionFlags, stars } from "./facts.js";
   import { displayTitle, artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
   import { ui } from "./ui.svelte.js";
 
@@ -48,7 +49,9 @@
       <p class="ibtitle">{displayTitle(row)}</p>
     {/if}
     <dl class="facts info">
-      {#if f.releaseyear}<div class="fact"><dt>Released</dt><dd>{released(f)}</dd></div>{/if}
+      {#if f.releaseyear}<div class="fact"><dt>Released</dt><dd title={f.releases ?? ""}>{released(f)}</dd></div>{/if}
+      {#if f.releases?.includes(";")}<div class="fact"><dt>Releases</dt><dd class="releases">{#each f.releases.split("; ") as r}<span>{r}</span>{/each}</dd></div>{/if}
+      {#if f.original_title}<div class="fact"><dt>Original title</dt><dd>{f.original_title}</dd></div>{/if}
       {#if detail.play}<div class="fact"><dt>Played</dt><dd>{played(detail.play)}</dd></div>{/if}
       {#if f.genre}
         {@const gs = genres(f.genre)}
@@ -62,10 +65,12 @@
       {/snippet}
       {#if f.developer}<div class="fact"><dt>Developer</dt><dd>{@render studio("developer", f.developer)}</dd></div>{/if}
       {#if f.publisher}<div class="fact"><dt>Publisher</dt><dd>{@render studio("publisher", f.publisher)}</dd></div>{/if}
-      {#if f.esrb}
-        {@const r = esrb(f.esrb)}
-        <div class="fact"><dt>Rating</dt><dd>{#if r}<span class="esrb" title="ESRB: {r.label}" aria-label="ESRB rating {r.label}"><b>{r.code}</b><small>ESRB</small></span>{:else}{f.esrb}{/if}</dd></div>
+      {#if ratings(f).length}
+        <div class="fact"><dt>Rating</dt><dd class="icons">{#each ratings(f) as r}<span class="esrb" title="{r.board}: {r.label}" aria-label="{r.board} rating {r.label}"><b>{r.code}</b><small>{r.board}</small></span>{/each}</dd></div>
       {/if}
+      {#each reviews(f) as r}<div class="fact"><dt>{r.name}</dt><dd title={r.note}>{r.score}</dd></div>{/each}
+      {#if f.rumble || f.analog}<div class="fact"><dt>Controls</dt><dd>{[f.analog && "Analog", f.rumble && "Rumble"].filter(Boolean).join(" · ")}</dd></div>{/if}
+      {#if f.serial}<div class="fact"><dt>Serial</dt><dd>{f.serial}</dd></div>{/if}
       {#if f.community_rating}
         {@const st = stars(f.community_rating)}
         <div class="fact"><dt>Community</dt><dd>{#if st}<span class="stars" title="{st.value} out of {st.max}" aria-label="{st.value} out of {st.max} stars"><span class="on" style="width: {st.pct}%">★★★★★</span>★★★★★</span> <span class="score">{st.value}{st.votes ? ` · ${st.votes.toLocaleString()} votes` : ""}</span>{:else}{f.community_rating}{/if}</dd></div>
@@ -122,8 +127,12 @@
 </div>
 
 {#if f.description}
-  <h3>Overview{#if detail.field_sources?.description}<span class="hint src"> · from {extdbLabel[detail.field_sources.description] ?? detail.field_sources.description}</span>{/if}</h3>
+  {@const src = detail.field_sources?.description}
+  <h3>Overview{#if src}<span class="hint src"> · from {extdbLabel[src] ?? src}{#if src === "wikipedia" && f.description_licence} ({f.description_licence}){/if}</span>{/if}</h3>
   <p class="desc">{f.description}</p>
+  {#if src === "wikipedia" && f.description_url}
+    <p class="hint credit"><button class="linkish" onclick={() => openUrl(f.description_url)}>Read more on Wikipedia</button>; text under {f.description_licence ?? "CC BY-SA 4.0"}, shortened to its summary.</p>
+  {/if}
 {/if}
 
 {#if mediaKinds.some((k) => detail.art[k]) || showEmpty}
@@ -229,7 +238,9 @@
   .studio { max-height: 2.2rem; max-width: 8rem; object-fit: contain; background: #fff; border-radius: 4px; padding: 0.15rem 0.3rem; }
   /* Drawn here, not the ESRB's own artwork: the letter in a white box with
      a black rim, as the rating marks look. */
-  .esrb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 2rem; height: 2.6rem; background: #fff; color: #000; border: 2px solid #000; outline: 1px solid #fff; border-radius: 2px; line-height: 1; cursor: help; }
+  .facts dd.releases { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85em; }
+  .credit { margin-top: -0.4rem; }
+  .esrb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 2rem; padding: 0 0.15rem; box-sizing: border-box; height: 2.6rem; background: #fff; color: #000; border: 2px solid #000; outline: 1px solid #fff; border-radius: 2px; line-height: 1; cursor: help; }
   .esrb b { font-size: 1.15rem; font-family: Arial, Helvetica, sans-serif; font-weight: 900; }
   .esrb small { font-size: 0.45rem; font-weight: 700; letter-spacing: 0.03em; margin-top: 0.15rem; }
   .stars { position: relative; display: inline-block; color: var(--line); letter-spacing: 0.08em; font-size: 1.05rem; line-height: 1; }

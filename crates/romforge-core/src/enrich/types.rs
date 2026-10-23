@@ -16,10 +16,16 @@ pub enum ArtKind {
     Spine,
     /// The box's back.
     Boxback,
+    /// The whole cover laid flat: back, spine and front.
+    Boxfull,
+    /// The cartridge or disc itself.
+    Media,
+    /// An arcade cabinet's marquee.
+    Marquee,
 }
 
 impl ArtKind {
-    pub const ALL: [ArtKind; 9] = [
+    pub const ALL: [ArtKind; 12] = [
         ArtKind::Boxart,
         ArtKind::Title,
         ArtKind::Snap,
@@ -29,6 +35,9 @@ impl ArtKind {
         ArtKind::Box3d,
         ArtKind::Spine,
         ArtKind::Boxback,
+        ArtKind::Boxfull,
+        ArtKind::Media,
+        ArtKind::Marquee,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -42,6 +51,9 @@ impl ArtKind {
             ArtKind::Box3d => "box3d",
             ArtKind::Spine => "spine",
             ArtKind::Boxback => "boxback",
+            ArtKind::Boxfull => "boxfull",
+            ArtKind::Media => "media",
+            ArtKind::Marquee => "marquee",
         }
     }
 
@@ -51,12 +63,13 @@ impl ArtKind {
             .find(|k| k.as_str().eq_ignore_ascii_case(s.trim()))
     }
 
-    /// libretro's thumbnail folder; it has only these three kinds.
+    /// libretro's thumbnail folder, for the kinds it has.
     pub(super) fn folder(self) -> Option<&'static str> {
         match self {
             ArtKind::Boxart => Some("Named_Boxarts"),
             ArtKind::Title => Some("Named_Titles"),
             ArtKind::Snap => Some("Named_Snaps"),
+            ArtKind::Logo => Some("Named_Logos"),
             _ => None,
         }
     }
@@ -111,6 +124,10 @@ pub struct EnrichOptions {
     /// Wikidata's SPARQL endpoint ([`crate::wikidata::ENDPOINT`]); `None`
     /// skips Wikidata.
     pub wikidata: Option<String>,
+    /// Wikipedia's REST API, `{lang}` for the language
+    /// ([`crate::wikidata::WIKIPEDIA`]): descriptions of the games Wikidata
+    /// matched (skipped with Wikidata).
+    pub wikipedia: String,
     /// Where the keyed art sources live.
     pub sources: crate::artsources::Bases,
     /// The folder of databases the user downloaded (OpenVGDB, LaunchBox);
@@ -143,6 +160,7 @@ impl EnrichOptions {
             dats_base: fetch::LIBRETRO_DAT_BASE.to_owned(),
             thumbnails_base: THUMBNAILS_BASE.to_owned(),
             wikidata: Some(crate::wikidata::ENDPOINT.to_owned()),
+            wikipedia: crate::wikidata::WIKIPEDIA.to_owned(),
             sources: crate::artsources::Bases::default(),
             extdb: None,
             art_dir: None,
@@ -226,7 +244,7 @@ impl Tally {
     pub(crate) fn wikidata(&mut self, step: &str, progress: &mut impl FnMut(EnrichEvent)) {
         let phase = match step {
             "details" => 1,
-            "series" => 2,
+            "series" | "descriptions" => 2,
             "pictures" => 3,
             _ => 0,
         };

@@ -233,13 +233,14 @@ fn a_failed_picture_is_not_asked_for_every_run() {
 
 #[test]
 fn wikidata_replaces_the_downloaded_databases_not_libretro() {
-    let had = |v: &str, s: Option<&str>| (v.to_owned(), s.map(str::to_owned));
-    assert!(run::takes_over(None));
-    assert!(run::takes_over(Some(&had("???", None))), "junk");
+    use crate::enrich::{LIBRETRO, WIKIDATA, replaces};
+    let had = |v: &str, s: Option<&str>| Some((v.to_owned(), s.map(str::to_owned)));
+    assert!(replaces(WIKIDATA, None));
+    assert!(replaces(WIKIDATA, had("???", None).as_ref()), "junk");
     assert!(
-        !run::takes_over(Some(&had("Nintendo", None))),
+        !replaces(WIKIDATA, had("Nintendo", Some(LIBRETRO)).as_ref()),
         "libretro's stands"
     );
-    assert!(run::takes_over(Some(&had("Nintendo", Some("launchbox")))));
-    assert!(run::takes_over(Some(&had("Nintendo", Some("openvgdb")))));
+    assert!(replaces(WIKIDATA, had("Nintendo", Some("launchbox")).as_ref()));
+    assert!(replaces(WIKIDATA, had("Nintendo", Some("openvgdb")).as_ref()));
 }

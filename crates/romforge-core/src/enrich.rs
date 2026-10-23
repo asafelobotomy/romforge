@@ -27,9 +27,11 @@ use crate::{Error, dat, fetch, systems};
 mod art;
 mod choices;
 mod chosen;
+mod fields;
 mod icons;
 mod info;
 mod meta;
+pub mod regions;
 mod run;
 #[cfg(test)]
 mod tests;
@@ -37,6 +39,7 @@ mod types;
 
 pub use art::*;
 pub use choices::*;
+pub use fields::*;
 pub use icons::*;
 pub use info::*;
 pub(crate) use meta::libretro_game;
@@ -50,7 +53,8 @@ pub const THUMBNAILS_BASE: &str = "https://thumbnails.libretro.com";
 /// DAT's (matched by CRC): libretro's thumbnails are named by it.
 pub const LIBRETRO_NAME: &str = "libretro_name";
 
-/// The metadata files fetched per system.
+/// The metadata files fetched per system (`metadat/<file>/<system>.dat`;
+/// a system without one has none of it).
 pub const FIELDS: &[&str] = &[
     "genre",
     "developer",
@@ -59,4 +63,28 @@ pub const FIELDS: &[&str] = &[
     "releaseyear",
     "releasemonth",
     "maxusers",
+    "esrb",
+    "serial",
+    "origin",
+    "rumble",
+    "analog",
+    "magazine/edge",
+    "magazine/famitsu",
 ];
+
+/// When romforge last learnt to ask its sources for more (fields, art
+/// kinds): a game's metadata checked, a libretro picture not found, or a
+/// keyed source asked before then is looked up again, once (the stamps
+/// are `db::now!()`'s format).
+pub const ASK_AGAIN_SINCE: &str = "2026-10-23T12:00:00Z";
+
+/// The field a libretro record's key is kept as: the names romforge uses
+/// for it elsewhere (LaunchBox's `esrb`).
+pub fn libretro_field(key: &str) -> &str {
+    match key {
+        "esrb_rating" => "esrb",
+        "edge_rating" => "edge",
+        "famitsu_rating" => "famitsu",
+        k => k,
+    }
+}

@@ -201,9 +201,7 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         .filter(|p| p.starts_with("/igimg/"))
         .collect();
     assert!(
-        igdb_img
-            .iter()
-            .all(|p| p.contains("/t_screenshot_huge/") || p.contains("/t_cover_big_2x/")),
+        igdb_img.iter().all(|p| p.contains("/t_1080p/")),
         "IGDB at its full sizes: {igdb_img:?}"
     );
     assert!(

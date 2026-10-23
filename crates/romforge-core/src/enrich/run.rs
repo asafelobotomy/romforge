@@ -110,7 +110,7 @@ pub fn enrich(
         ..EnrichReport::default()
     };
 
-    let keys = crate::settings::load(conn)?.keys;
+    let settings = crate::settings::load(conn)?;
     scrub_art_urls(conn)?;
     // Players were once kept from libretro's DATs as `maxusers`; they are
     // `users`, as everywhere else.
@@ -175,13 +175,9 @@ pub fn enrich(
                 &mut report,
                 &mut progress,
             )?;
-            let mut put = conn.prepare(
-                "INSERT INTO game_meta (system_id, title, field, value) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(system_id, title, field) DO NOTHING",
-            )?;
             for (game, fields) in &found {
                 for (k, v) in fields {
-                    put.execute(params![system_id, game, k, v])?;
+                    put_field(conn, *system_id, game, k, v, LIBRETRO, true)?;
                 }
             }
         }
@@ -203,7 +199,7 @@ pub fn enrich(
             system_id,
             lr_name,
             games,
-            &keys,
+            &settings,
             &lbdb,
             &halted,
             &halted_hosts,
@@ -221,7 +217,15 @@ pub fn enrich(
     if report.stopped {
         return Ok(report);
     }
-    wikidata_step(conn, opts, &have, &mut report, &mut tally, &mut progress)?;
+    wikidata_step(
+        conn,
+        opts,
+        settings.language(),
+        &have,
+        &mut report,
+        &mut tally,
+        &mut progress,
+    )?;
     extdb_fill(conn, opts, &have, &ovgdb, &lbdb, &mut report)?;
     // The same failure for many games is listed once.
     let mut seen = std::collections::HashSet::new();
@@ -233,6 +237,7 @@ pub fn enrich(
 fn wikidata_step(
     conn: &mut Connection,
     opts: &EnrichOptions,
+    lang: &str,
     have: &BTreeMap<(i64, String), Vec<String>>,
     report: &mut EnrichReport,
     tally: &mut Tally,
@@ -252,7 +257,7 @@ fn wikidata_step(
             .filter(|(k, _)| !derived.contains(*k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, |step| {
+        match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, lang, |step| {
             tally.wikidata(step, progress);
             progress(EnrichEvent::Wikidata { step })
         }) {
@@ -262,6 +267,16 @@ fn wikidata_step(
                     .art_dir
                     .clone()
                     .unwrap_or_else(|| opts.cache_dir.join(crate::layout::LOOSE_ART_DIR));
+                tally.wikidata("descriptions", progress);
+                progress(EnrichEvent::Wikidata { step: "descriptions" });
+                crate::wikidata::descriptions(
+                    conn,
+                    &opts.wikipedia,
+                    lang,
+                    &titled,
+                    opts.refresh,
+                    &mut w.errors,
+                )?;
                 tally.wikidata("pictures", progress);
                 progress(EnrichEvent::Wikidata { step: "pictures" });
                 crate::wikidata::fetch_pictures(conn, &dir.join("wikidata"), &mut w.errors)?;
@@ -305,15 +320,13 @@ fn extdb_fill(
                 }
             }
             let mut filled = false;
-            for (source, field, value) in found {
-                // Only empty fields, or libretro's "???" placeholders.
-                let n = conn.execute(
-                    "INSERT INTO game_meta (system_id, title, field, value, source) VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(system_id, title, field) DO UPDATE SET value = excluded.value, source = excluded.source
-                     WHERE game_meta.value LIKE '%???%' OR game_meta.source = excluded.source",
-                    params![system_id, game, field, value, source],
-                )?;
-                filled |= n > 0;
+            for source in ["openvgdb", "launchbox"] {
+                let mine: Vec<(&str, String)> = found
+                    .iter()
+                    .filter(|(s, _, _)| *s == source)
+                    .map(|(_, f, v)| (*f, v.clone()))
+                    .collect();
+                filled |= put_fields(conn, *system_id, game, &mine, source)?;
             }
             if filled {
                 report.extdb_games += 1;

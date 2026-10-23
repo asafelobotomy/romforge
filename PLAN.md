@@ -2524,6 +2524,61 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   member file named by hand inside a ScummVM game loses that name (its
   files have no rows now).
 
+## Enrich: more from every source (2026-10-23)
+
+A review of Enrich against what its sources send, plus a search for new
+sources (licences and keys checked against house rule 10).
+
+**Step 1 (built 2026-10-23).**
+- **One rule for which source keeps a field** (`enrich/fields.rs`): libretro,
+  then Wikidata/Wikipedia, ScreenScraper, IGDB, OpenVGDB, LaunchBox.
+  Every value is stored with its source.
+- **libretro:**
+  - every metadata file it has: ESRB, serial, origin, rumble, analog, Edge and Famitsu;
+  - its `Named_Logos`;
+  - another version's thumbnail, in Preferred regions' order, when the game's own is missing.
+- **Wikidata:** age ratings (PEGI, ESRB, CERO, USK), release dates by region
+  with their precision, and the original title.
+- **Wikipedia's summaries** of the article Wikidata links, in a new
+  "Descriptions in" setting (else English), credited with CC BY-SA 4.0
+  and the link.
+- **ScreenScraper:** keeps its text (synopsis in that language, ratings,
+  players, dates, genres) and more pictures (whole cover, cartridge or
+  disc, marquee), in the game's region, then Preferred regions.
+- **IGDB:** summary and genres, a year check for same-named games, images
+  up to 1080 px (`t_1080p`).
+- **SteamGridDB:** plain styles first, largest first.
+- **LaunchBox:** full cover, cartridge or disc, and marquee pictures.
+- **Re-asking:** sources asked before `ASK_AGAIN_SINCE` are asked once more,
+  so existing libraries get the new fields and kinds.
+
+**Step 2 (not built).** Each needs its terms confirmed by hand first, because
+their pages blocked automated reading:
+- **Arcade Database** (adb.arcadeitalia.net, by MAME set): snaps, titles,
+  marquees, cabinets, flyers, 1080p videos, manuals. It asks for a
+  credit, and a message to its author before use.
+- **GameTDB** by disc or cartridge serial (Wii, GameCube, Wii U, DS, 3DS,
+  Switch): high-res and full covers, disc and cartridge labels. This
+  needs the serial read from game headers. Its licence is unconfirmed,
+  so it is treated like LaunchBox (a user download) until it is
+  confirmed.
+- **Video snaps** (ScreenScraper `video`, ADB's videos): a setting, off by
+  default (each is several MB), played in the fullscreen mode.
+- **ScreenScraper's `manuel`** as a manual source.
+
+**Maybe:**
+- RetroAchievements (free account and key, by hash);
+- ZXDB for the Spectrum (ODbL, a user download);
+- arcade history.xml and catver.ini (no licence, user downloads only).
+
+**No:**
+- MobyGames (paid since 2024);
+- EmuMovies (videos behind a subscription);
+- TheGamesDB (title matching, a small quota);
+- RAWG (weak on retro);
+- The Cover Project, GameFAQs (no API, bots blocked);
+- GiantBomb (API unclear since its 2025 sale).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits

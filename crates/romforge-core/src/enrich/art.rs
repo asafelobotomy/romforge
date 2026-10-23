@@ -67,7 +67,7 @@ pub(super) fn system_art(
     system_id: &i64,
     lr_name: Option<&str>,
     games: &[(&String, &Vec<String>)],
-    keys: &crate::settings::Keys,
+    settings: &crate::settings::Settings,
     lbdb: &Option<Connection>,
     halted: &std::sync::Mutex<Vec<crate::artsources::Provider>>,
     halted_hosts: &std::sync::Mutex<std::collections::HashSet<String>>,
@@ -75,16 +75,29 @@ pub(super) fn system_art(
     tally: &mut Tally,
     progress: &mut impl FnMut(EnrichEvent),
 ) -> Result<(), Error> {
+    let prefs = settings.region_order();
     let mut inputs = Vec::with_capacity(games.len());
     for (game, _) in games {
-        let input = game::prepare(conn, opts, system, *system_id, lr_name, game, keys, lbdb)?;
+        let input = game::prepare(
+            conn,
+            opts,
+            system,
+            *system_id,
+            lr_name,
+            game,
+            &settings.keys,
+            &prefs,
+            lbdb,
+        )?;
         report.art_cached += input.cached;
         inputs.push(input);
     }
     let shared = game::Shared {
         opts,
         system,
-        keys,
+        keys: &settings.keys,
+        prefs: &prefs,
+        language: settings.language(),
         halted_hosts,
         halted,
     };

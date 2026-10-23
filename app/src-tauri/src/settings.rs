@@ -32,11 +32,17 @@ pub async fn set_fs_bookshelf(
 #[derive(serde::Serialize)]
 pub struct SettingsInfo {
     default_staging: String,
+    /// The languages descriptions can be fetched in: (code, name).
+    languages: &'static [(&'static str, &'static str)],
+    /// What an empty language setting means here (the system's).
+    system_language: &'static str,
 }
 
 #[tauri::command]
 pub async fn settings_info() -> Res<SettingsInfo> {
     Ok(SettingsInfo {
         default_staging: default_staging_dir().display().to_string(),
+        languages: romforge_core::settings::LANGUAGES,
+        system_language: romforge_core::settings::Settings::default().language(),
     })
 }
