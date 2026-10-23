@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gamesFor, gameKey, virtualPlatforms } from "../src/fullscreen/fshome.js";
+import { gamesFor, gameKey, shelvesFor, virtualPlatforms } from "../src/fullscreen/fshome.js";
 
 const row = (system, title, year) => ({ system, title, year });
 const all = [row("SNES", "Zelda", 1991), row("SNES", "Mario", 1990), row("NES", "Metroid", 1986)];
@@ -24,4 +24,14 @@ test("each list has its own order", () => {
   assert.deepEqual(titles("*fav"), ["Zelda"]);
   assert.deepEqual(titles("*recent"), ["Metroid", "Zelda"], "latest first");
   assert.deepEqual(titles("*most"), ["Zelda", "Metroid"], "longest first");
+});
+
+test("shelves: lately played, favourites, then all, empty rows left out", () => {
+  assert.deepEqual(shelvesFor(all, marks(), "SNES").map((s) => s.key), ["all"]);
+  const m = marks([all[1]], [[all[0], 60, 10], [all[2], 60, 30]]);
+  const s = shelvesFor(all, m, "All games");
+  assert.deepEqual(s.map((x) => x.name), ["Recently played", "Favourites", "All games"]);
+  assert.deepEqual(s[0].games.map((r) => r.title), ["Metroid", "Zelda"], "latest first");
+  assert.deepEqual(s[1].games.map((r) => r.title), ["Mario"]);
+  assert.equal(s[2].games.length, 3);
 });

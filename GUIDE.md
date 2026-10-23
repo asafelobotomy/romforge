@@ -797,7 +797,14 @@ fullscreen mode is open, an edited theme reloads within a second.
 }
 ```
 
-- `layout`: `grid`, `list` or `cover-flow` (`layouts`: the others it allows);
+- `layout`: `grid`, `list`, `cover-flow`, `wheel`, `shelves`, `hero` or
+  `hero-bottom` (`layouts`: the others it allows). Cover flow is one row of
+  box art turned in 3D; the wheel, the games' logos turning down the right;
+  shelves, rows of the platform's games played lately, its favourites and
+  all of them; the hero rows, a strip of small tiles along the top with
+  the game's details under it (`hero-bottom`: along the bottom, the
+  details over it). The wheel and hero rows show the game's fanart behind
+  them whatever the details say;
   `fallback`: what a game with no art shows, `title` or `platform` (its
   platform's icon).
 - `schemes`: colour schemes, each a set of variables; with both `light`
@@ -813,24 +820,28 @@ fullscreen mode is open, an edited theme reloads within a second.
 `--fs-flow-angle` (the side covers' turn, `55deg`), `--fs-flow-depth` (how
 far back they stand, `14vh`), `--fs-flow-spread` (their step, `0.42` of a
 cover), `--fs-flow-dim` (their brightness, `0.7`) and
-`--fs-flow-perspective` (`110vh`); `--fs-overview-lines` (the overview's
-lines, `6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
+`--fs-flow-perspective` (`110vh`); `--fs-wheel-curve` (how far the wheel's
+far logos move out, `1.2vw`) and `--fs-hero-opacity` (the fanart's in the
+wheel and hero rows, `0.5`); `--fs-overview-lines` (the overview's lines,
+`6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
 `--fs-scale` is the user's text size and only romforge sets it. Hooks: the
 root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
 `game`), `data-fs-layout`, `data-fs-aspect` (`wide`, `standard`, `tall`),
 `data-fs-theme`, `data-fs-scheme` and `data-fs-opt-*`; inside it
 `data-fs-wordmark`, `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`,
-`data-fs-list`, `data-fs-flow`, `data-fs-card`, `data-fs-row`,
-`data-fs-selected`, `data-fs-art="missing"`, `data-fs-title`,
-`data-fs-info` and in it `data-fs-detail` (`logo`, `platform`, `released`,
-`edition`, `genre`, `players`, `modes`, `developer`, `publisher`, `rating`,
-`community`, `played`, `derived`, `overview`; `backdrop` is the root's
-fanart), `data-fs-button`, `data-fs-menu`, `data-fs-help` and
-`data-fs-focus` (where the focus is); `data-fs-fav` (a favourite's star),
-`data-fs-search`, `data-fs-keyboard` and `data-fs-key` (the search screen),
-`data-fs-attract` and `data-fs-screensaver`. The splashes outside the mode
-carry `data-fs-splash` (`start`, `exit`) and `data-fs-platform`. Class
-names are not part of the API and change.
+`data-fs-list`, `data-fs-flow`, `data-fs-wheel`, `data-fs-tiles`,
+`data-fs-shelves` and its rows' `data-fs-shelf` (`recent`, `fav`, `all`),
+`data-fs-card`, `data-fs-row`, `data-fs-selected`, `data-fs-art="missing"`,
+`data-fs-title`, `data-fs-info` and in it `data-fs-detail` (`logo`,
+`platform`, `released`, `edition`, `genre`, `players`, `modes`,
+`developer`, `publisher`, `rating`, `community`, `played`, `derived`,
+`overview`; `backdrop` is the root's fanart), `data-fs-button`,
+`data-fs-menu`, `data-fs-help` and `data-fs-focus` (where the focus is);
+`data-fs-fav` (a favourite's star), `data-fs-search`, `data-fs-keyboard`
+and `data-fs-key` (the search screen), `data-fs-attract` and
+`data-fs-screensaver`. The splashes outside the mode carry `data-fs-splash`
+(`start`, `exit`) and `data-fs-platform`. Class names are not part of the
+API and change.
 
 The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
 fullscreen mode only, under a policy that loads nothing from outside

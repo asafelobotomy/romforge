@@ -41,3 +41,20 @@ export function gamesFor(key, all, marks, sort) {
     .filter((r) => key === "*" || (key === "*fav" ? marks.favourites.has(gameKey(r)) : r.system === key))
     .sort((a, b) => (sort === "year" ? (a.year ?? 9999) - (b.year ?? 9999) : 0) || titleOf(a).localeCompare(titleOf(b)));
 }
+
+// How many games a shelf of history or favourites holds.
+export const SHELF = 20;
+
+// The shelves layout: a platform's games (`games`, as gamesFor gave them)
+// as rows: those played lately (latest first), the favourites, then all
+// of them under `name`. A row with no games isn't there.
+export function shelvesFor(games, marks, name) {
+  const played = (r) => marks.played.get(gameKey(r));
+  const recent = games.filter(played).sort((a, b) => played(b).last_played - played(a).last_played).slice(0, SHELF);
+  const fav = games.filter((r) => marks.favourites.has(gameKey(r))).slice(0, SHELF);
+  return [
+    { key: "recent", name: "Recently played", games: recent },
+    { key: "fav", name: "Favourites", games: fav },
+    { key: "all", name, games },
+  ].filter((s) => s.games.length);
+}

@@ -99,17 +99,55 @@ export function gridMove({ index, count, cols, rows = 3 }, action) {
   }
 }
 
+// The layouts whose games are one column (up and down move, up from the
+// first goes to the carousel) or one row (left and right move, up goes to
+// the carousel, down stays); the grid has `cols`, and shelves are rows of
+// their own (shelfMove).
+const COLUMN = ["list", "wheel"];
+const ROW = ["cover-flow", "hero", "hero-bottom"];
+
+// Shelves: rows of games (`lengths`, each row's count), the focus at
+// `row` and `col`. Returns the new { row, col }, or "out-up" when up
+// leaves the first row. Up and down keep the column where the row is long
+// enough; the shoulders page along the row by `page`, the triggers go to
+// its ends.
+export function shelfMove({ row, col, lengths, page = 6 }, action) {
+  if (!lengths.length) return action === "up" ? "out-up" : { row: 0, col: 0 };
+  const r = clamp(row, 0, lengths.length - 1);
+  const last = (k) => Math.max(0, lengths[k] - 1);
+  const c = clamp(col, 0, last(r));
+  switch (action) {
+    case "left":
+      return { row: r, col: Math.max(0, c - 1) };
+    case "right":
+      return { row: r, col: Math.min(last(r), c + 1) };
+    case "up":
+      return r === 0 ? "out-up" : { row: r - 1, col: Math.min(c, last(r - 1)) };
+    case "down":
+      return r === lengths.length - 1 ? { row: r, col: c } : { row: r + 1, col: Math.min(c, last(r + 1)) };
+    case "page_up":
+      return { row: r, col: Math.max(0, c - Math.max(1, page)) };
+    case "page_down":
+      return { row: r, col: Math.min(last(r), c + Math.max(1, page)) };
+    case "first":
+      return { row: r, col: 0 };
+    case "last":
+      return { row: r, col: last(r) };
+    default:
+      return { row: r, col: c };
+  }
+}
+
 // What an action means on the home screen, given where the focus is
-// ("carousel" or "grid", which is the game list in the list and cover
-// flow layouts: `layout: "list"` makes it one column, "cover-flow" one
-// row). Returns { focus, platform, game } changes and, for the buttons,
-// an `intent`: "open" (the game page), "menu" (Start),
-// "context" (Select), "options" (North), "leave" (B on the home screen).
+// ("carousel" or "grid", which is the games in any layout). `layout`
+// shapes the moves (COLUMN, ROW, the grid's `cols`, or shelves' `shelf`:
+// { row, col, lengths }). Returns { focus, platform, game, shelf } changes
+// and, for the buttons, an `intent`: "open" (the game page), "menu"
+// (Start), "context" (Select), "options" (North), "leave" (B on the home
+// screen).
 export function homeAction(state, action) {
-  const { focus, platform, platforms, game, count, rows } = state;
-  // The list is one column; cover flow is one row, so left and right
-  // move along it, up goes to the carousel and down stays.
-  const cols = state.layout === "list" || state.layout === "cover-flow" ? 1 : state.cols;
+  const { focus, platform, platforms, game, count, rows, layout } = state;
+  const cols = COLUMN.includes(layout) || ROW.includes(layout) ? 1 : state.cols;
   if (action === "menu") return { intent: "menu" };
   if (action === "context") return { intent: "context" };
   if (focus === "carousel") {
@@ -123,7 +161,11 @@ export function homeAction(state, action) {
   if (action === "accept") return count ? { intent: "open" } : {};
   if (action === "north") return count ? { intent: "options" } : {};
   if (action === "back") return { focus: "carousel" };
-  if (state.layout === "cover-flow" && (action === "up" || action === "down")) return action === "up" ? { focus: "carousel" } : {};
+  if (layout === "shelves") {
+    const next = shelfMove({ ...state.shelf, page: rows }, action);
+    return next === "out-up" ? { focus: "carousel" } : { shelf: next };
+  }
+  if (ROW.includes(layout) && (action === "up" || action === "down")) return action === "up" ? { focus: "carousel" } : {};
   const next = gridMove({ index: game, count, cols, rows }, action);
   return next === "out-up" ? { focus: "carousel" } : { game: next };
 }

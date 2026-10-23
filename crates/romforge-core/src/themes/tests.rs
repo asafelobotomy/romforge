@@ -30,13 +30,14 @@ fn manifests_are_refused_with_a_reason() {
     let refused = |json: &str| parse(json, "mine").unwrap_err();
     assert!(refused(&manifest("mine", "").replace("\"api\": 1", "\"api\": 2")).contains("API"));
     assert!(refused(&manifest("other", "")).contains("folder"));
-    assert!(refused(&manifest("mine", ", \"layout\": \"wheel\"")).contains("layout"));
+    assert!(refused(&manifest("mine", ", \"layout\": \"carousel\"")).contains("layout"));
     assert!(refused(&manifest("mine", "").replace("--fs-bg", "--bg")).contains("--fs-"));
     assert!(refused(&manifest("mine", "").replace("#000", "url(x.png)")).contains("plain value"));
     assert!(refused(&manifest("mine", "").replace("--fs-bg", "--fs-scale")).contains("text size"));
     assert!(refused(&manifest("mine", ", \"script\": \"x.js\"")).contains("unknown field"));
     assert!(parse(&manifest("mine", ""), "mine").is_ok());
-    let flow = ", \"layout\": \"cover-flow\", \"layouts\": [\"grid\", \"list\"]";
+    let flow =
+        ", \"layout\": \"cover-flow\", \"layouts\": [\"wheel\", \"shelves\", \"hero\", \"hero-bottom\"]";
     assert!(parse(&manifest("mine", flow), "mine").is_ok());
 }
 

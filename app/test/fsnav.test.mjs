@@ -1,7 +1,7 @@
 // The fullscreen mode's focus moves (node --test app/test).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { carouselMove, gridMove, homeAction, keyAction, listMove } from "../src/fullscreen/fsnav.js";
+import { carouselMove, gridMove, homeAction, keyAction, listMove, shelfMove } from "../src/fullscreen/fsnav.js";
 
 test("the carousel wraps round", () => {
   assert.equal(carouselMove(0, 4, "left"), 3);
@@ -72,6 +72,31 @@ test("the cover flow layout is one row of games", () => {
   assert.deepEqual(homeAction(flow, "page_down"), { game: 9 }, "a page of covers");
   assert.deepEqual(homeAction(flow, "page_up"), { game: 0 });
   assert.deepEqual(homeAction(flow, "accept"), { intent: "open" });
+});
+
+test("the wheel moves like the list, the hero rows like cover flow", () => {
+  const at = { platform: 0, platforms: 2, game: 3, count: 10, cols: 5, rows: 7, focus: "grid" };
+  assert.deepEqual(homeAction({ ...at, layout: "wheel" }, "down"), { game: 4 });
+  assert.deepEqual(homeAction({ ...at, layout: "wheel", game: 0 }, "up"), { focus: "carousel" });
+  for (const layout of ["hero", "hero-bottom"]) {
+    assert.deepEqual(homeAction({ ...at, layout }, "right"), { game: 4 }, layout);
+    assert.deepEqual(homeAction({ ...at, layout }, "up"), { focus: "carousel" }, layout);
+    assert.deepEqual(homeAction({ ...at, layout }, "down"), {}, layout);
+  }
+});
+
+test("shelves move along a row and between rows", () => {
+  const lengths = [3, 10, 1];
+  assert.deepEqual(shelfMove({ row: 1, col: 5, lengths }, "up"), { row: 0, col: 2 }, "onto a shorter row's end");
+  assert.deepEqual(shelfMove({ row: 1, col: 5, lengths }, "down"), { row: 2, col: 0 });
+  assert.deepEqual(shelfMove({ row: 2, col: 0, lengths }, "down"), { row: 2, col: 0 }, "the last row stays");
+  assert.equal(shelfMove({ row: 0, col: 1, lengths }, "up"), "out-up");
+  assert.deepEqual(shelfMove({ row: 1, col: 9, lengths }, "right"), { row: 1, col: 9 });
+  assert.deepEqual(shelfMove({ row: 1, col: 1, lengths, page: 6 }, "page_down"), { row: 1, col: 7 });
+  assert.deepEqual(shelfMove({ row: 1, col: 4, lengths }, "last"), { row: 1, col: 9 });
+  const at = { platform: 0, platforms: 2, game: 0, count: 14, cols: 5, rows: 6, focus: "grid", layout: "shelves" };
+  assert.deepEqual(homeAction({ ...at, shelf: { row: 0, col: 0, lengths } }, "up"), { focus: "carousel" });
+  assert.deepEqual(homeAction({ ...at, shelf: { row: 0, col: 0, lengths } }, "down"), { shelf: { row: 1, col: 0 } });
 });
 
 test("keys stand in for the pad", () => {

@@ -2,12 +2,12 @@
   "api": 1,
   "id": "famicom",
   "name": "Famicom",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "romforge",
   "licence": "MIT",
   "description": "Cream and deep red with gold details, square cards.",
   "layout": "grid",
-  "layouts": ["list", "cover-flow"],
+  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom"],
   "fallback": "title",
   "schemes": {
     "cream": {

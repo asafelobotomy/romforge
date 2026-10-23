@@ -100,6 +100,50 @@
   display: flex;
   gap: 0.6vw;
 }
+/* The wheel: the game's details on the left over its fanart, the wheel
+   down the right. */
+[data-fs-root][data-fs-layout="wheel"] .home {
+  grid-template-columns: minmax(0, 1fr) minmax(24vw, 34vw);
+}
+[data-fs-root][data-fs-layout="wheel"] .home > [data-fs-wheel] {
+  order: 2;
+}
+[data-fs-root][data-fs-layout="wheel"] .home > [data-fs-info] {
+  align-content: end;
+}
+/* Hero rows: the strip across the top (or the bottom), the details over
+   the fanart below it (or above). */
+[data-fs-root][data-fs-layout^="hero"] .home {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 3vh;
+}
+[data-fs-root][data-fs-layout="hero"] .home > [data-fs-info] {
+  align-content: end;
+  max-width: 52vw;
+}
+[data-fs-root][data-fs-layout="hero-bottom"] .home {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+[data-fs-root][data-fs-layout="hero-bottom"] .home > [data-fs-tiles] {
+  order: 2;
+}
+[data-fs-root][data-fs-layout="hero-bottom"] .home > [data-fs-info] {
+  max-width: 52vw;
+}
+/* Fanart leads in these: stronger, faded away from where the games are. */
+[data-fs-root][data-fs-layout="wheel"] > .backdrop {
+  opacity: var(--fs-hero-opacity, 0.5);
+  mask-image: linear-gradient(to right, #000 35%, transparent 80%);
+}
+[data-fs-root][data-fs-layout="hero"] > .backdrop {
+  opacity: var(--fs-hero-opacity, 0.5);
+  mask-image: linear-gradient(to bottom, transparent 10%, #000 45%);
+}
+[data-fs-root][data-fs-layout="hero-bottom"] > .backdrop {
+  opacity: var(--fs-hero-opacity, 0.5);
+  mask-image: linear-gradient(to top, transparent 15%, #000 50%);
+}
 [data-fs-root] *,
 [data-fs-root] *::before,
 [data-fs-root] *::after {

@@ -31,6 +31,9 @@ export async function pickTheme(selection) {
   if (v) theme.view = v;
 }
 
+// The layouts by name, where their key as words isn't enough.
+const LAYOUT_NAMES = { hero: "Hero row", "hero-bottom": "Hero row, bottom" };
+
 // A scheme's or layout's key as words: "high-contrast" → "High contrast".
 export const nice = (s) => s.charAt(0).toUpperCase() + s.slice(1).replaceAll("-", " ");
 
@@ -60,7 +63,7 @@ export function themeChoices(view) {
     themes: themeList(view),
     schemes: [...(follows ? [{ value: "", label: "With the system" }] : []), ...names.map((s) => ({ value: s, label: nice(s) }))],
     scheme: sel.scheme || (follows ? "" : names[0]),
-    layouts: [m.layout, ...(m.layouts ?? []).filter((l) => l !== m.layout)].map((l) => ({ value: l, label: nice(l) })),
+    layouts: [m.layout, ...(m.layouts ?? []).filter((l) => l !== m.layout)].map((l) => ({ value: l, label: LAYOUT_NAMES[l] ?? nice(l) })),
     layout: sel.layout || m.layout,
     textSizes: view.text_sizes,
     textSize: sel.text_size,

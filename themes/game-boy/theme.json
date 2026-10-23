@@ -2,12 +2,12 @@
   "api": 1,
   "id": "game-boy",
   "name": "Game Boy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "romforge",
   "licence": "MIT",
   "description": "The original's four greens, square cards, a thick focus and monospace type.",
   "layout": "grid",
-  "layouts": ["list", "cover-flow"],
+  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom"],
   "fallback": "title",
   "schemes": {
     "dmg": {

@@ -6,7 +6,15 @@ use std::collections::BTreeMap;
 pub const API: u32 = 1;
 
 /// The fullscreen mode's layouts a theme can pick from.
-pub const LAYOUTS: &[&str] = &["grid", "list", "cover-flow"];
+pub const LAYOUTS: &[&str] = &[
+    "grid",
+    "list",
+    "cover-flow",
+    "wheel",
+    "shelves",
+    "hero",
+    "hero-bottom",
+];
 
 /// What a card without art shows.
 pub const FALLBACKS: &[&str] = &["title", "platform"];
