@@ -7,7 +7,7 @@
   "licence": "MIT",
   "description": "The UK (PAL) SNES: console greys and its four face-button colours, light or dark with the system.",
   "layout": "grid",
-  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom"],
+  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom", "bookshelf"],
   "fallback": "title",
   "schemes": {
     "light": {

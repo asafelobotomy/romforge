@@ -66,6 +66,19 @@ const BOX_SHAPES: &[(&str, [u16; 3])] = &[
     ("Xbox One", [79, 79, 79]),
 ];
 
+/// A home computer, whose games came in big boxes.
+pub(super) fn is_computer(system: &System) -> bool {
+    system.folders != Folders::No
+        || matches!(
+            system.manufacturer,
+            "Commodore" | "Sinclair" | "Amstrad" | "Acorn" | "Apple" | "IBM" | "Sharp" | "Fujitsu"
+        )
+        || matches!(
+            system.key,
+            "MSX" | "MSX2" | "PC-88" | "PC-98" | "Atari 8-bit" | "Atari ST"
+        )
+}
+
 /// A box's front, width / height, for `system` sold in `region`: the
 /// listed shape, else by rule: discs before the sixth generation in jewel
 /// cases (square), later in DVD cases; handhelds' small boxes; home
@@ -79,16 +92,7 @@ pub fn box_aspect(system: &System, region: BoxRegion) -> f32 {
         };
         return f32::from(s[i]) / 100.0;
     }
-    let computer = system.folders != Folders::No
-        || matches!(
-            system.manufacturer,
-            "Commodore" | "Sinclair" | "Amstrad" | "Acorn" | "Apple" | "IBM" | "Sharp" | "Fujitsu"
-        )
-        || matches!(
-            system.key,
-            "MSX" | "MSX2" | "PC-88" | "PC-98" | "Atari 8-bit" | "Atari ST"
-        );
-    if computer {
+    if is_computer(system) {
         0.8
     } else if system.is_disc_based {
         if system.generation <= 5 { 1.0 } else { 0.71 }

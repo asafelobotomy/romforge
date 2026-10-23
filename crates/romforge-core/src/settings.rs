@@ -27,6 +27,8 @@ mod regions;
 pub use regions::parse_regions;
 mod details;
 pub use details::{FS_DETAILS, clean_fs_details, default_fs_details, save_fs_details};
+mod bookshelf;
+pub use bookshelf::{Bookshelf, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_MAX, SHELF_SORTS, save_bookshelf};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
@@ -106,6 +108,9 @@ pub struct Settings {
     /// [`FS_DETAILS`]); the rest are turned off.
     #[serde(default = "default_fs_details")]
     pub fs_details: Vec<String>,
+    /// How the fullscreen bookshelf stands the games ([`Bookshelf`]).
+    #[serde(default)]
+    pub fs_bookshelf: Bookshelf,
 }
 
 fn default_volume() -> u32 {
@@ -161,6 +166,7 @@ impl Default for Settings {
             music_volume: default_volume(),
             music_shuffle: true,
             fs_details: default_fs_details(),
+            fs_bookshelf: Bookshelf::default(),
         }
     }
 }
@@ -319,6 +325,7 @@ impl Settings {
             music_volume: self.music_volume.min(100),
             music_shuffle: self.music_shuffle,
             fs_details: clean_fs_details(&self.fs_details),
+            fs_bookshelf: self.fs_bookshelf.cleaned(),
             while_playing: match self.while_playing.trim() {
                 "" => default_while_playing(),
                 w if WHILE_PLAYING.contains(&w) => w.to_owned(),

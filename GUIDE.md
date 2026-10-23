@@ -663,8 +663,10 @@ Links tab point at each game's own MobyGames, RetroAchievements, Wikipedia,
 IGDB and HowLongToBeat page.
 
 With keys in Settings, Enrich also fills art libretro lacks (fanart, logo,
-icon, 3D box, and any missing box art or screenshots) from ScreenScraper,
-then SteamGridDB, then IGDB, each only asked for what's still missing.
+icon, 3D box, the box's spine and back, and any missing box art or
+screenshots) from ScreenScraper, then SteamGridDB, then IGDB, each only
+asked for what's still missing. A game ScreenScraper was asked about
+before spines and backs were fetched gets them on a refresh.
 SteamGridDB's grids are never used as box art (they are Steam capsules),
 and IGDB images come at their largest sizes.
 
@@ -689,7 +691,8 @@ fact; in a narrow panel it comes under the art. Facts are pictures where
 they can be: a genre icon each (its name on hover), the ESRB rating as a
 badge, region flags for the edition, the community rating as stars, and
 the developer's and publisher's logos once Enrich has fetched them. Then
-the overview and Media (3D box, title screen, in-game, icon). Every image
+the overview and Media (3D box, box back, box spine, title screen,
+in-game, icon). Every image
 keeps its own aspect ratio and is never blown up; hovering gives its size
 in pixels and its source, and a click opens it full size (small
 screenshots scaled by whole steps, pixels kept sharp). Kinds with no art
@@ -701,7 +704,8 @@ licence, so romforge doesn't include them. One click fetches them from their
 makers onto your computer (LaunchBox is about 110 MB, updated daily), and
 Enrich then uses them only to fill what libretro and Wikidata leave empty:
 overviews, studios, genres, release dates, players, community ratings,
-Wikipedia and video links, and LaunchBox's 3D boxes, logos and fanart.
+Wikipedia and video links, and LaunchBox's 3D boxes, spines, backs, logos
+and fanart.
 Details shows where an overview came from.
 
 ```bash
@@ -797,14 +801,28 @@ fullscreen mode is open, an edited theme reloads within a second.
 }
 ```
 
-- `layout`: `grid`, `list`, `cover-flow`, `wheel`, `shelves`, `hero` or
-  `hero-bottom` (`layouts`: the others it allows). Cover flow is one row of
+- `layout`: `grid`, `list`, `cover-flow`, `wheel`, `shelves`, `hero`,
+  `hero-bottom` or `bookshelf` (`layouts`: the others it allows). Cover flow is one row of
   box art turned in 3D; the wheel, the games' logos turning down the right;
   shelves, rows of the platform's games played lately, its favourites and
   all of them; the hero rows, a strip of small tiles along the top with
   the game's details under it (`hero-bottom`: along the bottom, the
   details over it). The wheel and hero rows show the game's fanart behind
-  them whatever the details say;
+  them whatever the details say. The bookshelf stands the games' boxes
+  side by side on wooden shelves, spines out, each at its real size
+  (`systems::box_size`: listed sizes, else worked out from its shape),
+  with its spine art or one drawn in its platform's colour. Settings →
+  Display (or Start → Bookshelf there) picks one endless shelf each or a
+  bookcase of shelves of 30 (down goes to the next shelf, and moving on
+  from a shelf's end goes on to the next's start), their order (name,
+  release date either way, most played), All games' platforms on a shelf
+  each or all mixed, and a favourites shelf at the top and a recently
+  played one under it. The shelves hold the platform picked along the
+  top, its favourites and recently played shelves its own. The focused
+  box slides out, Accept takes it off the shelf in 3D (left and right
+  turn it a quarter at a time to its spine, back and other side, its back
+  art else one drawn from its screenshots and overview), and Accept again
+  opens the game's page;
   `fallback`: what a game with no art shows, `title` or `platform` (its
   platform's icon).
 - `schemes`: colour schemes, each a set of variables; with both `light`
@@ -822,8 +840,9 @@ far back they stand, `14vh`), `--fs-flow-spread` (their step, `0.42` of a
 cover), `--fs-flow-dim` (their brightness, `0.7`) and
 `--fs-flow-perspective` (`110vh`); `--fs-wheel-curve` (how far the wheel's
 far logos move out, `1.2vw`) and `--fs-hero-opacity` (the fanart's in the
-wheel and hero rows, `0.5`); `--fs-overview-lines` (the overview's lines,
-`6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
+wheel and hero rows, `0.5`); `--fs-shelf-wood` and `--fs-shelf-back` (the
+bookshelf's board and back panel); `--fs-overview-lines` (the overview's
+lines, `6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
 `--fs-scale` is the user's text size and only romforge sets it. Hooks: the
 root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
 `game`), `data-fs-layout`, `data-fs-aspect` (`wide`, `standard`, `tall`),
@@ -831,17 +850,18 @@ root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
 `data-fs-wordmark`, `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`,
 `data-fs-list`, `data-fs-flow`, `data-fs-wheel`, `data-fs-tiles`,
 `data-fs-shelves` and its rows' `data-fs-shelf` (`recent`, `fav`, `all`),
-`data-fs-card`, `data-fs-row`, `data-fs-selected`, `data-fs-art="missing"`,
-`data-fs-title`, `data-fs-info` and in it `data-fs-detail` (`logo`,
-`platform`, `released`, `edition`, `genre`, `players`, `modes`,
-`developer`, `publisher`, `rating`, `community`, `played`, `derived`,
-`overview`; `backdrop` is the root's fanart), `data-fs-button`,
-`data-fs-menu`, `data-fs-help` and `data-fs-focus` (where the focus is);
-`data-fs-fav` (a favourite's star), `data-fs-search`, `data-fs-keyboard`
-and `data-fs-key` (the search screen), `data-fs-attract` and
-`data-fs-screensaver`. The splashes outside the mode carry `data-fs-splash`
-(`start`, `exit`) and `data-fs-platform`. Class names are not part of the
-API and change.
+`data-fs-bookshelf`, `data-fs-box` (a box off the shelf) and its faces'
+`data-fs-face` (`front`, `back`, `spine`), `data-fs-card`, `data-fs-row`,
+`data-fs-selected`, `data-fs-art="missing"`, `data-fs-title`,
+`data-fs-info` and in it `data-fs-detail` (`logo`, `platform`, `released`,
+`edition`, `genre`, `players`, `modes`, `developer`, `publisher`, `rating`,
+`community`, `played`, `derived`, `overview`; `backdrop` is the root's
+fanart), `data-fs-button`, `data-fs-menu`, `data-fs-help` and
+`data-fs-focus` (where the focus is); `data-fs-fav` (a favourite's star),
+`data-fs-search`, `data-fs-keyboard` and `data-fs-key` (the search screen),
+`data-fs-attract` and `data-fs-screensaver`. The splashes outside the mode
+carry `data-fs-splash` (`start`, `exit`) and `data-fs-platform`. Class
+names are not part of the API and change.
 
 The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
 fullscreen mode only, under a policy that loads nothing from outside

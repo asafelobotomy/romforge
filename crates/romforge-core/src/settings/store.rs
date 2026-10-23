@@ -42,6 +42,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
             .unwrap_or_else(default_volume),
         music_shuffle: get("music_shuffle")?.as_deref() != Some("0"),
         fs_details: details::load(conn)?,
+        fs_bookshelf: bookshelf::load(conn)?,
         regions: get("regions")?
             .map(|v| {
                 v.split(',')
@@ -124,6 +125,10 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 Some(if s.music_shuffle { "1" } else { "0" }.to_owned()),
             ),
             ("fs_details", Some(clean_fs_details(&s.fs_details).join(","))),
+            (
+                "fs_bookshelf",
+                serde_json::to_string(&s.fs_bookshelf.cleaned()).ok(),
+            ),
             (
                 "platform_icons",
                 Some(s.platform_icons.clone()).filter(|t| !t.is_empty()),

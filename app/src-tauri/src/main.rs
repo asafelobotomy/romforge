@@ -205,6 +205,7 @@ fn main() {
             settings::get_settings,
             settings::save_settings,
             settings::set_fs_details,
+            settings::set_fs_bookshelf,
             settings::settings_info,
             dats::scummvm_list,
             search::search_queue,

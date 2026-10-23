@@ -198,6 +198,12 @@ impl Library {
         settings::save_fs_details(&self.conn, shown)
     }
 
+    /// Keep how the fullscreen bookshelf stands the games (its Start →
+    /// Bookshelf); returns what was kept.
+    pub fn set_fs_bookshelf(&self, b: &settings::Bookshelf) -> Result<settings::Bookshelf, Error> {
+        settings::save_bookshelf(&self.conn, b)
+    }
+
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {
         report::systems_in_use(&self.conn)
     }

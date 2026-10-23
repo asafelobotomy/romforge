@@ -1,6 +1,7 @@
 <script>
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { DETAILS, SHOWN, toggled } from "./fullscreen/fsdetails.js";
+  import { SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_SORTS } from "./fullscreen/fsshelf.js";
 
   // Settings → Display: the fullscreen mode's attract mode, screensaver
   // and background music (stage 2, step 6), part of the dialog's draft
@@ -56,6 +57,31 @@
     {/each}
   </div>
   <p class="hint">What the fullscreen mode shows beside the games (under them in cover flow), in every layout. Start → Details there changes it too.</p>
+</section>
+
+<section class="setting">
+  <span class="flabel">The bookshelf layout</span>
+  {#if draft.fs_bookshelf}
+    <div class="grid">
+      <label for="fs-shelves">Shelves</label>
+      <select id="fs-shelves" bind:value={draft.fs_bookshelf.direction}>
+        {#each SHELF_DIRECTIONS as d}<option value={d.value}>{d.label}</option>{/each}
+      </select>
+      <label for="fs-shelf-group">All games</label>
+      <select id="fs-shelf-group" bind:value={draft.fs_bookshelf.group}>
+        {#each SHELF_GROUPS as g}<option value={g.value}>{g.label}</option>{/each}
+      </select>
+      <label for="fs-shelf-sort">Order</label>
+      <select id="fs-shelf-sort" bind:value={draft.fs_bookshelf.sort}>
+        {#each SHELF_SORTS as s}<option value={s.value}>{s.label}</option>{/each}
+      </select>
+      <span></span>
+      <label class="toggle"><input type="checkbox" bind:checked={draft.fs_bookshelf.favourites} /> A favourites shelf at the top</label>
+      <span></span>
+      <label class="toggle"><input type="checkbox" bind:checked={draft.fs_bookshelf.recent} /> A recently played shelf under it</label>
+    </div>
+  {/if}
+  <p class="hint">The platform picked along the top stands its games on shelves, spines out, at their real sizes (All games: every platform's, on a shelf each or mixed); its favourites and recently played shelves hold its own. Start → Bookshelf in the fullscreen mode changes these too.</p>
 </section>
 
 <style>

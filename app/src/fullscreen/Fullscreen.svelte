@@ -13,6 +13,8 @@
   import FsWheel from "./FsWheel.svelte";
   import FsTiles from "./FsTiles.svelte";
   import FsShelves from "./FsShelves.svelte";
+  import FsBookshelf from "./FsBookshelf.svelte";
+  import FsBox from "./FsBox.svelte";
   import { theme, loadThemes, pickTheme, themeLink, applyTheme, watchTheme } from "./theme.svelte.js";
   import FsInfo from "./FsInfo.svelte";
   import { SHOWN } from "./fsdetails.js";
@@ -23,7 +25,8 @@
   import FsAttract from "./FsAttract.svelte";
   import { idle, poke, setIdle, pauseIdle } from "./attract.svelte.js";
   import { music, startMusic, stopMusic, nextTrack, toggleMusic, setVolume, pauseMusic } from "./music.svelte.js";
-  import { gamesFor, shelvesFor, virtualPlatforms } from "./fshome.js";
+  import { gameKey, gamesFor, shelvesFor, virtualPlatforms } from "./fshome.js";
+  import { bookcase, SHELF_DEFAULT } from "./fsshelf.js";
   import { marks, loadMarks, isFavourite, toggleFavourite } from "./marks.svelte.js";
   import { listen } from "@tauri-apps/api/event";
   import "./fullscreen.css";
@@ -107,14 +110,26 @@
   // The details shown of the focused game (Settings → Display, Start →
   // Details): the core's defaults until the settings have loaded.
   let shown = $state(SHOWN);
-  invoke("get_settings").then((s) => s?.fs_details && (shown = s.fs_details), () => {});
+  // How the bookshelf stands them (Settings → Display, Start → Bookshelf).
+  let shelfPrefs = $state(SHELF_DEFAULT);
+  invoke("get_settings").then((s) => ((shown = s?.fs_details ?? shown), (shelfPrefs = s?.fs_bookshelf ?? shelfPrefs)), () => {});
   // The wheel and hero rows are led by the game's fanart: theirs is always on.
   const ART_LED = ["wheel", "hero", "hero-bottom"];
   let backdrop = $derived(screen === "home" && (ART_LED.includes(layout) || shown.includes("backdrop")) ? artSrc(game?.pictures?.hero) : null);
+  // The bookshelf: the box taken off it (Accept), turned a quarter at a
+  // time; Accept again opens the game's page, B puts it back.
+  let boxOpen = $state(false);
+  let boxTurn = $state(0);
+  // The platforms' colours (as the splashes'), for boxes without art.
+  let accents = $state({});
+  invoke("all_systems").then((all) => (accents = Object.fromEntries(all.map((s) => [s.key, s.accent]))), () => {});
   // Shelves: the rows, the focused one (the first holding the game when
   // the remembered one doesn't), and the game's place in it.
   let shelfRow = $state(0);
-  let shelves = $derived(layout === "shelves" ? shelvesFor(games, marks, platforms[pIndex]?.name ?? "All games") : []);
+  let pName = $derived(platforms[pIndex]?.name ?? "All games");
+  let shelves = $derived(
+    layout === "shelves" ? shelvesFor(games, marks, pName) : layout === "bookshelf" ? bookcase(games, marks, shelfPrefs, pName, gameKey) : [],
+  );
   const holds = (s) => s?.games.some((r) => r.id === game?.id);
   let sRow = $derived(holds(shelves[shelfRow]) ? shelfRow : Math.max(0, shelves.findIndex(holds)));
   let sCol = $derived(Math.max(0, shelves[sRow]?.games.findIndex((r) => r.id === game?.id) ?? 0));
@@ -122,6 +137,12 @@
   const act = {
     themes: () => theme.view,
     details: () => shown,
+    bookshelf: () => (layout === "bookshelf" ? shelfPrefs : null),
+    setBookshelf: (b) => {
+      shelfPrefs = b;
+      invoke("set_fs_bookshelf", { shelf: b }).then((kept) => (shelfPrefs = kept), () => {});
+      return b;
+    },
     // Shown at once, then kept (as the core cleaned it).
     setDetails: (s) => {
       shown = s;
@@ -262,7 +283,14 @@
       return;
     }
     if (action === "west" && focus === "grid") return void toggleFavourite(game);
-    const shelf = { row: sRow, col: sCol, lengths: shelves.map((s) => s.games.length) };
+    if (boxOpen) {
+      if (action === "left" || action === "right") boxTurn += action === "left" ? -1 : 1;
+      else if (action === "back") boxOpen = false;
+      else if (action === "accept") ((boxOpen = false), (screen = "game"), (button = 0));
+      else if (action === "north") menu = optionsMenu(act, game, versionsOf(game));
+      return;
+    }
+    const shelf = { row: sRow, col: sCol, lengths: shelves.map((s) => s.games.length), wrap: shelfPrefs.direction === "vertical" };
     const r = homeAction({ focus, platform: pIndex, platforms: platforms.length, game: gIndex, count: games.length, cols, rows, layout, shelf }, action);
     if (r.platform !== undefined) {
       platformKey = platforms[r.platform].system;
@@ -272,7 +300,8 @@
     if (r.game !== undefined) gameId = games[r.game]?.id ?? null;
     if (r.shelf) pickShelf(r.shelf.row, r.shelf.col);
     if (r.focus) focus = r.focus;
-    if (r.intent === "open") {
+    if (r.intent === "open" && layout === "bookshelf") ((boxOpen = true), (boxTurn = 0));
+    else if (r.intent === "open") {
       screen = "game";
       button = 0;
     } else if (r.intent === "options") menu = optionsMenu(act, game, versionsOf(game));
@@ -298,9 +327,11 @@
         ? [["move", "Move"], ["accept", "Type"], ["north", "Space"], ["back", "Delete"], ["menu", "Results"]]
       : screen === "game"
         ? [["accept", buttons[button]?.label ?? "Choose"], ["side", "Game"], ["west", "Favourite"], ["north", "Options"], ["back", "Back"], ...(quitChord ? [[quitChord, "Quits a game"]] : [])]
+        : boxOpen
+          ? [["side", "Turn"], ["accept", "Game"], ["north", "Options"], ["back", "Back"]]
         : focus === "carousel"
           ? [["side", "Platform"], ["accept", "Games"], ["back", "Desktop"], ["menu", "Menu"]]
-          : [["accept", "Open"], ["west", isFavourite(game) ? "Unfavourite" : "Favourite"], ["north", "Options"], ["context", "More"], ["back", "Platforms"], ["menu", "Menu"]],
+          : [["accept", layout === "bookshelf" ? "Take out" : "Open"], ["west", isFavourite(game) ? "Unfavourite" : "Favourite"], ["north", "Options"], ["context", "More"], ["back", "Platforms"], ["menu", "Menu"]],
   );
 </script>
 
@@ -331,6 +362,8 @@
         <FsWheel {games} index={gIndex} focused={focus === "grid" && !menu} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {:else if layout === "hero" || layout === "hero-bottom"}
         <FsTiles {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+      {:else if layout === "bookshelf"}
+        <FsBookshelf {shelves} {accents} row={sRow} col={sCol} focused={focus === "grid" && !menu && !boxOpen} fav={marks.favourites} bind:rows pick={(r, c) => (pickShelf(r, c), (focus = "grid"))} open={() => handle("accept")} />
       {:else if layout === "shelves"}
         <FsShelves {shelves} row={sRow} col={sCol} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(r, c) => (pickShelf(r, c), (focus = "grid"))} open={() => handle("accept")} />
       {:else if layout === "cover-flow"}
@@ -347,6 +380,7 @@
     <FsGame {game} {detail} {buttons} focus={button} press={(i) => buttons[i]?.run()} />
   {/if}
   <FsHelp items={help} pad={fs.padSeen} />
+  {#if boxOpen && screen === "home" && game}<FsBox {game} {detail} turn={boxTurn} accent={accents[game.system]} />{/if}
   {#if menu}<FsMenu {menu} press={pressMenu} />{/if}
   {#if idle.mode}<FsAttract {all} saver={idle.mode === "saver"} shown={(g) => (attractGame = g)} />{/if}
 </div>

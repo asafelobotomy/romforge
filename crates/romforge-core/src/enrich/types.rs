@@ -12,10 +12,14 @@ pub enum ArtKind {
     Icon,
     /// A 3D render of the box.
     Box3d,
+    /// The box's spine, as it shows on a shelf.
+    Spine,
+    /// The box's back.
+    Boxback,
 }
 
 impl ArtKind {
-    pub const ALL: [ArtKind; 7] = [
+    pub const ALL: [ArtKind; 9] = [
         ArtKind::Boxart,
         ArtKind::Title,
         ArtKind::Snap,
@@ -23,6 +27,8 @@ impl ArtKind {
         ArtKind::Logo,
         ArtKind::Icon,
         ArtKind::Box3d,
+        ArtKind::Spine,
+        ArtKind::Boxback,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -34,6 +40,8 @@ impl ArtKind {
             ArtKind::Logo => "logo",
             ArtKind::Icon => "icon",
             ArtKind::Box3d => "box3d",
+            ArtKind::Spine => "spine",
+            ArtKind::Boxback => "boxback",
         }
     }
 

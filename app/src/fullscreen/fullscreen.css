@@ -131,6 +131,23 @@
 [data-fs-root][data-fs-layout="hero-bottom"] .home > [data-fs-info] {
   max-width: 52vw;
 }
+/* The bookshelf: the details over the shelf, the shelf along the bottom. */
+[data-fs-root][data-fs-layout="bookshelf"] .home {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 54vh;
+  gap: 2vh;
+}
+[data-fs-root][data-fs-layout="bookshelf"] .home > [data-fs-info] img[data-fs-detail="logo"] {
+  max-height: 6vh;
+}
+[data-fs-root][data-fs-layout="bookshelf"] .home > [data-fs-bookshelf] {
+  order: 2;
+}
+[data-fs-root][data-fs-layout="bookshelf"] .home > [data-fs-info] {
+  --fs-overview-lines: 2;
+  max-width: 70vw;
+  overflow: hidden;
+}
 /* Fanart leads in these: stronger, faded away from where the games are. */
 [data-fs-root][data-fs-layout="wheel"] > .backdrop {
   opacity: var(--fs-hero-opacity, 0.5);

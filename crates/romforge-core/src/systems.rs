@@ -20,6 +20,8 @@ mod table;
 pub use table::*;
 mod boxes;
 pub use boxes::*;
+mod sizes;
+pub use sizes::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct System {

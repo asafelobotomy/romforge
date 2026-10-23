@@ -7,6 +7,7 @@ import { listLabel } from "../listLabel.js";
 import { displayTitle } from "../labels.js";
 import { themeChoices, themeList, withTheme } from "./theme.svelte.js";
 import { detailsMenu } from "./fsdetails.js";
+import { bookshelfMenu } from "./fsshelf.js";
 
 export function mainMenu(act, { sort, art }) {
   return {
@@ -18,6 +19,7 @@ export function mainMenu(act, { sort, art }) {
       { label: "Back to desktop", run: () => act.leave() },
       ...(act.themes() ? [{ label: "Theme…", run: () => themeMenu(act, act.themes()) }] : []),
       { label: "Details…", run: () => detailsMenu(act, act.details()) },
+      ...(act.bookshelf?.() ? [{ label: "Bookshelf…", run: () => bookshelfMenu(act, act.bookshelf()) }] : []),
       { label: `Sort: ${sort === "title" ? "Title" : "Year"} (change)`, run: () => act.sort(sort === "title" ? "year" : "title") },
       { label: `Art: ${art === "box3d" ? "3D box" : "Box"} (change)`, run: () => act.art(art === "box3d" ? "boxart" : "box3d") },
       { label: "Quit romforge", run: () => ask("Quit romforge?", () => act.quit()) },

@@ -22,9 +22,11 @@ export const artLabel = {
   hero: "Fanart",
   logo: "Logo",
   icon: "Icon",
+  spine: "Box spine",
+  boxback: "Box back",
 };
 // Box art, fanart and logo have their own places; the rest sit under Media.
-export const mediaKinds = ["box3d", "title", "snap", "icon"];
+export const mediaKinds = ["box3d", "boxback", "spine", "title", "snap", "icon"];
 export const sourceLabel = { libretro: "libretro", screenscraper: "ScreenScraper", steamgriddb: "SteamGridDB", igdb: "IGDB", launchbox: "LaunchBox" };
 export const extdbLabel = { openvgdb: "OpenVGDB", launchbox: "LaunchBox" };
 

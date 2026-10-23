@@ -301,6 +301,11 @@ pub fn launchbox_lookup(
             &["Box - Front", "Box - Front - Reconstructed"][..],
         ),
         (ArtKind::Box3d, &["Box - 3D"]),
+        (ArtKind::Spine, &["Box - Spine"]),
+        (
+            ArtKind::Boxback,
+            &["Box - Back", "Box - Back - Reconstructed"][..],
+        ),
         (ArtKind::Title, &["Screenshot - Game Title"]),
         (ArtKind::Snap, &["Screenshot - Gameplay"]),
         (ArtKind::Hero, &["Fanart - Background"]),

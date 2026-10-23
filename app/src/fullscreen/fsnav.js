@@ -101,8 +101,8 @@ export function gridMove({ index, count, cols, rows = 3 }, action) {
 
 // The layouts whose games are one column (up and down move, up from the
 // first goes to the carousel) or one row (left and right move, up goes to
-// the carousel, down stays); the grid has `cols`, and shelves are rows of
-// their own (shelfMove).
+// the carousel, down stays); the grid has `cols`, and shelves and the
+// bookshelf are rows of their own (shelfMove).
 const COLUMN = ["list", "wheel"];
 const ROW = ["cover-flow", "hero", "hero-bottom"];
 
@@ -110,16 +110,19 @@ const ROW = ["cover-flow", "hero", "hero-bottom"];
 // `row` and `col`. Returns the new { row, col }, or "out-up" when up
 // leaves the first row. Up and down keep the column where the row is long
 // enough; the shoulders page along the row by `page`, the triggers go to
-// its ends.
-export function shelfMove({ row, col, lengths, page = 6 }, action) {
+// its ends. With `wrap` (the bookcase), right off a row's end goes on to
+// the next row's first, left off its start to the previous row's last.
+export function shelfMove({ row, col, lengths, page = 6, wrap = false }, action) {
   if (!lengths.length) return action === "up" ? "out-up" : { row: 0, col: 0 };
   const r = clamp(row, 0, lengths.length - 1);
   const last = (k) => Math.max(0, lengths[k] - 1);
   const c = clamp(col, 0, last(r));
   switch (action) {
     case "left":
+      if (wrap && c === 0 && r > 0) return { row: r - 1, col: last(r - 1) };
       return { row: r, col: Math.max(0, c - 1) };
     case "right":
+      if (wrap && c === last(r) && r < lengths.length - 1) return { row: r + 1, col: 0 };
       return { row: r, col: Math.min(last(r), c + 1) };
     case "up":
       return r === 0 ? "out-up" : { row: r - 1, col: Math.min(c, last(r - 1)) };
@@ -161,7 +164,7 @@ export function homeAction(state, action) {
   if (action === "accept") return count ? { intent: "open" } : {};
   if (action === "north") return count ? { intent: "options" } : {};
   if (action === "back") return { focus: "carousel" };
-  if (layout === "shelves") {
+  if (layout === "shelves" || layout === "bookshelf") {
     const next = shelfMove({ ...state.shelf, page: rows }, action);
     return next === "out-up" ? { focus: "carousel" } : { shelf: next };
   }

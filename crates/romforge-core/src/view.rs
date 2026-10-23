@@ -111,6 +111,11 @@ pub struct GameRow {
     /// region ([`crate::systems::box_aspect`]): the picture views draw its box art
     /// so.
     pub box_aspect: u16,
+    /// Its box as it stands on a shelf, [width, height, depth] in
+    /// millimetres ([`crate::systems::box_size`]): the fullscreen
+    /// bookshelf draws it to scale.
+    #[serde(default)]
+    pub box_size: [u16; 3],
     /// Not matched to a game yet ([`RowStatus::unmatched`], or no platform
     /// found at all): listed under Unidentified, not with the games.
     pub unmatched: bool,

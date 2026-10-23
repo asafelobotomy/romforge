@@ -7,7 +7,7 @@
   "licence": "MIT",
   "description": "Cream and deep red with gold details, square cards.",
   "layout": "grid",
-  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom"],
+  "layouts": ["list", "cover-flow", "wheel", "shelves", "hero", "hero-bottom", "bookshelf"],
   "fallback": "title",
   "schemes": {
     "cream": {

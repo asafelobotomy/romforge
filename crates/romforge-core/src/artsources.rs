@@ -203,6 +203,8 @@ fn screenscraper(keys: &Keys, bases: &Bases, job: &Job) -> Result<Vec<ArtFound>,
         let kind = match m["type"].as_str().unwrap_or_default() {
             "box-2D" => ArtKind::Boxart,
             "box-3D" => ArtKind::Box3d,
+            "box-2D-side" => ArtKind::Spine,
+            "box-2D-back" => ArtKind::Boxback,
             "wheel" | "wheel-hd" => ArtKind::Logo,
             "fanart" => ArtKind::Hero,
             "sstitle" => ArtKind::Title,

@@ -7,8 +7,9 @@ use rusqlite::Connection;
 use super::GameRow;
 use crate::{Error, systems};
 
-/// The art kinds the list's picture views show.
-const LIST_PICTURES: [&str; 4] = ["boxart", "box3d", "hero", "logo"];
+/// The art kinds the list's picture views show (and the fullscreen
+/// bookshelf's spines).
+const LIST_PICTURES: [&str; 5] = ["boxart", "box3d", "hero", "logo", "spine"];
 
 /// Each row's pictures for the list: its own, else its game's.
 pub(super) fn pictures(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Error> {
@@ -40,6 +41,7 @@ pub(super) fn pictures(conn: &Connection, rows: &mut [GameRow]) -> Result<(), Er
             let named = r.patch_of.as_ref().map_or(r.title.as_str(), |(t, _)| t.as_str());
             let region = systems::BoxRegion::of(&crate::names::parse(named).region_codes);
             r.box_aspect = (systems::box_aspect(sys, region) * 100.0).round() as u16;
+            r.box_size = systems::box_size(sys, region);
         }
         let mut own = by.get(&(sid, r.title.clone())).cloned().unwrap_or_default();
         let base = r

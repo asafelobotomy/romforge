@@ -99,6 +99,18 @@ test("shelves move along a row and between rows", () => {
   assert.deepEqual(homeAction({ ...at, shelf: { row: 0, col: 0, lengths } }, "down"), { shelf: { row: 1, col: 0 } });
 });
 
+test("the bookcase wraps along its shelves; the endless shelf doesn't", () => {
+  const lengths = [30, 30, 4];
+  assert.deepEqual(shelfMove({ row: 0, col: 29, lengths, wrap: true }, "right"), { row: 1, col: 0 });
+  assert.deepEqual(shelfMove({ row: 1, col: 0, lengths, wrap: true }, "left"), { row: 0, col: 29 });
+  assert.deepEqual(shelfMove({ row: 2, col: 3, lengths, wrap: true }, "right"), { row: 2, col: 3 }, "the last box stays");
+  assert.deepEqual(shelfMove({ row: 0, col: 29, lengths }, "right"), { row: 0, col: 29 });
+  assert.deepEqual(shelfMove({ row: 0, col: 12, lengths, wrap: true }, "down"), { row: 1, col: 12 }, "down to the next shelf");
+  const at = { platform: 0, platforms: 2, game: 0, count: 64, cols: 5, rows: 6, focus: "grid", layout: "bookshelf" };
+  assert.deepEqual(homeAction({ ...at, shelf: { row: 0, col: 29, lengths, wrap: true } }, "right"), { shelf: { row: 1, col: 0 } });
+  assert.deepEqual(homeAction({ ...at, shelf: { row: 0, col: 3, lengths } }, "up"), { focus: "carousel" });
+});
+
 test("keys stand in for the pad", () => {
   assert.equal(keyAction("Enter"), "accept");
   assert.equal(keyAction("Escape"), "back");

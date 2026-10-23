@@ -187,6 +187,7 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
             year: None,
             pictures: BTreeMap::new(),
             box_aspect: 72,
+            box_size: [0; 3],
             packed: false,
             likely_system: None,
             unmatched: false,

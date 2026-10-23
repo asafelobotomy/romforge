@@ -14,6 +14,7 @@ pub const LAYOUTS: &[&str] = &[
     "shelves",
     "hero",
     "hero-bottom",
+    "bookshelf",
 ];
 
 /// What a card without art shows.
