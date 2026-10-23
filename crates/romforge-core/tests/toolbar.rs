@@ -109,16 +109,22 @@ fn refresh_rescans_only_the_settings_folders() {
 }
 
 /// Platform icons come once from retroarch-assets, by the theme in
-/// Settings: one it has is kept, one it hasn't is remembered and not asked
-/// for again; "none" asks for nothing.
+/// Settings: one it has is kept, one flatui lacks comes from systematic,
+/// one neither has is remembered and not asked for again; "none" asks for
+/// nothing. Logos: the table's Commons file, else Wikidata's (an SVG
+/// first).
 #[test]
 fn platform_icons_are_fetched_once() {
     use std::io::{BufRead, BufReader, Write};
     use std::sync::{Arc, Mutex};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let host = format!("http://{}", listener.local_addr().unwrap());
-    let base = format!("{host}/xmb");
-    let sparql = format!("{host}/sparql");
+    let commons = format!("{host}/file/");
+    let from = romforge_core::enrich::IconSources {
+        assets: &format!("{host}/xmb"),
+        wikidata: &format!("{host}/sparql"),
+        commons: &commons,
+    };
     let served = host.clone();
     let asked: Arc<Mutex<Vec<String>>> = Arc::default();
     let log = asked.clone();
@@ -136,12 +142,22 @@ fn platform_icons_are_fetched_once() {
             }
             let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
             log.lock().unwrap().push(path.clone());
-            // Wikidata knows the Game Boy's logo (its item Q186437).
+            // Wikidata knows two Game Boy logos (its item Q186437): the
+            // SVG is shown.
+            let row = |file: &str| {
+                format!(
+                    r#"{{"e":{{"type":"uri","value":"http://www.wikidata.org/entity/Q186437"}},"logo":{{"type":"uri","value":"{served}/commons/{file}"}}}}"#
+                )
+            };
             let logo = format!(
-                r#"{{"results":{{"bindings":[{{"e":{{"type":"uri","value":"http://www.wikidata.org/entity/Q186437"}},"logo":{{"type":"uri","value":"{served}/commons/GB%20logo.svg"}}}}]}}}}"#
+                r#"{{"results":{{"bindings":[{},{}]}}}}"#,
+                row("A%20GB.png"),
+                row("GB%20logo.svg")
             );
             let body: &[u8] = if path == "/xmb/flatui/png/Nintendo%20-%20Game%20Boy.png"
+                || path == "/xmb/systematic/png/Nintendo%20-%20Nintendo%20Entertainment%20System.png"
                 || path.starts_with("/commons/GB%20logo.svg?width=256")
+                || path.starts_with("/file/NES%20logo.svg?width=256")
             {
                 b"\x89PNG\r\n\x1a\nicon"
             } else if path.starts_with("/sparql") {
@@ -169,35 +185,42 @@ fn platform_icons_are_fetched_once() {
     lib.import_dat(fixtures().join("dats/nes.dat"), None).unwrap();
     lib.scan_folder(&a).unwrap();
     let cache = tmp.path().join("cache");
-    let got = lib.platform_icons(&cache, &base, &sparql).unwrap();
+    let got = lib.platform_icons(&cache, &from).unwrap();
     assert_eq!(got.theme, "flatui", "controllers by default");
     let icons = got.icons;
-    assert_eq!(icons.keys().collect::<Vec<_>>(), ["Game Boy"]);
-    assert!(icons["Game Boy"].exists());
+    assert_eq!(icons.keys().collect::<Vec<_>>(), ["Game Boy", "NES"]);
+    assert!(icons["Game Boy"].exists() && icons["NES"].exists());
     let first = asked.lock().unwrap().len();
-    assert_eq!(first, 2, "{:?}", asked.lock().unwrap());
-    lib.platform_icons(&cache, &base, &sparql).unwrap();
+    assert_eq!(
+        first,
+        3,
+        "flatui twice, systematic for the NES: {:?}",
+        asked.lock().unwrap()
+    );
+    lib.platform_icons(&cache, &from).unwrap();
     assert_eq!(asked.lock().unwrap().len(), first, "neither asked again");
     // Logos: from Wikidata, as small PNGs Commons renders.
     let mut s = lib.settings().unwrap();
     s.platform_icons = "logo".into();
     lib.save_settings(&s).unwrap();
-    let logos = lib.platform_icons(&cache, &base, &sparql).unwrap();
+    let logos = lib.platform_icons(&cache, &from).unwrap();
     assert_eq!(logos.theme, "logo");
-    assert_eq!(
-        logos.icons.keys().collect::<Vec<_>>(),
-        ["Game Boy"],
-        "the NES has none here"
-    );
+    assert_eq!(logos.icons.keys().collect::<Vec<_>>(), ["Game Boy", "NES"]);
     assert!(logos.icons["Game Boy"].to_string_lossy().contains("/logo/"));
+    let asked_now = asked.lock().unwrap().clone();
+    assert!(
+        asked_now.iter().any(|p| p.starts_with("/commons/GB%20logo.svg")),
+        "{asked_now:?}"
+    );
+    assert!(!asked_now.iter().any(|p| p.starts_with("/commons/A%20GB.png")));
+    // Icons kept under an older revision of the table are fetched again.
+    std::fs::write(cache.join("platform-icons/revision"), "1").unwrap();
+    let before = asked.lock().unwrap().len();
+    lib.platform_icons(&cache, &from).unwrap();
+    assert!(asked.lock().unwrap().len() > before, "fetched again");
     s.platform_icons = "none".into();
     lib.save_settings(&s).unwrap();
-    assert!(
-        lib.platform_icons(&cache, &base, &sparql)
-            .unwrap()
-            .icons
-            .is_empty()
-    );
+    assert!(lib.platform_icons(&cache, &from).unwrap().icons.is_empty());
     s.platform_icons = "pixel".into();
     assert!(
         lib.save_settings(&s).is_err(),

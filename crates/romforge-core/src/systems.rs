@@ -79,6 +79,13 @@ pub struct System {
     /// libretro's name for the system (thumbnails, metadata), where its
     /// No-Intro or DAT names don't give it (Redump-only systems).
     pub libretro: &'static str,
+    /// The file name (without `.png`) of its picture in RetroArch's icon
+    /// themes, where that isn't its libretro name (no thumbnails or
+    /// metadata there, or spelt otherwise).
+    pub icon: &'static str,
+    /// The Commons file shown as its logo, where its Wikidata items have
+    /// none or several (then the one that reads like its name here).
+    pub logo: &'static str,
     /// libretro-database's own DATs (`dat/<name>.dat`, without `.dat`),
     /// imported for matching; enrich also reads their metadata.
     pub dats: &'static [&'static str],
@@ -153,6 +160,8 @@ const fn s(
         launchbox: &[],
         ident: &[],
         libretro: "",
+        icon: "",
+        logo: "",
         dats: &[],
         titles: &[],
         folders: Folders::No,
@@ -253,6 +262,16 @@ impl System {
 
     const fn libretro(mut self, name: &'static str) -> Self {
         self.libretro = name;
+        self
+    }
+
+    const fn icon(mut self, name: &'static str) -> Self {
+        self.icon = name;
+        self
+    }
+
+    const fn logo(mut self, file: &'static str) -> Self {
+        self.logo = file;
         self
     }
 

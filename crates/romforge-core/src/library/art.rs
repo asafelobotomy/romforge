@@ -125,14 +125,12 @@ impl Library {
 
     /// The sidebar's icons for the platforms in the library, in the style
     /// Settings picks (none: empty), fetched into `cache_dir` the first
-    /// time from retroarch-assets (`base`, [`enrich::PLATFORM_ICONS_BASE`])
-    /// or, for logos, Wikidata (`wikidata`, [`crate::wikidata::ENDPOINT`]).
-    /// Offline, only those fetched before.
+    /// time `from` retroarch-assets or, for logos, Commons and Wikidata
+    /// ([`enrich::IconSources::LIVE`]). Offline, only those fetched before.
     pub fn platform_icons(
         &self,
         cache_dir: &Path,
-        base: &str,
-        wikidata: &str,
+        from: &enrich::IconSources,
     ) -> Result<PlatformIcons, Error> {
         let s = settings::load(&self.conn)?;
         let Some(theme) = s.icon_theme() else {
@@ -146,7 +144,7 @@ impl Library {
             .collect();
         Ok(PlatformIcons {
             theme: theme.to_owned(),
-            icons: enrich::platform_icons(cache_dir, base, wikidata, theme, &systems).0,
+            icons: enrich::platform_icons(cache_dir, from, theme, &systems).0,
         })
     }
 
@@ -155,12 +153,11 @@ impl Library {
     pub fn platform_logo(
         &self,
         cache_dir: &Path,
-        base: &str,
-        wikidata: &str,
+        from: &enrich::IconSources,
         system: &str,
     ) -> Result<Option<PathBuf>, Error> {
         let s = systems::by_key(system).ok_or_else(|| Error::UnknownSystem(system.to_owned()))?;
-        Ok(enrich::platform_icons(cache_dir, base, wikidata, "logo", &[s])
+        Ok(enrich::platform_icons(cache_dir, from, "logo", &[s])
             .0
             .remove(system))
     }

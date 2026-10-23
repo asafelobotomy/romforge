@@ -34,11 +34,7 @@ pub fn options(
 #[tauri::command]
 pub async fn platform_icons(db: tauri::State<'_, Db>) -> Res<romforge_core::PlatformIcons> {
     read_net(&db, move |lib| {
-        lib.platform_icons(
-            &default_cache_dir(),
-            romforge_core::enrich::PLATFORM_ICONS_BASE,
-            romforge_core::wikidata::ENDPOINT,
-        )
+        lib.platform_icons(&default_cache_dir(), &romforge_core::enrich::IconSources::LIVE)
     })
     .await
 }
@@ -49,8 +45,7 @@ pub async fn platform_logo(db: tauri::State<'_, Db>, system: String) -> Res<Opti
     read_net(&db, move |lib| {
         lib.platform_logo(
             &default_cache_dir(),
-            romforge_core::enrich::PLATFORM_ICONS_BASE,
-            romforge_core::wikidata::ENDPOINT,
+            &romforge_core::enrich::IconSources::LIVE,
             &system,
         )
     })

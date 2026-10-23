@@ -1,7 +1,8 @@
 use super::*;
 
-/// Each item's logo (P154) on Wikimedia Commons, as its file URL.
-pub(crate) fn logos(endpoint: &str, qids: &[String]) -> Result<HashMap<String, String>, Error> {
+/// Each item's logos (P154) on Wikimedia Commons, as file URLs: SVGs
+/// first, then by name, so the same one is shown every time.
+pub(crate) fn logos(endpoint: &str, qids: &[String]) -> Result<HashMap<String, Vec<String>>, Error> {
     let values: String = qids.iter().map(|q| format!("wd:{q} ")).collect();
     let q = format!(
         "SELECT ?e ?logo WHERE {{
@@ -9,11 +10,15 @@ pub(crate) fn logos(endpoint: &str, qids: &[String]) -> Result<HashMap<String, S
            ?e wdt:P154 ?logo.
          }}"
     );
-    let mut out = HashMap::new();
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
     for row in sparql(endpoint, &q)? {
         if let (Some(e), Some(l)) = (row.get("e"), row.get("logo")) {
-            out.entry(e.clone()).or_insert_with(|| l.clone());
+            out.entry(e.clone()).or_default().push(l.clone());
         }
+    }
+    for files in out.values_mut() {
+        files.sort_by_key(|f| (!f.to_ascii_lowercase().ends_with(".svg"), f.clone()));
+        files.dedup();
     }
     Ok(out)
 }

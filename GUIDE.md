@@ -614,7 +614,12 @@ The sidebar shows each platform's icon (its name under it, wrapped, in
 bold), fetched once into the cache; Settings → Display picks **Controller
 icons** (the default) or **System icons** from RetroArch's own icon sets,
 or **Platform logos** from Wikidata (Wikimedia Commons, on a light tile).
-A platform without one keeps a coloured badge.
+Controller icons cover fewer platforms: the rest show romforge's own
+icon in the same style where it has one
+(`crates/romforge-core/assets/platform-icons/`), else their system icon. A logo is the Commons file the systems table names (where Wikidata
+has none, or several), else the first of the platform's Wikidata items
+that has one. A platform without one keeps a coloured badge. When the
+table's icons or logos change, the kept ones are fetched again.
 DATs, BIOS and Organize are at the foot of the platform list.
 
 **Search** (toolbar, or `romforge-cli search queue|find|name|forget|wikidata`)
@@ -967,4 +972,11 @@ libretro team and contributors,
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), and its
 platform logos come from Wikimedia Commons through Wikidata (each under
 its own Commons terms; many are trademarks); all downloaded by the app,
-never shipped.
+never shipped. romforge's own platform icons, in flatui's style for
+platforms flatui lacks, are MIT like the rest: PC, Tandy VIS, Sega
+Lindbergh and ScummVM drawn by hand (their SVG sources beside them); the
+others generated with OpenAI's GPT Image (`gpt-image-2.5-flare`), with
+three of RetroArch's flatui icons as the style reference, and touched up
+by hand. The ScummVM icon's label carries the
+[ScummVM Team](https://www.scummvm.org)'s logo, under the
+[GPL](https://www.gnu.org/licenses/gpl-3.0.html).

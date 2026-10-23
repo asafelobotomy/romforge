@@ -48,3 +48,32 @@ fn by_key_is_case_insensitive() {
     assert_eq!(by_key("snes").map(|s| s.id), Some(2));
     assert!(by_key("nope").is_none());
 }
+
+#[test]
+fn icon_and_logo_names_are_plain_file_names() {
+    for s in SYSTEMS {
+        assert!(!s.icon.contains('/') && !s.icon.ends_with(".png"), "{}", s.key);
+        let l = s.logo.to_ascii_lowercase();
+        assert!(
+            s.logo.is_empty()
+                || (!l.contains('/') && [".svg", ".png", ".jpg", ".gif"].iter().any(|e| l.ends_with(e))),
+            "{}: {}",
+            s.key,
+            s.logo
+        );
+        for q in s.wikidata {
+            assert!(
+                q.starts_with('Q') && q[1..].bytes().all(|b| b.is_ascii_digit()),
+                "{}: {q}",
+                s.key
+            );
+        }
+    }
+}
+
+#[test]
+fn own_icons_are_for_real_platforms() {
+    for key in crate::enrich::own_icon_keys() {
+        assert!(by_key(key).is_some(), "{key}");
+    }
+}

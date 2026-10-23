@@ -322,8 +322,10 @@
         <p class="hint">
           Controller and system icons from {@render link("https://github.com/libretro/retroarch-assets", "RetroArch's assets")}
           by the libretro team and contributors, licensed {@render link("https://creativecommons.org/licenses/by/4.0/", "CC BY 4.0")},
-          downloaded to this computer as they are. Platform logos come from Wikimedia Commons through Wikidata (each logo's
-          Commons page gives its terms; many are trademarks).
+          downloaded to this computer as they are; romforge draws its own, in their flatui style, for platforms flatui
+          lacks (some generated with OpenAI's GPT Image; the ScummVM one carries the ScummVM Team's logo, GPL).
+          Platform logos come from Wikimedia Commons through Wikidata (each logo's Commons page gives its terms; many
+          are trademarks).
         </p>
         <p class="hint">
           Studio logos and people's photos come from {@render link("https://commons.wikimedia.org", "Wikimedia Commons")}

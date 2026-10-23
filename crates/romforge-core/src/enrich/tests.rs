@@ -44,3 +44,35 @@ fn thumbnail_names_and_urls() {
     let psx = systems::by_key("PlayStation").unwrap();
     assert_eq!(libretro_name(psx), Some("Sony - PlayStation"));
 }
+
+/// A platform neither RetroArch theme draws gets romforge's own icon.
+#[test]
+fn own_icons_fill_what_retroarch_lacks() {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let host = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            let _ =
+                stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    let from = IconSources {
+        assets: &host,
+        wikidata: &host,
+        commons: &host,
+    };
+    let pc = systems::by_key("PC").unwrap();
+    for theme in ["flatui", "systematic"] {
+        let (got, err) = platform_icons(tmp.path(), &from, theme, &[pc]);
+        assert!(err.is_none(), "{err:?}");
+        let data = std::fs::read(&got["PC"]).unwrap();
+        assert_eq!(image_ext(&data), Some("png"), "{theme}");
+    }
+}

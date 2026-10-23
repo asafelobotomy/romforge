@@ -35,7 +35,10 @@
 9. **Licenses:** dependencies must be MIT, Apache-2.0, BSD, Zlib, ISC,
    Unlicense or similar. MPL-2.0 is accepted only for the crates Tauri
    itself pulls into the app, each named in `deny.toml`; never in
-   romforge-core or the CLI.
+   romforge-core or the CLI. The one artwork under another licence is the
+   ScummVM Team's logo (GPL) on romforge's ScummVM platform icon
+   (`assets/platform-icons/ScummVM.png`), credited in GUIDE.md; nothing
+   else of theirs is shipped.
 10. **Data sources in order of preference.** (1) Free, no account and no
     key: libretro, Wikidata, plain search links. (2) Free key, no account:
     ScreenScraper with app credentials. (3) Free account and free key:

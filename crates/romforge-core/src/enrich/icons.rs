@@ -12,6 +12,83 @@ pub fn libretro_name(system: &systems::System) -> Option<&'static str> {
 pub const PLATFORM_ICONS_BASE: &str =
     "https://raw.githubusercontent.com/libretro/retroarch-assets/master/xmb";
 
+/// Where platform pictures come from: RetroArch's icons
+/// ([`PLATFORM_ICONS_BASE`]), Wikidata's SPARQL endpoint (the logos'
+/// items) and Commons (a logo the systems table names by file).
+#[derive(Debug, Clone, Copy)]
+pub struct IconSources<'a> {
+    pub assets: &'a str,
+    pub wikidata: &'a str,
+    /// Where a Commons file is served by name (as Wikidata's P154 gives it).
+    pub commons: &'a str,
+}
+
+impl IconSources<'static> {
+    /// The real ones.
+    pub const LIVE: Self = IconSources {
+        assets: PLATFORM_ICONS_BASE,
+        wikidata: crate::wikidata::ENDPOINT,
+        commons: "http://commons.wikimedia.org/wiki/Special:FilePath/",
+    };
+}
+
+/// Bumped when the systems table's icons or logos change: the kept icons
+/// and `.missing` marks are then fetched again.
+const ICONS_REVISION: &str = "2";
+
+/// romforge's own icon of a platform: system key, PNG.
+macro_rules! own {
+    ($key:literal) => {
+        (
+            $key,
+            include_bytes!(concat!("../../assets/platform-icons/", $key, ".png")),
+        )
+    };
+}
+
+/// romforge's own icons in flatui's style, for platforms flatui lacks:
+/// drawn by hand (SVG sources beside them) where neither RetroArch theme
+/// has one, generated (GUIDE.md, Licences and credits) for the most played
+/// of the rest.
+const OWN_ICONS: &[(&str, &[u8])] = &[
+    own!("PC"),
+    own!("VIS"),
+    own!("Lindbergh"),
+    own!("Nintendo Switch"),
+    own!("PlayStation 3"),
+    own!("Xbox 360"),
+    own!("Neo Geo"),
+    own!("Xbox"),
+    own!("Amiga"),
+    own!("ZX Spectrum"),
+    own!("PlayStation Vita"),
+    own!("PlayStation 4"),
+    own!("ScummVM"),
+];
+
+/// The platforms romforge draws its own icon for.
+pub fn own_icon_keys() -> impl Iterator<Item = &'static str> {
+    OWN_ICONS.iter().map(|(k, _)| *k)
+}
+
+/// The name of a platform's picture in RetroArch's icon themes.
+fn icon_name(system: &systems::System) -> Option<&'static str> {
+    (!system.icon.is_empty())
+        .then_some(system.icon)
+        .or_else(|| libretro_name(system))
+}
+
+/// Forget icons kept under an older [`ICONS_REVISION`].
+fn renew(cache_dir: &Path) {
+    let dir = cache_dir.join("platform-icons");
+    let stamp = dir.join("revision");
+    if std::fs::read_to_string(&stamp).is_ok_and(|r| r.trim() == ICONS_REVISION) {
+        return;
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = save(&stamp, ICONS_REVISION.as_bytes());
+}
+
 /// The sidebar's platform icon styles: RetroArch's flat controllers
 /// (`flatui`, the default) or its consoles (`systematic`), or each
 /// platform's own logo from Wikidata (`logo`, a Commons file).
@@ -43,16 +120,16 @@ fn kept_icon(stem: &Path) -> Option<PathBuf> {
 }
 
 /// The icons of `theme` for `systems`, fetched the first time: system key
-/// -> file. RetroArch's themes come from retroarch-assets (`base`) by the
-/// platform's libretro name; logos from Wikidata (`wikidata`, its SPARQL
-/// endpoint) by the platform's item, as small PNGs Commons renders. A
+/// -> file. RetroArch's themes come from retroarch-assets by the
+/// platform's icon name (flatui's missing ones from systematic); logos by
+/// the table's Commons file, else from Wikidata by the platform's items,
+/// as small PNGs Commons renders. A
 /// platform with none is remembered (a `.missing` file) and not asked
 /// again. Errors (offline) don't forget anything; the first is returned
 /// with what there is.
 pub fn platform_icons(
     cache_dir: &Path,
-    base: &str,
-    wikidata: &str,
+    from: &IconSources,
     theme: &str,
     systems: &[&'static systems::System],
 ) -> (BTreeMap<String, PathBuf>, Option<Error>) {
@@ -61,6 +138,7 @@ pub fn platform_icons(
     if !PLATFORM_ICON_THEMES.contains(&theme) {
         return (out, Some(Error::Settings(format!("no icon theme {theme:?}"))));
     }
+    renew(cache_dir);
     let mut todo: Vec<(&'static systems::System, PathBuf)> = Vec::new();
     for system in systems {
         let stem = platform_icon_stem(cache_dir, theme, system);
@@ -91,14 +169,29 @@ pub fn platform_icons(
     if theme == "logo" {
         let qids: Vec<String> = todo
             .iter()
-            .filter_map(|(s, _)| s.wikidata.first().map(|q| (*q).to_owned()))
+            .filter(|(s, _)| s.logo.is_empty())
+            .flat_map(|(s, _)| s.wikidata.iter().map(|q| (*q).to_owned()))
             .collect();
-        let found = match crate::wikidata::logos(wikidata, &qids) {
-            Ok(f) => f,
-            Err(e) => return (out, Some(e)),
+        let found = if qids.is_empty() {
+            Default::default()
+        } else {
+            match crate::wikidata::logos(from.wikidata, &qids) {
+                Ok(f) => f,
+                Err(e) => return (out, Some(e)),
+            }
         };
         for (system, stem) in &todo {
-            let Some(url) = system.wikidata.first().and_then(|q| found.get(*q)) else {
+            // The table's own pick, else the first item (in the table's
+            // order) that has a logo.
+            let url = if system.logo.is_empty() {
+                system
+                    .wikidata
+                    .iter()
+                    .find_map(|q| found.get(*q).and_then(|f| f.first()).cloned())
+            } else {
+                Some(format!("{}{}", from.commons, fetch::encode_segment(system.logo)))
+            };
+            let Some(url) = url else {
                 missing(stem);
                 continue;
             };
@@ -119,15 +212,21 @@ pub fn platform_icons(
         return (out, first_error);
     }
     for (system, stem) in &todo {
-        let Some(name) = libretro_name(system) else {
-            missing(stem);
-            continue;
+        let file = icon_name(system).map(|n| fetch::encode_segment(&format!("{n}.png")));
+        let mut got = match &file {
+            Some(file) => fetch::get_image(&format!("{}/{theme}/png/{file}", from.assets)),
+            None => Ok(None),
         };
-        let url = format!(
-            "{base}/{theme}/png/{}",
-            fetch::encode_segment(&format!("{name}.png"))
-        );
-        match fetch::get_image(&url) {
+        // One RetroArch doesn't draw: romforge's own, in flatui's style; else
+        // (flatui draws far fewer platforms) systematic's.
+        if matches!(got, Ok(None)) {
+            if let Some((_, png)) = OWN_ICONS.iter().find(|(k, _)| *k == system.key) {
+                got = Ok(Some(png.to_vec()));
+            } else if let (Some(file), "flatui") = (&file, theme) {
+                got = fetch::get_image(&format!("{}/systematic/png/{file}", from.assets));
+            }
+        }
+        match got {
             Ok(Some(data)) => {
                 if let Err(e) = keep(system, stem, &data) {
                     first_error.get_or_insert(e);
