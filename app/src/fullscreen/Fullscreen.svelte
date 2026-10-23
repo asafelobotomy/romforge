@@ -350,7 +350,7 @@
   }}
 />
 
-<div class="fs" data-fs-root data-fs-screen={screen} data-fs-layout={layout} data-fs-aspect={aspect} bind:this={root}>
+<div class="fs" data-fs-root data-fs-screen={screen} data-fs-layout={layout} data-fs-shelf-details={layout === "bookshelf" && shelfPrefs.details !== "top" ? shelfPrefs.details : undefined} data-fs-aspect={aspect} bind:this={root}>
   {#if backdrop}<img class="backdrop" src={backdrop} alt="" data-fs-detail="backdrop" />{/if}
   {#if screen === "home"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>

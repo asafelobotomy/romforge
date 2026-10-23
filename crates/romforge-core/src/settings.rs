@@ -28,7 +28,10 @@ pub use regions::parse_regions;
 mod details;
 pub use details::{FS_DETAILS, clean_fs_details, default_fs_details, save_fs_details};
 mod bookshelf;
-pub use bookshelf::{Bookshelf, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_MAX, SHELF_SORTS, save_bookshelf};
+pub use bookshelf::{
+    Bookshelf, SHELF_DETAILS, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_MAX, SHELF_MAX_BESIDE, SHELF_SORTS,
+    save_bookshelf,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {

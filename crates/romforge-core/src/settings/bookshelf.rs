@@ -9,8 +9,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-/// The most boxes a shelf holds in the bookcase (`vertical`).
+/// The most boxes a shelf holds in the bookcase (`vertical`), and with
+/// the details beside the shelves rather than above them.
 pub const SHELF_MAX: usize = 30;
+pub const SHELF_MAX_BESIDE: usize = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -28,11 +30,16 @@ pub struct Bookshelf {
     /// The games' order on the shelves: "title", "released" (oldest
     /// first), "newest" or "played" (longest played first).
     pub sort: String,
+    /// Where the focused game's details go: "top" (above the shelves),
+    /// "left" or "right" (beside them, the shelves shorter: at most
+    /// [`SHELF_MAX_BESIDE`] boxes).
+    pub details: String,
 }
 
 pub const SHELF_DIRECTIONS: &[&str] = &["horizontal", "vertical"];
 pub const SHELF_GROUPS: &[&str] = &["platform", "mixed"];
 pub const SHELF_SORTS: &[&str] = &["title", "released", "newest", "played"];
+pub const SHELF_DETAILS: &[&str] = &["top", "left", "right"];
 
 impl Default for Bookshelf {
     fn default() -> Self {
@@ -42,13 +49,14 @@ impl Default for Bookshelf {
             favourites: false,
             recent: false,
             sort: "title".into(),
+            details: "top".into(),
         }
     }
 }
 
 impl Bookshelf {
-    /// As it is kept: an unknown direction, grouping or order is the
-    /// default's.
+    /// As it is kept: an unknown direction, grouping, order or place for
+    /// the details is the default's.
     pub fn cleaned(&self) -> Bookshelf {
         let d = Bookshelf::default();
         let pick =
@@ -57,6 +65,7 @@ impl Bookshelf {
             direction: pick(&self.direction, SHELF_DIRECTIONS, d.direction),
             group: pick(&self.group, SHELF_GROUPS, d.group),
             sort: pick(&self.sort, SHELF_SORTS, d.sort),
+            details: pick(&self.details, SHELF_DETAILS, d.details),
             ..self.clone()
         }
     }
@@ -103,13 +112,14 @@ mod tests {
             favourites: true,
             recent: false,
             sort: "newest".into(),
+            details: "left".into(),
         };
         let kept = save_bookshelf(&c, &b).unwrap();
         assert_eq!(
             (kept.direction.as_str(), kept.group.as_str()),
             ("vertical", "platform")
         );
-        assert_eq!(kept.sort, "newest");
+        assert_eq!((kept.sort.as_str(), kept.details.as_str()), ("newest", "left"));
         assert_eq!(load(&c).unwrap(), kept);
     }
 }

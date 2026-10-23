@@ -36,10 +36,13 @@ export function shelfFits(widths, first, width) {
 }
 
 // The bookshelf's choices (the core's settings::Bookshelf) until the
-// settings have loaded, and the most boxes a bookcase shelf holds
-// (settings::SHELF_MAX).
-export const SHELF_DEFAULT = { direction: "horizontal", group: "platform", favourites: false, recent: false, sort: "title" };
+// settings have loaded, and the most boxes a bookcase shelf holds, with
+// the details above the shelves and beside them (settings::SHELF_MAX,
+// SHELF_MAX_BESIDE).
+export const SHELF_DEFAULT = { direction: "horizontal", group: "platform", favourites: false, recent: false, sort: "title", details: "top" };
 export const SHELF_MAX = 30;
+export const SHELF_MAX_BESIDE = 15;
+export const shelfMax = (p) => ((p?.details ?? "top") === "top" ? SHELF_MAX : SHELF_MAX_BESIDE);
 
 // `games` in the bookshelf's order `sort`: by title, by release year
 // (oldest or newest first, games without one last), or longest played
@@ -60,18 +63,19 @@ export function shelfSorted(games, sort, marks, keyOf) {
 // lately next (latest first) when asked for, then the games by platform
 // (each platform's own, by name) or all mixed under `name`, in the order
 // asked for. In the bookcase
-// (`vertical`) each run is cut into shelves of SHELF_MAX, numbered; else
+// (`vertical`) each run is cut into shelves of shelfMax, numbered; else
 // each is one endless shelf. Empty ones aren't there. `keyOf(r)` keys a
 // game as favourites and play time are kept.
 export function bookcase(all, marks, prefs, name, keyOf) {
   const p = { ...SHELF_DEFAULT, ...prefs };
   const games = shelfSorted(all, p.sort, marks, keyOf);
+  const max = shelfMax(p);
   const played = (r) => marks.played.get(keyOf(r));
   const runs = [];
   if (p.favourites) runs.push({ key: "fav", name: "Favourites", games: games.filter((r) => marks.favourites.has(keyOf(r))) });
   if (p.recent) {
     const recent = games.filter(played).sort((a, b) => played(b).last_played - played(a).last_played);
-    runs.push({ key: "recent", name: "Recently played", games: recent.slice(0, SHELF_MAX) });
+    runs.push({ key: "recent", name: "Recently played", games: recent.slice(0, max) });
   }
   if (p.group === "platform") {
     const by = new Map();
@@ -87,9 +91,9 @@ export function bookcase(all, marks, prefs, name, keyOf) {
       out.push(run);
       continue;
     }
-    const n = Math.ceil(run.games.length / SHELF_MAX);
+    const n = Math.ceil(run.games.length / max);
     for (let i = 0; i < n; i++) {
-      out.push({ key: `${run.key}:${i}`, name: n > 1 ? `${run.name} ${i + 1}/${n}` : run.name, games: run.games.slice(i * SHELF_MAX, (i + 1) * SHELF_MAX) });
+      out.push({ key: `${run.key}:${i}`, name: n > 1 ? `${run.name} ${i + 1}/${n}` : run.name, games: run.games.slice(i * max, (i + 1) * max) });
     }
   }
   return out;
@@ -98,11 +102,16 @@ export function bookcase(all, marks, prefs, name, keyOf) {
 // The bookshelf's choices as words, for Settings and Start → Bookshelf.
 export const SHELF_DIRECTIONS = [
   { value: "horizontal", label: "One endless shelf each" },
-  { value: "vertical", label: `Shelves of ${SHELF_MAX}, down to the next` },
+  { value: "vertical", label: `Shelves of ${SHELF_MAX} (${SHELF_MAX_BESIDE} beside the details), down to the next` },
 ];
 export const SHELF_GROUPS = [
   { value: "platform", label: "A shelf for each platform" },
   { value: "mixed", label: "All platforms mixed" },
+];
+export const SHELF_DETAILS = [
+  { value: "top", label: "Above the shelves" },
+  { value: "left", label: "On the left" },
+  { value: "right", label: "On the right" },
 ];
 export const SHELF_SORTS = [
   { value: "title", label: "Name" },
@@ -127,6 +136,7 @@ export function bookshelfMenu(act, b, index = 0) {
       { label: `Order: ${label(SHELF_SORTS, p.sort)}`, run: () => again({ sort: other(SHELF_SORTS, p.sort) }, 2) },
       { label: `Favourites shelf: ${p.favourites ? "On" : "Off"}`, run: () => again({ favourites: !p.favourites }, 3) },
       { label: `Recently played shelf: ${p.recent ? "On" : "Off"}`, run: () => again({ recent: !p.recent }, 4) },
+      { label: `Details: ${label(SHELF_DETAILS, p.details)}`, run: () => again({ details: other(SHELF_DETAILS, p.details) }, 5) },
     ],
   };
 }

@@ -1,7 +1,7 @@
 <script>
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { DETAILS, SHOWN, toggled } from "./fullscreen/fsdetails.js";
-  import { SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_SORTS } from "./fullscreen/fsshelf.js";
+  import { SHELF_DETAILS, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_SORTS } from "./fullscreen/fsshelf.js";
 
   // Settings → Display: the fullscreen mode's attract mode, screensaver
   // and background music (stage 2, step 6), part of the dialog's draft
@@ -70,6 +70,10 @@
       <label for="fs-shelf-group">All games</label>
       <select id="fs-shelf-group" bind:value={draft.fs_bookshelf.group}>
         {#each SHELF_GROUPS as g}<option value={g.value}>{g.label}</option>{/each}
+      </select>
+      <label for="fs-shelf-details">Details</label>
+      <select id="fs-shelf-details" bind:value={draft.fs_bookshelf.details}>
+        {#each SHELF_DETAILS as d}<option value={d.value}>{d.label}</option>{/each}
       </select>
       <label for="fs-shelf-sort">Order</label>
       <select id="fs-shelf-sort" bind:value={draft.fs_bookshelf.sort}>

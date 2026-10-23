@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookcase, bookshelfMenu, shelfSorted, sizeOf, shelfScale, shelfFirst, shelfFits, SHELF_MAX } from "../src/fullscreen/fsshelf.js";
+import { bookcase, bookshelfMenu, shelfSorted, sizeOf, shelfScale, shelfFirst, shelfFits, SHELF_MAX, SHELF_MAX_BESIDE } from "../src/fullscreen/fsshelf.js";
 
 test("boxes keep their real sizes, the tallest filling the shelf", () => {
   const games = [{ box_size: [135, 190, 14] }, { box_size: [142, 125, 10] }, {}];
@@ -63,4 +63,14 @@ test("the shelves' order: name, release date either way, most played", () => {
   assert.deepEqual(titles("released"), ["Cobra", "alpha", "Bravo"], "no year last");
   assert.deepEqual(titles("newest"), ["alpha", "Cobra", "Bravo"], "no year last");
   assert.deepEqual(titles("played"), ["Bravo", "Cobra", "alpha"]);
+});
+
+test("with the details beside them, bookcase shelves hold fewer", () => {
+  const games = many("SNES", 20);
+  const beside = bookcase(games, none, { direction: "vertical", details: "left" }, "SNES", key);
+  assert.deepEqual(beside.map((s) => s.games.length), [SHELF_MAX_BESIDE, 5]);
+  assert.equal(bookcase(games, none, { direction: "vertical" }, "SNES", key).length, 1, "above them, 30 a shelf");
+  assert.equal(bookcase(games, none, { details: "right" }, "SNES", key)[0].games.length, 20, "an endless shelf stays endless");
+  const m = bookshelfMenu({ setBookshelf: (b) => b }, { details: "top" });
+  assert.equal(m.items[5].run().items[5].label, "Details: On the left");
 });

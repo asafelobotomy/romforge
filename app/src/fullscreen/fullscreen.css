@@ -148,6 +148,26 @@
   max-width: 70vw;
   overflow: hidden;
 }
+/* The bookshelf with the details beside it: they take a column (on the
+   left or the right) and the shelves the rest, the whole height. */
+[data-fs-root][data-fs-shelf-details] .home {
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(22vw, 30vw) minmax(0, 1fr);
+}
+[data-fs-root][data-fs-shelf-details="right"] .home {
+  grid-template-columns: minmax(0, 1fr) minmax(22vw, 30vw);
+}
+[data-fs-root][data-fs-shelf-details="right"] .home > [data-fs-info] {
+  order: 3;
+}
+[data-fs-root][data-fs-shelf-details] .home > [data-fs-info] {
+  --fs-overview-lines: 10;
+  max-width: none;
+  align-content: center;
+}
+[data-fs-root][data-fs-shelf-details] .home > [data-fs-info] img[data-fs-detail="logo"] {
+  max-height: 14vh;
+}
 /* Fanart leads in these: stronger, faded away from where the games are. */
 [data-fs-root][data-fs-layout="wheel"] > .backdrop {
   opacity: var(--fs-hero-opacity, 0.5);

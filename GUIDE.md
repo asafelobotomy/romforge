@@ -817,7 +817,9 @@ fullscreen mode is open, an edited theme reloads within a second.
   from a shelf's end goes on to the next's start), their order (name,
   release date either way, most played), All games' platforms on a shelf
   each or all mixed, and a favourites shelf at the top and a recently
-  played one under it. The shelves hold the platform picked along the
+  played one under it, and the game's details above the shelves or
+  beside them, on the left or the right (the shelves then shorter, 15 to
+  a bookcase shelf). The shelves hold the platform picked along the
   top, its favourites and recently played shelves its own. The focused
   box slides out, Accept takes it off the shelf in 3D (left and right
   turn it a quarter at a time to its spine, back and other side, its back
@@ -845,8 +847,9 @@ bookshelf's board and back panel); `--fs-overview-lines` (the overview's
 lines, `6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
 `--fs-scale` is the user's text size and only romforge sets it. Hooks: the
 root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
-`game`), `data-fs-layout`, `data-fs-aspect` (`wide`, `standard`, `tall`),
-`data-fs-theme`, `data-fs-scheme` and `data-fs-opt-*`; inside it
+`game`), `data-fs-layout`, `data-fs-shelf-details` (`left`, `right`: the
+bookshelf's details beside it), `data-fs-aspect` (`wide`, `standard`,
+`tall`), `data-fs-theme`, `data-fs-scheme` and `data-fs-opt-*`; inside it
 `data-fs-wordmark`, `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`,
 `data-fs-list`, `data-fs-flow`, `data-fs-wheel`, `data-fs-tiles`,
 `data-fs-shelves` and its rows' `data-fs-shelf` (`recent`, `fav`, `all`),
