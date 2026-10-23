@@ -29,6 +29,14 @@ pub struct KnownEmulator {
     /// `{system}` the game's system; milestone 18, 1.3). Used only for an
     /// emulator romforge writes a config for (`launch/owned.rs`).
     pub config: &'static [&'static str],
+    /// Where it finds BIOS files, when the RomForge folder is there:
+    /// `{bios}` is `Bios/<settings name>/` (milestone 20). For emulators
+    /// that take the folder on the command line rather than in a config
+    /// file of romforge's (`launch/owned/standalone.rs`).
+    pub bios: &'static [&'static str],
+    /// For MAME's machines: the machine it starts, whose ROM set (`<machine>.zip`)
+    /// is the BIOS it needs.
+    pub machine: Option<&'static str>,
     /// Opens a ROM inside a zip/7z itself.
     pub archives: bool,
 }
@@ -51,6 +59,8 @@ const fn emu(
         args,
         fullscreen: &[],
         config: &[],
+        bios: &[],
+        machine: None,
         archives,
     }
 }
@@ -62,6 +72,14 @@ impl KnownEmulator {
     }
     const fn config(mut self, flags: &'static [&'static str]) -> Self {
         self.config = flags;
+        self
+    }
+    const fn bios(mut self, flags: &'static [&'static str]) -> Self {
+        self.bios = flags;
+        self
+    }
+    const fn machine(mut self, name: &'static str) -> Self {
+        self.machine = Some(name);
         self
     }
     const fn appimage(mut self, prefix: &'static str) -> Self {
@@ -234,7 +252,17 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["--fullscreen"])
-    .config(&["--noprimaryconf", "--conf", "{config}/dosbox-staging.conf"]),
+    .config(&["--noprimaryconf", "--conf", "{config}/dosbox-staging.conf"])
+    // 0.83's `[mt32] romdir`, `[soundcanvas] soundcanvas_rom_dir` and
+    // `[fluidsynth] soundfont_dir`, by `--set`.
+    .bios(&[
+        "--set",
+        "romdir={bios}/mt32-roms",
+        "--set",
+        "soundcanvas_rom_dir={bios}/soundcanvas-roms",
+        "--set",
+        "soundfont_dir={bios}/soundfonts",
+    ]),
     // Checked with `-help` (2026.10.01).
     emu(
         "dosbox-x",
@@ -245,7 +273,9 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["-fullscreen"])
-    .config(&["-conf", "{config}/dosbox-x.conf"]),
+    .config(&["-conf", "{config}/dosbox-x.conf"])
+    // `[midi] mt32.romdir` (dosbox-x.reference.conf), by `-set`.
+    .bios(&["-set", "midi mt32.romdir={bios}"]),
     // ScummVM finds the game in the folder itself. Checked with `--help`
     // (2026.3.0).
     emu(
@@ -257,7 +287,9 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["-f"])
-    .config(&["--config={config}/scummvm.ini"]),
+    .config(&["--config={config}/scummvm.ini"])
+    // Engine data (`--extrapath`), laid out as RetroBIOS gives it.
+    .bios(&["--extrapath={bios}/scummvm/extra"]),
     // Arcade sets by name, from the folder holding them (and their parents
     // and BIOS sets). Fullscreen is MAME's default; `-nowindow` overrides
     // an ini that says otherwise. Checked with `-showconfig` (0.289).
@@ -271,7 +303,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .fullscreen(&["-nowindow"])
     .config(&["-inipath", "{config}"]),
-    // MAME needs the machine's own ROMs in its rompath.
+    // MAME needs the machine's own ROM set in its rompath: `Bios/mame/`.
     emu(
         "mame-fm7",
         "MAME: FM-7",
@@ -282,8 +314,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .appimage("mame")
     .shares("mame")
+    .machine("fm7")
     .fullscreen(&["-nowindow"])
-    .config(&["-inipath", "{config}"]),
+    .config(&["-inipath", "{config}"])
+    .bios(&["-rompath", "{bios}"]),
     emu(
         "mame-fmtowns",
         "MAME: FM Towns",
@@ -294,8 +328,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .appimage("mame")
     .shares("mame")
+    .machine("fmtowns")
     .fullscreen(&["-nowindow"])
-    .config(&["-inipath", "{config}"]),
+    .config(&["-inipath", "{config}"])
+    .bios(&["-rompath", "{bios}"]),
 ];
 
 /// The entry named `name` (`retroarch` included).

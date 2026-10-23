@@ -49,7 +49,12 @@
     return e.regions.length ? `ready for ${e.regions.join(", ")}` : "ready";
   }
   const STATES = { accepted: "Accepted", present: "Present (no hash to check)", wrong_hash: "Wrong file", missing: "Missing" };
-  const need = (f) => (f.required ? (f.hle ? "Required, runs without" : "Required") : "Optional");
+  const need = (f) =>
+    !f.required ? "Optional"
+    : f.only_for === "chip" ? "Only games with its chip"
+    : f.only_for ? `Only ${f.only_for} games`
+    : f.hle ? "Required, runs without"
+    : "Required";
   // Where a file goes, from Bios/ on.
   const where = (f) => (report && f.place.startsWith(report.bios_dir) ? "Bios" + f.place.slice(report.bios_dir.length) : f.place);
   const readyCount = (s) => s.emulators.filter((e) => e.ready && e.profiled).length;

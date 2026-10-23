@@ -306,6 +306,19 @@ import`): each file is matched by its contents and copied where every
 emulator that wants it looks; a file whose name fits but whose hash isn't
 known is placed only when you tick it (`--also NAME`).
 
+Each emulator is pointed at its folder when it starts: RetroArch's system
+folder; DuckStation, PCSX2, mGBA, Mednafen, melonDS and xemu through
+romforge's config of theirs; Flycast by `FLYCAST_BIOS_PATH`; Dolphin's and
+Cemu's files (`keys.txt`, `otp.bin`, `seeprom.bin`) linked into their data
+folder; MAME's machines by `-rompath` (FM-7 and FM Towns need their
+machine's set, `fm7.zip`, `fmtowns.zip`, in `Bios/mame/`); ScummVM by
+`--extrapath`; DOSBox Staging's MT-32, Sound Canvas and SoundFont folders,
+and DOSBox-X's MT-32 folder, by their settings on the command line. An
+emulator is *ready* when every file it can't run without is accepted or
+present; files only some games load don't decide it: a sub-system's
+(Satellaview, DSi) and a cartridge chip's (bsnes's `*.program.rom`), shown
+as "only … games".
+
 ## Manuals
 
 ```bash

@@ -22,12 +22,18 @@
 //!   (optional: it skips the IPL by default), so files are linked into the
 //!   user folder where it reads them (`GC/<region>/IPL.bin`).
 //! - PPSSPP 1.20.4: `XDG_CONFIG_HOME`; no BIOS.
+//! - melonDS 1.1: `XDG_CONFIG_HOME` → `melonDS/melonDS.toml`
+//!   (`main.cpp`, `Config.cpp`): `[DS] BIOS9Path`, `BIOS7Path`,
+//!   `FirmwarePath` and `[DSi]`'s four, set only for files there are;
+//!   `[Emu] ExternalBIOSEnable` only with all three DS files, else it uses
+//!   its own free BIOS (a missing file with it on stops the game).
 //!
 //! Not here: RPCS3, Cemu and xemu keep firmware, installed games or a hard
 //! disk in their data folder, so a folder of romforge's would hide them.
 
 use std::path::{Path, PathBuf};
 
+use super::formats::toml_string;
 use super::{ConfigWrite, Format, Prepare};
 
 /// What `name` needs to start from `dir` with its BIOS files in `bios`;
@@ -112,6 +118,35 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
         }
         "dolphin" => p.links.push((bios.to_path_buf(), dir.to_path_buf())),
         "ppsspp" => p.env = env(&[("XDG_CONFIG_HOME", s(dir))]),
+        "melonds" => {
+            p.env = env(&[("XDG_CONFIG_HOME", s(dir))]);
+            let (mut keys, mut remove) = (Vec::new(), Vec::new());
+            let mut ds = 0;
+            for (key, file) in [
+                ("[DS]BIOS9Path", "bios9.bin"),
+                ("[DS]BIOS7Path", "bios7.bin"),
+                ("[DS]FirmwarePath", "firmware.bin"),
+                ("[DSi]BIOS9Path", "dsi_bios9.bin"),
+                ("[DSi]BIOS7Path", "dsi_bios7.bin"),
+                ("[DSi]FirmwarePath", "dsi_firmware.bin"),
+                ("[DSi]NANDPath", "dsi_nand.bin"),
+            ] {
+                let path = bios.join(file);
+                if path.is_file() {
+                    ds += usize::from(key.starts_with("[DS]"));
+                    keys.push((key.to_owned(), toml_string(&s(&path))));
+                } else {
+                    remove.push(key.to_owned());
+                }
+            }
+            keys.push(("[Emu]ExternalBIOSEnable".into(), (ds == 3).to_string()));
+            p.writes.push(ConfigWrite {
+                path: dir.join("melonDS/melonDS.toml"),
+                format: Format::Toml,
+                keys,
+                remove,
+            });
+        }
         _ => return None,
     }
     Some(p)
@@ -176,6 +211,25 @@ mod tests {
         prepare(&standalone("dolphin", &dir, &bios).unwrap()).unwrap();
         assert_eq!(read("GC/USA/IPL.bin"), "ipl");
         assert_eq!(read("gba_bios.bin"), "mine", "never replaced");
+
+        // melonDS: the files there are, and its own BIOS until all three
+        // DS files are.
+        let ds = t.path().join("Bios/ds");
+        std::fs::create_dir_all(&ds).unwrap();
+        std::fs::write(ds.join("bios9.bin"), b"9").unwrap();
+        prepare(&standalone("melonds", &dir, &ds).unwrap()).unwrap();
+        let toml = read("melonDS/melonDS.toml");
+        assert!(
+            toml.contains(&format!("BIOS9Path = \"{}\"", ds.join("bios9.bin").display())),
+            "{toml}"
+        );
+        assert!(toml.contains("ExternalBIOSEnable = false"), "{toml}");
+        assert!(!toml.contains("BIOS7Path"), "{toml}");
+        for f in ["bios7.bin", "firmware.bin"] {
+            std::fs::write(ds.join(f), b"x").unwrap();
+        }
+        prepare(&standalone("melonds", &dir, &ds).unwrap()).unwrap();
+        assert!(read("melonDS/melonDS.toml").contains("ExternalBIOSEnable = true"));
 
         for none in ["rpcs3", "cemu", "xemu", "scummvm"] {
             assert!(standalone(none, &dir, &bios).is_none(), "{none}");

@@ -25,6 +25,8 @@ mod data;
 pub use data::{FileReq, Profile};
 mod import;
 pub use import::*;
+mod ready;
+use ready::{is_chip, readiness, same_core};
 mod walk;
 pub use walk::SourceId;
 
@@ -57,6 +59,11 @@ pub struct FileState {
     pub archive: bool,
     /// Loaded only for games of these regions; empty: all.
     pub regions: Vec<String>,
+    /// Needed only by some of the system's games, so it doesn't decide
+    /// whether the emulator is ready: those of a sub-system (RetroBIOS's
+    /// id: `nintendo-satellaview`, `nintendo-dsi`), or `chip` for a
+    /// cartridge's coprocessor ROM.
+    pub only_for: Option<String>,
     pub state: State,
 }
 
@@ -123,6 +130,9 @@ struct Slot<'a> {
     profile: Option<&'a Profile>,
     dir: PathBuf,
     installed: bool,
+    /// For a MAME machine (`KnownEmulator::machine`): its own set, when the
+    /// list gives none for it.
+    machine: Vec<FileReq>,
 }
 
 impl Slot<'_> {
@@ -148,13 +158,44 @@ impl Slot<'_> {
     }
 
     /// Its profile's files for its system: those tied to the system, and
-    /// those tied to none.
+    /// those tied to none. A MAME machine gets only its own: MAME's profile
+    /// covers every machine, and its untied files are other machines' BIOS
+    /// sets and MAME's support files.
     fn files(&self) -> impl Iterator<Item = &FileReq> {
         let ids = self.system.retrobios;
+        let tied_only = self.is_machine();
         self.profile
             .into_iter()
             .flat_map(|p| &p.files)
-            .filter(move |f| f.system.as_deref().is_none_or(|sys| ids.contains(&sys)))
+            .filter(move |f| match f.system.as_deref() {
+                Some(sys) => ids.contains(&sys),
+                None => !tied_only,
+            })
+            .chain(&self.machine)
+    }
+
+    fn is_machine(&self) -> bool {
+        launch::known(&self.name).is_some_and(|e| e.machine.is_some())
+    }
+
+    /// The RetroBIOS id of the system itself, among the system's ids: the
+    /// first its profile names (the others are its sub-systems there).
+    fn main_id(&self) -> Option<&str> {
+        let named = &self.profile?.systems;
+        self.system
+            .retrobios
+            .iter()
+            .copied()
+            .find(|id| named.iter().any(|n| n == id))
+    }
+
+    /// What `f` is needed only for ([`FileState::only_for`]).
+    fn only_for(&self, f: &FileReq) -> Option<String> {
+        if is_chip(&f.name) {
+            return Some("chip".into());
+        }
+        let sys = f.system.as_deref()?;
+        (Some(sys) != self.main_id()).then(|| sys.to_owned())
     }
 }
 
@@ -166,9 +207,13 @@ fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
             out.push(Slot {
                 system: s,
                 name: format!("retroarch:{core}"),
-                profile: profiles.iter().find(|p| p.cores.iter().any(|c| c == core)),
+                profile: profiles
+                    .iter()
+                    .find(|p| p.cores.iter().any(|c| same_core(c, core)))
+                    .or_else(|| profiles.iter().find(|p| p.id == *core)),
                 dir: home.bios().join("RetroArch"),
                 installed: env.find(&RETROARCH).is_some() && env.core_path(core).is_some(),
+                machine: Vec::new(),
             });
         }
         for name in s.emulators {
@@ -185,7 +230,19 @@ fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
                     .or_else(|| profiles.iter().find(|p| p.cores.iter().any(|c| c == id))),
                 dir: home.bios().join(id),
                 installed: env.find(e).is_some(),
+                machine: Vec::new(),
             });
+            if let (Some(m), Some(slot)) = (e.machine, out.last_mut()) {
+                let set = format!("{m}.zip");
+                if !slot.files().any(|f| f.name == set) {
+                    slot.machine.push(FileReq {
+                        name: set,
+                        required: true,
+                        archive: true,
+                        ..FileReq::default()
+                    });
+                }
+            }
         }
     }
     out
@@ -224,7 +281,13 @@ struct Checker {
 impl Checker {
     fn emulator(&mut self, slot: &Slot) -> EmulatorFirmware {
         let reqs: Vec<&FileReq> = slot.files().collect();
-        let files: Vec<FileState> = reqs.iter().map(|f| self.file(f, slot.place(f))).collect();
+        let files: Vec<FileState> = reqs
+            .iter()
+            .map(|f| FileState {
+                only_for: slot.only_for(f),
+                ..self.file(f, slot.place(f))
+            })
+            .collect();
         let (ready, regions) = readiness(&reqs, &files);
         EmulatorFirmware {
             name: slot.name.clone(),
@@ -264,43 +327,10 @@ impl Checker {
             hle: f.hle,
             archive: f.archive,
             regions: f.regions.clone(),
+            only_for: None,
             state,
         }
     }
-}
-
-/// Whether an emulator can start games with `files` (checked, in the order
-/// of `reqs`), and for which regions when its required files are regional.
-fn readiness(reqs: &[&FileReq], files: &[FileState]) -> (bool, Vec<String>) {
-    let ok = |f: &FileState| matches!(f.state, State::Accepted | State::Present);
-    let needed = |r: &&FileReq| r.required && !r.hle;
-    let pairs: Vec<(&FileReq, &FileState)> = reqs
-        .iter()
-        .copied()
-        .zip(files)
-        .filter(|(r, _)| needed(r))
-        .collect();
-    // A group of alternatives needs one; so does a set of regional files.
-    let mut groups: HashMap<&str, bool> = HashMap::new();
-    let mut regions = Vec::new();
-    let mut regional = false;
-    let mut plain = true;
-    for (r, f) in &pairs {
-        if let Some(g) = &r.variant_group {
-            *groups.entry(g).or_default() |= ok(f);
-        } else if !r.regions.is_empty() {
-            regional = true;
-            if ok(f) {
-                regions.extend(r.regions.iter().cloned());
-            }
-        } else {
-            plain &= ok(f);
-        }
-    }
-    regions.sort();
-    regions.dedup();
-    let ready = plain && groups.values().all(|g| *g) && (!regional || !regions.is_empty());
-    (ready, regions)
 }
 
 /// A plain file's size and hashes (a folder or nothing: `None`).

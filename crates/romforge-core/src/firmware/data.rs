@@ -151,10 +151,13 @@ fn relative(p: &str) -> bool {
 }
 
 /// Strings in a value that is a string or a list of them.
+/// One string, a list of them, or an object's keys (snes9x lists its
+/// cores as an object of notes per core).
 fn strings(v: Option<&Value>) -> Vec<String> {
     match v {
         Some(Value::String(s)) => vec![s.clone()],
         Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+        Some(Value::Object(o)) => o.keys().cloned().collect(),
         _ => Vec::new(),
     }
 }

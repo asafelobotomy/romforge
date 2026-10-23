@@ -71,6 +71,7 @@ fn flatpak_commands() {
         set: "a b",
         core: Some(Path::new("/c/x_libretro.so")),
         config: None,
+        bios: None,
         system: "GBA",
     };
     assert_eq!(fill(&["-e", "{rom}"], &vars), ["-e", "/r/a b.iso"]);
@@ -168,6 +169,7 @@ fn placeholders_are_filled_once() {
         set: "{system}",
         core: None,
         config: None,
+        bios: None,
         system: "GBA",
     };
     assert_eq!(
@@ -191,4 +193,30 @@ fn a_helper_run_that_hangs_is_stopped() {
     let out = tools::output_within(quick, std::time::Duration::from_secs(10)).unwrap();
     assert!(out.status.success());
     assert_eq!(out.stdout, b"hi\n");
+}
+
+/// An emulator that takes its BIOS folder on the command line gets it only
+/// with a RomForge folder.
+#[test]
+fn bios_flags_come_with_the_romforge_folder() {
+    let towns = known("mame-fmtowns").unwrap();
+    let mut vars = Vars {
+        rom: Path::new("/g/t.chd"),
+        set: "t",
+        core: None,
+        config: None,
+        bios: None,
+        system: "FM Towns",
+    };
+    let o = LaunchOptions::default();
+    assert!(!known_args(towns, &vars, &o).contains(&"-rompath".to_owned()));
+    vars.bios = Some(Path::new("/rf/Bios/mame"));
+    let args = known_args(towns, &vars, &o);
+    assert!(
+        args.windows(2).any(|w| w == ["-rompath", "/rf/Bios/mame"]),
+        "{args:?}"
+    );
+    let staging = known("dosbox-staging").unwrap();
+    vars.bios = Some(Path::new("/rf/Bios/dosbox-staging"));
+    assert!(known_args(staging, &vars, &o).contains(&"romdir=/rf/Bios/dosbox-staging/mt32-roms".to_owned()));
 }

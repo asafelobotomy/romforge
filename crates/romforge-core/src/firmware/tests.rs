@@ -260,3 +260,61 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
         "nothing left to undo"
     );
 }
+
+/// Cores listed as an object or with `_libretro`, MAME's machines (their
+/// own sets only), and files that don't decide readiness: a sub-system's,
+/// a coprocessor chip's.
+#[test]
+fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
+    let doc = serde_json::json!({"items": [
+        {"id": "bsnes", "profile": {"cores": {"bsnes": null}, "systems": ["nintendo-snes", "nintendo-satellaview"],
+            "files": [
+                {"name": "dsp3.program.rom", "required": true, "system": "nintendo-snes"},
+                {"name": "BS-X.bin", "required": true, "system": "nintendo-satellaview"}]}},
+        {"id": "o2em", "profile": {"cores": ["o2em_libretro"], "systems": ["odyssey2"],
+            "files": [{"name": "o2rom.bin", "required": true}]}},
+        {"id": "mame", "profile": {"cores": ["mame"], "systems": ["fm7", "snk-neogeo-mvs"],
+            "files": [
+                {"name": "fm7.zip", "required": true, "system": "fm7"},
+                {"name": "neogeo.zip", "required": true}]}}
+    ]})
+    .to_string();
+    let (profiles, _) = data::parse(doc.as_bytes()).unwrap();
+    assert_eq!(profiles[0].cores, ["bsnes"], "an object's keys");
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(t.path()).unwrap();
+    let dir = t.path().join("db");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(FILE), doc).unwrap();
+    let r = report(&dir, &home, &Env::default()).unwrap();
+    let emu = |sys: &str, name: &str| {
+        r.systems
+            .iter()
+            .find(|s| s.key == sys)
+            .and_then(|s| s.emulators.iter().find(|e| e.name == name))
+            .cloned()
+            .unwrap()
+    };
+    let bsnes = emu("SNES", "retroarch:bsnes");
+    assert!(bsnes.ready, "neither the chip nor Satellaview's BIOS decides it");
+    let only: Vec<_> = bsnes.files.iter().map(|f| f.only_for.as_deref()).collect();
+    assert_eq!(only, [Some("chip"), Some("nintendo-satellaview")]);
+    let o2 = emu("Odyssey2", "retroarch:o2em");
+    assert!(o2.profiled && !o2.ready, "o2em_libretro is the o2em core");
+    let fm7 = emu("FM-7", "mame-fm7");
+    let names: Vec<_> = fm7.files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["fm7.zip"], "not another machine's set");
+    assert_eq!(fm7.files[0].place, home.bios().join("mame/fm7.zip"));
+    let towns = emu("FM Towns", "mame-fmtowns");
+    let names: Vec<_> = towns
+        .files
+        .iter()
+        .map(|f| (f.name.as_str(), f.required))
+        .collect();
+    assert_eq!(
+        names,
+        [("fmtowns.zip", true)],
+        "its set, though the list has none"
+    );
+    assert!(!towns.ready);
+}

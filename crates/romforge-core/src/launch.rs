@@ -278,25 +278,30 @@ pub(crate) struct Vars<'a> {
     pub core: Option<&'a Path>,
     /// romforge's config folder for the emulator, if it writes one.
     pub config: Option<&'a Path>,
+    /// Its folder in the RomForge folder's `Bios/`, when there is one.
+    pub bios: Option<&'a Path>,
     /// The game's system (its key).
     pub system: &'a str,
 }
 
 /// An emulator's arguments for a game: `{rom}` the file, `{dir}` its
 /// folder, `{set}` the set's name, `{core}` the RetroArch core, `{config}`
-/// romforge's config folder, `{system}` the system. One pass: a value that
+/// romforge's config folder, `{bios}` its BIOS folder, `{system}` the
+/// system. One pass: a value that
 /// itself holds a placeholder's text (a ROM named `{set}.zip`) stays as it is.
 fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
     let rom = v.rom.to_string_lossy();
     let dir = v.rom.parent().unwrap_or(Path::new(".")).to_string_lossy();
     let core = v.core.map(|c| c.to_string_lossy()).unwrap_or_default();
     let config = v.config.map(|c| c.to_string_lossy()).unwrap_or_default();
-    let vars: [(&str, &str); 6] = [
+    let bios = v.bios.map(|c| c.to_string_lossy()).unwrap_or_default();
+    let vars: [(&str, &str); 7] = [
         ("{rom}", &rom),
         ("{dir}", &dir),
         ("{set}", v.set),
         ("{core}", &core),
         ("{config}", &config),
+        ("{bios}", &bios),
         ("{system}", v.system),
     ];
     args.iter()
@@ -324,8 +329,9 @@ fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
 }
 
 /// A known emulator's whole command line: its fullscreen flags (unless set
-/// windowed), its config flags (with romforge's config), the extra
-/// arguments set for it, then its arguments for the game.
+/// windowed), its config flags (with romforge's config), its BIOS folder's
+/// flags (with a RomForge folder), the extra arguments set for it, then its
+/// arguments for the game.
 fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
     let fullscreen = if o.windowed { &[][..] } else { e.fullscreen };
     let config = if v.config.is_some() {
@@ -333,10 +339,16 @@ fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
     } else {
         Vec::new()
     };
+    let bios = if v.bios.is_some() {
+        fill(e.bios, v)
+    } else {
+        Vec::new()
+    };
     fullscreen
         .iter()
         .map(|f| (*f).to_owned())
         .chain(config)
+        .chain(bios)
         .chain(o.args.iter().cloned())
         .chain(fill(e.args, v))
         .collect()

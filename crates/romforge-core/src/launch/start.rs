@@ -46,8 +46,10 @@ pub(super) fn start(
     } else {
         rom.parent().map(Path::to_path_buf)
     };
-    let spec = |emulator: String, runner: &Runner, args: Vec<String>, prepare: Prepare| {
-        let home = env.home.as_ref().filter(|_| !prepare.writes.is_empty());
+    // `uses_home`: romforge sets the emulator up from the RomForge folder
+    // (its config, folders or BIOS folder), so a Flatpak is given it too.
+    let spec = |emulator: String, runner: &Runner, args: Vec<String>, prepare: Prepare, uses_home: bool| {
+        let home = env.home.as_ref().filter(|_| uses_home);
         let grants = owned::grants(grant.as_deref(), home);
         let (program, args, env) = command(runner, args, &grants, &prepare.env);
         LaunchSpec {
@@ -102,10 +104,12 @@ pub(super) fn start(
                             set: &set,
                             core: None,
                             config: None,
+                            bios: None,
                             system: system.key,
                         },
                     ),
                     Prepare::default(),
+                    false,
                 ));
             }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
@@ -139,10 +143,12 @@ pub(super) fn start(
                         set: &set,
                         core: Some(&c),
                         config: config.as_deref(),
+                        bios: None,
                         system: system.key,
                     };
                     let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
-                    return Ok(spec(name, &ra, args, prepare.unwrap_or_default()));
+                    let uses_home = prepare.is_some();
+                    return Ok(spec(name, &ra, args, prepare.unwrap_or_default(), uses_home));
                 }
                 None => why_not.push(format!("{name}: core not installed")),
             }
@@ -164,15 +170,24 @@ pub(super) fn start(
         match env.known(e) {
             Some(r) => {
                 let (config, prepare) = owned(e).unzip();
+                let bios = env.home.as_ref().map(|h| h.bios().join(e.settings_name()));
                 let vars = Vars {
                     rom: &rom,
                     set: &set,
                     core: None,
                     config: config.as_deref(),
+                    bios: bios.as_deref(),
                     system: system.key,
                 };
                 let args = known_args(e, &vars, &env.options(e));
-                return Ok(spec(e.name.to_owned(), &r, args, prepare.unwrap_or_default()));
+                let uses_home = prepare.is_some() || (bios.is_some() && !e.bios.is_empty());
+                return Ok(spec(
+                    e.name.to_owned(),
+                    &r,
+                    args,
+                    prepare.unwrap_or_default(),
+                    uses_home,
+                ));
             }
             None => why_not.push(format!("{} not installed", e.name)),
         }

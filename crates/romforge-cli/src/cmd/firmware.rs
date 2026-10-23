@@ -50,10 +50,12 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                             State::WrongHash => "WRONG HASH",
                             State::Missing => "missing",
                         };
-                        let need = match (f.required, f.hle) {
-                            (true, false) => "required",
-                            (true, true) => "required, runs without (HLE)",
-                            _ => "optional",
+                        let need = match (f.required, f.hle, f.only_for.as_deref()) {
+                            (true, _, Some("chip")) => "only games with its chip".to_owned(),
+                            (true, _, Some(sys)) => format!("only {sys} games"),
+                            (true, false, None) => "required".to_owned(),
+                            (true, true, None) => "required, runs without (HLE)".to_owned(),
+                            _ => "optional".to_owned(),
                         };
                         let regions = if f.regions.is_empty() {
                             String::new()

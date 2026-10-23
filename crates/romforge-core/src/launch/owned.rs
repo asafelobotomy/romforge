@@ -181,7 +181,7 @@ fn link_tree(root: &Path, dir: &Path, to: &Path) -> Result<(), Error> {
 }
 
 /// The folders a Flatpak emulator must be able to read: the game's and,
-/// with romforge's config, the RomForge folder.
+/// when romforge sets it up from there, the RomForge folder.
 pub(super) fn grants(game: Option<&Path>, home: Option<&Home>) -> Vec<PathBuf> {
     game.map(Path::to_path_buf)
         .into_iter()
