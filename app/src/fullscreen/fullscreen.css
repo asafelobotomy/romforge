@@ -56,6 +56,20 @@
   min-height: 0;
   padding: 1vh 3vw 5vh;
 }
+/* Cover flow: the covers across, the focused game's details under them. */
+[data-fs-root] .home.flow {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1vh;
+}
+[data-fs-root] .home.flow [data-fs-info] {
+  justify-items: center;
+  text-align: center;
+}
+[data-fs-root] .home.flow [data-fs-info] > * {
+  justify-self: center;
+  justify-content: center;
+}
 [data-fs-root] *,
 [data-fs-root] *::before,
 [data-fs-root] *::after {

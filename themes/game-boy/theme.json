@@ -6,7 +6,7 @@
   "licence": "MIT",
   "description": "The original's four greens, square cards, a thick focus and monospace type.",
   "layout": "grid",
-  "layouts": ["list"],
+  "layouts": ["list", "cover-flow"],
   "fallback": "title",
   "schemes": {
     "dmg": {

@@ -62,6 +62,18 @@ test("the list layout is one column of games", () => {
   assert.deepEqual(homeAction(list, "accept"), { intent: "open" });
 });
 
+test("the cover flow layout is one row of games", () => {
+  const flow = { platform: 0, platforms: 2, game: 3, count: 10, cols: 5, rows: 7, focus: "grid", layout: "cover-flow" };
+  assert.deepEqual(homeAction(flow, "right"), { game: 4 });
+  assert.deepEqual(homeAction(flow, "left"), { game: 2 });
+  assert.deepEqual(homeAction({ ...flow, game: 0 }, "left"), { game: 0 }, "no wrap");
+  assert.deepEqual(homeAction(flow, "up"), { focus: "carousel" }, "up leaves from any cover");
+  assert.deepEqual(homeAction(flow, "down"), {});
+  assert.deepEqual(homeAction(flow, "page_down"), { game: 9 }, "a page of covers");
+  assert.deepEqual(homeAction(flow, "page_up"), { game: 0 });
+  assert.deepEqual(homeAction(flow, "accept"), { intent: "open" });
+});
+
 test("keys stand in for the pad", () => {
   assert.equal(keyAction("Enter"), "accept");
   assert.equal(keyAction("Escape"), "back");

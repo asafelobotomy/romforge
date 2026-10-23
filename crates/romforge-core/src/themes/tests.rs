@@ -34,6 +34,8 @@ fn manifests_are_refused_with_a_reason() {
     assert!(refused(&manifest("mine", "").replace("--fs-bg", "--fs-scale")).contains("text size"));
     assert!(refused(&manifest("mine", ", \"script\": \"x.js\"")).contains("unknown field"));
     assert!(parse(&manifest("mine", ""), "mine").is_ok());
+    let flow = ", \"layout\": \"cover-flow\", \"layouts\": [\"grid\", \"list\"]";
+    assert!(parse(&manifest("mine", flow), "mine").is_ok());
 }
 
 #[test]

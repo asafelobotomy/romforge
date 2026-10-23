@@ -8,6 +8,7 @@
   import { run } from "../jobs.svelte.js";
   import FsCarousel from "./FsCarousel.svelte";
   import FsGrid from "./FsGrid.svelte";
+  import FsFlow from "./FsFlow.svelte";
   import FsList from "./FsList.svelte";
   import { theme, loadThemes, pickTheme, themeLink, applyTheme, watchTheme } from "./theme.svelte.js";
   import FsInfo from "./FsInfo.svelte";
@@ -285,13 +286,15 @@
   }}
 />
 
-<div class="fs" data-fs-root data-fs-screen={screen} data-fs-aspect={aspect} bind:this={root}>
+<div class="fs" data-fs-root data-fs-screen={screen} data-fs-layout={layout} data-fs-aspect={aspect} bind:this={root}>
   {#if screen === "home"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />
-    <main class="home">
+    <main class="home" class:flow={layout === "cover-flow"}>
       {#if layout === "list"}
         <FsList {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
+      {:else if layout === "cover-flow"}
+        <FsFlow {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {:else}
         <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {/if}

@@ -784,7 +784,7 @@ fullscreen mode is open, an edited theme reloads within a second.
 }
 ```
 
-- `layout`: `grid` or `list` (`layouts`: the others it allows);
+- `layout`: `grid`, `list` or `cover-flow` (`layouts`: the others it allows);
   `fallback`: what a game with no art shows, `title` or `platform` (its
   platform's icon).
 - `schemes`: colour schemes, each a set of variables; with both `light`
@@ -796,19 +796,24 @@ fullscreen mode is open, an edited theme reloads within a second.
 `--fs-bg`, `--fs-bg-2` (the background's glow), `--fs-panel`, `--fs-text`,
 `--fs-muted`, `--fs-accent`, `--fs-accent-text`, `--fs-line`, `--fs-focus`,
 `--fs-warn`, `--fs-shadow`, `--fs-scrim`, `--fs-radius`, `--fs-card-ratio`,
-`--fs-font`, `--fs-title-font`, `--fs-gap`. `--fs-scale` is the user's text
-size and only romforge sets it. Hooks: the root `[data-fs-root]` (in the
-CSS, `:scope`) with `data-fs-screen` (`home`, `game`), `data-fs-layout`,
+`--fs-font`, `--fs-title-font`, `--fs-gap`; for cover flow,
+`--fs-flow-angle` (the side covers' turn, `55deg`), `--fs-flow-depth` (how
+far back they stand, `14vh`), `--fs-flow-spread` (their step, `0.42` of a
+cover), `--fs-flow-dim` (their brightness, `0.7`) and
+`--fs-flow-perspective` (`110vh`). `--fs-scale` is the user's text size and
+only romforge sets it. Hooks: the root `[data-fs-root]` (in the CSS,
+`:scope`) with `data-fs-screen` (`home`, `game`), `data-fs-layout`,
 `data-fs-aspect` (`wide`, `standard`, `tall`), `data-fs-theme`,
 `data-fs-scheme` and `data-fs-opt-*`; inside it `data-fs-wordmark`,
 `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`, `data-fs-list`,
-`data-fs-card`, `data-fs-row`, `data-fs-selected`, `data-fs-art="missing"`,
-`data-fs-title`, `data-fs-info`, `data-fs-button`, `data-fs-menu`,
-`data-fs-help` and `data-fs-focus` (where the focus is); `data-fs-fav` (a
-favourite's star), `data-fs-search`, `data-fs-keyboard` and `data-fs-key`
-(the search screen), `data-fs-attract` and `data-fs-screensaver`. The
-splashes outside the mode carry `data-fs-splash` (`start`, `exit`) and
-`data-fs-platform`. Class names are not part of the API and change.
+`data-fs-flow`, `data-fs-card`, `data-fs-row`, `data-fs-selected`,
+`data-fs-art="missing"`, `data-fs-title`, `data-fs-info`, `data-fs-button`,
+`data-fs-menu`, `data-fs-help` and `data-fs-focus` (where the focus is);
+`data-fs-fav` (a favourite's star), `data-fs-search`, `data-fs-keyboard`
+and `data-fs-key` (the search screen), `data-fs-attract` and
+`data-fs-screensaver`. The splashes outside the mode carry `data-fs-splash`
+(`start`, `exit`) and `data-fs-platform`. Class names are not part of the
+API and change.
 
 The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
 fullscreen mode only, under a policy that loads nothing from outside

@@ -100,13 +100,16 @@ export function gridMove({ index, count, cols, rows = 3 }, action) {
 }
 
 // What an action means on the home screen, given where the focus is
-// ("carousel" or "grid", which is the game list in the list layout:
-// `layout: "list"` makes it one column). Returns { focus, platform, game } changes and,
-// for the buttons, an `intent`: "open" (the game page), "menu" (Start),
+// ("carousel" or "grid", which is the game list in the list and cover
+// flow layouts: `layout: "list"` makes it one column, "cover-flow" one
+// row). Returns { focus, platform, game } changes and, for the buttons,
+// an `intent`: "open" (the game page), "menu" (Start),
 // "context" (Select), "options" (North), "leave" (B on the home screen).
 export function homeAction(state, action) {
   const { focus, platform, platforms, game, count, rows } = state;
-  const cols = state.layout === "list" ? 1 : state.cols;
+  // The list is one column; cover flow is one row, so left and right
+  // move along it, up goes to the carousel and down stays.
+  const cols = state.layout === "list" || state.layout === "cover-flow" ? 1 : state.cols;
   if (action === "menu") return { intent: "menu" };
   if (action === "context") return { intent: "context" };
   if (focus === "carousel") {
@@ -120,6 +123,7 @@ export function homeAction(state, action) {
   if (action === "accept") return count ? { intent: "open" } : {};
   if (action === "north") return count ? { intent: "options" } : {};
   if (action === "back") return { focus: "carousel" };
+  if (state.layout === "cover-flow" && (action === "up" || action === "down")) return action === "up" ? { focus: "carousel" } : {};
   const next = gridMove({ index: game, count, cols, rows }, action);
   return next === "out-up" ? { focus: "carousel" } : { game: next };
 }

@@ -6,7 +6,7 @@
   "licence": "MIT",
   "description": "Near-black and glossy, a red accent, bold condensed type; a list by default.",
   "layout": "list",
-  "layouts": ["grid"],
+  "layouts": ["grid", "cover-flow"],
   "fallback": "platform",
   "schemes": {
     "black": {
