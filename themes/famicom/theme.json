@@ -2,6 +2,7 @@
   "api": 1,
   "id": "famicom",
   "name": "Famicom",
+  "version": "1.0.0",
   "author": "romforge",
   "licence": "MIT",
   "description": "Cream and deep red with gold details, square cards.",

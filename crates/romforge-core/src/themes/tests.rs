@@ -19,6 +19,8 @@ fn the_built_in_themes_are_all_usable() {
     for e in &all {
         assert!(e.usable(), "{}: {:?}", e.id, e.problem);
         assert!(e.builtin);
+        let m = e.manifest.as_ref().unwrap();
+        assert!(!m.version.is_empty(), "{}: no version", e.id);
     }
     assert!(find(None, DEFAULT).is_some());
 }

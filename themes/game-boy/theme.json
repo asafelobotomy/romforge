@@ -2,6 +2,7 @@
   "api": 1,
   "id": "game-boy",
   "name": "Game Boy",
+  "version": "1.0.0",
   "author": "romforge",
   "licence": "MIT",
   "description": "The original's four greens, square cards, a thick focus and monospace type.",

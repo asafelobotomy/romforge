@@ -2,6 +2,7 @@
   "api": 1,
   "id": "snes-uk",
   "name": "SNES UK",
+  "version": "1.0.0",
   "author": "romforge",
   "licence": "MIT",
   "description": "The UK (PAL) SNES: console greys and its four face-button colours, light or dark with the system.",
