@@ -14,6 +14,12 @@ pub async fn save_settings(db: tauri::State<'_, Db>, settings: Settings) -> Res<
     edit(&db, move |lib| lib.save_settings_from_form(&settings)).await
 }
 
+/// The fullscreen mode's Start → Details: keep which details it shows.
+#[tauri::command]
+pub async fn set_fs_details(db: tauri::State<'_, Db>, shown: Vec<String>) -> Res<Vec<String>> {
+    edit(&db, move |lib| lib.set_fs_details(&shown)).await
+}
+
 #[derive(serde::Serialize)]
 pub struct SettingsInfo {
     default_staging: String,

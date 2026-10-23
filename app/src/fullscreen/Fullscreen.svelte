@@ -12,6 +12,7 @@
   import FsList from "./FsList.svelte";
   import { theme, loadThemes, pickTheme, themeLink, applyTheme, watchTheme } from "./theme.svelte.js";
   import FsInfo from "./FsInfo.svelte";
+  import { SHOWN } from "./fsdetails.js";
   import FsGame from "./FsGame.svelte";
   import FsMenu from "./FsMenu.svelte";
   import FsHelp from "./FsHelp.svelte";
@@ -100,9 +101,21 @@
     if (root) applyTheme(root, theme.applied, dark);
   });
   let layout = $derived(theme.applied?.layout ?? "grid");
+  // The details shown of the focused game (Settings → Display, Start →
+  // Details): the core's defaults until the settings have loaded.
+  let shown = $state(SHOWN);
+  invoke("get_settings").then((s) => s?.fs_details && (shown = s.fs_details), () => {});
+  let backdrop = $derived(screen === "home" && shown.includes("backdrop") && detail?.row?.id === game?.id ? detail?.art?.hero : null);
 
   const act = {
     themes: () => theme.view,
+    details: () => shown,
+    // Shown at once, then kept (as the core cleaned it).
+    setDetails: (s) => {
+      shown = s;
+      invoke("set_fs_details", { shown: s }).then((kept) => (shown = kept), () => {});
+      return s;
+    },
     theme: (s) => void pickTheme(s),
     // Get themes: fetched, then shown (the menu says so meanwhile).
     store: () => later("Get themes", "Fetching the list…", () => invoke("themes_available").then((a) => storeMenu(act, a), () => storeMenu(act, null))),
@@ -287,6 +300,7 @@
 />
 
 <div class="fs" data-fs-root data-fs-screen={screen} data-fs-layout={layout} data-fs-aspect={aspect} bind:this={root}>
+  {#if backdrop}<img class="backdrop" src={backdrop} alt="" data-fs-detail="backdrop" />{/if}
   {#if screen === "home"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />
@@ -298,7 +312,7 @@
       {:else}
         <FsGrid {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:cols bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {/if}
-      <FsInfo {game} {detail} />
+      <FsInfo {game} {detail} {shown} />
     </main>
   {:else if screen === "search"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>

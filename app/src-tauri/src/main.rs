@@ -204,6 +204,7 @@ fn main() {
             emulators::install_emulator,
             settings::get_settings,
             settings::save_settings,
+            settings::set_fs_details,
             settings::settings_info,
             dats::scummvm_list,
             search::search_queue,

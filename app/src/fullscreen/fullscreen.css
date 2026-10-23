@@ -38,6 +38,20 @@
   font-size: calc(2vh * var(--fs-scale));
   overflow: hidden;
 }
+/* The focused game's fanart behind the home screen (a detail, off unless
+   turned on), dimmed so the text stays readable; z-index -1 puts it over
+   the root's background (its z-index makes it a stacking context) and
+   under everything else. */
+[data-fs-root] > .backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: var(--fs-backdrop-opacity, 0.18);
+  pointer-events: none;
+}
 [data-fs-root][data-fs-screen="game"] {
   grid-template-rows: minmax(0, 1fr) auto;
 }
@@ -69,6 +83,22 @@
 [data-fs-root] .home.flow [data-fs-info] > * {
   justify-self: center;
   justify-content: center;
+}
+/* There the details run across, in a band two lines of overview deep. */
+[data-fs-root] .home.flow [data-fs-info] {
+  --fs-overview-lines: 2;
+  gap: 0.8vh;
+  max-width: 80vw;
+  justify-self: center;
+}
+[data-fs-root] .home.flow [data-fs-info] dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6vh 2.4vw;
+}
+[data-fs-root] .home.flow [data-fs-info] dl div {
+  display: flex;
+  gap: 0.6vw;
 }
 [data-fs-root] *,
 [data-fs-root] *::before,

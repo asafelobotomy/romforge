@@ -25,6 +25,8 @@ mod store;
 pub use store::*;
 mod regions;
 pub use regions::parse_regions;
+mod details;
+pub use details::{FS_DETAILS, clean_fs_details, default_fs_details, save_fs_details};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
@@ -100,6 +102,10 @@ pub struct Settings {
     pub music_volume: u32,
     #[serde(default = "default_true")]
     pub music_shuffle: bool,
+    /// The details the fullscreen mode shows of the game in focus (of
+    /// [`FS_DETAILS`]); the rest are turned off.
+    #[serde(default = "default_fs_details")]
+    pub fs_details: Vec<String>,
 }
 
 fn default_volume() -> u32 {
@@ -154,6 +160,7 @@ impl Default for Settings {
             music_dir: None,
             music_volume: default_volume(),
             music_shuffle: true,
+            fs_details: default_fs_details(),
         }
     }
 }
@@ -311,6 +318,7 @@ impl Settings {
             },
             music_volume: self.music_volume.min(100),
             music_shuffle: self.music_shuffle,
+            fs_details: clean_fs_details(&self.fs_details),
             while_playing: match self.while_playing.trim() {
                 "" => default_while_playing(),
                 w if WHILE_PLAYING.contains(&w) => w.to_owned(),

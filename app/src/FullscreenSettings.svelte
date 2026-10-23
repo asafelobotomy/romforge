@@ -1,5 +1,6 @@
 <script>
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+  import { DETAILS, SHOWN, toggled } from "./fullscreen/fsdetails.js";
 
   // Settings → Display: the fullscreen mode's attract mode, screensaver
   // and background music (stage 2, step 6), part of the dialog's draft
@@ -47,6 +48,17 @@
   <p class="hint">A folder of your own music (MP3, Ogg, Opus, FLAC, M4A, WAV, and the folders in it), played while the fullscreen mode is open, paused while a game runs. Start → Music skips and pauses.</p>
 </section>
 
+<section class="setting">
+  <span class="flabel">Details of the game in focus</span>
+  <div class="details">
+    {#each DETAILS as d}
+      <label class="toggle"><input type="checkbox" checked={(draft.fs_details ?? SHOWN).includes(d.key)} onchange={() => (draft.fs_details = toggled(draft.fs_details ?? SHOWN, d.key))} /> {d.label}</label>
+    {/each}
+  </div>
+  <p class="hint">What the fullscreen mode shows beside the games (under them in cover flow), in every layout. Start → Details there changes it too.</p>
+</section>
+
 <style>
+  .details { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.25rem 0.8rem; margin: 0.3rem 0; }
   .grid { display: grid; grid-template-columns: auto minmax(10rem, 18rem); gap: 0.35rem 0.8rem; align-items: center; margin: 0.3rem 0; }
 </style>

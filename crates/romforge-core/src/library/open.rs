@@ -192,6 +192,12 @@ impl Library {
         Ok(saved)
     }
 
+    /// Keep which details the fullscreen mode shows (its Start →
+    /// Details); returns what was kept.
+    pub fn set_fs_details(&self, shown: &[String]) -> Result<Vec<String>, Error> {
+        settings::save_fs_details(&self.conn, shown)
+    }
+
     pub fn systems_in_use(&self) -> Result<Vec<SystemInfo>, Error> {
         report::systems_in_use(&self.conn)
     }
