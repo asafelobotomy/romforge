@@ -1051,9 +1051,11 @@ Each [release](https://github.com/asafelobotomy/romforge/releases) has:
 
 There is no Flatpak: romforge starts the emulators installed on your
 system and works with files on any drive, which a Flatpak's sandbox
-doesn't allow. A release is made by pushing a tag `vX.Y.Z` matching the
-version in `Cargo.toml`, `tauri.conf.json` and `app/package.json`
-(`.github/workflows/release.yml`, which runs the tests first).
+doesn't allow. A release is made by bumping the version (the same in
+`Cargo.toml`, `tauri.conf.json` and `app/package.json`) and pushing it to
+main: when that version has no tag yet, `.github/workflows/release.yml`
+runs the tests, builds the packages, tags the commit `vX.Y.Z` and
+releases them. Pushing a tag `vX.Y.Z` by hand does the same.
 To build the packages yourself: `cd app && npm ci && npx tauri build`
 (they land in `target/release/bundle/`).
 

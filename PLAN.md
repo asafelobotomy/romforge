@@ -791,8 +791,10 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     - *No Flatpak*: its sandbox can start host emulators only through
       `flatpak-spawn --host` (in effect an escape) and needs the whole
       filesystem.
-    - *Releases from CI.* Pushing a tag `vX.Y.Z` builds every package and
-      attaches them, with SHA-256 checksums, to a GitHub release. CI today
+    - *Releases from CI.* A new version pushed to main (one with no tag
+      yet; since 2026-10-24), or a tag `vX.Y.Z` pushed by hand, builds every
+      package and attaches them, with SHA-256 checksums, to a GitHub
+      release; from main the workflow makes the tag. CI today
       builds the app without bundling.
     As built and tried locally: `.deb` and `.rpm` 14.9 MiB each (app,
     `romforge-cli`, desktop entry, icons, licence; they depend on the

@@ -1,28 +1,74 @@
 name: Release
-# Milestone 15: pushing a tag vX.Y.Z (the workspace version) builds the
-# packages and attaches them, with SHA-256 checksums, to a GitHub release:
-# .deb, .rpm, AppImage, the CLI on its own, and the AUR's PKGBUILD for
-# romforge-bin (pushed to the AUR by hand: `makepkg --printsrcinfo`).
+# Milestone 15: a new version builds the packages and attaches them, with
+# SHA-256 checksums, to a GitHub release: .deb, .rpm, AppImage, the CLI on
+# its own, and the AUR's PKGBUILD for romforge-bin (pushed to the AUR by
+# hand: `makepkg --printsrcinfo`).
+#
+# A version bump pushed to main is enough: when the workspace version has
+# no tag yet, this tags that commit vX.Y.Z and releases it. Pushing a tag
+# by hand still works the same. (A tag made here with the workflow's own
+# token starts no second run.)
 on:
   push:
+    branches: [main]
+    # Only a push that may change the version (the version files, or this
+    # workflow) is looked at; tag pushes always are.
+    paths:
+      - Cargo.toml
+      - app/package.json
+      - app/src-tauri/tauri.conf.json
+      - .github/workflows/release.yml
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# One release at a time; a run is never cut off halfway through uploading.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  packages:
-    # The oldest supported Ubuntu: its glibc is older than every target's.
-    runs-on: ubuntu-22.04
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
     steps:
       - uses: actions/checkout@v4
-      - name: The tag is the version
+      - name: The version, and whether it is released yet
+        id: v
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            v="${GITHUB_REF_NAME#v}"
+            release=true
+          else
+            v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+            [ -n "$v" ] || { echo "no version in Cargo.toml"; exit 1; }
+            if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null; then
+              echo "v$v is tagged already: nothing to release"
+              release=false
+            else
+              release=true
+            fi
+          fi
           grep -q "^version = \"$v\"" Cargo.toml || { echo "Cargo.toml isn't $v"; exit 1; }
           grep -q "\"version\": \"$v\"" app/src-tauri/tauri.conf.json || { echo "tauri.conf.json isn't $v"; exit 1; }
           grep -q "\"version\": \"$v\"" app/package.json || { echo "app/package.json isn't $v"; exit 1; }
-          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+  packages:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    # The oldest supported Ubuntu: its glibc is older than every target's.
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: v${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
@@ -88,6 +134,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --title "romforge $VERSION" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" out/* --clobber
+          # From main, this makes the tag, on the commit that was built.
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --target "$GITHUB_SHA" --title "romforge $VERSION" --generate-notes
+          gh release upload "$TAG" out/* --clobber
