@@ -1,5 +1,5 @@
 //! GameTDB (gametdb.com): covers, full covers, 3D boxes and disc or
-//! cartridge labels for GameCube, Wii, DS and 3DS games, by the game ID their
+//! cartridge labels for GameCube, Wii, Wii U, DS and 3DS games, by the game ID their
 //! header gives (house rule 8: an ID, never a title). Free and keyless;
 //! its terms ask software to link to it, which Details and Credits do.
 //! It has no API: its files are at fixed addresses
@@ -12,7 +12,13 @@ use crate::Error;
 use crate::enrich::{ArtFound, ArtKind};
 
 /// romforge's header kinds and GameTDB's platform folder for them.
-pub const PLATFORMS: &[(&str, &str)] = &[("gc", "wii"), ("wii", "wii"), ("nds", "ds"), ("3ds", "3ds")];
+pub const PLATFORMS: &[(&str, &str)] = &[
+    ("gc", "wii"),
+    ("wii", "wii"),
+    ("nds", "ds"),
+    ("3ds", "3ds"),
+    ("wiiu", "wiiu"),
+];
 
 /// Per platform: (kind, GameTDB's types best first, file extension).
 fn types(platform: &str) -> &'static [(ArtKind, &'static [&'static str], &'static str)] {
@@ -22,6 +28,13 @@ fn types(platform: &str) -> &'static [(ArtKind, &'static [&'static str], &'stati
             (ArtKind::Boxart, &["coverHQ", "cover"], "jpg"),
             (ArtKind::Boxfull, &["coverfullHQ", "coverfull"], "jpg"),
             (ArtKind::Media, &["cart"], "png"),
+        ],
+        // Checked 2026-10-24 (ARPE01).
+        "wiiu" => &[
+            (ArtKind::Boxart, &["coverHQ", "cover"], "jpg"),
+            (ArtKind::Boxfull, &["coverfullHQ", "coverfull"], "jpg"),
+            (ArtKind::Box3d, &["cover3D"], "png"),
+            (ArtKind::Media, &["disc"], "png"),
         ],
         "ds" => &[
             (ArtKind::Boxart, &["coverHQ", "cover"], "jpg"),
@@ -78,6 +91,11 @@ pub(super) fn lookup(bases: &Bases, job: &Job) -> Result<Found, Error> {
         "3ds" => serial.rsplit('-').next().unwrap_or(serial),
         _ => serial,
     };
+    // Wii U files are named by game code and maker (`ARPE01`); a disc's
+    // header has no maker, and the game code alone finds nothing.
+    if *platform == "wiiu" && serial.len() != 6 {
+        return Ok(Found::default());
+    }
     let mut art = Vec::new();
     for (kind, names, ext) in types(platform) {
         for name in *names {
@@ -143,5 +161,22 @@ mod tests {
         assert_eq!(f.art[0].url, "https://art.gametdb.com/3ds/coverHQ/US/AREE.jpg");
         assert!(f.art.iter().any(|a| a.url.ends_with("/3ds/cart/US/AREE.png")));
         assert!(f.art.iter().all(|a| a.kind != ArtKind::Box3d));
+        let wiiu = |serial: &str| Job {
+            system: crate::systems::by_key("Wii U").unwrap(),
+            title: "x",
+            rom: None,
+            prefs: &[],
+            language: "en",
+            year: None,
+            serial: Some(crate::ident::GameId {
+                kind: "wiiu",
+                serial: Some(serial.into()),
+                ..Default::default()
+            }),
+            video: false,
+        };
+        let f = lookup(&Bases::default(), &wiiu("ARPE01")).unwrap();
+        assert_eq!(f.art[0].url, "https://art.gametdb.com/wiiu/coverHQ/US/ARPE01.jpg");
+        assert!(lookup(&Bases::default(), &wiiu("ARPE")).unwrap().art.is_empty());
     }
 }

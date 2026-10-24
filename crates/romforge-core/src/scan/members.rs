@@ -82,6 +82,10 @@ fn hash_file(path: &Path) -> std::io::Result<Hashes> {
     if hashes.id.is_none() {
         hashes.id = crate::ident::read_container(&mut BufReader::new(File::open(path)?));
     }
+    // A Wii U title folder's game: its folder's `meta/meta.xml` says.
+    if hashes.id.is_none() {
+        hashes.id = crate::ident::wup::beside(path);
+    }
     Ok(hashes)
 }
 

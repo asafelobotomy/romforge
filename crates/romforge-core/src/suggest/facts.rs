@@ -186,9 +186,11 @@ pub(super) fn by_serial(conn: &Connection, f: &Facts) -> Result<BTreeMap<(i64, S
     for id in &f.ids {
         let Some(serial) = &id.serial else { continue };
         let mut key = dat::serial_key(serial);
-        // GameCube / Wii: "GALE01" is game code GALE and maker 01; Redump's
-        // serials ("DL-DOL-GALE-USA") carry the game code only.
-        if matches!(id.kind, "gc" | "wii") {
+        // GameCube / Wii / Wii U: "GALE01" is game code GALE and maker 01;
+        // Redump's serials ("DL-DOL-GALE-USA") and the Wii U list carry the
+        // game code only.
+        let with_maker = matches!(id.kind, "gc" | "wii" | "wiiu");
+        if with_maker {
             key.truncate(4);
         }
         if key.len() < 4 {
@@ -205,7 +207,11 @@ pub(super) fn by_serial(conn: &Connection, f: &Facts) -> Result<BTreeMap<(i64, S
                 let (sid, title, serial) = r?;
                 // A short game code must be a whole part of the serial
                 // ("AQ3J" in SHVC-AQ3J-JPN), not letters across two parts.
-                if dat::serial_key(&serial) != key && !code_in(&key, &serial) {
+                // A game code with its maker ("AGMP01", in the Wii U list)
+                // is the same game code.
+                let stored = dat::serial_key(&serial);
+                let maker_of = with_maker && stored.len() == 6 && stored.starts_with(&key);
+                if stored != key && !code_in(&key, &serial) && !maker_of {
                     continue;
                 }
                 out.entry((sid, title)).or_insert(serial);

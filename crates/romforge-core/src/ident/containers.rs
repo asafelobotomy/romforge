@@ -4,7 +4,7 @@ use super::*;
 
 /// A disc image inside a container romforge can't hash as the DAT's plain
 /// image: GameCube / Wii as RVZ, WIA, WBFS, CISO or GCZ; PSP / PS2 as CSO
-/// or ZSO; PS1 / PSP as PBP. Gives the game ID (and the plain image's size
+/// or ZSO; PS1 / PSP as PBP; Wii U as WUX or WUA. Gives the game ID (and the plain image's size
 /// where the container stores it) by reading just its header and first
 /// block, never the whole file.
 pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<GameId> {
@@ -119,8 +119,20 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
             id.image_size = Some(size);
             Some(id)
         }
-        _ => None,
+        // Wii U: a WUX (its WUD's first sector), else a WUA (its footer is
+        // at the end).
+        b"WUX0" => super::wup::wux(f, head),
+        _ => super::wup::wua(f),
     }
+}
+
+/// Read exactly `buf.len()` bytes at `at`.
+pub(super) fn read_exact_at<R: std::io::Read + std::io::Seek>(
+    f: &mut R,
+    at: u64,
+    buf: &mut [u8],
+) -> Option<()> {
+    (read_at(f, at, buf)? == buf.len()).then_some(())
 }
 
 /// Read up to `buf.len()` bytes at `at`; how many were read.

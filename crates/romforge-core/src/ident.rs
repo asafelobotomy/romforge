@@ -15,6 +15,7 @@ mod discs;
 use discs::*;
 mod containers;
 mod ctr;
+pub mod wup;
 pub use containers::*;
 
 /// Bytes of the data (in the DAT's form: header stripped, byte order fixed)
@@ -25,7 +26,8 @@ pub const PREFIX_LEN: usize = 1 << 20;
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct GameId {
     /// Which reader answered: `snes`, `md`, `gba`, `gb`, `n64`, `nds`,
-    /// `ps1`, `ps2`, `psp`, `saturn`, `segacd`, `dc`, `gc`, `wii`.
+    /// `ps1`, `ps2`, `psp`, `saturn`, `segacd`, `dc`, `gc`, `wii`, `3ds`,
+    /// `wiiu`.
     pub kind: &'static str,
     /// The product code as the game stores it: a 4-letter game code
     /// (`BPEE`, `NSME`), a Mega Drive serial (`T-95076-00`), a disc's boot
@@ -70,14 +72,26 @@ impl GameId {
 /// Every `kind` a reader gives.
 const KINDS: &[&str] = &[
     "snes", "md", "gba", "gb", "n64", "nds", "ps1", "ps2", "psp", "saturn", "segacd", "dc", "gc", "wii",
-    "3ds",
+    "3ds", "wiiu",
 ];
 
 /// Cartridges before discs; the first reader that answers wins.
 type Reader = fn(&[u8]) -> Option<GameId>;
 
-/// The 3DS's first: its headers are told by magic numbers, not guesses.
-const READERS: &[Reader] = &[ctr::ctr, gba, nds, gb, n64, md, snes, disc, gamecube_wii];
+/// The 3DS's and Wii U's first: their headers are told by magic numbers,
+/// not guesses.
+const READERS: &[Reader] = &[
+    ctr::ctr,
+    wup::wud,
+    gba,
+    nds,
+    gb,
+    n64,
+    md,
+    snes,
+    disc,
+    gamecube_wii,
+];
 
 /// What the first bytes of a file say it is, if any reader recognises them.
 pub fn read(prefix: &[u8]) -> Option<GameId> {

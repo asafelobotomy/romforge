@@ -95,6 +95,16 @@ again). `romforge-cli games` lists games the way the app does.
 - A Z3DS file (Azahar's compressed 3DS games: `.zcci`, `.zcia`, `.zcxi`,
   `.z3dsx`) is hashed as the file it holds, its zstd stream read straight
   through, so it matches the DAT like a zip member.
+- Wii U: every form Cemu loads is scanned: a disc (`.wud`, or `.wux`, its
+  deduplicated form), a `.wua` archive, a `.wuhb`, a decrypted title
+  folder by its `code/<name>.rpx`, an eShop download by its `title.tmd`.
+  WUX and WUA are read in place, never unpacked. Only the eShop
+  downloads' TMDs have a DAT with hashes (No-Intro's "Wii U (Digital)",
+  partial); there is none of discs, so a disc, WUA or folder is named in
+  Search by the product code its header or `meta/meta.xml` gives, from
+  libretro's Wii U list (from GameTDB), as "identified by you", never
+  verified. Organize and Rename & Cleanup leave a title folder (and an
+  eShop download) as it is: Cemu reads the whole folder.
 - If a copier header or another byte order is found, the data is hashed a
   second time in the DAT's form. The one table is in
   `crates/romforge-core/src/headers.rs`: iNES/NES 2.0 (16 bytes,
@@ -185,10 +195,12 @@ what the ones before it left; `enrich::fields` keeps the order):
    motoschifo, by set name: snap, title, marquee, flyer and cabinet, genre,
    players, year, manufacturer, series, and the history from
    arcade-history.com (shown with its copyright line); it takes one
-   request at a time, which romforge keeps to. For GameCube, Wii, DS and
-   3DS games, [GameTDB](https://www.gametdb.com), by the ID in the game's
+   request at a time, which romforge keeps to. For GameCube, Wii, Wii U,
+   DS and 3DS games, [GameTDB](https://www.gametdb.com), by the ID in the game's
    header: covers larger than libretro's, the whole cover, the 3D box and
-   the disc or cartridge label (3DS: no 3D box). Both are free, without a key, and come
+   the disc or cartridge label (3DS: no 3D box; Wii U: only from a WUA or
+   title folder, whose `meta.xml` gives the maker code GameTDB names files
+   by). Both are free, without a key, and come
    before libretro's thumbnails.
 3. With keys, ScreenScraper (by the ROM's hashes), then SteamGridDB and
    IGDB (by title).
@@ -1114,7 +1126,7 @@ its own Commons terms; many are trademarks); all downloaded by the app,
 never shipped. Arcade games' pictures, videos, facts and manuals:
 scraping using the [Arcade Database](https://adb.arcadeitalia.net) by
 motoschifo, with its history text © arcade-history.com; GameCube, Wii,
-DS and 3DS covers and labels from [GameTDB](https://www.gametdb.com); both
+Wii U, DS and 3DS covers and labels from [GameTDB](https://www.gametdb.com); both
 fetched per game, never shipped. romforge's own platform icons, in flatui's style for
 platforms flatui lacks, are MIT like the rest, except ScummVM's: PC,
 Tandy VIS, Sega Lindbergh and ScummVM drawn by hand (their SVG sources

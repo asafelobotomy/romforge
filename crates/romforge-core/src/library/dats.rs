@@ -82,7 +82,7 @@ impl Library {
         system_key: &str,
         source: fetch::Source,
     ) -> Result<Vec<ImportedDat>, Error> {
-        if let fetch::Source::Serials(_) = source {
+        if let fetch::Source::Serials(_) | fetch::Source::SerialDat(_) = source {
             self.download_serials(system_key, source)?;
             return Ok(Vec::new());
         }

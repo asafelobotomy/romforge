@@ -99,6 +99,10 @@ pub struct System {
     /// metadata, never imported as DATs (ScummVM's: its hashes are of
     /// `.scummvm` launcher files).
     pub titles: &'static [&'static str],
+    /// libretro-database files (`dat/<name>.dat`) of names and product
+    /// codes only, no hashes (Wii U's, from GameTDB): stored as serials
+    /// for Search's suggestions, never imported as DATs.
+    pub serial_dats: &'static [&'static str],
     /// Whether a game is a folder of files (or the archive holding it),
     /// and how import keeps it.
     pub folders: Folders,
@@ -171,6 +175,7 @@ const fn s(
         logo: "",
         dats: &[],
         titles: &[],
+        serial_dats: &[],
         folders: Folders::No,
         loose_sets: None,
         arcade: false,
@@ -309,6 +314,11 @@ impl System {
 
     const fn loose_sets(mut self, playlist: &'static str) -> Self {
         self.loose_sets = Some(playlist);
+        self
+    }
+
+    const fn serial_dats(mut self, names: &'static [&'static str]) -> Self {
+        self.serial_dats = names;
         self
     }
 

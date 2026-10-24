@@ -334,8 +334,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          to the raw bytes;
        - results go in `files.id_*` (migration 16, which also re-reads
          files not matched yet) and show next to each file in Details;
-       - not yet read: Switch, Xbox, GDI's high-density area (3DS:
-         milestone 24).
+       - not yet read: Switch, Xbox, GDI's high-density area (3DS and
+         Wii U: milestones 24 and 25).
 
        On the real library:
        - every cartridge and all 5 PS1 discs gave an ID;
@@ -2337,7 +2337,33 @@ reading, and no compressed format. It gets:
   downloaded, linked or derived.
 - *Compression:* Z3DS (milestone 23, 3).
 
-## Wii U (milestone 25; decided 2026-10-19, not built)
+## Wii U (milestone 25; decided 2026-10-19, built 2026-10-24)
+
+**Built** (checked against Cemu 2.6's and ZArchive's source):
+- Formats: `wua`, `wuhb` and `tmd` (an eShop download's `title.tmd`)
+  beside `wud`, `wux`, `rpx`; a decrypted folder is its `code/*.rpx`,
+  which Cemu starts the folder from (`-g`, as every form). Organize and
+  cleanup leave title folders whole (`ident::wup::in_title_folder`); Wii
+  U stays one file per game otherwise (not `Folders::Kept`, which would
+  make a `.wua`'s folder the game).
+- IDs (`ident/wup.rs`): a WUD's product code at 0 (magic at 0x10000), a
+  WUX's first sector through its index, a WUA's base title `meta.xml`
+  (`wua.rs`, the ZArchive reader), a folder's `meta/meta.xml` beside the
+  `.rpx`. The serial is `ARPE01` (game code + maker) when `meta.xml`
+  gives the maker, else `ARPE`; Search compares the game code, as for
+  GameCube and Wii.
+- DATs: No-Intro's "Wii U (Digital)" (eShop CDN files; `title.tmd`
+  matches its `tmd.<version>`); libretro's `dat/Nintendo - Wii U.dat`
+  (GameTDB's names and codes, no hashes) as a serial list
+  (`System::serial_dats`, `Source::SerialDat`), kept apart from the
+  `metadat/serial` lists.
+- GameTDB Wii U: cover, full cover, 3D box, disc, with a 6-character ID.
+
+**Open:** WUA writing (milestone 23, 4); eShop downloads' `.app` and
+`.h3` files (the DAT lists some; hashing them would list hundreds of
+files per game); a disc DAT, if Redump publishes one.
+
+**As decided:**
 
 Wii U is a system already (`wud`, `wux`, `rpx`, Cemu in the launch
 table, no DATs). It gets:

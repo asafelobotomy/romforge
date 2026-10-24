@@ -38,7 +38,11 @@ impl Library {
         let Some(body) = fetch::get_optional(&url)? else {
             return Ok(0);
         };
-        self.store_serials(system_key, &body)
+        let tag = match source {
+            fetch::Source::SerialDat(_) => "libretro-dat",
+            _ => "libretro",
+        };
+        self.store_serials_from(system_key, &body, tag)
     }
 
     /// DAT titles of `system_key` with `serial` (compared by
@@ -112,21 +116,33 @@ impl Library {
         Ok(n)
     }
 
-    /// [`Library::download_serials`] with the list already in hand.
+    /// [`Library::download_serials`] with libretro's `metadat/serial` list
+    /// already in hand.
     pub fn store_serials(&mut self, system_key: &str, list: &[u8]) -> Result<usize, Error> {
+        self.store_serials_from(system_key, list, "libretro")
+    }
+
+    /// Store a serial list under `source`, replacing that source's earlier
+    /// list for the system (each list replaces only its own).
+    pub fn store_serials_from(
+        &mut self,
+        system_key: &str,
+        list: &[u8],
+        source: &str,
+    ) -> Result<usize, Error> {
         let system =
             systems::by_key(system_key).ok_or_else(|| Error::UnknownSystem(system_key.to_owned()))?;
         let records = dat::parse_cmp_records(&String::from_utf8_lossy(list))?;
         let tx = self.conn.transaction()?;
         tx.execute(
-            "DELETE FROM serials WHERE system_id = ?1 AND source = 'libretro'",
-            [system.id],
+            "DELETE FROM serials WHERE system_id = ?1 AND source = ?2",
+            params![system.id, source],
         )?;
         let mut stored = 0;
         {
             let mut put = tx.prepare(
                 "INSERT OR IGNORE INTO serials (system_id, title, serial, key, source)
-                 VALUES (?1, ?2, ?3, ?4, 'libretro')",
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             let mut by_crc = tx.prepare(
                 "SELECT DISTINCT g.name FROM roms r JOIN games g ON g.game_id = r.game_id
@@ -150,7 +166,8 @@ impl Library {
                 titles.dedup();
                 for title in &titles {
                     for serial in &serials {
-                        stored += put.execute(params![system.id, title, serial, dat::serial_key(serial)])?;
+                        stored +=
+                            put.execute(params![system.id, title, serial, dat::serial_key(serial), source])?;
                     }
                 }
             }

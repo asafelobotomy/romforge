@@ -282,3 +282,15 @@ fn a_busy_host_holds_every_worker() {
     );
     first.join().unwrap().unwrap();
 }
+
+#[test]
+fn wii_u_gets_the_digital_dat_and_the_serial_list() {
+    let wiiu = sources(systems::by_key("Wii U").unwrap(), false);
+    assert_eq!(wiiu[0], Source::NoIntro("Nintendo - Wii U (Digital)"));
+    let list = wiiu.iter().find(|s| matches!(s, Source::SerialDat(_))).unwrap();
+    assert_eq!(
+        list.url().unwrap(),
+        "https://raw.githubusercontent.com/libretro/libretro-database/master/dat/Nintendo%20-%20Wii%20U.dat"
+    );
+    assert!(list.is_list() && !wiiu[0].is_list());
+}

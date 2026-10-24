@@ -292,3 +292,36 @@ fn serials_from_dats_and_libretro_lists() {
     assert!(lib.import_dat(&snes, None).unwrap().replaced.is_some());
     assert_eq!(lib.titles_by_serial("SNES", "SHVCAQ3JJPN").unwrap().len(), 2);
 }
+
+/// Wii U has no DAT of discs: libretro's list of names and product codes
+/// (from GameTDB) names a disc in Search by the code in its header, kept
+/// apart from the `metadat/serial` lists. Never verified.
+#[test]
+fn a_wii_u_disc_is_suggested_by_its_product_code() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("roms");
+    std::fs::create_dir(&dir).unwrap();
+    let mut wud = vec![0u8; 0x10004];
+    wud[..10].copy_from_slice(b"WUP-P-AMKE");
+    wud[0x10000..].copy_from_slice(&[0xCC, 0x54, 0x9E, 0xB9]);
+    std::fs::write(dir.join("disc.wud"), &wud).unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    let list = b"clrmamepro ( name \"Nintendo - Nintendo Wii U\" )\ngame (\n\tname \"Mario Kart 8 (USA)\"\n\tserial \"AMKE\"\n\trom (\n\t\tname \"Mario Kart 8 (USA).wux\"\n\t\tserial \"AMKE\"\n\t)\n)\ngame (\n\tname \"Splatoon (Europe)\"\n\tserial \"AGMP01\"\n)\n";
+    assert_eq!(lib.store_serials_from("Wii U", list, "libretro-dat").unwrap(), 2);
+    // The other list is stored apart: neither replaces the other.
+    lib.store_serials("Wii U", b"clrmamepro ( name \"x\" )\n")
+        .unwrap();
+    assert_eq!(
+        lib.titles_by_serial("Wii U", "AMKE").unwrap(),
+        ["Mario Kart 8 (USA)"]
+    );
+    lib.scan(&dir, romforge_core::Scope::All).unwrap();
+    let q = lib.search_queue(None).unwrap();
+    let s = q[0].suggestion.clone().expect("a suggestion");
+    assert_eq!(s.title, "Mario Kart 8 (USA)", "{s:?}");
+    assert!(
+        s.evidence.iter().any(|e| e.kind == "serial" && e.agrees),
+        "{:?}",
+        s.evidence
+    );
+}

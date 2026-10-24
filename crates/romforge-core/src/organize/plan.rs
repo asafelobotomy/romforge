@@ -142,6 +142,10 @@ pub fn plan(conn: &Connection, opts: &OrganizeOptions) -> Result<Plan, Error> {
             path: from.clone(),
             reason,
         };
+        if crate::ident::wup::in_title_folder(&from) {
+            plan.skipped.push(skip(crate::cleanup::TITLE_FOLDER_STAYS.into()));
+            continue;
+        }
         let is_archive = members.keys().any(|m| !m.is_empty());
         let matched: Vec<&Member> = members.values().filter(|m| m.status == "matched").collect();
         if matched.is_empty() {

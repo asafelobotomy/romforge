@@ -203,6 +203,7 @@ pub(crate) use chd::write_chd;
 pub(crate) use items::{archive_entries, safe_member_name};
 pub use parts::details_md;
 pub(crate) use parts::{named_parts, open_part, verified_parts};
+pub(crate) use plan::TITLE_FOLDER_STAYS;
 use plan::plan_as;
 pub use trash::{TrashBatch, TrashSummary, empty_trash, trash_contents};
 pub use undo::{Batch, CleanupUndone, batches, undo};

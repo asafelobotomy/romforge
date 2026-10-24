@@ -16,6 +16,9 @@ use super::{CleanupPlan, Format, How, Item, Part, Source};
 
 mod originals;
 
+/// Why a Wii U title folder's game is left where it is.
+pub(crate) const TITLE_FOLDER_STAYS: &str = "a Wii U title folder (code/, content/, meta/, or an eShop download) stays as it is: Cemu reads the whole folder";
+
 pub(super) fn plan_as(
     conn: &Connection,
     only: Option<&[String]>,
@@ -156,6 +159,19 @@ pub(super) fn plan_as(
                     }
                 }
                 Err(why) => plan.skipped.push((row.title.clone(), why)),
+            }
+            continue;
+        }
+        // A Wii U title folder's game (`code/<x>.rpx`, `title.tmd`): Cemu
+        // reads the whole folder, so it stays as it is.
+        let mut in_folder = false;
+        for f in row.file_ids() {
+            let p: String = path_of.query_row([f], |r| r.get(0))?;
+            in_folder |= crate::ident::wup::in_title_folder(Path::new(&p));
+        }
+        if in_folder {
+            if only.is_some() {
+                plan.skipped.push((row.title.clone(), TITLE_FOLDER_STAYS.into()));
             }
             continue;
         }

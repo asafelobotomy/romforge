@@ -31,9 +31,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             let mut report =
                 |key: &str, source: fetch::Source, result: Result<Vec<ImportedDat>, romforge_core::Error>| {
                     match result {
-                        Ok(_)
-                            if matches!(source, fetch::Source::Serials(_) | fetch::Source::CloneList(..)) =>
-                        {
+                        Ok(_) if source.is_list() => {
                             println!("{key}: {source}: stored")
                         }
                         Ok(dats) if dats.is_empty() => println!("{key}: {source}: already imported"),

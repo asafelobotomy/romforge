@@ -21,6 +21,9 @@ pub enum Source {
     /// A file in libretro-database's `serial` folder: product codes, not a
     /// DAT ([`crate::Library::download_dat`] stores them in `serials`).
     Serials(&'static str),
+    /// One of libretro-database's own DATs of names and product codes only
+    /// (`dat/<name>.dat`, `System::serial_dats`): stored in `serials` too.
+    SerialDat(&'static str),
     /// Retool's clone list for a DAT name and its group ("No-Intro" or
     /// "Redump"); stored in `clone_groups`.
     CloneList(&'static str, &'static str),
@@ -43,11 +46,20 @@ impl Source {
             Source::Libretro(name) => Some(format!("{LIBRETRO_DAT_BASE}/{}.dat", percent_encode(name))),
             Source::Url(url) => Some(url.to_owned()),
             Source::Serials(name) => Some(libretro("serial", name)),
+            Source::SerialDat(name) => Some(format!("{LIBRETRO_DAT_BASE}/{}.dat", percent_encode(name))),
             Source::CloneList(name, group) => Some(format!(
                 "{CLONELISTS_BASE}/{}",
                 percent_encode(&format!("{name} ({group}).json"))
             )),
         }
+    }
+
+    /// A list stored beside the DATs (serials, clone groups), not a DAT.
+    pub fn is_list(&self) -> bool {
+        matches!(
+            self,
+            Source::Serials(_) | Source::SerialDat(_) | Source::CloneList(..)
+        )
     }
 
     /// Whether `source_path` (as stored for an imported DAT) came from the
@@ -76,6 +88,7 @@ impl std::fmt::Display for Source {
                     .replace("%2C", ",")
             ),
             Source::Serials(n) => write!(f, "serials (libretro) {n}"),
+            Source::SerialDat(n) => write!(f, "serials (libretro) {n} (GameTDB)"),
             Source::CloneList(n, g) => write!(f, "clone list (Retool) {n} ({g})"),
         }
     }
@@ -93,6 +106,7 @@ pub fn sources(system: &System, extras: bool) -> Vec<Source> {
     // to by CRC.
     let mut out: Vec<Source> = (system.nointro.iter().copied().map(Source::NoIntro))
         .chain(serials.map(Source::Serials))
+        .chain(system.serial_dats.iter().copied().map(Source::SerialDat))
         .chain(system.redump.iter().copied().map(Source::Redump))
         .chain(system.tosec.iter().copied().map(Source::Tosec))
         .chain(system.dats.iter().copied().map(Source::Libretro))
