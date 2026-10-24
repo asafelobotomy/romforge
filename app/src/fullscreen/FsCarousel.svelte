@@ -53,11 +53,13 @@
   .plat { display: grid; justify-items: center; gap: 0.6vh; width: var(--w); padding: 1vh 0.5vw; border: 0.3vh solid transparent; border-radius: calc(var(--fs-radius) * 1.2); background: none; color: var(--fs-muted); cursor: pointer; opacity: 0.55; transition: opacity 0.2s, transform 0.2s; }
   .plat.sel { opacity: 1; color: var(--fs-text); transform: scale(1.08); }
   .plat.focus { outline: 0.4vh solid var(--fs-focus); outline-offset: -0.4vh; background: color-mix(in srgb, var(--fs-focus) 12%, transparent); }
-  .mark { display: grid; place-items: center; height: 10vh; width: 100%; }
+  .mark { display: grid; place-items: center; height: 10vh; width: 100%; overflow: hidden; }
   .mark img { max-height: 10vh; max-width: 100%; object-fit: contain; }
   .mark img.icon { max-height: 8vh; }
   .mark img.tile { padding: 0.5vh; background: #f4f4f4; border-radius: calc(var(--fs-radius) * 0.6); }
-  .all, .short { font-size: calc(3.4vh * var(--fs-scale)); font-weight: 700; letter-spacing: 0.05em; }
+  /* Up to two lines ("Recently played") inside the mark's height, even
+     at the largest text size, clear of the name under it. */
+  .all, .short { max-width: 100%; font-size: calc(3.4vh * var(--fs-scale)); font-weight: 700; line-height: 1.1; letter-spacing: 0.05em; text-align: center; }
   .name { font-size: calc(1.9vh * var(--fs-scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   @media (prefers-color-scheme: dark) {
     .mark img:not(.icon) { filter: drop-shadow(0 0 1px #fffa) drop-shadow(0 0 6px #fff3); }

@@ -911,28 +911,34 @@ cover), `--fs-flow-dim` (their brightness, `0.7`) and
 `--fs-flow-perspective` (`110vh`); `--fs-wheel-curve` (how far the wheel's
 far logos move out, `1.2vw`) and `--fs-hero-opacity` (the fanart's in the
 wheel and hero rows, `0.5`); `--fs-shelf-wood` and `--fs-shelf-back` (the
-bookshelf's board and back panel); `--fs-shelf-plate` and `--fs-shelf-plate-text` (the shelves' brass name plates, `#e8cf8a` and `#3a2a10`), `--fs-shelf-text` (the empty bookcase's words, `#f3e6d2`), `--fs-shelf-spine` (a box's colour when its platform has none, `#5c5c6a`); `--fs-overview-lines` (the overview's
-lines, `6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
-`--fs-scale` is the user's text size and only romforge sets it. Hooks: the
-root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
-`game`), `data-fs-layout`, `data-fs-shelf-details` (`left`, `right`: the
-bookshelf's details beside it), `data-fs-aspect` (`wide`, `standard`,
-`tall`), `data-fs-theme`, `data-fs-scheme` and `data-fs-opt-*`; inside it
-`data-fs-wordmark`, `data-fs-carousel`, `data-fs-platform`, `data-fs-grid`,
-`data-fs-list`, `data-fs-flow`, `data-fs-wheel`, `data-fs-tiles`,
-`data-fs-shelves` and its rows' `data-fs-shelf` (`recent`, `fav`, `all`),
-`data-fs-bookshelf`, `data-fs-box` (a box off the shelf) and its faces'
-`data-fs-face` (`front`, `back`, `spine`), `data-fs-card`, `data-fs-row`,
-`data-fs-selected`, `data-fs-art="missing"`, `data-fs-title`,
-`data-fs-info` and in it `data-fs-detail` (`logo`, `platform`, `released`,
-`edition`, `genre`, `players`, `modes`, `developer`, `publisher`, `rating`,
-`community`, `played`, `derived`, `overview`; `backdrop` is the root's
-fanart), `data-fs-button`, `data-fs-menu`, `data-fs-help` and
-`data-fs-focus` (where the focus is); `data-fs-fav` (a favourite's star),
-`data-fs-search`, `data-fs-keyboard` and `data-fs-key` (the search screen),
-`data-fs-attract` and `data-fs-screensaver`. The splashes outside the mode
-carry `data-fs-splash` (`start`, `exit`) and `data-fs-platform`. Class
-names are not part of the API and change.
+bookshelf's board and back panel); `--fs-shelf-plate` and
+`--fs-shelf-plate-text` (the shelves' brass name plates, `#e8cf8a` and
+`#3a2a10`), `--fs-shelf-text` (the empty bookcase's words, `#f3e6d2`),
+`--fs-shelf-spine` (a box's colour when its platform has none, `#5c5c6a`);
+`--fs-overview-lines` (the overview's lines, `6`; `2` under cover flow) and
+`--fs-backdrop-opacity` (`0.18`). `--fs-scale` is the user's text size and
+only romforge sets it. Hooks: the root `[data-fs-root]` (in the CSS,
+`:scope`) with `data-fs-screen` (`home`, `game`), `data-fs-layout`,
+`data-fs-shelf-details` (`left`, `right`: the bookshelf's details beside
+it), `data-fs-aspect` (`wide`, `standard`, `tall`), `data-fs-theme`,
+`data-fs-scheme` and `data-fs-opt-*`; inside it `data-fs-wordmark`,
+`data-fs-carousel`, `data-fs-platform`, `data-fs-grid`, `data-fs-list`,
+`data-fs-flow`, `data-fs-wheel` and its logos' `data-fs-logo`,
+`data-fs-tiles`, `data-fs-shelves` and its rows' `data-fs-shelf` (`recent`,
+`fav`, `all`), `data-fs-bookshelf` and its boxes' `data-fs-spine`,
+`data-fs-box` (a box off the shelf) and its faces' `data-fs-face` (`front`,
+`back`, `spine`), `data-fs-card` (a game's box art: grid, cover flow,
+shelves and hero rows), `data-fs-row`, `data-fs-selected`,
+`data-fs-art="missing"`, `data-fs-title`, `data-fs-info` and in it
+`data-fs-detail` (`logo`, `platform`, `released`, `edition`, `genre`,
+`players`, `modes`, `developer`, `publisher`, `rating`, `community`,
+`played`, `derived`, `overview`; `backdrop` is the root's fanart),
+`data-fs-button`, `data-fs-menu`, `data-fs-help` and `data-fs-focus` (where
+the focus is); `data-fs-fav` (a favourite's star), `data-fs-search`,
+`data-fs-keyboard` and `data-fs-key` (the search screen), `data-fs-attract`
+and `data-fs-screensaver`. The splashes outside the mode carry
+`data-fs-splash` (`start`, `exit`) and `data-fs-platform`. Class names are
+not part of the API and change.
 
 The CSS is served wrapped in `@scope ([data-fs-root])`, so it styles the
 fullscreen mode only, under a policy that loads nothing from outside

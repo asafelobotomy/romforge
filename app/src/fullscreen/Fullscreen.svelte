@@ -349,7 +349,7 @@
   {#if screen === "home"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />
-    <main class="home" class:flow={layout === "cover-flow"}>
+    <main class="home">
       {#if layout === "list"}
         <FsList {games} index={gIndex} focused={focus === "grid" && !menu} {art} {icons} fav={marks.favourites} bind:rows pick={(i) => ((gameId = games[i].id), (focus = "grid"))} open={() => handle("accept")} />
       {:else if layout === "wheel"}

@@ -14,8 +14,15 @@
 
   let w = $state(1200);
   let h = $state(600);
-  // The focused row's tiles, and the others' (both as heights).
-  let big = $derived(Math.max(80, Math.round(h * 0.42)));
+  let screenH = $state(typeof innerHeight === "number" ? innerHeight : 800);
+  // The focused row's tiles, and the others' (both as heights, the others
+  // 0.6 of it): what the rows in view leave once their names (2vh text and
+  // a 0.8vh gap each), the 1.6vh between rows and the focus ring's room
+  // (1vh) are taken away.
+  let shown = $derived(Math.max(1, Math.min(3, shelves.length)));
+  let vh = $derived(screenH / 100);
+  let spare = $derived(h - shown * (2.6 * vh * (theme.applied?.scale ?? 1) + 0.8 * vh) - (shown - 1) * 1.6 * vh - vh);
+  let big = $derived(Math.max(60, Math.round(spare / (1 + 0.6 * (shown - 1)))));
   let small = $derived(Math.round(big * 0.6));
   // The card's shape, the theme's (--fs-card-ratio), to count what fits.
   let el = $state(null);
@@ -40,6 +47,8 @@
   const picture = (r) => r.pictures?.[art] ?? r.pictures?.boxart ?? null;
 </script>
 
+<svelte:window bind:innerHeight={screenH} />
+
 <div class="shelves" data-fs-shelves data-fs-focus={focused ? "grid" : undefined} bind:clientWidth={w} bind:clientHeight={h} bind:this={el} style="--gap: {gap}px">
   {#if !shelves.length}
     <p class="none">No games on this platform yet.</p>
@@ -49,7 +58,7 @@
       {@const tileH = on ? big : small}
       {@const first = Math.min(firsts[s.key] ?? 0, Math.max(0, s.games.length - 1))}
       <section class="shelf" class:on data-fs-shelf={s.key}>
-        <h3 class="name">{s.name} <span class="n">{s.games.length}</span></h3>
+        <h3 class="name">{s.name} <span class="n" aria-live={on ? "polite" : undefined}>{on ? `${col + 1} / ${s.games.length}` : s.games.length}</span></h3>
         <div class="strip" style="--tile-h: {tileH}px">
           {#each s.games.slice(first, first + fit(tileH)) as g, k (g.id)}
             {@const c = first + k}

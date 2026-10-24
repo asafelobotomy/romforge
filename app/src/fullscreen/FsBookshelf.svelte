@@ -15,7 +15,8 @@
   // the focus leaves them; each shelf draws the boxes that fit, moving
   // only when its focus would leave it. `rows` is bound back as the boxes
   // a shelf shows, so the shoulders page by them. `accents`: platform
-  // key → its colour.
+  // key → its colour. Each box is data-fs-spine, not a card, so a theme's
+  // rules for box art don't reach it.
   let { shelves, row, col, focused, accents = {}, fav = new Set(), rows = $bindable(10), pick, open } = $props();
 
   let w = $state(1200);
@@ -67,7 +68,7 @@
               class:sel
               class:focus={focused && sel}
               style="--w: {Math.max(8, bd * scale)}px; --h: {bh * scale}px; --c: {accents[g.system] ?? 'var(--fs-shelf-spine, #5c5c6a)'}"
-              data-fs-card={g.id}
+              data-fs-spine={g.id}
               data-fs-selected={sel ? "" : undefined}
               data-fs-art={spine ? undefined : "missing"}
               onclick={() => (sel ? open() : pick(r, c))}
@@ -137,7 +138,7 @@
     max-height: 92%;
     overflow: hidden;
     color: #fff;
-    font-size: clamp(9px, calc(var(--w) * 0.5), 2.4vh);
+    font-size: clamp(9px, calc(var(--w) * 0.5), calc(2.4vh * var(--fs-scale)));
     font-weight: 700;
     line-height: 1;
     text-overflow: ellipsis;

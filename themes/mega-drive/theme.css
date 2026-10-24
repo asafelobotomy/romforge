@@ -1,6 +1,9 @@
-/* Mega Drive: glossy panels and heavy titles. */
-:scope[data-fs-opt-gloss="on"] [data-fs-info],
-:scope[data-fs-opt-gloss="on"] [data-fs-menu] {
+/* Mega Drive: glossy panels and heavy titles. The details get a panel
+   where they have a column of their own (not over the fanart, under the
+   covers or above the shelves), and the menu its box (not the scrim
+   behind it). */
+:scope[data-fs-opt-gloss="on"]:is([data-fs-layout="grid"], [data-fs-layout="list"], [data-fs-layout="shelves"], [data-fs-shelf-details]) [data-fs-info],
+:scope[data-fs-opt-gloss="on"] [data-fs-menu] > * {
   background: linear-gradient(180deg, #2c2c32 0%, var(--fs-panel) 45%, #0e0e11 100%);
 }
 [data-fs-title] {

@@ -8,7 +8,8 @@
   // others smaller and turned away along its curve. The game's fanart
   // fills the screen behind (the root's backdrop). Only SIDE a side are
   // drawn, keyed so they turn; `rows` is bound back as those in view, so
-  // the shoulders page by them.
+  // the shoulders page by them. Each is data-fs-logo, not a card, so a
+  // theme's rules for box art don't reach it.
   let { games, index, focused, fav = new Set(), rows = $bindable(7), pick, open } = $props();
 
   const SIDE = 4;
@@ -33,7 +34,7 @@
         class="item"
         class:focus={focused && d === 0}
         style="--d: {d}; --s: {Math.sign(d)}; --a: {Math.abs(d)}; --step: {step}px"
-        data-fs-card={r.id}
+        data-fs-logo={r.id}
         data-fs-selected={d === 0 ? "" : undefined}
         data-fs-art={logo ? undefined : "missing"}
         onclick={() => (d === 0 ? open() : pick(index + d))}
