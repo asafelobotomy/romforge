@@ -802,7 +802,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     writes the AUR's `romforge-bin` PKGBUILD (repackaging the `.deb`, all
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
-    Every tag from v0.1.0 to v0.7.0 was built and released by the
+    Every tag from v0.1.0 to v0.8.0 was built and released by the
     workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
     (the owner's account); Debian's and Fedora's package names for the
     recommended packages are unchecked (Fedora's libav plugin may be
