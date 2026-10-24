@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::existing::UserDirs;
-use super::gamedata::{first, usual};
+use super::theirs::{citra_storage, moved_in};
 use super::{ConfigWrite, Format, Prepare};
 
 /// One of Citra's line: its folder name (data and config alike), the
@@ -42,16 +42,9 @@ const KINDS: &[Kind] = &[
 ];
 
 /// `name`'s folder and the folders it reads, when it is one of Citra's line.
-pub(super) fn folders(name: &str) -> Option<(&'static str, &'static [&'static str])> {
+pub(crate) fn folders(name: &str) -> Option<(&'static str, &'static [&'static str])> {
     KINDS.iter().find(|k| k.name == name).map(|k| (k.folder, k.reads))
 }
-
-/// The Flatpaks of Citra's line, whose data folders may hold the user's.
-const FLATPAKS: &[&str] = &[
-    "org.azahar_emu.Azahar",
-    "io.github.lime3ds.Lime3DS",
-    "org.citra_emu.citra",
-];
 
 /// Azahar, Lime3DS or Citra (`name`): its data (`sysdata/`, `nand/`,
 /// `sdmc/`) in `$XDG_DATA_HOME/<folder>`, its config in
@@ -79,13 +72,10 @@ pub(super) fn citra_line(
         ("XDG_CONFIG_HOME".into(), s(dir)),
         ("XDG_DATA_HOME".into(), s(&data)),
     ];
-    let theirs = user.and_then(|u| {
-        kind.reads.iter().find_map(|d| {
-            FLATPAKS
-                .iter()
-                .find_map(|id| first(usual(u, id, true, d)).filter(|f| f.join("nand").is_dir()))
-        })
-    });
+    // Yours where it is, or RomForge's once moved in.
+    let theirs = user
+        .filter(|_| !moved_in(dir))
+        .and_then(|u| citra_storage(u, kind.reads));
     // RetroBIOS's standalone places: `sysdata/…` in the data folder, the
     // console's own files in `nand/…`, linked only into a NAND that is
     // romforge's, never into the user's.
@@ -157,7 +147,14 @@ mod tests {
         );
         assert!(text.contains(&format!("nand_directory={}/", saves.join("nand").display())));
         assert!(text.contains("firstStart=false") && text.contains("check_for_update_on_start=false"));
-        assert!(dir.join("data/azahar-emu/sysdata/keys.txt").is_file());
+        let linked = dir.join("data/azahar-emu/sysdata/keys.txt");
+        assert!(linked.is_file());
+        // A symbolic link to the one copy in Bios/.
+        assert!(linked.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(
+            std::fs::read_link(&linked).unwrap(),
+            std::path::absolute(bios.join("sysdata/keys.txt")).unwrap()
+        );
         assert!(saves.join("nand/private/movable.sed").is_file());
         assert!(saves.join("sdmc").is_dir());
         assert!(

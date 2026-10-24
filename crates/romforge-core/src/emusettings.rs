@@ -49,6 +49,14 @@ pub struct EmulatorTab {
     /// copies into romforge's (with a RomForge folder, for emulators
     /// romforge sets up).
     pub existing: Option<launch::existing::ExistingSetup>,
+    /// It keeps game data outside romforge's config that can be moved into
+    /// RomForge (`launch::move_in`).
+    #[serde(default)]
+    pub movable: bool,
+    /// Started as a Flatpak where it has an official AppImage romforge can
+    /// download instead, and why that's better (RPCS3's warning).
+    #[serde(default)]
+    pub flatpak_note: Option<&'static str>,
 }
 
 /// What the Emulator Settings dialog shows.
@@ -70,6 +78,9 @@ pub struct NotInstalled {
     pub flathub: bool,
     /// Its last release, when discontinued: never installed by romforge.
     pub discontinued: Option<&'static str>,
+    /// Its official AppImage can be downloaded (`obtain::install_appimage`).
+    #[serde(default)]
+    pub appimage: bool,
 }
 
 const PREFIX: &str = "emu.";
@@ -235,6 +246,7 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 label: e.label,
                 flathub: e.flatpak.is_some() && e.discontinued.is_none(),
                 discontinued: e.discontinued,
+                appimage: e.official_appimage.is_some() && env.home.is_some(),
             });
             continue;
         };
@@ -255,6 +267,10 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 .map(|s| s.name)
                 .collect(),
             settings: SETTINGS.iter().filter(|d| applies(d, e)).map(|d| d.key).collect(),
+            movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
+            flatpak_note: e
+                .flatpak_note
+                .filter(|_| env.home.is_some() && e.official_appimage.is_some() && env.is_flatpak(e)),
             existing: env
                 .home
                 .as_ref()

@@ -285,3 +285,26 @@ fn user_emulators_get_their_bios_folder() {
 }
 
 mod consoles;
+
+/// RPCS3's official AppImage, when there, before its Flatpak (which warns on
+/// every start); without it, the Flatpak.
+#[test]
+fn rpcs3_s_appimage_comes_before_its_flatpak() {
+    let t = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(t.path().join("flatpak/net.rpcs3.RPCS3")).unwrap();
+    let apps = t.path().join("apps");
+    std::fs::create_dir_all(&apps).unwrap();
+    let env = Env {
+        flatpak_dirs: vec![t.path().join("flatpak")],
+        emulator_dirs: vec![apps.clone()],
+        ..Default::default()
+    };
+    let rpcs3 = known("rpcs3").unwrap();
+    assert!(env.is_flatpak(rpcs3));
+    let image = apps.join("rpcs3-v0.0.43-20397_linux64.AppImage");
+    std::fs::write(&image, b"#!/bin/sh\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!env.is_flatpak(rpcs3));
+    assert_eq!(env.find(rpcs3), Some(image.display().to_string()));
+}

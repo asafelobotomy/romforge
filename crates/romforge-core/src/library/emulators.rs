@@ -42,7 +42,30 @@ impl Library {
     /// RomForge folder's `Bios/`.
     pub fn firmware_report(&self) -> Result<firmware::FirmwareReport, Error> {
         let (home, dir) = self.firmware_dirs()?;
-        firmware::report(&dir, home, &self.env()?)
+        firmware::report(&self.conn, &dir, home, &self.env()?)
+    }
+
+    /// The library's BIOS badges ([`firmware::FirmwareReport::needs`]); none
+    /// without a RomForge folder or RetroBIOS's list.
+    pub fn firmware_needs(&self) -> Vec<firmware::BiosNeed> {
+        self.firmware_report().map(|r| r.needs).unwrap_or_default()
+    }
+
+    /// The usual BIOS places that exist on this computer (RetroArch's
+    /// system folder, EmuDeck's, RetroDECK's, the emulators' own), for an
+    /// import plan like a drop's.
+    pub fn firmware_found(&self) -> Result<Vec<std::path::PathBuf>, Error> {
+        let env = self.env()?;
+        Ok(env
+            .user
+            .as_ref()
+            .map(|u| {
+                firmware::find::usual_places(u)
+                    .into_iter()
+                    .map(|(_, p)| p)
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// What importing the BIOS files in `paths` would do; nothing is written.
@@ -58,7 +81,8 @@ impl Library {
         also: &[String],
     ) -> Result<firmware::Imported, Error> {
         let (home, dir) = self.firmware_dirs()?;
-        firmware::apply(&self.conn, &dir, home, &self.env()?, paths, also)
+        let move_originals = !crate::settings::load(&self.conn)?.bios_leave_in_place;
+        firmware::apply(&self.conn, &dir, home, &self.env()?, paths, also, move_originals)
     }
 
     /// Install the PS3 firmware in `Bios/rpcs3/` into RPCS3.
@@ -105,6 +129,15 @@ impl Library {
     }
 
     /// Install an emulator from Flathub into the user's Flatpak installation.
+    /// Download `emulator`'s official AppImage into the RomForge folder's
+    /// `Emulators/` (RPCS3's). Returns where it went.
+    pub fn install_appimage(&self, emulator: &str) -> Result<std::path::PathBuf, Error> {
+        let home = self.home.as_ref().ok_or_else(|| {
+            Error::Settings("AppImages are kept in a RomForge folder; create one first".into())
+        })?;
+        obtain::install_appimage(home, emulator)
+    }
+
     pub fn install_emulator(&self, emulator: &str) -> Result<String, Error> {
         obtain::install_flatpak(&self.env()?, emulator)
     }
@@ -131,8 +164,33 @@ impl Library {
         emulator: &str,
     ) -> Result<launch::existing::SetupImported, Error> {
         let (home, e, user) = self.setup_target(emulator)?;
+        not_running(e)?;
         let xdg = launch::existing::Xdg::detect(&user);
         launch::existing::import(&self.conn, e, home, &user, &xdg)
+    }
+
+    /// What moving `emulator`'s game data into RomForge would do.
+    pub fn move_data_plan(&self, emulator: &str) -> Result<launch::move_in::MovePlan, Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        let mut plan = launch::move_in::plan(e.settings_name(), home, self.env()?.user.as_ref());
+        if plan.problem.is_none() && launch::running(e) {
+            plan.problem = Some(format!("{} is running: close it first", e.label));
+        }
+        Ok(plan)
+    }
+
+    /// Move `emulator`'s game data into RomForge (originals to the trash).
+    pub fn move_data(&mut self, emulator: &str) -> Result<i64, Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        not_running(e)?;
+        launch::move_in::apply(&self.conn, e.settings_name(), home, self.env()?.user.as_ref())
+    }
+
+    /// Take back the last move of `emulator`'s game data.
+    pub fn undo_move_data(&mut self, emulator: &str) -> Result<usize, Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        not_running(e)?;
+        launch::move_in::undo(&self.conn, e.settings_name(), home)
     }
 
     /// Take back the last setup import of `emulator`.
@@ -241,4 +299,12 @@ impl Library {
     ) -> Result<launch::LaunchSpec, Error> {
         launch::plan_row(&self.conn, env, row_id, emulator)
     }
+}
+
+/// Refuse while `e` is running: its files must not change under it.
+fn not_running(e: &launch::KnownEmulator) -> Result<(), Error> {
+    if launch::running(e) {
+        return Err(Error::Launch(format!("{} is running: close it first", e.label)));
+    }
+    Ok(())
 }

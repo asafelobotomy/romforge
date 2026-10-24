@@ -23,6 +23,8 @@ sevenz-rust2 = { version = "0.24", default-features = false, features = ["bzip2"
 sha2 = "0.11"
 thiserror = "2"
 walkdir = "2"
+# Free space before moving game data into RomForge (milestone 20).
+rustix = { version = "1", default-features = false, features = ["std", "fs"] }
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "ppmd"] }
 ruzstd = { version = "0.9", default-features = false, features = ["std"] }
 # Writing Z3DS, WUA and RVZ (milestone 23); ruzstd reads.

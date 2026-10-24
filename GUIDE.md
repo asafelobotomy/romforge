@@ -263,7 +263,9 @@ romforge-cli emulator cores --refresh                  # the cores romforge's pl
 romforge-cli emulator get-core snes9x                  # into RomForge/Emulators/cores/
 romforge-cli emulator remove-core snes9x --yes
 romforge-cli emulator install duckstation [--apply]    # from Flathub
+romforge-cli emulator install rpcs3 --appimage --apply  # its official AppImage
 romforge-cli emulator import-setup pcsx2 [--apply | --undo]
+romforge-cli emulator move-data rpcs3 [--apply | --undo]
 ```
 
 **Emulator Settings** (toolbar) has a Global tab for every emulator at
@@ -275,10 +277,25 @@ each is installed, its licence (non-commercial ones are flagged and asked
 about), and what the libretro buildbot has; a download goes into
 `RomForge/Emulators/cores/`, which romforge looks in first. An emulator
 that isn't installed can be installed from Flathub into your own Flatpak
-installation (`flatpak install --user`, no password). **Import my existing
+installation (`flatpak install --user`, no password). RPCS3's Flatpak asks
+on every start whether to run an "unofficial build" (its developers don't
+support Flatpak builds, and there is no setting for it), so romforge
+prefers RPCS3's official AppImage when it is in `RomForge/Emulators/` or
+`~/Applications`, and RPCS3's tab offers to download it from RPCS3's own
+GitHub releases (checked against the SHA-256 published with it). **Import my existing
 setup** copies what an emulator keeps in its usual folders (memory cards,
 saves, controller mappings, settings) into romforge's copy for it; undo
-takes it back. romforge never ships an emulator or a core.
+takes it back. **Your game data** (on the tabs of RPCS3, Cemu, xemu,
+Azahar, Lime3DS and Citra): romforge points these at your own data where
+it is (RPCS3's `dev_hdd0`…, Cemu's MLC, xemu's disk and EEPROM, the 3DS
+NAND and SD card); **Move into RomForge** moves it in instead, after a
+plan (what, how much, whether it fits; never over files already there).
+Every file is copied and checked first; only then do the originals go to
+the RomForge trash, and the emulator's setup uses RomForge's copy from then
+on. Undo puts them back until the trash is emptied. Moving, undoing and
+importing a setup are refused while the emulator is running (romforge's
+or one you started yourself: found by its program, AppImage or Flatpak).
+romforge never ships an emulator or a core.
 
 ## The RomForge folder
 
@@ -346,9 +363,10 @@ still be undone).
 
 ```bash
 romforge-cli firmware download                 # RetroBIOS's list of what each emulator loads
-romforge-cli firmware check [--system "PlayStation"] [--all]
+romforge-cli firmware check [--system "PlayStation"] [--core duckstation] [--all]
 romforge-cli firmware import ~/bios ~/bios.zip  # the plan: what goes where
 romforge-cli firmware import ~/bios --apply     # copies; never replaces a file
+romforge-cli firmware find [--apply]            # BIOS files already on this computer
 romforge-cli firmware undo --yes                # takes the last import back
 romforge-cli firmware install-ps3 [--apply]     # Bios/rpcs3/PS3UPDAT.PUP into RPCS3
 ```
@@ -363,14 +381,31 @@ that it is a verified dump. A file with no hash in the list can only be
 *present*. Drop folders, files, zips or 7z on the page (or `firmware
 import`): each file is matched by its contents and copied where every
 emulator that wants it looks; a file whose name fits but whose hash isn't
-known is placed only when you tick it (`--also NAME`); so is a dropped
-zip named like a MAME machine's set (`fm7.zip`), offered as it is.
+known is placed only when you tick it (`--also NAME`), and stays *placed
+by you* on the page, never "accepted". A BIOS zip (MAME-style, `neogeo.zip`)
+is checked by its members, as RetroBIOS lists them by size and SHA1/MD5:
+*accepted* when it holds them all, *incomplete* (with what it lacks) when
+some; a dropped zip that holds them all is placed whole, whatever its name.
+One named like a machine's set but holding other members is offered, as a
+name-only file.
+
+romforge keeps every BIOS file in `RomForge/Bios/`. **Find BIOS on this
+computer** (on the page, or `firmware find`) looks in the usual places
+only (RetroArch's system folder, EmuDeck's `~/Emulation/bios`, RetroDECK's
+`~/retrodeck/bios`, DuckStation's and PCSX2's `bios/`, the 3DS emulators'
+`sysdata/`, Cemu's keys, Dolphin's `GC/`; native and Flatpak) and shows an
+import plan as for a drop. The Setting **Leave BIOS files where they are**
+(Rename & Cleanup tab, on by default) copies them; off, each original goes
+to the RomForge trash once its copy is checked (undo puts it back; Empty
+trash deletes it). A platform whose emulator Play would use lacks a
+required file shows a **BIOS** badge in the library's platform list.
 
 Each emulator is pointed at its folder when it starts: RetroArch's system
 folder; DuckStation, PCSX2, mGBA, Mednafen, melonDS and xemu through
 romforge's config of theirs; Flycast by `FLYCAST_BIOS_PATH`; Dolphin's and
-Cemu's files (`keys.txt`, `otp.bin`, `seeprom.bin`) linked into their data
-folder; Azahar's, Lime3DS's and Citra's `sysdata/` files (`keys.txt` or
+Cemu's files (`keys.txt`, `otp.bin`, `seeprom.bin`) symlinked into their
+data folder (the one copy stays in `Bios/`; a hard link or a copy where a
+symlink can't be made); Azahar's, Lime3DS's and Citra's `sysdata/` files (`keys.txt` or
 `aes_keys.txt`, `boot9.bin`, `shared_font.bin`, `seeddb.bin`, `otp.bin`)
 linked into their data folder, and their NAND and SD card set to your own
 data of that emulator or an older one (Azahar reads Lime3DS's and Citra's,

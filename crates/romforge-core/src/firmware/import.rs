@@ -81,6 +81,10 @@ pub struct ImportPlan {
 pub struct Imported {
     /// Files written.
     pub written: usize,
+    /// Originals moved to the trash (Settings: not leaving BIOS files where
+    /// they are).
+    #[serde(default)]
+    pub moved: usize,
     /// Further places given a hard link (or a copy) of one.
     pub linked: usize,
     pub batch: Option<i64>,
@@ -111,6 +115,11 @@ fn places<'a>(slots: &'a [Slot<'a>]) -> BTreeMap<PathBuf, Place<'a>> {
     out
 }
 
+/// A zip, which is offered whole as well as by its members.
+fn is_zip(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".zip")
+}
+
 /// The archives emulators load as they are (a MAME machine's `fm7.zip`): a
 /// dropped one of these names is also offered whole, not only its members.
 fn sets(places: &BTreeMap<PathBuf, Place>) -> HashSet<String> {
@@ -137,7 +146,7 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
     let sets = sets(&places);
     walk(
         paths,
-        &|name| sets.contains(&name.to_ascii_lowercase()),
+        &|name| is_zip(name),
         &mut |id, r, size| {
             let d = crate::hash::hash_stream(r, size)?.raw;
             found.push((id.clone(), d));
@@ -145,13 +154,38 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
         },
         &mut out.skipped,
     );
+    // Each zip's members, for a BIOS zip matched by what it holds.
+    let mut members_of: BTreeMap<SourceId, Vec<(String, crate::hash::Digest)>> = BTreeMap::new();
+    for (id, d) in &found {
+        if let Some(parent) = id.parent() {
+            members_of.entry(parent).or_default().push((id.name(), d.clone()));
+        }
+    }
     for (id, d) in found {
         let name = id.name();
         let mut matched = Match::Unknown;
-        let mut hits: Vec<(&PathBuf, &Place)> = places
-            .iter()
-            .filter(|(_, p)| p.reqs.iter().any(|f| accepts(f, &d)))
-            .collect();
+        let whole = is_zip(&name);
+        let mut hits: Vec<(&PathBuf, &Place)> = if whole {
+            // A zip is a BIOS file only as a set: every member a place's
+            // zip should hold is in it, by contents (its name aside).
+            let members = members_of.get(&id).map_or(&[][..], Vec::as_slice);
+            places
+                .iter()
+                .filter(|(_, p)| {
+                    p.reqs.iter().any(|f| {
+                        !f.contents.is_empty() && f.contents.iter().all(|m| super::members::holds(members, m))
+                    })
+                })
+                .collect()
+        } else {
+            places
+                .iter()
+                .filter(|(_, p)| p.reqs.iter().any(|f| accepts(f, &d)))
+                .collect()
+        };
+        if whole && hits.is_empty() && !sets.contains(&name.to_ascii_lowercase()) {
+            continue; // an ordinary zip: its members are what count
+        }
         if hits.is_empty() {
             hits = places
                 .iter()
@@ -206,12 +240,15 @@ pub fn apply(
     env: &Env,
     paths: &[PathBuf],
     also: &[String],
+    move_originals: bool,
 ) -> Result<Imported, Error> {
     let plan = plan(dir, home, env, paths)?;
-    let (profiles, _) = load(dir)?;
-    let slots = slots(&profiles, home, env);
-    let sets = sets(&places(&slots));
-    let mut wanted: BTreeMap<SourceId, (String, Vec<PathBuf>)> = BTreeMap::new();
+    let originals = if move_originals {
+        super::originals::taken(&plan, also)
+    } else {
+        Vec::new()
+    };
+    let mut wanted: BTreeMap<SourceId, (String, Vec<PathBuf>, bool)> = BTreeMap::new();
     let mut taken: HashSet<PathBuf> = HashSet::new();
     for f in &plan.files {
         let picked =
@@ -223,15 +260,19 @@ pub fn apply(
             .map(|t| t.place.clone())
             .collect();
         if !places.is_empty() {
-            wanted.insert(f.source.clone(), (f.sha1.clone(), places));
+            wanted.insert(
+                f.source.clone(),
+                (f.sha1.clone(), places, f.matched == Match::NameOnly),
+            );
         }
     }
     let mut done = Imported {
         written: 0,
+        moved: 0,
         linked: 0,
         batch: None,
     };
-    if wanted.is_empty() {
+    if wanted.is_empty() && originals.is_empty() {
         return Ok(done);
     }
     conn.execute(
@@ -244,10 +285,10 @@ pub fn apply(
     )?;
     let batch = conn.last_insert_rowid();
     done.batch = Some(batch);
-    let journal = |p: &Path| -> Result<(), Error> {
+    let journal = |p: &Path, picked: bool| -> Result<(), Error> {
         conn.execute(
-            "INSERT OR IGNORE INTO firmware_outputs (batch_id, path) VALUES (?1, ?2)",
-            params![batch, p.to_string_lossy()],
+            "INSERT OR IGNORE INTO firmware_outputs (batch_id, path, picked) VALUES (?1, ?2, ?3)",
+            params![batch, p.to_string_lossy(), picked],
         )?;
         Ok(())
     };
@@ -255,9 +296,9 @@ pub fn apply(
     let mut failure = None;
     walk(
         paths,
-        &|name| sets.contains(&name.to_ascii_lowercase()),
+        &|name| is_zip(name),
         &mut |id, r, _| {
-            let Some((sha1, places)) = wanted.get(id) else {
+            let Some((sha1, places, picked)) = wanted.get(id) else {
                 return Ok(());
             };
             let first = &places[0];
@@ -265,7 +306,7 @@ pub fn apply(
                 std::fs::create_dir_all(dir)?;
             }
             write_once(first, r)?;
-            journal(first)?;
+            journal(first, *picked)?;
             if digest(first).is_none_or(|d| d.sha1 != *sha1) {
                 std::fs::remove_file(first)?;
                 return Err(Error::Launch(format!(
@@ -281,7 +322,7 @@ pub fn apply(
                 if std::fs::hard_link(first, p).is_err() {
                     write_once(p, &mut std::fs::File::open(first)?)?;
                 }
-                journal(p)?;
+                journal(p, *picked)?;
                 done.linked += 1;
             }
             Ok(())
@@ -290,6 +331,9 @@ pub fn apply(
     );
     if let Some((what, why)) = skipped.into_iter().next() {
         failure = Some(Error::Launch(format!("{what}: {why}")));
+    }
+    if failure.is_none() {
+        done.moved = super::originals::trash(conn, home, batch, &originals)?;
     }
     match failure {
         Some(e) if done.written == 0 => Err(e),
@@ -309,38 +353,4 @@ fn write_once(path: &Path, r: &mut dyn std::io::Read) -> Result<(), Error> {
         return Err(e.into());
     }
     Ok(())
-}
-
-/// Take away what the last import not yet undone wrote. Returns how many
-/// files went.
-pub fn undo(conn: &Connection) -> Result<usize, Error> {
-    let batch: Option<i64> = conn
-        .query_row(
-            "SELECT batch_id FROM firmware_batches WHERE undone_at IS NULL ORDER BY batch_id DESC LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .ok();
-    let Some(batch) = batch else {
-        return Err(Error::Launch("no BIOS import to undo".into()));
-    };
-    let mut stmt = conn.prepare("SELECT path FROM firmware_outputs WHERE batch_id = ?1")?;
-    let paths: Vec<String> = stmt.query_map([batch], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    let mut n = 0;
-    for p in &paths {
-        match std::fs::remove_file(p) {
-            Ok(()) => n += 1,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    conn.execute(
-        concat!(
-            "UPDATE firmware_batches SET undone_at = ",
-            crate::db::now!(),
-            " WHERE batch_id = ?1"
-        ),
-        [batch],
-    )?;
-    Ok(n)
 }

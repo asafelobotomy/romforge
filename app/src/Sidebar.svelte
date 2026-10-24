@@ -6,7 +6,9 @@
   // unidentified files), and the DATs and organize screens at the foot.
   // `icons`: system key -> file of its picture; one that fails to load
   // keeps its badge, also after the next load (no retry, no flicker).
-  let { lib, games, view, platform = $bindable(), icons, iconStyle, show } = $props();
+  // `needs`: systems whose emulator lacks a required BIOS file.
+  let { lib, games, view, platform = $bindable(), icons, iconStyle, show, needs = [] } = $props();
+  let lacking = $derived(new Map(needs.map((n) => [n.system, n.emulator])));
   let failed = $state(new Set());
 </script>
 
@@ -29,6 +31,16 @@
         <span class="icon" data-maker={p.manufacturer ?? "none"}>{p.short}</span>
       {/if}
       <span class="pname">{p.name}</span>
+      {#if p.system && lacking.has(p.system)}
+        <span
+          class="bios"
+          role="link"
+          tabindex="-1"
+          title={`${lacking.get(p.system)} lacks a required BIOS file: see BIOS`}
+          onclick={(e) => { e.stopPropagation(); show("bios"); }}
+          onkeydown={() => {}}
+        >BIOS</span>
+      {/if}
       <span class="count">{p.games}</span>
     </button>
   {/each}
@@ -62,5 +74,7 @@
   /* A platform's whole name, wrapped (never cut short), in bold. */
   .pname { font-size: 0.72rem; font-weight: 700; text-align: center; line-height: 1.15; white-space: normal; overflow-wrap: anywhere; hyphens: auto; max-width: 100%; }
   .count { font-size: 0.7rem; color: var(--muted); }
+  /* The emulator Play would use lacks a required BIOS file. */
+  .bios { font-size: 0.6rem; font-weight: 700; padding: 0 0.3rem; border-radius: 0.6rem; background: var(--bad); color: #fff; cursor: pointer; }
   .plat.active .count { color: #fffc; }
 </style>

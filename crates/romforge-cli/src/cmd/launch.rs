@@ -130,6 +130,39 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             }
         }
+        Command::Emulator(EmulatorCommand::MoveData {
+            emulator,
+            apply,
+            undo,
+        }) => {
+            if undo {
+                let n = lib.undo_move_data(&emulator)?;
+                println!("{emulator}: {n} item(s) put back where they were");
+                return Ok(());
+            }
+            let p = lib.move_data_plan(&emulator)?;
+            for i in &p.items {
+                println!(
+                    "{}: {} file(s), {} MiB\n    from {}\n    to   {}",
+                    i.what,
+                    i.files,
+                    i.bytes >> 20,
+                    i.from.display(),
+                    i.to.display()
+                );
+            }
+            if let Some(f) = p.free {
+                println!("{} MiB to move, {} MiB free there", p.bytes >> 20, f >> 20);
+            }
+            match (&p.problem, apply) {
+                (Some(why), _) => println!("{emulator}: can't move: {why}"),
+                (None, false) => println!("run again with --apply to move it (--undo takes it back)"),
+                (None, true) => {
+                    let id = lib.move_data(&emulator)?;
+                    println!("{emulator}: moved into RomForge (move #{id}; originals in the trash)");
+                }
+            }
+        }
         Command::Emulator(EmulatorCommand::Cores { refresh }) => {
             if refresh {
                 println!("buildbot: {} cores listed", lib.refresh_emulator_cores()?);
@@ -175,7 +208,25 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             lib.remove_core(&core)?;
             println!("{core} removed");
         }
-        Command::Emulator(EmulatorCommand::Install { emulator, apply }) => {
+        Command::Emulator(EmulatorCommand::Install {
+            emulator,
+            apply,
+            appimage,
+        }) if appimage => {
+            if !apply {
+                println!(
+                    "would download {emulator}'s official AppImage into RomForge/Emulators/ (run again with --apply)"
+                );
+                return Ok(());
+            }
+            println!("downloading {emulator}'s official AppImage…");
+            let at = lib.install_appimage(&emulator)?;
+            println!(
+                "downloaded {} (checked against its published SHA-256)",
+                at.display()
+            );
+        }
+        Command::Emulator(EmulatorCommand::Install { emulator, apply, .. }) => {
             if !apply {
                 println!("would install {emulator} from Flathub into your Flatpak (run again with --apply)");
                 return Ok(());

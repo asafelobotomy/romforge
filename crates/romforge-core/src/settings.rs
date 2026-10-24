@@ -49,6 +49,11 @@ pub struct Settings {
     pub in_place: bool,
     /// `None` means [`default_staging_dir`].
     pub staging_dir: Option<PathBuf>,
+    /// BIOS files imported into the RomForge folder's `Bios/` (dropped, or
+    /// found on this computer) stay where they were too (on, the default);
+    /// off, each original goes to the trash once its copy is checked.
+    #[serde(default = "default_true")]
+    pub bios_leave_in_place: bool,
     /// Optional credentials for online sources (house rule 10, tiers 2 and
     /// 3). Stored in the local database; never shown in full.
     #[serde(default)]
@@ -165,6 +170,7 @@ impl Default for Settings {
             keep_originals: false,
             in_place: false,
             staging_dir: None,
+            bios_leave_in_place: true,
             keys: Keys::default(),
             show_empty_media: false,
             region_flags: true,
@@ -304,6 +310,7 @@ impl Settings {
             keep_originals: self.keep_originals,
             in_place: self.in_place,
             staging_dir: staging,
+            bios_leave_in_place: self.bios_leave_in_place,
             keys,
             show_empty_media: self.show_empty_media,
             region_flags: self.region_flags,

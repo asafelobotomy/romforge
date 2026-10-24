@@ -83,7 +83,7 @@ fn bios_files_are_checked_where_each_emulator_finds_them() {
     std::fs::write(ra.join("extra/ps1_rom.bin"), b"anything").unwrap();
     std::fs::write(ra.join("wrong.bin"), b"not it").unwrap();
 
-    let r = report(&dir, &home, &empty).unwrap();
+    let r = report(&crate::db::open_in_memory().unwrap(), &dir, &home, &empty).unwrap();
     assert!(
         r.systems.iter().all(|s| s.key != "Arcade"),
         "arcade BIOS sets are MAME's DATs'"
@@ -126,7 +126,7 @@ fn bios_files_are_checked_where_each_emulator_finds_them() {
 
     std::fs::remove_file(dir.join(FILE)).unwrap();
     assert!(
-        report(&dir, &home, &empty)
+        report(&crate::db::open_in_memory().unwrap(), &dir, &home, &empty)
             .unwrap_err()
             .to_string()
             .contains("firmware download")
@@ -206,7 +206,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
 
     // Apply, with the name-only file picked too.
     let ps1 = by("ps1_rom.bin").shown.clone();
-    let done = apply(&conn, &dir, &home, &env, &paths, &[ps1]).unwrap();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[ps1], false).unwrap();
     assert_eq!((done.written, done.linked), (2, 1));
     assert_eq!(std::fs::read(&ra).unwrap(), us);
     assert_eq!(std::fs::read(&duck).unwrap(), us);
@@ -215,7 +215,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
         b"rom"
     );
     assert!(drop.join("renamed.bin").exists(), "copied, never moved");
-    let r = report(&dir, &home, &env).unwrap();
+    let r = report(&crate::db::open_in_memory().unwrap(), &dir, &home, &env).unwrap();
     let ps = r.systems.iter().find(|s| s.key == "PlayStation").unwrap();
     assert!(
         ps.emulators
@@ -253,7 +253,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
         .map(|t| t.state)
         .collect();
     assert_eq!(states, [TargetState::New, TargetState::Taken]);
-    apply(&conn, &dir, &home, &env, &paths, &[]).unwrap();
+    apply(&conn, &dir, &home, &env, &paths, &[], false).unwrap();
     assert_eq!(std::fs::read(&duck).unwrap(), b"someone else's");
     assert!(
         undo(&conn).is_ok() && undo(&conn).is_err(),
@@ -290,7 +290,13 @@ fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
     let dir = t.path().join("db");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(FILE), doc).unwrap();
-    let r = report(&dir, &home, &Env::default()).unwrap();
+    let r = report(
+        &crate::db::open_in_memory().unwrap(),
+        &dir,
+        &home,
+        &Env::default(),
+    )
+    .unwrap();
     let emu = |sys: &str, name: &str| {
         r.systems
             .iter()
@@ -328,4 +334,44 @@ fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
     assert!(!towns.ready);
 }
 
+#[test]
+fn a_badge_for_a_system_whose_first_installed_emulator_lacks_a_file() {
+    let e = |name: &str, installed: bool, profiled: bool, ready: bool| EmulatorFirmware {
+        name: name.into(),
+        label: name.into(),
+        installed,
+        profiled,
+        files: Vec::new(),
+        ready,
+        regions: Vec::new(),
+    };
+    let s = |key: &'static str, emulators| SystemFirmware {
+        key,
+        name: key,
+        emulators,
+    };
+    let systems = vec![
+        // The core isn't installed: the standalone is the one Play uses.
+        s(
+            "PlayStation",
+            vec![
+                e("retroarch:swanstation", false, true, false),
+                e("duckstation", true, true, false),
+            ],
+        ),
+        s("SNES", vec![e("retroarch:snes9x", true, true, true)]),
+        s("Wii U", vec![e("cemu", true, false, false)]),
+        s("GBA", vec![e("mgba", false, true, false)]),
+    ];
+    let n = needs(&systems);
+    assert_eq!(
+        n,
+        [BiosNeed {
+            system: "PlayStation",
+            emulator: "duckstation".into()
+        }]
+    );
+}
+
+mod originals;
 mod sets;

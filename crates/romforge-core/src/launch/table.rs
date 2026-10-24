@@ -133,7 +133,14 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--no-gui", "{rom}"],
         false,
     )
-    .fullscreen(&["--fullscreen"]),
+    .fullscreen(&["--fullscreen"])
+    // Its Flatpak asks on every start whether to run an "unofficial build"
+    // (`gui_application.cpp`, whenever `FLATPAK_ID` is set; no setting).
+    // The official AppImage doesn't: it is preferred, and offered.
+    .official_appimage("RPCS3/rpcs3-binaries-linux", "_linux64.AppImage")
+    .flatpak_note(
+        "RPCS3's Flatpak asks on every start whether to run an unofficial build (its developers don't support Flatpak builds). The official AppImage doesn't ask; romforge uses it instead once it is downloaded.",
+    ),
     // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`. Not on
     // Flathub (checked 2026-10-19).
     emu("mednafen", "Mednafen", &["mednafen"], "", &["{rom}"], true)

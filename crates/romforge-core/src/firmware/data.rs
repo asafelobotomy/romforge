@@ -18,6 +18,15 @@ pub struct Profile {
     pub files: Vec<FileReq>,
 }
 
+/// A member of a BIOS zip (MAME-style): what RetroBIOS lists it with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Member {
+    pub name: String,
+    pub size: Option<u64>,
+    pub sha1: Vec<String>,
+    pub md5: Vec<String>,
+}
+
 /// A file an emulator loads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileReq {
@@ -38,6 +47,8 @@ pub struct FileReq {
     pub system: Option<String>,
     /// An archive of several files (MAME-style BIOS zips).
     pub archive: bool,
+    /// For an archive: the members it should hold, checked by contents.
+    pub contents: Vec<Member>,
     /// The regions it is loaded for (a regional BIOS is needed only for
     /// games of its regions); empty: all.
     pub regions: Vec<String>,
@@ -136,6 +147,20 @@ fn file(v: &Value) -> Option<FileReq> {
             .get("contents")
             .and_then(Value::as_array)
             .is_some_and(|c| !c.is_empty()),
+        contents: v
+            .get("contents")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|m| {
+                Some(Member {
+                    name: m.get("name").and_then(Value::as_str)?.to_owned(),
+                    size: m.get("size").and_then(Value::as_u64),
+                    sha1: hashes(m.get("sha1"), 40),
+                    md5: hashes(m.get("md5"), 32),
+                })
+            })
+            .collect(),
         regions: strings(v.get("region")),
         variant_group: v.get("variant_group").and_then(Value::as_str).map(str::to_owned),
     })

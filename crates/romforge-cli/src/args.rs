@@ -195,6 +195,10 @@ pub enum Command {
         /// original to the trash) instead of moving it
         #[arg(long)]
         in_place: Option<bool>,
+        /// BIOS files imported into Bios/ also stay where they were (default
+        /// true); false moves each original to the trash once copied
+        #[arg(long)]
+        bios_leave_in_place: Option<bool>,
         /// Scratch folder for cleanup [default: <cache>/staging] ("" for the default)
         #[arg(long)]
         staging: Option<String>,

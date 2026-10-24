@@ -1,4 +1,5 @@
 <script>
+  import GameDataPanel from "./GameDataPanel.svelte";
   import { edit, run } from "./jobs.svelte.js";
   import { size } from "./lib.js";
   import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
@@ -79,6 +80,26 @@
 
   // Install an emulator from Flathub, then look again.
   let installing = $state("");
+  // An emulator's official AppImage (RPCS3's), from its own releases, into
+  // RomForge/Emulators/; romforge prefers it to the Flatpak.
+  async function appimage(n) {
+    const ok = await ask(`Download ${n.label}'s official AppImage from its own releases into RomForge's Emulators folder?`, {
+      title: "Download AppImage",
+      kind: "info",
+    });
+    if (!ok) return;
+    error = "";
+    installing = `appimage:${n.name}`;
+    const at = await run(`Downloading ${n.label}'s AppImage…`, "install_appimage", { emulator: n.name }, { key: `appimage:${n.name}` });
+    if (at) note = `${n.label}'s AppImage is in ${at}; romforge starts it from now on.`;
+    if (at && open) {
+      const keep = draft;
+      await openEmulatorSettings();
+      draft = { ...keep, emulators: { ...draft.emulators, ...keep.emulators } };
+    }
+    installing = null;
+  }
+
   async function install(n) {
     const ok = await ask(`Install ${n.label} from Flathub into your Flatpak? This can take a while.`, {
       title: "Install emulator",
@@ -163,6 +184,11 @@
                   {n.label}
                   {#if n.flathub}
                     <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : "Install from Flathub"}</button>
+                  {/if}
+                  {#if n.appimage}
+                    <button onclick={() => appimage(n)} disabled={!!installing}>{installing === `appimage:${n.name}` ? "Downloading…" : "Download official AppImage"}</button>
+                  {/if}
+                  {#if n.flathub || n.appimage}{""}
                   {:else if n.discontinued}<span class="hint">· discontinued (last release {n.discontinued}): romforge uses your own install and never downloads it</span>
                   {:else}<span class="hint">· not on Flathub: install it yourself</span>{/if}
                 </li>
@@ -194,6 +220,14 @@
             {/if}
           </section>
         {/if}
+        {#if e.flatpak_note}
+          <section class="setting">
+            <span class="flabel">Started as a Flatpak</span>
+            <p class="hint">{e.flatpak_note}</p>
+            <div class="pick"><button onclick={() => appimage(e)} disabled={!!installing}>{installing === `appimage:${e.name}` ? "Downloading…" : "Download official AppImage"}</button></div>
+          </section>
+        {/if}
+        {#if e.movable}<GameDataPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
         {#each e.settings.map(def) as s}
           <section class="setting">
             {#if s.kind === "bool" || s.kind === "choice"}

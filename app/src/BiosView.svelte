@@ -6,7 +6,8 @@
   // The BIOS page (milestone 20): what each system's emulators load, from
   // RetroBIOS's list, against the files in the RomForge folder's Bios/.
   // Always mounted, so the system picked lasts; drawn only while `active`.
-  let { active, busy, note = $bindable(""), error = $bindable(""), run } = $props();
+  // `needs`: the library's BIOS badges, kept current from each report.
+  let { active, busy, note = $bindable(""), error = $bindable(""), run, needs = $bindable([]) } = $props();
 
   let report = $state(null);
   let problem = $state("");
@@ -17,6 +18,7 @@
     problem = "";
     try {
       report = await invoke("firmware_report");
+      needs = report.needs;
       if (!report.systems.some((s) => s.key === key)) key = report.systems[0]?.key ?? null;
     } catch (e) {
       report = null;
@@ -48,7 +50,14 @@
     if (!e.ready) return "missing required files";
     return e.regions.length ? `ready for ${e.regions.join(", ")}` : "ready";
   }
-  const STATES = { accepted: "Accepted", present: "Present (no hash to check)", wrong_hash: "Wrong file", missing: "Missing" };
+  const STATES = {
+    accepted: "Accepted",
+    present: "Present (no hash to check)",
+    wrong_hash: "Wrong file",
+    incomplete: "Incomplete zip",
+    placed_by_you: "Placed by you",
+    missing: "Missing",
+  };
   const need = (f) =>
     !f.required ? "Optional"
     : f.only_for ? `Only ${f.only_for}`
@@ -109,7 +118,7 @@
                       {#each files as f}
                         <tr>
                           <td>{f.name}{#if f.regions.length}<span class="hint"> · {f.regions.join(", ")}</span>{/if}</td>
-                          <td class={f.state}>{STATES[f.state]}</td>
+                          <td class={f.state} title={f.missing?.length ? `Lacks ${f.missing.join(", ")}` : undefined}>{STATES[f.state]}{#if f.missing?.length}<span class="lacks"> · lacks {f.missing.length}</span>{/if}</td>
                           <td>{need(f)}</td>
                           <td class="path" title={f.place}>{where(f)}</td>
                         </tr>
@@ -139,5 +148,7 @@
   .good, .accepted { color: var(--ok); }
   .bad, .wrong_hash { color: var(--bad); }
   .missing, .none { color: var(--muted); }
+  .incomplete { color: var(--warn, #b8860b); }
+  .lacks { font-size: 0.75rem; color: var(--muted); }
   .path { font-size: 0.8rem; word-break: break-all; }
 </style>

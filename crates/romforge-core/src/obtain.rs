@@ -10,8 +10,12 @@
 //! - RetroArch and standalone emulators from Flathub, in the user's own
 //!   Flatpak installation (no root), with the `flatpak` tool the way
 //!   romforge already starts Flatpaks. romforge never bundles an emulator.
+//! - An emulator's official AppImage from its own GitHub releases, where
+//!   the table names one (RPCS3's, whose Flatpak warns on every start).
 
 mod cores;
 pub use cores::*;
 mod flathub;
 pub use flathub::*;
+mod appimage;
+pub use appimage::install_appimage;

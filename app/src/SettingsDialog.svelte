@@ -1,4 +1,5 @@
 <script>
+  import BiosSetting from "./BiosSetting.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -196,6 +197,7 @@
           {/if}
         </p>
       </section>
+      <BiosSetting bind:draft />
       {:else if stab === "display"}
       <ThemeSettings />
       <FullscreenSettings bind:draft />

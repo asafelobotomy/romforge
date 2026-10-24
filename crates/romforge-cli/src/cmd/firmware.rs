@@ -14,18 +14,14 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             let n = lib.firmware_download()?;
             println!("RetroBIOS's list: {n} emulators and cores");
         }
-        Command::Firmware(FirmwareCommand::Check { system, all }) => {
-            let r = lib.firmware_report()?;
+        Command::Firmware(FirmwareCommand::Check { system, core, all }) => {
+            let r = lib.firmware_report()?.only(system.as_deref(), core.as_deref());
             println!(
                 "BIOS folder: {} (list of {})",
                 r.bios_dir.display(),
                 r.generated_at
             );
-            for s in r
-                .systems
-                .iter()
-                .filter(|s| system.as_deref().is_none_or(|k| s.key.eq_ignore_ascii_case(k)))
-            {
+            for s in &r.systems {
                 println!("{}", s.key);
                 for e in &s.emulators {
                     let ready = match (e.ready, e.regions.is_empty()) {
@@ -48,6 +44,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                             State::Accepted => "accepted",
                             State::Present => "present (no hash to check)",
                             State::WrongHash => "WRONG HASH",
+                            State::Incomplete => "incomplete zip",
+                            State::PlacedByYou => "placed by you",
                             State::Missing => "missing",
                         };
                         let need = match (f.required, f.hle, f.only_for.as_deref()) {
@@ -66,41 +64,26 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                             f.name,
                             f.place.display()
                         );
+                        if !f.missing.is_empty() {
+                            println!("      lacks {}", f.missing.join(", "));
+                        }
                     }
                 }
             }
         }
         Command::Firmware(FirmwareCommand::Import { paths, apply, also }) => {
-            let plan = lib.firmware_import_plan(&paths)?;
-            for f in &plan.files {
-                let what = match f.matched {
-                    Match::Accepted => "accepted",
-                    Match::NameOnly => "name fits, hash unknown",
-                    Match::Unknown => "unknown",
-                };
-                println!("{}  ({what})", f.shown);
-                for t in &f.targets {
-                    let state = match t.state {
-                        TargetState::New => "goes to",
-                        TargetState::AlreadyThere => "already in",
-                        TargetState::Taken => "another file in (left alone)",
-                        TargetState::Claimed => "another dropped file goes to",
-                    };
-                    println!("    {state} {}  [{}]", t.place.display(), t.used_by.join(", "));
-                }
+            import(lib, &paths, apply, &also)?
+        }
+        Command::Firmware(FirmwareCommand::Find { apply, also }) => {
+            let paths = lib.firmware_found()?;
+            if paths.is_empty() {
+                println!("no BIOS folders in their usual places on this computer");
+                return Ok(());
             }
-            for (what, why) in &plan.skipped {
-                println!("skipped {what}: {why}");
+            for p in &paths {
+                println!("looking in {}", p.display());
             }
-            if apply {
-                let done = lib.firmware_import(&paths, &also)?;
-                println!("wrote {} file(s), linked {} more", done.written, done.linked);
-            } else {
-                println!(
-                    "{} place(s) would be filled; run again with --apply",
-                    plan.new_places
-                );
-            }
+            import(lib, &paths, apply, &also)?;
         }
         Command::Firmware(FirmwareCommand::InstallPs3 { apply }) => {
             if !apply {
@@ -120,6 +103,47 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             println!("removed {n} file(s)");
         }
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// What importing `paths` would do, or doing it.
+fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[String]) -> Result<()> {
+    let plan = lib.firmware_import_plan(paths)?;
+    for f in &plan.files {
+        let what = match f.matched {
+            Match::Accepted => "accepted",
+            Match::NameOnly => "name fits, hash unknown",
+            Match::Unknown => "unknown",
+        };
+        println!("{}  ({what})", f.shown);
+        for t in &f.targets {
+            let state = match t.state {
+                TargetState::New => "goes to",
+                TargetState::AlreadyThere => "already in",
+                TargetState::Taken => "another file in (left alone)",
+                TargetState::Claimed => "another dropped file goes to",
+            };
+            println!("    {state} {}  [{}]", t.place.display(), t.used_by.join(", "));
+        }
+    }
+    for (what, why) in &plan.skipped {
+        println!("skipped {what}: {why}");
+    }
+    if apply {
+        let done = lib.firmware_import(paths, also)?;
+        println!("wrote {} file(s), linked {} more", done.written, done.linked);
+        if done.moved > 0 {
+            println!(
+                "moved {} original(s) to the trash (undo puts them back)",
+                done.moved
+            );
+        }
+    } else {
+        println!(
+            "{} place(s) would be filled; run again with --apply",
+            plan.new_places
+        );
     }
     Ok(())
 }

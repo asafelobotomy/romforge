@@ -11,6 +11,18 @@ pub async fn firmware_report(db: tauri::State<'_, Db>) -> Res<FirmwareReport> {
     read(&db, move |lib| lib.firmware_report()).await
 }
 
+/// The usual BIOS places that exist on this computer.
+#[tauri::command]
+pub async fn firmware_found(db: tauri::State<'_, Db>) -> Res<Vec<PathBuf>> {
+    read(&db, move |lib| lib.firmware_found()).await
+}
+
+/// The library's BIOS badges.
+#[tauri::command]
+pub async fn firmware_needs(db: tauri::State<'_, Db>) -> Res<Vec<romforge_core::firmware::BiosNeed>> {
+    read(&db, move |lib| Ok(lib.firmware_needs())).await
+}
+
 /// Fetch RetroBIOS's list (the list only, never BIOS files).
 #[tauri::command]
 pub async fn firmware_download(

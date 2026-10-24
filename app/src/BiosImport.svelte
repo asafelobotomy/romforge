@@ -53,6 +53,16 @@
     working = false;
   }
 
+  // The usual BIOS places that exist here, shown as an import plan.
+  async function find() {
+    const found = await invoke("firmware_found").catch((e) => {
+      error = String(e);
+      return null;
+    });
+    if (found && !found.length) note = "No BIOS folders in their usual places on this computer.";
+    else if (found) look(found);
+  }
+
   async function choose(directory) {
     const p = await pick({ multiple: !directory, directory, title: directory ? "A folder of BIOS files" : "BIOS files or archives" });
     if (p) look(Array.isArray(p) ? p : [p]);
@@ -64,7 +74,10 @@
     working = true;
     const r = await run("Importing BIOS files…", "firmware_import", { paths, also });
     if (r) {
-      note = `BIOS import: ${r.written} file${r.written === 1 ? "" : "s"} written, ${r.linked} more place${r.linked === 1 ? "" : "s"} linked. Undo takes them away.`;
+      note =
+        `BIOS import: ${r.written} file${r.written === 1 ? "" : "s"} written, ${r.linked} more place${r.linked === 1 ? "" : "s"} linked` +
+        (r.moved ? `, ${r.moved} original${r.moved === 1 ? "" : "s"} moved to the trash` : "") +
+        ". Undo takes them away.";
       plan = null;
       await done();
     }
@@ -94,11 +107,12 @@
 <section class="drop" class:over>
   <p>
     <strong>Drop BIOS files here</strong> — a folder, files, or zip / 7z archives. Each file is recognised by its contents, so
-    names don't matter; your files are copied, never moved.
+    names don't matter. Your files are copied; the originals stay where they are unless Settings says otherwise.
   </p>
   <div class="pick">
     <button onclick={() => choose(true)} disabled={!!busy || working}>Add folder…</button>
     <button onclick={() => choose(false)} disabled={!!busy || working}>Add files…</button>
+    <button onclick={find} disabled={!!busy || working} title="Look in the usual places: RetroArch's system folder, EmuDeck's and RetroDECK's BIOS folders, the emulators' own">Find BIOS on this computer</button>
     <span class="spacer"></span>
     <button onclick={undo} disabled={!!busy || working} title="Take away what the last import wrote">Undo last import</button>
   </div>

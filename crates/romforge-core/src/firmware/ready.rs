@@ -19,7 +19,14 @@ pub(super) fn same_core(listed: &str, core: &str) -> bool {
 /// Whether an emulator can start games with `files` (checked, in the order
 /// of `reqs`), and for which regions when its required files are regional.
 pub(super) fn readiness(reqs: &[&FileReq], files: &[FileState]) -> (bool, Vec<String>) {
-    let ok = |f: &FileState| matches!(f.state, State::Accepted | State::Present);
+    // A zip with some members, or a file you placed, is there: which members
+    // a game needs varies, and yours is your call.
+    let ok = |f: &FileState| {
+        matches!(
+            f.state,
+            State::Accepted | State::Present | State::Incomplete | State::PlacedByYou
+        )
+    };
     let pairs: Vec<(&FileReq, &FileState)> = reqs
         .iter()
         .copied()

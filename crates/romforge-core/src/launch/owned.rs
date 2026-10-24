@@ -22,7 +22,9 @@ mod formats;
 pub use formats::Format;
 mod azahar;
 mod gamedata;
+pub mod move_in;
 mod standalone;
+pub mod theirs;
 
 /// A config file, the keys romforge sets in it and the ones it takes out.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -167,7 +169,9 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
 }
 
 /// Link each file under `dir` (inside `root`) to the same place under
-/// `to`, where nothing is yet: a hard link, else a copy.
+/// `to`, where nothing is yet: a symbolic link to the file in `root` (the
+/// RomForge folder keeps the one copy), else a hard link, else a copy. A
+/// link of romforge's whose file has gone from `root` is made again.
 fn link_tree(root: &Path, dir: &Path, to: &Path) -> Result<(), Error> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());
@@ -182,13 +186,22 @@ fn link_tree(root: &Path, dir: &Path, to: &Path) -> Result<(), Error> {
             continue;
         };
         let target = to.join(rel);
-        if target.exists() {
-            continue;
+        if let Ok(meta) = target.symlink_metadata() {
+            let ours_broken = meta.file_type().is_symlink()
+                && !target.exists()
+                && std::fs::read_link(&target).is_ok_and(|l| l.starts_with(root));
+            if !ours_broken {
+                continue;
+            }
+            std::fs::remove_file(&target)?;
         }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        if std::fs::hard_link(&path, &target).is_err() {
+        let source = std::path::absolute(&path)?;
+        if std::os::unix::fs::symlink(&source, &target).is_err()
+            && std::fs::hard_link(&path, &target).is_err()
+        {
             std::fs::copy(&path, &target)?;
         }
     }

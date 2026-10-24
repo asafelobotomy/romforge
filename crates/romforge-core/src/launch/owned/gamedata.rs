@@ -27,33 +27,8 @@ use std::path::{Path, PathBuf};
 
 use super::existing::UserDirs;
 use super::formats::toml_string;
+use super::theirs::{RPCS3_DEVICES, cemu_mlc, moved_in, rpcs3_devices, xemu_file};
 use super::{ConfigWrite, Format, Prepare};
-
-/// The folder among `candidates` that exists.
-pub(super) fn first(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
-    candidates.into_iter().find(|p| p.exists())
-}
-
-/// `rel` in the user's XDG folder and in the Flatpak `id`'s.
-pub(super) fn usual(user: &UserDirs, id: &str, data: bool, rel: &str) -> [PathBuf; 2] {
-    let (base, sub) = if data {
-        (&user.xdg.data, "data")
-    } else {
-        (&user.xdg.config, "config")
-    };
-    [
-        base.join(rel),
-        user.home.join(".var/app").join(id).join(sub).join(rel),
-    ]
-}
-
-/// A value in a simple `key: value` (YAML) or `key = value` (TOML) line,
-/// unquoted.
-fn value_of(line: &str, key: &str, sep: char) -> Option<String> {
-    let (k, v) = line.split_once(sep)?;
-    let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_owned();
-    (unquote(k) == key).then(|| unquote(v))
-}
 
 pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDirs>) -> Option<Prepare> {
     let s = |p: &Path| p.to_string_lossy().into_owned();
@@ -64,32 +39,20 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
     match name {
         "rpcs3" => {
             p.env = vec![("XDG_CONFIG_HOME".into(), s(dir))];
-            let mut keys = Vec::new();
-            if let Some(theirs) = user.and_then(|u| first(usual(u, "net.rpcs3.RPCS3", false, "rpcs3"))) {
-                let vfs = std::fs::read_to_string(theirs.join("vfs.yml")).unwrap_or_default();
-                let custom = |key: &str| {
-                    vfs.lines()
-                        .find_map(|l| value_of(l, key, ':'))
-                        .filter(|v| !v.is_empty())
-                };
-                let emu_dir = custom("$(EmulatorDir)").unwrap_or_else(|| format!("{}/", s(&theirs)));
-                for dev in [
-                    "dev_hdd0",
-                    "dev_hdd1",
-                    "dev_flash",
-                    "dev_flash2",
-                    "dev_flash3",
-                    "games",
-                ] {
-                    let key = format!("/{dev}/");
-                    let path = custom(&key)
-                        .map(|v| v.replace("$(EmulatorDir)", &emu_dir))
-                        .unwrap_or_else(|| format!("{emu_dir}{dev}/"));
-                    if Path::new(&path).exists() {
-                        keys.push((key, toml_string(&path)));
-                    }
-                }
-            }
+            // Your devices where they are, or RomForge's once moved in.
+            let devices: Vec<(&str, PathBuf)> = if moved_in(dir) {
+                RPCS3_DEVICES
+                    .iter()
+                    .map(|d| (*d, dir.join("rpcs3").join(d)))
+                    .filter(|(_, p)| p.exists())
+                    .collect()
+            } else {
+                user.map(rpcs3_devices).unwrap_or_default()
+            };
+            let keys = devices
+                .into_iter()
+                .map(|(dev, path)| (format!("/{dev}/"), toml_string(&format!("{}/", s(&path)))))
+                .collect();
             p.writes.push(ConfigWrite {
                 path: dir.join("rpcs3/vfs.yml"),
                 format: Format::Yaml,
@@ -109,22 +72,12 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
                 ("XDG_CONFIG_HOME".into(), s(dir)),
                 ("XDG_DATA_HOME".into(), s(&data)),
             ];
-            let mlc = user.and_then(|u| {
-                let own = first(usual(u, "info.cemu.Cemu", false, "Cemu/settings.xml"))
-                    .and_then(|f| std::fs::read_to_string(f).ok())
-                    .and_then(|x| {
-                        Some(
-                            x.split_once("<mlc_path>")?
-                                .1
-                                .split_once("</mlc_path>")?
-                                .0
-                                .trim()
-                                .to_owned(),
-                        )
-                    })
-                    .filter(|m| !m.is_empty() && Path::new(m).exists());
-                own.or_else(|| first(usual(u, "info.cemu.Cemu", true, "Cemu/mlc01")).map(|m| s(&m)))
-            });
+            let mlc = if moved_in(dir) {
+                Some(data.join("Cemu/mlc01"))
+            } else {
+                user.and_then(cemu_mlc)
+            }
+            .map(|m| s(&m));
             p.writes.push(ConfigWrite {
                 path: dir.join("Cemu/settings.xml"),
                 format: Format::Xml,
@@ -135,15 +88,11 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
             p.dirs.push(data);
         }
         "xemu" => {
-            let theirs = user
-                .and_then(|u| first(usual(u, "app.xemu.xemu", true, "xemu/xemu/xemu.toml")))
-                .and_then(|f| std::fs::read_to_string(f).ok())
-                .unwrap_or_default();
+            // Yours where your xemu.toml says, or RomForge's once moved in.
             let their = |key: &str| {
-                theirs
-                    .lines()
-                    .find_map(|l| value_of(l, key, '='))
-                    .filter(|v| !v.is_empty() && Path::new(v).exists())
+                user.filter(|_| !moved_in(dir))
+                    .and_then(|u| xemu_file(u, key))
+                    .map(|p| s(&p))
             };
             let ours = |file: &str| Some(bios.join(file)).filter(|f| f.is_file()).map(|f| s(&f));
             let mut keys = vec![("[general]show_welcome".to_owned(), "false".to_owned())];

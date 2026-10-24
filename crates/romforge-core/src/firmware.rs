@@ -14,7 +14,6 @@
 //! it, not that it is a verified dump, so it is never counted as
 //! DAT-verified. A file with no hash in the list can only be *present*.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::home::Home;
@@ -22,11 +21,18 @@ use crate::launch::{self, Env, KNOWN_EMULATORS, RETROARCH};
 use crate::{Error, systems};
 
 mod data;
-pub use data::{FileReq, Profile};
+pub use data::{FileReq, Member, Profile};
+mod check;
 mod import;
+use check::{Checker, digest};
+mod journal;
+pub use journal::undo;
+pub mod find;
+mod members;
+mod originals;
 pub use import::*;
 mod ready;
-use ready::{is_chip, readiness, same_core};
+use ready::{is_chip, same_core};
 mod walk;
 pub use walk::SourceId;
 
@@ -45,6 +51,11 @@ pub enum State {
     Present,
     /// There, but neither its size nor its hashes are ones accepted.
     WrongHash,
+    /// A BIOS zip with some of its members, not all (`FileState::missing`).
+    Incomplete,
+    /// A file whose name fits but whose hash isn't known, placed because you
+    /// picked it: yours, never "accepted".
+    PlacedByYou,
     Missing,
 }
 
@@ -65,6 +76,9 @@ pub struct FileState {
     /// or "games with that chip" for a cartridge's coprocessor ROM.
     pub only_for: Option<String>,
     pub state: State,
+    /// For an incomplete BIOS zip: the members it lacks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<String>,
 }
 
 /// One emulator or core for a system.
@@ -99,6 +113,51 @@ pub struct FirmwareReport {
     pub generated_at: String,
     pub bios_dir: PathBuf,
     pub systems: Vec<SystemFirmware>,
+    /// The library's badges: systems whose emulator Play would use lacks a
+    /// required file.
+    pub needs: Vec<BiosNeed>,
+}
+
+/// A system that can't start its games for want of a BIOS file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BiosNeed {
+    pub system: &'static str,
+    /// The emulator Play would start (as the app names it).
+    pub emulator: String,
+}
+
+/// The systems whose first installed core or emulator (the one Play tries
+/// first: a core when RetroArch has one, else a standalone emulator, as
+/// `launch` orders them) is in RetroBIOS's list and not ready.
+fn needs(systems: &[SystemFirmware]) -> Vec<BiosNeed> {
+    systems
+        .iter()
+        .filter_map(|s| {
+            let e = s.emulators.iter().find(|e| e.installed)?;
+            (e.profiled && !e.ready).then(|| BiosNeed {
+                system: s.key,
+                emulator: e.label.clone(),
+            })
+        })
+        .collect()
+}
+
+impl FirmwareReport {
+    /// Only `system` (as the systems table names it) and only the emulator
+    /// or core `emulator` (`retroarch:<core>`, or as `emulator list` names
+    /// it), where given; systems left with nothing go.
+    pub fn only(mut self, system: Option<&str>, emulator: Option<&str>) -> FirmwareReport {
+        self.systems
+            .retain(|s| system.is_none_or(|k| s.key.eq_ignore_ascii_case(k)));
+        if let Some(e) = emulator {
+            for s in &mut self.systems {
+                s.emulators.retain(|x| x.name.eq_ignore_ascii_case(e));
+            }
+            self.systems.retain(|s| !s.emulators.is_empty());
+        }
+        self.needs = needs(&self.systems);
+        self
+    }
 }
 
 /// Fetch RetroBIOS's emulator list into `dir`. Returns how many profiles
@@ -242,10 +301,16 @@ fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
     out
 }
 
-/// Check the RomForge folder's `Bios/` against the list in `dir`.
-pub fn report(dir: &Path, home: &Home, env: &Env) -> Result<FirmwareReport, Error> {
+/// Check the RomForge folder's `Bios/` against the list in `dir`; `conn`
+/// says which name-only files you placed yourself.
+pub fn report(
+    conn: &rusqlite::Connection,
+    dir: &Path,
+    home: &Home,
+    env: &Env,
+) -> Result<FirmwareReport, Error> {
     let (profiles, generated_at) = load(dir)?;
-    let mut check = Checker::default();
+    let mut check = Checker::with_picked(journal::picked(conn)?);
     let mut out: Vec<SystemFirmware> = Vec::new();
     for slot in slots(&profiles, home, env) {
         let e = check.emulator(&slot);
@@ -261,79 +326,9 @@ pub fn report(dir: &Path, home: &Home, env: &Env) -> Result<FirmwareReport, Erro
     Ok(FirmwareReport {
         generated_at,
         bios_dir: home.bios(),
+        needs: needs(&out),
         systems: out,
     })
-}
-
-/// Hashes of the files looked at, so one file needed by many cores is read
-/// once.
-#[derive(Default)]
-struct Checker {
-    seen: HashMap<PathBuf, Option<crate::hash::Digest>>,
-}
-
-impl Checker {
-    fn emulator(&mut self, slot: &Slot) -> EmulatorFirmware {
-        let reqs: Vec<&FileReq> = slot.files().collect();
-        let files: Vec<FileState> = reqs
-            .iter()
-            .map(|f| FileState {
-                only_for: slot.only_for(f),
-                ..self.file(f, slot.place(f))
-            })
-            .collect();
-        let (ready, regions) = readiness(&reqs, &files);
-        EmulatorFirmware {
-            name: slot.name.clone(),
-            label: slot.label(),
-            installed: slot.installed,
-            profiled: slot.profile.is_some(),
-            files,
-            ready,
-            regions,
-        }
-    }
-
-    fn file(&mut self, f: &FileReq, place: PathBuf) -> FileState {
-        let digest = self
-            .seen
-            .entry(place.clone())
-            .or_insert_with(|| digest(&place))
-            .clone();
-        let state = match digest {
-            None => State::Missing,
-            Some(d) => {
-                let size_ok = f.size.is_none_or(|s| s == d.size);
-                let hashed = !f.sha1.is_empty() || !f.md5.is_empty();
-                if size_ok && (f.sha1.contains(&d.sha1) || f.md5.contains(&d.md5)) {
-                    State::Accepted
-                } else if size_ok && !hashed {
-                    State::Present
-                } else {
-                    State::WrongHash
-                }
-            }
-        };
-        FileState {
-            name: f.name.clone(),
-            place,
-            required: f.required,
-            hle: f.hle,
-            archive: f.archive,
-            regions: f.regions.clone(),
-            only_for: None,
-            state,
-        }
-    }
-}
-
-/// A plain file's size and hashes (a folder or nothing: `None`).
-fn digest(path: &Path) -> Option<crate::hash::Digest> {
-    let file = std::fs::File::open(path).ok()?;
-    let meta = file.metadata().ok().filter(|m| m.is_file())?;
-    crate::hash::hash_stream(std::io::BufReader::new(file), meta.len())
-        .ok()
-        .map(|h| h.raw)
 }
 
 #[cfg(test)]

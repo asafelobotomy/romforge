@@ -6,6 +6,9 @@ use clap::Subcommand;
 
 use crate::args::OrganizeArgs;
 
+mod firmware;
+pub use firmware::FirmwareCommand;
+
 #[derive(Subcommand)]
 pub enum DatCommand {
     /// Import Logiqx XML DATs (No-Intro, Redump, ...), or zips of them
@@ -215,49 +218,6 @@ pub enum ManualCommand {
 }
 
 #[derive(Subcommand)]
-pub enum FirmwareCommand {
-    /// Fetch RetroBIOS's list of the files each emulator loads (the list
-    /// only, never BIOS files)
-    Download,
-    /// Check the RomForge folder's Bios/ against it
-    Check {
-        /// Only this system (as `dat systems` names it)
-        #[arg(long)]
-        system: Option<String>,
-        /// Show every file, not only required ones and ones you have
-        #[arg(long)]
-        all: bool,
-    },
-    /// Put BIOS files from folders, files, zips or 7z where each emulator
-    /// finds them, matched by contents (shows the plan unless --apply)
-    Import {
-        #[arg(required = true)]
-        paths: Vec<std::path::PathBuf>,
-        /// Do it (copies; never replaces a file; `firmware undo` takes it back)
-        #[arg(long)]
-        apply: bool,
-        /// Also place this file whose name fits but whose hash isn't known
-        /// (as the plan shows it); may be given several times
-        #[arg(long)]
-        also: Vec<String>,
-    },
-    /// Take away what the last import wrote
-    Undo {
-        /// Confirm removal
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Install the PS3 firmware from Bios/rpcs3/PS3UPDAT.PUP into RPCS3
-    ///
-    /// Shows what it would do unless --apply.
-    InstallPs3 {
-        /// Run RPCS3's firmware installer now
-        #[arg(long)]
-        apply: bool,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum EmulatorCommand {
     /// Emulators romforge knows, and which are installed
     List {
@@ -324,6 +284,10 @@ pub enum EmulatorCommand {
         /// Run `flatpak install` now
         #[arg(long)]
         apply: bool,
+        /// Download its official AppImage into RomForge/Emulators/ instead
+        /// (RPCS3's; it is preferred to the Flatpak)
+        #[arg(long)]
+        appimage: bool,
     },
     /// Copy an emulator's existing setup (memory cards, saves, controller
     /// mappings, settings) from its usual folders into romforge's
@@ -335,6 +299,19 @@ pub enum EmulatorCommand {
         #[arg(long)]
         apply: bool,
         /// Take back the last import instead
+        #[arg(long)]
+        undo: bool,
+    },
+    /// Move an emulator's game data into RomForge (RPCS3's devices, Cemu's
+    /// MLC, xemu's disk and EEPROM, the 3DS emulators' NAND and SD card):
+    /// each file copied and checked, then the originals to the trash
+    /// (shows the plan unless --apply)
+    MoveData {
+        emulator: String,
+        /// Move it now
+        #[arg(long)]
+        apply: bool,
+        /// Take back the last move instead (until the trash is emptied)
         #[arg(long)]
         undo: bool,
     },

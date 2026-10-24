@@ -202,6 +202,11 @@ const PATH_COLUMNS: &[(&str, &str)] = &[
     ("firmware_outputs", "path"),
     ("setup_import_files", "path"),
     ("setup_import_files", "backup"),
+    ("firmware_trash", "original"),
+    ("firmware_trash", "trashed"),
+    ("data_move_items", "original"),
+    ("data_move_items", "copy"),
+    ("data_move_items", "trashed"),
     // An emulator set up by hand may be a program in the folder.
     ("emulators", "program"),
     ("settings", "value"),

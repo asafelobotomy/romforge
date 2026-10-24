@@ -107,6 +107,8 @@
   let pickerOpen = $state(false);
   let dats = $state(null);
   let bios = $state(null);
+  // Systems whose emulator lacks a required BIOS file (the sidebar's badge).
+  let biosNeeds = $state([]);
   let settingsOpen = $state(false);
   let cleanOpen = $state(false);
   let searchOpen = $state(false);
@@ -135,6 +137,8 @@
   // The library's generation the page has: the list comes again only when
   // it changed.
   let libGeneration = null;
+  // Asked once (it reads every BIOS file); the BIOS page keeps it current.
+  let biosAsked = false;
   async function load() {
     const got = await call("library_view", { known: libGeneration }, true);
     if (got?.view) {
@@ -142,6 +146,10 @@
       libGeneration = got.generation;
     }
     canRefresh = (await call("can_refresh", undefined, true)) ?? false;
+    if (!biosAsked) {
+      biosAsked = true;
+      call("firmware_needs", undefined, true).then((n) => (biosNeeds = n ?? []));
+    }
     loadIcons();
     if (selected && !lib.rows.some((r) => r.id === selected)) selected = null;
     const ids = new Set(lib.rows.map((r) => r.id));
@@ -364,7 +372,7 @@
   <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error stayFullscreen={fs.on} ended={() => selected && open(selected, true)} />
 
   <div class="body">
-    <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} />
+    <Sidebar {lib} {games} {view} bind:platform {icons} {iconStyle} {show} needs={biosNeeds} />
 
     {#if view === "library"}
       <LibraryPane {lib} {rows} {games} {platform} {selected} {picked} chosen={chosen.length} {isOpen} {toggle} open={pick} {regionFlags} {icons} {iconStyle} bind:filter bind:listMode bind:listSort bind:table />
@@ -372,7 +380,7 @@
       <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} {regionFlags} open={pick} {forget} {applyPatchRow} {patcher} {artPicker} bind:note bind:error />
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
-    <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} />
+    <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} bind:needs={biosNeeds} />
     <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>
 

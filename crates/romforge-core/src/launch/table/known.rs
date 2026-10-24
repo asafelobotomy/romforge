@@ -43,6 +43,12 @@ pub struct KnownEmulator {
     /// The RetroBIOS profile for its files when it isn't the one of its
     /// own name (`firmware.rs`).
     pub firmware: Option<&'static str>,
+    /// Its official AppImage: (GitHub repository of its releases, the end of
+    /// the asset's name). romforge can download it (`obtain/appimage.rs`)
+    /// and prefers it to the Flatpak when it is there.
+    pub official_appimage: Option<(&'static str, &'static str)>,
+    /// Shown on its tab when it runs as a Flatpak.
+    pub flatpak_note: Option<&'static str>,
 }
 
 pub(super) const fn emu(
@@ -69,6 +75,8 @@ pub(super) const fn emu(
         cannot_open: &[],
         discontinued: None,
         firmware: None,
+        official_appimage: None,
+        flatpak_note: None,
     }
 }
 
@@ -103,6 +111,14 @@ impl KnownEmulator {
     }
     pub(super) const fn discontinued(mut self, last: &'static str) -> Self {
         self.discontinued = Some(last);
+        self
+    }
+    pub(super) const fn official_appimage(mut self, repo: &'static str, suffix: &'static str) -> Self {
+        self.official_appimage = Some((repo, suffix));
+        self
+    }
+    pub(super) const fn flatpak_note(mut self, note: &'static str) -> Self {
+        self.flatpak_note = Some(note);
         self
     }
     pub(super) const fn firmware(mut self, profile: &'static str) -> Self {

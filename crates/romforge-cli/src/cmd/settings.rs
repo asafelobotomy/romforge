@@ -15,6 +15,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             library,
             keep_originals,
             in_place,
+            bios_leave_in_place,
             staging,
             regions,
             threads,
@@ -33,6 +34,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || library.is_some()
                 || keep_originals.is_some()
                 || in_place.is_some()
+                || bios_leave_in_place.is_some()
                 || staging.is_some()
                 || regions.is_some()
                 || threads.is_some()
@@ -58,6 +60,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             }
             if let Some(p) = library {
                 s.library_dir = set(p);
+            }
+            if let Some(b) = bios_leave_in_place {
+                s.bios_leave_in_place = b;
             }
             if let Some(k) = keep_originals {
                 s.keep_originals = k;
@@ -87,6 +92,14 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             println!("source          {}", shown(&s.source_dir));
             println!("library         {}", shown(&s.library_dir));
             println!("keep originals  {}", if s.keep_originals { "yes" } else { "no" });
+            println!(
+                "BIOS left where they are  {}",
+                if s.bios_leave_in_place {
+                    "yes"
+                } else {
+                    "no (moved to the trash)"
+                }
+            );
             println!(
                 "start fullscr.  {}",
                 if s.start_fullscreen { "yes" } else { "no" }

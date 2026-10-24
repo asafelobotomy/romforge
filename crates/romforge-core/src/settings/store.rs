@@ -12,6 +12,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         keep_originals: get("keep_originals")?.as_deref() == Some("1"),
         in_place: get("in_place")?.as_deref() == Some("1"),
         staging_dir: get("staging_dir")?.map(PathBuf::from),
+        bios_leave_in_place: get("bios_leave_in_place")?.as_deref() != Some("0"),
         keys: Keys {
             screenscraper_dev_id: get("screenscraper_dev_id")?,
             screenscraper_dev_password: get("screenscraper_dev_password")?,
@@ -95,6 +96,10 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 Some(if s.keep_originals { "1" } else { "0" }.to_owned()),
             ),
             ("in_place", Some(if s.in_place { "1" } else { "0" }.to_owned())),
+            (
+                "bios_leave_in_place",
+                Some(if s.bios_leave_in_place { "1" } else { "0" }.to_owned()),
+            ),
             (
                 "show_empty_media",
                 Some(if s.show_empty_media { "1" } else { "0" }.to_owned()),

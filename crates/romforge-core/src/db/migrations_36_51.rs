@@ -92,4 +92,31 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         value  TEXT NOT NULL,
         PRIMARY KEY (system, title, key)
     );",
+    // 43: milestone 20's gaps. A name-only BIOS file you ticked is
+    // journaled as yours (`picked`), so the page says "placed by you"; the
+    // originals a BIOS import moved (Settings: not leaving them where they
+    // are) are kept in the trash for undo; and moving an emulator's game
+    // data into RomForge is journaled, its originals in the trash.
+    "ALTER TABLE firmware_outputs ADD COLUMN picked INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE firmware_batches ADD COLUMN emptied_at TEXT;
+    CREATE TABLE firmware_trash (
+        batch_id INTEGER NOT NULL REFERENCES firmware_batches(batch_id),
+        original TEXT NOT NULL,
+        trashed  TEXT NOT NULL,
+        PRIMARY KEY (batch_id, trashed)
+    );
+    CREATE TABLE data_moves (
+        move_id    INTEGER PRIMARY KEY,
+        emulator   TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        undone_at  TEXT,
+        emptied_at TEXT
+    );
+    CREATE TABLE data_move_items (
+        move_id  INTEGER NOT NULL REFERENCES data_moves(move_id),
+        original TEXT NOT NULL,
+        copy     TEXT NOT NULL,
+        trashed  TEXT,
+        PRIMARY KEY (move_id, original)
+    );",
 ];

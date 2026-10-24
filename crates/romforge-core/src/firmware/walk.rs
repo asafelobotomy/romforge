@@ -31,6 +31,15 @@ impl SourceId {
             .join(" › ")
     }
 
+    /// The archive it is a member of, if any.
+    pub fn parent(&self) -> Option<SourceId> {
+        let (_, up) = self.members.split_last()?;
+        Some(SourceId {
+            file: self.file.clone(),
+            members: up.to_vec(),
+        })
+    }
+
     /// The file's own name, without folders.
     pub fn name(&self) -> String {
         match self.members.last() {

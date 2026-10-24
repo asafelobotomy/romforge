@@ -1930,9 +1930,18 @@ In this order:
    - **Page:** BIOS in the sidebar under DATs: platforms with "ready n /
      m", each emulator's files with state, need, region and where it goes.
      CLI `firmware check [--system X] [--all]`.
-   - **Not yet:** the platform badge in the library sidebar; `--core`;
-     archive members (a BIOS zip is checked as a file); checking files
-     outside `Bios/`.
+   - *(Built 2026-10-24.)* The platform badge (`FirmwareReport::needs`:
+     the emulator Play would use is profiled and not ready), `--core`
+     (`FirmwareReport::only`), BIOS zips checked by their members
+     (`firmware/members.rs`: RetroBIOS's `contents` by size + SHA1/MD5;
+     `State::Incomplete` with what is missing), and files outside `Bios/`:
+     **Find BIOS on this computer** (`firmware/find.rs`, the usual places
+     only) imports them like a drop. Owner's direction: romforge owns every
+     BIOS file in `Bios/`; Settings **Leave BIOS files where they are**
+     (on by default) copies, off moves each original to the trash
+     (`firmware_trash`, undo, Empty trash). Links into data folders are
+     symlinks to `Bios/` (a hard link, then a copy, where one can't be
+     made).
 3. *Import BIOS files by dropping them on the page* (or "Add BIOS…", or
    `firmware import <path>`). Dropping a folder or an archive starts the
    process; Tauri's webview drag-drop event gives the paths, and the app
@@ -1984,9 +1993,10 @@ In this order:
      paths passed to the core), plus Add folder… / Add files…; it shows the
      plan and imports on "Import (n places)". CLI: `firmware import PATH…
      [--apply] [--also NAME]`, `firmware undo --yes`.
-   - **Not yet:** a needed BIOS zip dropped whole (e.g. `neogeo.zip`) is
-     opened, not placed as a zip; "placed by you" isn't shown on the page
-     afterwards (a name-only file then reads as present).
+   - *(Built 2026-10-24.)* A dropped zip holding every member of a BIOS
+     zip is accepted and placed whole, whatever its name; a ticked
+     name-only file is journaled (`firmware_outputs.picked`) and shows
+     *placed by you*.
 4. *Point the emulators at it.* Each emulator's BIOS path is set in
    romforge's own copy of its config (milestone 18, 1.3): RetroArch's
    `system_directory`, DuckStation's BIOS search folder, PCSX2's BIOS
@@ -2027,9 +2037,24 @@ In this order:
    RPCS3" on the BIOS page (`firmware install-ps3 --apply`) runs RPCS3's own
    `--installfw … --headless` with romforge's config and checks the
    firmware landed (RPCS3 exits 0 even when it fails). Writers for TOML,
-   flat YAML and Cemu's XML joined `owned/formats.rs`. Not yet: RPCS3's
-   Flatpak still asks about being an unofficial build (no setting); their
-   game data isn't moved into RomForge (a later "move it in" step).
+   flat YAML and Cemu's XML joined `owned/formats.rs`. RPCS3's Flatpak
+   asks about being an unofficial build on every start (`gui_application.cpp`,
+   whenever `FLATPAK_ID` is set; no setting). *(Owner's choice 2026-10-25.)*
+   romforge prefers RPCS3's official AppImage (`official_appimage` in the
+   launch table, found before the Flatpak) and downloads it on request
+   from `RPCS3/rpcs3-binaries-linux` (`obtain/appimage.rs`, the release's
+   SHA-256 checked); RPCS3's tab says why. Nothing is hidden from RPCS3.
+   *(Built 2026-10-24: "move it in".)* `launch/owned/move_in.rs`: RPCS3's
+   devices, Cemu's MLC, xemu's disk and EEPROM, the 3DS emulators' NAND
+   and SD card (where `launch/owned/theirs.rs` finds them, the one place
+   the config code reads too) moved into RomForge on request: a plan with
+   sizes and free space (`rustix`), refused over files already there;
+   every file copied and checked before any original moves to the trash
+   (`data_moves`, `data_move_items`); a `.romforge-moved-in` marker makes
+   the config use RomForge's copy; undo until the trash is emptied.
+   Moving, undoing and "Import my existing setup" are refused while the
+   emulator runs (`launch/running.rs`: `/proc`, by program, AppImage or
+   Flatpak cgroup; started by romforge or not).
    *(Built 2026-10-19: "Import my existing setup".)* An emulator started
    from romforge's folder no longer sees its usual one, so Emulator
    Settings (each emulator's tab) and `emulator import-setup NAME

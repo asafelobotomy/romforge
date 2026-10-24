@@ -27,6 +27,27 @@ pub async fn import_emulator_setup(
     with(&db, move |lib| lib.import_emulator_setup(&emulator)).await
 }
 
+/// What moving an emulator's game data into RomForge would do.
+#[tauri::command]
+pub async fn move_data_plan(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<romforge_core::launch::move_in::MovePlan> {
+    read(&db, move |lib| lib.move_data_plan(&emulator)).await
+}
+
+/// Move it in (originals to the trash).
+#[tauri::command]
+pub async fn move_data(db: tauri::State<'_, Db>, emulator: String) -> Res<i64> {
+    with(&db, move |lib| lib.move_data(&emulator)).await
+}
+
+/// Take the last move back.
+#[tauri::command]
+pub async fn undo_move_data(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
+    with(&db, move |lib| lib.undo_move_data(&emulator)).await
+}
+
 #[tauri::command]
 pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
     with(&db, move |lib| lib.undo_emulator_setup(&emulator)).await
@@ -64,6 +85,15 @@ pub async fn download_core(
 #[tauri::command]
 pub async fn remove_core(db: tauri::State<'_, Db>, core: String) -> Res<()> {
     read_net(&db, move |lib| lib.remove_core(&core)).await
+}
+
+/// Download an emulator's official AppImage into RomForge/Emulators/.
+#[tauri::command]
+pub async fn install_appimage(db: tauri::State<'_, Db>, emulator: String) -> Res<String> {
+    read_net(&db, move |lib| {
+        lib.install_appimage(&emulator).map(|p| p.display().to_string())
+    })
+    .await
 }
 
 #[tauri::command]

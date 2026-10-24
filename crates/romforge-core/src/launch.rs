@@ -25,14 +25,16 @@ pub use emulators::*;
 mod plan;
 pub use plan::*;
 mod owned;
-pub use owned::{ConfigWrite, Prepare, existing, prepare};
+pub use owned::{ConfigWrite, Prepare, existing, move_in, prepare};
 mod plays;
 pub use plays::*;
 mod session;
 pub use session::*;
 mod start;
 use start::*;
+mod running;
 mod table;
+pub use running::running;
 pub use table::*;
 mod tools;
 pub use tools::*;
@@ -85,8 +87,9 @@ pub struct EmulatorStatus {
 /// tests point it elsewhere.
 ///
 /// An emulator is found, in this order: at the path set for it in
-/// Settings, on `PATH`, as a Flatpak, then in `emulator_dirs` as one of
-/// its programs or an AppImage (`<name>*.AppImage`, any case).
+/// Settings, on `PATH`, its official AppImage in `emulator_dirs` where the
+/// table names one (RPCS3's), as a Flatpak, then in `emulator_dirs` as one
+/// of its programs or an AppImage (`<name>*.AppImage`, any case).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Env {
     pub path: Vec<PathBuf>,
@@ -196,8 +199,11 @@ impl Env {
             .user_paths
             .get(e.settings_name())
             .filter(|p| is_executable(p));
+        // Its official AppImage, where it has one, before its Flatpak.
+        let official = || e.official_appimage.and_then(|_| self.in_emulator_dirs(e));
         user.cloned()
             .or_else(|| e.programs.iter().find_map(|p| self.which(p)))
+            .or_else(official)
             .map(Runner::Program)
             .or_else(|| e.flatpak.and_then(|id| self.flatpak(id)).map(Runner::Flatpak))
             .or_else(|| self.in_emulator_dirs(e).map(Runner::Program))
@@ -359,6 +365,11 @@ impl Env {
     /// How `e` would be started, if it is installed.
     pub fn find(&self, e: &KnownEmulator) -> Option<String> {
         self.known(e).map(|r| describe(&r))
+    }
+
+    /// Whether `e` is found only as a Flatpak (what romforge would start).
+    pub fn is_flatpak(&self, e: &KnownEmulator) -> bool {
+        matches!(self.known(e), Some(Runner::Flatpak(_)))
     }
 
     /// Where RetroArch's core `name` is found.
