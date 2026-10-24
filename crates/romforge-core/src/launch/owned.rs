@@ -20,6 +20,7 @@ use crate::{Error, systems::System};
 pub mod existing;
 mod formats;
 pub use formats::Format;
+mod azahar;
 mod gamedata;
 mod standalone;
 
@@ -51,6 +52,13 @@ pub struct Prepare {
 /// `{config}` of the table's `config` flags) and what to write first,
 /// Emulator Settings' keys (`options`) included. `None` for an emulator
 /// romforge doesn't write a config for yet.
+/// Cores whose user folder, system files included, is `<name>/` in
+/// RetroArch's save folder (their "Save Data Location" default, LibRetro
+/// Default; read in Azahar 2126.2's and libretro/citra's
+/// `citra_libretro`): RetroBIOS's files for them (`Bios/RetroArch/<name>/`)
+/// are linked in there.
+const USER_DIR_IN_SAVES: &[(&str, &str)] = &[("azahar", "Azahar"), ("citra", "Citra")];
+
 pub(super) fn owned(
     e: &KnownEmulator,
     home: &Home,
@@ -95,7 +103,13 @@ pub(super) fn owned(
             let (hot, mut remove, control) = super::controls::retroarch(options.hotkeys);
             keys.extend(hot);
             remove.extend(options.unset.iter().cloned());
+            let links = USER_DIR_IN_SAVES
+                .iter()
+                .filter(|(core, _)| system.cores.contains(core))
+                .map(|(_, d)| (bios.join(d), saves.join(d)))
+                .collect();
             let prepare = Prepare {
+                links,
                 dirs: vec![bios, saves, states, shots],
                 writes: vec![
                     ConfigWrite {
@@ -120,6 +134,7 @@ pub(super) fn owned(
             let bios = home.bios().join(name);
             standalone::standalone(name, &dir, &bios)
                 .or_else(|| gamedata::gamedata(name, &dir, &bios, user))
+                .or_else(|| azahar::citra_line(name, &dir, &bios, &home.saves().join(system.key), user))
                 .map(|mut p| {
                     super::controls::bind(name, options.hotkeys, &mut p.writes);
                     (dir, p)

@@ -49,6 +49,7 @@ pub mod user_games;
 mod vcdiff;
 pub mod view;
 pub mod wikidata;
+pub mod z3ds;
 
 use std::path::PathBuf;
 

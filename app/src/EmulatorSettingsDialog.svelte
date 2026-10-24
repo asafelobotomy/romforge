@@ -163,6 +163,7 @@
                   {n.label}
                   {#if n.flathub}
                     <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : "Install from Flathub"}</button>
+                  {:else if n.discontinued}<span class="hint">· discontinued (last release {n.discontinued}): romforge uses your own install and never downloads it</span>
                   {:else}<span class="hint">· not on Flathub: install it yourself</span>{/if}
                 </li>
               {/each}

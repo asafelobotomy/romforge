@@ -70,6 +70,11 @@ fn member_opts(opts: &ScanOptions, whole: bool) -> ScanOptions {
 }
 
 fn hash_file(path: &Path) -> std::io::Result<Hashes> {
+    // A Z3DS file (Azahar's compressed 3DS games) is the ROM it holds: its
+    // hashes, size and header ID are that ROM's (milestone 24).
+    if let Some((header, inner)) = crate::z3ds::open(BufReader::new(File::open(path)?))? {
+        return hash_stream(inner, header.uncompressed_size);
+    }
     let file = File::open(path)?;
     let size = file.metadata()?.len();
     let mut hashes = hash_stream(BufReader::new(file), size)?;
@@ -156,4 +161,29 @@ fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Resu
         Ok(true)
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_z3ds_file_hashes_as_the_rom_it_holds() {
+        let rom: Vec<u8> = (0..70_000u32).map(|i| (i * 7 % 256) as u8).collect();
+        let t = tempfile::tempdir().unwrap();
+        let (plain, packed) = (t.path().join("g.3ds"), t.path().join("g.zcci"));
+        std::fs::write(&plain, &rom).unwrap();
+        std::fs::write(&packed, crate::z3ds::tests::z3ds_of(&rom, *b"NCSD", 16)).unwrap();
+        let (a, b) = (
+            super::hash_file(&plain).unwrap(),
+            super::hash_file(&packed).unwrap(),
+        );
+        assert_eq!(a.raw, b.raw, "same size and hashes");
+        assert!(std::fs::metadata(&packed).unwrap().len() != rom.len() as u64);
+        // Its header ID is the held file's: a CXI's product code.
+        let mut cxi = vec![0u8; 0x400];
+        cxi[0x100..0x104].copy_from_slice(b"NCCH");
+        cxi[0x150..0x15A].copy_from_slice(b"CTR-P-AREE");
+        std::fs::write(&packed, crate::z3ds::tests::z3ds_of(&cxi, *b"NCCH", 0)).unwrap();
+        let id = super::hash_file(&packed).unwrap().id.unwrap();
+        assert_eq!((id.kind, id.serial.as_deref()), ("3ds", Some("CTR-P-AREE")));
+    }
 }

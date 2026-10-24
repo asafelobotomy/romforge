@@ -14,6 +14,7 @@ use carts::*;
 mod discs;
 use discs::*;
 mod containers;
+mod ctr;
 pub use containers::*;
 
 /// Bytes of the data (in the DAT's form: header stripped, byte order fixed)
@@ -69,12 +70,14 @@ impl GameId {
 /// Every `kind` a reader gives.
 const KINDS: &[&str] = &[
     "snes", "md", "gba", "gb", "n64", "nds", "ps1", "ps2", "psp", "saturn", "segacd", "dc", "gc", "wii",
+    "3ds",
 ];
 
 /// Cartridges before discs; the first reader that answers wins.
 type Reader = fn(&[u8]) -> Option<GameId>;
 
-const READERS: &[Reader] = &[gba, nds, gb, n64, md, snes, disc, gamecube_wii];
+/// The 3DS's first: its headers are told by magic numbers, not guesses.
+const READERS: &[Reader] = &[ctr::ctr, gba, nds, gb, n64, md, snes, disc, gamecube_wii];
 
 /// What the first bytes of a file say it is, if any reader recognises them.
 pub fn read(prefix: &[u8]) -> Option<GameId> {

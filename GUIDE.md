@@ -92,6 +92,9 @@ again). `romforge-cli games` lists games the way the app does.
   (CRC32, MD5, SHA1). Archives are never unpacked to disk.
 - A `.chd` is read as its tracks: each CD track is rebuilt as the Redump
   `.bin` it came from and hashed as a member; a DVD CHD as one `.iso`.
+- A Z3DS file (Azahar's compressed 3DS games: `.zcci`, `.zcia`, `.zcxi`,
+  `.z3dsx`) is hashed as the file it holds, its zstd stream read straight
+  through, so it matches the DAT like a zip member.
 - If a copier header or another byte order is found, the data is hashed a
   second time in the DAT's form. The one table is in
   `crates/romforge-core/src/headers.rs`: iNES/NES 2.0 (16 bytes,
@@ -182,10 +185,10 @@ what the ones before it left; `enrich::fields` keeps the order):
    motoschifo, by set name: snap, title, marquee, flyer and cabinet, genre,
    players, year, manufacturer, series, and the history from
    arcade-history.com (shown with its copyright line); it takes one
-   request at a time, which romforge keeps to. For GameCube, Wii and DS
-   games, [GameTDB](https://www.gametdb.com), by the ID in the game's
+   request at a time, which romforge keeps to. For GameCube, Wii, DS and
+   3DS games, [GameTDB](https://www.gametdb.com), by the ID in the game's
    header: covers larger than libretro's, the whole cover, the 3D box and
-   the disc or cartridge label. Both are free, without a key, and come
+   the disc or cartridge label (3DS: no 3D box). Both are free, without a key, and come
    before libretro's thumbnails.
 3. With keys, ScreenScraper (by the ROM's hashes), then SteamGridDB and
    IGDB (by title).
@@ -214,7 +217,7 @@ romforge-cli emulator add bsnes --system SNES --program bsnes --args "--fullscre
 
 RetroArch (on `PATH` or the Flatpak) with the system's first installed core,
 else a known standalone emulator (DuckStation, PCSX2, Dolphin, PPSSPP,
-Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu, DOSBox Staging,
+Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu, Azahar, Lime3DS, Citra, DOSBox Staging,
 DOSBox-X, ScummVM, MAME; `PATH` or Flatpak). A Flatpak emulator is given
 the game's folder for that run (`--filesystem`), since it may see only
 your home folder, and the RomForge folder too when romforge sets the
@@ -225,6 +228,18 @@ add gets `{bios}` as `Bios/<its name>/`.
 Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
+A 3DS CIA (`.cia`, `.zcia`) is an installer: the 3DS emulators install it
+into their NAND (File → Install CIA) rather than starting it, so Play
+refuses one and says so; cartridge dumps (`.3ds`, `.cci`, `.cxi`,
+`.3dsx`) start. Azahar (current) plays decrypted games only, and is the
+only one that reads Z3DS (`.zcci`…). Encrypted dumps, the ones No-Intro's
+DATs match, play in its discontinued predecessors, Lime3DS 2119.1 and
+Citra's last build, and in RetroArch's Citra core (libretro's, still
+built), with `aes_keys.txt` (and `boot9.bin`, `seeddb.bin` for some
+games) on the BIOS page; romforge never downloads those two programs, it
+uses yours (PATH, Flatpak or AppImage). A decrypted dump doesn't match
+No-Intro by hash; Search names it by the product code in its header
+(`CTR-P-AREE`), as "identified by you", never verified.
 
 ## Emulator settings, cores and installs
 
@@ -343,7 +358,15 @@ Each emulator is pointed at its folder when it starts: RetroArch's system
 folder; DuckStation, PCSX2, mGBA, Mednafen, melonDS and xemu through
 romforge's config of theirs; Flycast by `FLYCAST_BIOS_PATH`; Dolphin's and
 Cemu's files (`keys.txt`, `otp.bin`, `seeprom.bin`) linked into their data
-folder; MAME's machines by `-rompath` (FM-7 and FM Towns need their
+folder; Azahar's, Lime3DS's and Citra's `sysdata/` files (`keys.txt` or
+`aes_keys.txt`, `boot9.bin`, `shared_font.bin`, `seeddb.bin`, `otp.bin`)
+linked into their data folder, and their NAND and SD card set to your own
+data of that emulator or an older one (Azahar reads Lime3DS's and Citra's,
+Lime3DS Citra's; XDG or Flatpak) so installed titles and saves stay where
+they are, else to `Saves/Nintendo 3DS/` (with `Bios/<emulator>/nand/…`
+linked in, never into yours); the Azahar and Citra cores' files
+(`Bios/RetroArch/Azahar/`, `Citra/`) linked into `Saves/Nintendo 3DS/`,
+where those cores keep their system folder; MAME's machines by `-rompath` (FM-7 and FM Towns need their
 machine's set, `fm7.zip`, `fmtowns.zip`, in `Bios/mame/`); ScummVM by
 `--extrapath`; DOSBox Staging's MT-32, Sound Canvas and SoundFont folders,
 and DOSBox-X's MT-32 folder, by their settings on the command line. An
@@ -1082,8 +1105,8 @@ platform logos come from Wikimedia Commons through Wikidata (each under
 its own Commons terms; many are trademarks); all downloaded by the app,
 never shipped. Arcade games' pictures, videos, facts and manuals:
 scraping using the [Arcade Database](https://adb.arcadeitalia.net) by
-motoschifo, with its history text © arcade-history.com; GameCube, Wii
-and DS covers and labels from [GameTDB](https://www.gametdb.com); both
+motoschifo, with its history text © arcade-history.com; GameCube, Wii,
+DS and 3DS covers and labels from [GameTDB](https://www.gametdb.com); both
 fetched per game, never shipped. romforge's own platform icons, in flatui's style for
 platforms flatui lacks, are MIT like the rest, except ScummVM's: PC,
 Tandy VIS, Sega Lindbergh and ScummVM drawn by hand (their SVG sources

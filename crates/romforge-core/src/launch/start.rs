@@ -36,6 +36,17 @@ pub(super) fn start(
         (None, Some(s)) => (s, false),
         (None, None) => (first.0.clone(), false),
     };
+    // Azahar and its predecessors (standalone and core) have no loader for
+    // a CIA: they install one into their NAND and start the installed title.
+    if system.emulators.contains(&"azahar")
+        && rom
+            .extension()
+            .is_some_and(|e| ["cia", "zcia"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str()))
+    {
+        return Err(Error::Launch(format!(
+            "{game}: 3DS emulators install CIA files rather than starting them: install it from the emulator's File menu"
+        )));
+    }
     // One disk of a set: start the set's playlist, so disks can be swapped.
     let rom = playlist_for(&rom).unwrap_or(rom);
 
@@ -166,6 +177,11 @@ pub(super) fn start(
         }
         if archived && !e.archives {
             why_not.push(format!("{} can't open archives", e.name));
+            continue;
+        }
+        let ext = rom.extension().map(|x| x.to_string_lossy().to_ascii_lowercase());
+        if let Some(ext) = ext.filter(|x| e.cannot_open.contains(&x.as_str())) {
+            why_not.push(format!("{} can't open .{ext}", e.name));
             continue;
         }
         match env.known(e) {

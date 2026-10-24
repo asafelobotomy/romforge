@@ -220,7 +220,7 @@ fn slots<'a>(profiles: &'a [Profile], home: &Home, env: &Env) -> Vec<Slot<'a>> {
                 name: e.name.to_owned(),
                 profile: profiles
                     .iter()
-                    .find(|p| p.id == id)
+                    .find(|p| p.id == e.firmware.unwrap_or(id))
                     .or_else(|| profiles.iter().find(|p| p.cores.iter().any(|c| c == id))),
                 dir: home.bios().join(id),
                 installed: env.find(e).is_some(),

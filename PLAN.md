@@ -334,7 +334,8 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
          to the raw bytes;
        - results go in `files.id_*` (migration 16, which also re-reads
          files not matched yet) and show next to each file in Details;
-       - not yet read: 3DS, Switch, Xbox, GDI's high-density area.
+       - not yet read: Switch, Xbox, GDI's high-density area (3DS:
+         milestone 24).
 
        On the real library:
        - every cartridge and all 5 PS1 discs gave an ID;
@@ -2278,7 +2279,39 @@ Not planned: PS3 and Xbox 360 (RPCS3 and Xenia load no compressed
 image), original Xbox (xiso trims, it doesn't compress), CSO / ZSO
 writing (CHD covers PSP and PS2).
 
-## Nintendo 3DS (milestone 24; decided 2026-10-19, not built)
+## Nintendo 3DS (milestone 24; decided 2026-10-19, built 2026-10-24)
+
+**Built** (checked against Azahar 2126.2's source and 3dbrew):
+- Azahar in the launch table (`azahar`, `azahar-qt`, Flathub
+  `org.azahar_emu.Azahar`, the `azahar_libretro` core), `-f` full
+  screen; its config (`launch/owned/azahar.rs`): XDG folders in
+  romforge's config, `Bios/azahar/sysdata/` linked in, `[Data Storage]`
+  custom NAND and SD card on the user's own Azahar/Citra/Lime3DS data,
+  else `Saves/Nintendo 3DS/`; first start and update check off.
+- A CIA is refused by Play (Azahar has no CIA loader; it installs one).
+- Encrypted games (added 2026-10-24): Azahar removed them (dc1ebb63,
+  2025-02-27), so its discontinued predecessors come in under the
+  exception above: Lime3DS 2119.1 (`lime3ds`, Flatpak
+  `io.github.lime3ds.Lime3DS`, read from lime3ds-archive) and Citra's last
+  build (`citra-qt -f -g`, read from citra-mirror/citra), never installed
+  by romforge (`discontinued` in the launch table) and passed over for
+  Z3DS (`cannot_open`); RetroArch's `citra` core (libretro/citra, built
+  nightly) after `azahar`. Their config is Azahar's (`azahar.rs`, one
+  table of the three), each reading only its own and older lines' data.
+  Both cores keep their system folder in `<saves>/Azahar|Citra/`, so
+  `Bios/RetroArch/Azahar|Citra/` is linked in there. Citra's standalone
+  uses RetroBIOS's `lime3ds` profile (its `citra` one is the core's).
+- `3dsx` and the Z3DS extensions; Z3DS hashed as the file inside
+  (`z3ds.rs`, `ruzstd`, MIT); the `(Digital)` No-Intro DATs.
+- IDs (`ident/ctr.rs`): the product code from a CCI's first NCCH, a
+  CXI, a CIA's first content (when not encrypted), and through Z3DS.
+- GameTDB 3DS: cover, full cover, cartridge, by the product code's
+  game code.
+
+**Open:** "Install into Azahar" (`-i`) for a CIA; Z3DS writing
+(milestone 23); a decrypted-dump DAT if one turns up.
+
+**As decided:**
 
 3DS is a system already (`3ds`, `cia`, `cci`, `cxi`; No-Intro DATs,
 "Nintendo 3DS" and "New Nintendo 3DS") but has no emulator, no ID
@@ -2578,8 +2611,8 @@ sources (licences and keys checked against house rule 10).
 
 **Open:**
 - Telling both projects about romforge: the owner sends it.
-- 3DS, Wii U and Switch serials once they have header readers
-  (milestones 22, 24 and 25).
+- Wii U and Switch serials once they have header readers
+  (milestones 22 and 25); 3DS's came with milestone 24.
 
 **Maybe:**
 - RetroAchievements (free account and key, by hash);

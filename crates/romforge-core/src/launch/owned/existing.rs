@@ -77,6 +77,9 @@ fn settings_files(name: &str) -> &'static [&'static str] {
         "rpcs3" => &["rpcs3/vfs.yml", "rpcs3/GuiConfigs/CurrentSettings.ini"],
         "cemu" => &["Cemu/settings.xml"],
         "xemu" => &["xemu.toml"],
+        "azahar" => &["azahar-emu/qt-config.ini"],
+        "lime3ds" => &["lime3ds-emu/qt-config.ini"],
+        "citra" => &["citra-emu/qt-config.ini"],
         _ => &[],
     }
 }
@@ -125,6 +128,26 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
         ]
         .concat(),
         "xemu" => both("xemu/xemu/xemu.toml", dir.join("xemu.toml"), true),
+        // Citra's line: its config and system files, and those of the older
+        // ones it reads; its NAND and SD card are used where they are
+        // (`azahar.rs`).
+        name @ ("azahar" | "lime3ds" | "citra") => {
+            let (folder, reads) = super::azahar::folders(name).unwrap_or_default();
+            reads
+                .iter()
+                .flat_map(|d| {
+                    [
+                        both(d, dir.join(folder), false),
+                        both(
+                            &format!("{d}/sysdata"),
+                            dir.join("data").join(folder).join("sysdata"),
+                            true,
+                        ),
+                    ]
+                    .concat()
+                })
+                .collect()
+        }
         "dolphin" => [
             at(home_dir.join(".dolphin-emu"), dir.to_path_buf()),
             both("dolphin-emu", dir.join("Config"), false),
@@ -192,6 +215,9 @@ pub fn importable(name: &str) -> bool {
             | "rpcs3"
             | "cemu"
             | "xemu"
+            | "azahar"
+            | "lime3ds"
+            | "citra"
     )
 }
 

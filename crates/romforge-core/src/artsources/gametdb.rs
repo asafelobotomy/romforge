@@ -1,5 +1,5 @@
 //! GameTDB (gametdb.com): covers, full covers, 3D boxes and disc or
-//! cartridge labels for GameCube, Wii and DS games, by the game ID their
+//! cartridge labels for GameCube, Wii, DS and 3DS games, by the game ID their
 //! header gives (house rule 8: an ID, never a title). Free and keyless;
 //! its terms ask software to link to it, which Details and Credits do.
 //! It has no API: its files are at fixed addresses
@@ -12,11 +12,17 @@ use crate::Error;
 use crate::enrich::{ArtFound, ArtKind};
 
 /// romforge's header kinds and GameTDB's platform folder for them.
-pub const PLATFORMS: &[(&str, &str)] = &[("gc", "wii"), ("wii", "wii"), ("nds", "ds")];
+pub const PLATFORMS: &[(&str, &str)] = &[("gc", "wii"), ("wii", "wii"), ("nds", "ds"), ("3ds", "3ds")];
 
 /// Per platform: (kind, GameTDB's types best first, file extension).
 fn types(platform: &str) -> &'static [(ArtKind, &'static [&'static str], &'static str)] {
     match platform {
+        // Checked 2026-10-24 (AREE): no 3D box; `box` is a small front.
+        "3ds" => &[
+            (ArtKind::Boxart, &["coverHQ", "cover"], "jpg"),
+            (ArtKind::Boxfull, &["coverfullHQ", "coverfull"], "jpg"),
+            (ArtKind::Media, &["cart"], "png"),
+        ],
         "ds" => &[
             (ArtKind::Boxart, &["coverHQ", "cover"], "jpg"),
             (ArtKind::Boxfull, &["coverfullHQ", "coverfull"], "jpg"),
@@ -66,6 +72,11 @@ pub(super) fn lookup(bases: &Bases, job: &Job) -> Result<Found, Error> {
         PLATFORMS.iter().find(|(k, _)| *k == id.kind),
     ) else {
         return Ok(Found::default());
+    };
+    // A 3DS product code (`CTR-P-AREE`): GameTDB's ID is its game code.
+    let serial = match *platform {
+        "3ds" => serial.rsplit('-').next().unwrap_or(serial),
+        _ => serial,
     };
     let mut art = Vec::new();
     for (kind, names, ext) in types(platform) {
@@ -118,5 +129,19 @@ mod tests {
                 .iter()
                 .any(|a| a.kind == ArtKind::Media && a.url.ends_with("/ds/cart/US/AMCE.png"))
         );
+        let ctr = crate::ident::GameId {
+            kind: "3ds",
+            serial: Some("CTR-P-AREE".into()),
+            ..Default::default()
+        };
+        let job = Job {
+            system: crate::systems::by_key("Nintendo 3DS").unwrap(),
+            serial: Some(ctr),
+            ..job
+        };
+        let f = lookup(&Bases::default(), &job).unwrap();
+        assert_eq!(f.art[0].url, "https://art.gametdb.com/3ds/coverHQ/US/AREE.jpg");
+        assert!(f.art.iter().any(|a| a.url.ends_with("/3ds/cart/US/AREE.png")));
+        assert!(f.art.iter().all(|a| a.kind != ArtKind::Box3d));
     }
 }

@@ -30,12 +30,12 @@ use super::formats::toml_string;
 use super::{ConfigWrite, Format, Prepare};
 
 /// The folder among `candidates` that exists.
-fn first(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+pub(super) fn first(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
 /// `rel` in the user's XDG folder and in the Flatpak `id`'s.
-fn usual(user: &UserDirs, id: &str, data: bool, rel: &str) -> [PathBuf; 2] {
+pub(super) fn usual(user: &UserDirs, id: &str, data: bool, rel: &str) -> [PathBuf; 2] {
     let (base, sub) = if data {
         (&user.xdg.data, "data")
     } else {

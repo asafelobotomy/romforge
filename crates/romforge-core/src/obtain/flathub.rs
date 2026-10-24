@@ -12,6 +12,12 @@ const FLATHUB_REPO: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
 /// included) from Flathub. Returns its Flatpak id.
 pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
     let e = launch::known(name).ok_or_else(|| Error::Launch(format!("no emulator named {name:?}")))?;
+    if let Some(last) = e.discontinued {
+        return Err(Error::Launch(format!(
+            "{} is discontinued (last release: {last}): romforge doesn't install it, it uses yours",
+            e.label
+        )));
+    }
     let id = e
         .flatpak
         .ok_or_else(|| Error::Launch(format!("{} isn't on Flathub", e.label)))?;

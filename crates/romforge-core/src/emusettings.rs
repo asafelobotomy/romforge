@@ -68,6 +68,8 @@ pub struct NotInstalled {
     pub name: &'static str,
     pub label: &'static str,
     pub flathub: bool,
+    /// Its last release, when discontinued: never installed by romforge.
+    pub discontinued: Option<&'static str>,
 }
 
 const PREFIX: &str = "emu.";
@@ -231,7 +233,8 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
             not_installed.push(NotInstalled {
                 name: e.name,
                 label: e.label,
-                flathub: e.flatpak.is_some(),
+                flathub: e.flatpak.is_some() && e.discontinued.is_none(),
+                discontinued: e.discontinued,
             });
             continue;
         };

@@ -5,101 +5,9 @@
 //! install or against the emulator's source; an empty `fullscreen` or
 //! `config` means not checked yet, not "has none".
 
-/// An emulator romforge knows how to start.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KnownEmulator {
-    pub name: &'static str,
-    /// As its makers write it, for the app.
-    pub label: &'static str,
-    /// Another entry whose settings it uses (MAME's machines are MAME).
-    pub shares: Option<&'static str>,
-    /// Executable names to look for on `PATH` and in emulator folders.
-    pub programs: &'static [&'static str],
-    pub flatpak: Option<&'static str>,
-    /// How its AppImage's file name starts (any case), when it isn't
-    /// `name`: `<appimage>*.AppImage`.
-    pub appimage: Option<&'static str>,
-    /// Arguments for a game: `{rom}` the file, `{dir}` its folder, `{set}`
-    /// an arcade set's name, `{core}` a RetroArch core.
-    pub args: &'static [&'static str],
-    /// Put before `args` on every start: fullscreen, without the
-    /// emulator's own UI.
-    pub fullscreen: &'static [&'static str],
-    /// How to run it from a config folder of romforge's (`{config}`, and
-    /// `{system}` the game's system; milestone 18, 1.3). Used only for an
-    /// emulator romforge writes a config for (`launch/owned.rs`).
-    pub config: &'static [&'static str],
-    /// Where it finds BIOS files, when the RomForge folder is there:
-    /// `{bios}` is `Bios/<settings name>/` (milestone 20). For emulators
-    /// that take the folder on the command line rather than in a config
-    /// file of romforge's (`launch/owned/standalone.rs`).
-    pub bios: &'static [&'static str],
-    /// For MAME's machines: the machine it starts, whose ROM set (`<machine>.zip`)
-    /// is the BIOS it needs.
-    pub machine: Option<&'static str>,
-    /// Opens a ROM inside a zip/7z itself.
-    pub archives: bool,
-}
-
-const fn emu(
-    name: &'static str,
-    label: &'static str,
-    programs: &'static [&'static str],
-    flatpak: &'static str,
-    args: &'static [&'static str],
-    archives: bool,
-) -> KnownEmulator {
-    KnownEmulator {
-        name,
-        label,
-        shares: None,
-        programs,
-        flatpak: Some(flatpak),
-        appimage: None,
-        args,
-        fullscreen: &[],
-        config: &[],
-        bios: &[],
-        machine: None,
-        archives,
-    }
-}
-
-impl KnownEmulator {
-    const fn fullscreen(mut self, flags: &'static [&'static str]) -> Self {
-        self.fullscreen = flags;
-        self
-    }
-    const fn config(mut self, flags: &'static [&'static str]) -> Self {
-        self.config = flags;
-        self
-    }
-    const fn bios(mut self, flags: &'static [&'static str]) -> Self {
-        self.bios = flags;
-        self
-    }
-    const fn machine(mut self, name: &'static str) -> Self {
-        self.machine = Some(name);
-        self
-    }
-    const fn appimage(mut self, prefix: &'static str) -> Self {
-        self.appimage = Some(prefix);
-        self
-    }
-    const fn no_flatpak(mut self) -> Self {
-        self.flatpak = None;
-        self
-    }
-    const fn shares(mut self, name: &'static str) -> Self {
-        self.shares = Some(name);
-        self
-    }
-    /// The entry whose settings apply to it: [`KnownEmulator::shares`],
-    /// else itself.
-    pub fn settings_name(&self) -> &'static str {
-        self.shares.unwrap_or(self.name)
-    }
-}
+mod known;
+pub use known::KnownEmulator;
+use known::emu;
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
 
@@ -241,6 +149,49 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["-f"]),
+    // 2126.2 (citra_qt.cpp): the game is the last argument, `-f` full
+    // screen; a CIA is installed (`-i`), never started, so Play refuses
+    // one (`launch/start.rs`). Decrypted games only.
+    emu(
+        "azahar",
+        "Azahar",
+        &["azahar", "azahar-qt"],
+        "org.azahar_emu.Azahar",
+        &["{rom}"],
+        false,
+    )
+    .fullscreen(&["-f"]),
+    // Azahar's predecessors, discontinued; both play encrypted games with
+    // `aes_keys.txt` (Azahar removed that in dc1ebb63, 2025-02-27), and
+    // neither reads Z3DS. Lime3DS 2119.1 (lime3ds-archive, lime_qt.cpp):
+    // one `lime3ds` program, the game last, `-f`.
+    emu(
+        "lime3ds",
+        "Lime3DS",
+        &["lime3ds"],
+        "io.github.lime3ds.Lime3DS",
+        &["{rom}"],
+        false,
+    )
+    .fullscreen(&["-f"])
+    .cannot_open(&["zcci", "zcia", "zcxi", "z3dsx"])
+    .discontinued("2119.1 (2024-11-09)"),
+    // Citra's last build (2024-03-04; its repository was taken down, read
+    // from citra-mirror/citra, main.cpp): `citra-qt -f -g <file>`. Its
+    // files are Lime3DS's (RetroBIOS's `citra` is the core's layout).
+    emu(
+        "citra",
+        "Citra",
+        &["citra-qt"],
+        "org.citra_emu.citra",
+        &["-g", "{rom}"],
+        false,
+    )
+    .appimage("citra-qt")
+    .fullscreen(&["-f"])
+    .cannot_open(&["zcci", "zcia", "zcxi", "z3dsx"])
+    .discontinued("its last build (2024-03-04)")
+    .firmware("lime3ds"),
     // A folder is mounted as C:, a program run from its folder; images
     // and archives need the core. Checked with `--help` (0.83).
     emu(
