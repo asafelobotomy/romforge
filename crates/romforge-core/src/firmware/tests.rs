@@ -271,6 +271,10 @@ fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
             "files": [
                 {"name": "dsp3.program.rom", "required": true, "system": "nintendo-snes"},
                 {"name": "BS-X.bin", "required": true, "system": "nintendo-satellaview"}]}},
+        {"id": "snes9x", "profile": {"cores": ["snes9x"], "systems": ["snes", "sufami-turbo"],
+            "files": [
+                {"name": "own.bin", "required": true, "system": "nintendo-snes"},
+                {"name": "STBIOS.bin", "required": true, "system": "sufami-turbo"}]}},
         {"id": "o2em", "profile": {"cores": ["o2em_libretro"], "systems": ["odyssey2"],
             "files": [{"name": "o2rom.bin", "required": true}]}},
         {"id": "mame", "profile": {"cores": ["mame"], "systems": ["fm7", "snk-neogeo-mvs"],
@@ -298,7 +302,12 @@ fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
     let bsnes = emu("SNES", "retroarch:bsnes");
     assert!(bsnes.ready, "neither the chip nor Satellaview's BIOS decides it");
     let only: Vec<_> = bsnes.files.iter().map(|f| f.only_for.as_deref()).collect();
-    assert_eq!(only, [Some("chip"), Some("nintendo-satellaview")]);
+    assert_eq!(only, [Some("games with that chip"), Some("Satellaview games")]);
+    // Its files tied to another spelling of the system are its own.
+    let snes9x = emu("SNES", "retroarch:snes9x");
+    let only: Vec<_> = snes9x.files.iter().map(|f| f.only_for.as_deref()).collect();
+    assert_eq!(only, [None, Some("Sufami Turbo games")]);
+    assert!(!snes9x.ready, "the console's own BIOS decides it");
     let o2 = emu("Odyssey2", "retroarch:o2em");
     assert!(o2.profiled && !o2.ready, "o2em_libretro is the o2em core");
     let fm7 = emu("FM-7", "mame-fm7");
@@ -318,3 +327,5 @@ fn each_emulator_gets_its_own_files_and_only_those_gate_it() {
     );
     assert!(!towns.ready);
 }
+
+mod sets;

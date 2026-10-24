@@ -3,11 +3,13 @@ use super::*;
 /// Games' boxes as they stand on a shelf, in millimetres: the front's
 /// width and height, and the spine's thickness, for (North America,
 /// Europe, Japan). The fullscreen mode's bookshelf draws them to scale.
+/// The one table of box shapes too: [`box_aspect`] reads its fronts.
 /// Systems not listed follow [`box_size`]'s rule. From box protector
 /// makers' sizes less their margin (RetroProtection, gameboxprotector.com),
 /// Japanese package-size listings and collectors' measurements, 2026-10;
-/// Neo Geo Pocket, the PC Engine's and SuperGrafx's, Virtual Boy, Wii U
-/// and regions a platform wasn't sold in are estimates.
+/// Neo Geo Pocket, the PC Engine's and SuperGrafx's, the TurboGrafx-16's
+/// tall plastic cases, Virtual Boy, Wii U and regions a platform wasn't
+/// sold in are estimates.
 pub(super) const BOX_SIZES: &[(&str, [[u16; 3]; 3])] = &[
     // Famicom boxes lie down.
     ("NES", [[127, 179, 24], [127, 179, 23], [139, 98, 22]]),
@@ -45,7 +47,8 @@ pub(super) const BOX_SIZES: &[(&str, [[u16; 3]; 3])] = &[
     ("Dreamcast", [[142, 125, 10], [141, 124, 20], [142, 125, 10]]),
     ("Neo Geo", [[171, 219, 42], [171, 219, 42], [171, 219, 42]]),
     ("Neo Geo Pocket", [[100, 130, 20], [100, 130, 20], [100, 130, 20]]),
-    ("TurboGrafx-16", [[142, 125, 14], [142, 125, 14], [142, 125, 10]]),
+    // The TurboGrafx-16's tall plastic cases; the PC Engine's jewel-style.
+    ("TurboGrafx-16", [[135, 185, 15], [135, 185, 15], [142, 125, 10]]),
     ("SuperGrafx", [[142, 125, 10], [142, 125, 10], [142, 125, 10]]),
     ("Lynx", [[112, 138, 23], [112, 138, 23], [112, 138, 23]]),
     ("Atari 2600", [[140, 194, 23], [140, 194, 23], [140, 194, 23]]),
@@ -67,18 +70,26 @@ pub(super) const BOX_SIZES: &[(&str, [[u16; 3]; 3])] = &[
     ("3DO", [[136, 262, 27], [142, 125, 10], [142, 125, 10]]),
 ];
 
+/// `system`'s listed box size in `region`, if [`BOX_SIZES`] has it.
+pub(super) fn listed_size(system: &System, region: BoxRegion) -> Option<[u16; 3]> {
+    let (_, s) = BOX_SIZES.iter().find(|(k, _)| *k == system.key)?;
+    Some(
+        s[match region {
+            BoxRegion::NorthAmerica => 0,
+            BoxRegion::Europe => 1,
+            BoxRegion::Japan => 2,
+        }],
+    )
+}
+
 /// A box's size for `system` sold in `region`, [width, height, depth] in
 /// millimetres: the listed one, else worked out from its front's shape
 /// ([`box_aspect`]) and the kind of box it comes in (a computer's big box,
 /// a jewel case before the sixth generation, a DVD case after, a
 /// handheld's small box, a cartridge's cardboard box).
 pub fn box_size(system: &System, region: BoxRegion) -> [u16; 3] {
-    if let Some((_, s)) = BOX_SIZES.iter().find(|(k, _)| *k == system.key) {
-        return s[match region {
-            BoxRegion::NorthAmerica => 0,
-            BoxRegion::Europe => 1,
-            BoxRegion::Japan => 2,
-        }];
+    if let Some(s) = listed_size(system, region) {
+        return s;
     }
     let aspect = box_aspect(system, region);
     // The longer side and the depth of each kind of box.

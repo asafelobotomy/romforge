@@ -95,4 +95,8 @@ fn only_archive_org_downloads_are_taken() {
         "https only"
     );
     assert!(!super::known_source("https://evil.example/screenscraper.fr.pdf"));
+    assert!(
+        !super::known_source("https://www.screenscraper.fr:x@attacker.tld/m.pdf"),
+        "userinfo hides the real host"
+    );
 }

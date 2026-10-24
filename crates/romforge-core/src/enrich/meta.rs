@@ -74,9 +74,16 @@ pub(super) fn libretro_meta(
     let tx = conn.transaction()?;
     {
         for (game, fields) in &found {
-            for (k, v) in fields {
-                put_field(&tx, *system_id, game, k, v, LIBRETRO, false)?;
+            if fetch_failed {
+                // A file missing this time is no reason to drop a date.
+                for (k, v) in fields {
+                    put_field(&tx, *system_id, game, k, v, LIBRETRO, false)?;
+                }
+                continue;
             }
+            // Year and month as one date ([`put_fields`]).
+            let fields: Vec<(&str, String)> = fields.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+            put_fields(&tx, *system_id, game, &fields, LIBRETRO)?;
         }
         let mut checked = tx.prepare(concat!(
             "INSERT INTO meta_checked (system_id, title, checked_at)

@@ -51,8 +51,7 @@
   const STATES = { accepted: "Accepted", present: "Present (no hash to check)", wrong_hash: "Wrong file", missing: "Missing" };
   const need = (f) =>
     !f.required ? "Optional"
-    : f.only_for === "chip" ? "Only games with its chip"
-    : f.only_for ? `Only ${f.only_for} games`
+    : f.only_for ? `Only ${f.only_for}`
     : f.hle ? "Required, runs without"
     : "Required";
   // Where a file goes, from Bios/ on.

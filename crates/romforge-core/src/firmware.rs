@@ -60,9 +60,9 @@ pub struct FileState {
     /// Loaded only for games of these regions; empty: all.
     pub regions: Vec<String>,
     /// Needed only by some of the system's games, so it doesn't decide
-    /// whether the emulator is ready: those of a sub-system (RetroBIOS's
-    /// id: `nintendo-satellaview`, `nintendo-dsi`), or `chip` for a
-    /// cartridge's coprocessor ROM.
+    /// whether the emulator is ready, and which, to show as it is: those of
+    /// a sub-system (`systems::System::sub_systems`: "Satellaview games"),
+    /// or "games with that chip" for a cartridge's coprocessor ROM.
     pub only_for: Option<String>,
     pub state: State,
 }
@@ -178,24 +178,18 @@ impl Slot<'_> {
         launch::known(&self.name).is_some_and(|e| e.machine.is_some())
     }
 
-    /// The RetroBIOS id of the system itself, among the system's ids: the
-    /// first its profile names (the others are its sub-systems there).
-    fn main_id(&self) -> Option<&str> {
-        let named = &self.profile?.systems;
-        self.system
-            .retrobios
-            .iter()
-            .copied()
-            .find(|id| named.iter().any(|n| n == id))
-    }
-
-    /// What `f` is needed only for ([`FileState::only_for`]).
+    /// What `f` is needed only for ([`FileState::only_for`]): the games of a
+    /// sub-system the systems table names, or those with a chip.
     fn only_for(&self, f: &FileReq) -> Option<String> {
         if is_chip(&f.name) {
-            return Some("chip".into());
+            return Some("games with that chip".into());
         }
         let sys = f.system.as_deref()?;
-        (Some(sys) != self.main_id()).then(|| sys.to_owned())
+        self.system
+            .sub_systems
+            .iter()
+            .find(|(id, _)| *id == sys)
+            .map(|(_, label)| format!("{label} games"))
     }
 }
 

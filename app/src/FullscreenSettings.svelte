@@ -1,11 +1,12 @@
 <script>
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import { DETAILS, SHOWN, toggled } from "./fullscreen/fsdetails.js";
-  import { SHELF_DETAILS, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_SORTS } from "./fullscreen/fsshelf.js";
+  import { SHELF } from "./fullscreen/fsshelf.js";
 
   // Settings → Display: the fullscreen mode's attract mode, screensaver
   // and background music (stage 2, step 6), part of the dialog's draft
-  // (saved with Save).
+  // (saved with Save). The details' and the bookshelf's lists are the
+  // core's, known once the dialog has read settings_info.
   let { draft = $bindable() } = $props();
   // The core's choices (settings::ATTRACT_MINUTES, SCREENSAVER_MINUTES; it
   // takes no others): settings_info doesn't send them yet.
@@ -65,19 +66,19 @@
     <div class="grid">
       <label for="fs-shelves">Shelves</label>
       <select id="fs-shelves" bind:value={draft.fs_bookshelf.direction}>
-        {#each SHELF_DIRECTIONS as d}<option value={d.value}>{d.label}</option>{/each}
+        {#each SHELF.directions as d}<option value={d.value}>{d.label}</option>{/each}
       </select>
       <label for="fs-shelf-group">All games</label>
       <select id="fs-shelf-group" bind:value={draft.fs_bookshelf.group}>
-        {#each SHELF_GROUPS as g}<option value={g.value}>{g.label}</option>{/each}
+        {#each SHELF.groups as g}<option value={g.value}>{g.label}</option>{/each}
       </select>
       <label for="fs-shelf-details">Details</label>
       <select id="fs-shelf-details" bind:value={draft.fs_bookshelf.details}>
-        {#each SHELF_DETAILS as d}<option value={d.value}>{d.label}</option>{/each}
+        {#each SHELF.details as d}<option value={d.value}>{d.label}</option>{/each}
       </select>
       <label for="fs-shelf-sort">Order</label>
       <select id="fs-shelf-sort" bind:value={draft.fs_bookshelf.sort}>
-        {#each SHELF_SORTS as s}<option value={s.value}>{s.label}</option>{/each}
+        {#each SHELF.sorts as s}<option value={s.value}>{s.label}</option>{/each}
       </select>
       <span></span>
       <label class="toggle"><input type="checkbox" bind:checked={draft.fs_bookshelf.favourites} /> A favourites shelf at the top</label>

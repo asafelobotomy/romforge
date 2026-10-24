@@ -1,6 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bookcase, bookshelfMenu, shelfSorted, sizeOf, shelfScale, shelfFirst, shelfFits, SHELF_MAX, SHELF_MAX_BESIDE } from "../src/fullscreen/fsshelf.js";
+import { bookcase, bookshelfMenu, knowShelf, shelfSorted, sizeOf, shelfScale, shelfFirst, shelfFits, SHELF } from "../src/fullscreen/fsshelf.js";
+
+// As settings_info sends them (the core's settings::bookshelf_info).
+const choices = (...pairs) => pairs.map(([value, label]) => ({ value, label }));
+knowShelf({
+  default: { direction: "horizontal", group: "platform", favourites: false, recent: false, sort: "title", details: "top" },
+  max: 30,
+  max_beside: 15,
+  directions: choices(["horizontal", "One endless shelf each"], ["vertical", "Shelves of 30 (15 beside the details), down to the next"]),
+  groups: choices(["platform", "A shelf for each platform"], ["mixed", "All platforms mixed"]),
+  sorts: choices(["title", "Name"], ["released", "Release date, oldest first"], ["newest", "Release date, newest first"], ["played", "Most played"]),
+  details: choices(["top", "Above the shelves"], ["left", "On the left"], ["right", "On the right"]),
+});
+const SHELF_MAX = SHELF.max;
+const SHELF_MAX_BESIDE = SHELF.max_beside;
 
 test("boxes keep their real sizes, the tallest filling the shelf", () => {
   const games = [{ box_size: [135, 190, 14] }, { box_size: [142, 125, 10] }, {}];

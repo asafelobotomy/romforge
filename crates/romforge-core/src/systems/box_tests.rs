@@ -19,9 +19,16 @@ fn boxes_by_platform_and_region() {
         box_aspect(k("NES"), BoxRegion::Japan) > 1.3,
         "the Famicom's lie down"
     );
-    assert_eq!(box_aspect(k("PlayStation"), BoxRegion::Japan), 1.0);
+    assert!(
+        box_aspect(k("PlayStation"), BoxRegion::Japan) > 1.0,
+        "a jewel case, hinge included"
+    );
+    assert!(
+        box_aspect(k("TurboGrafx-16"), BoxRegion::NorthAmerica) < 0.8,
+        "the TurboGrafx-16's tall cases"
+    );
     assert_eq!(
-        box_aspect(k("PlayStation 2"), BoxRegion::NorthAmerica),
+        box_aspect(k("Naomi"), BoxRegion::NorthAmerica),
         0.71,
         "a DVD case by rule"
     );
@@ -55,5 +62,18 @@ fn box_sizes_are_real_and_keep_their_shape() {
     }
     for (key, _) in BOX_SIZES {
         assert!(by_key(key).is_some(), "{key} isn't a platform");
+    }
+}
+
+#[test]
+fn cards_and_shelves_draw_one_shape() {
+    // The picture views' shape (box_aspect) and the bookshelf's size
+    // (box_size) agree for every platform and region, listed or by rule.
+    for s in SYSTEMS {
+        for region in [BoxRegion::NorthAmerica, BoxRegion::Europe, BoxRegion::Japan] {
+            let [w, h, _] = box_size(s, region);
+            let (a, b) = (box_aspect(s, region), f32::from(w) / f32::from(h));
+            assert!((a - b).abs() < 0.01, "{} {region:?}: {a} vs {b}", s.key);
+        }
     }
 }

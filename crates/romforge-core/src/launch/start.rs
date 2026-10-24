@@ -94,22 +94,23 @@ pub(super) fn start(
         }
         match env.which(&u.program) {
             Some(p) => {
+                // `{bios}`: `Bios/<its name>/`, with a RomForge folder.
+                let bios = env.home.as_ref().and_then(|h| user_bios(h, &u.name));
+                let uses_home = bios.is_some() && u.args.iter().any(|a| a.contains("{bios}"));
+                let vars = Vars {
+                    rom: &rom,
+                    set: &set,
+                    core: None,
+                    config: None,
+                    bios: bios.as_deref(),
+                    system: system.key,
+                };
                 return Ok(spec(
                     u.name.clone(),
                     &Runner::Program(p),
-                    fill(
-                        &u.args,
-                        &Vars {
-                            rom: &rom,
-                            set: &set,
-                            core: None,
-                            config: None,
-                            bios: None,
-                            system: system.key,
-                        },
-                    ),
+                    fill(&u.args, &vars),
                     Prepare::default(),
-                    false,
+                    uses_home,
                 ));
             }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
@@ -170,7 +171,14 @@ pub(super) fn start(
         match env.known(e) {
             Some(r) => {
                 let (config, prepare) = owned(e).unzip();
-                let bios = env.home.as_ref().map(|h| h.bios().join(e.settings_name()));
+                // Its BIOS folder's flags only when the folder holds a file:
+                // they override the emulator's own paths (a MAME rompath
+                // with the machine's set in it), so not for nothing.
+                let bios = env
+                    .home
+                    .as_ref()
+                    .map(|h| h.bios().join(e.settings_name()))
+                    .filter(|d| holds_file(d));
                 let vars = Vars {
                     rom: &rom,
                     set: &set,
@@ -218,6 +226,30 @@ pub(super) fn start(
             why_not.join("; ")
         }
     )))
+}
+
+/// Whether `dir` holds a file, at any depth (a few levels at most).
+pub(super) fn holds_file(dir: &Path) -> bool {
+    fn walk(dir: &Path, depth: u8) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.filter_map(Result::ok).any(|e| {
+            let p = e.path();
+            p.is_file() || (depth > 0 && p.is_dir() && walk(&p, depth - 1))
+        })
+    }
+    walk(dir, 8)
+}
+
+/// A user-added emulator's BIOS folder, `Bios/<name>/`, when its name is a
+/// plain folder name.
+fn user_bios(home: &crate::home::Home, name: &str) -> Option<PathBuf> {
+    let mut parts = Path::new(name).components();
+    match (parts.next(), parts.next()) {
+        (Some(std::path::Component::Normal(_)), None) => Some(home.bios().join(name)),
+        _ => None,
+    }
 }
 
 /// A sheet next to a loose track that lists it: the disc's own cue (or

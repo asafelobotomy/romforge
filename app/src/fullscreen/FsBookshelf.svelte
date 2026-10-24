@@ -66,19 +66,19 @@
               class="box"
               class:sel
               class:focus={focused && sel}
-              style="--w: {Math.max(8, bd * scale)}px; --h: {bh * scale}px; --c: {accents[g.system] ?? '#5c5c6a'}"
+              style="--w: {Math.max(8, bd * scale)}px; --h: {bh * scale}px; --c: {accents[g.system] ?? 'var(--fs-shelf-spine, #5c5c6a)'}"
               data-fs-card={g.id}
               data-fs-selected={sel ? "" : undefined}
               data-fs-art={spine ? undefined : "missing"}
               onclick={() => (sel ? open() : pick(r, c))}
-              aria-label={listLabel(g)}
+              aria-label={fav.has(gameKey(g)) ? `${listLabel(g)}, favourite` : listLabel(g)}
             >
               {#if spine}
                 <img src={spine} alt="" decoding="async" />
               {:else}
                 <span class="drawn" data-fs-title>{listLabel(g)}</span>
               {/if}
-              {#if fav.has(gameKey(g))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+              {#if fav.has(gameKey(g))}<span class="star" data-fs-fav aria-hidden="true">★</span>{/if}
             </button>
           {/each}
         </div>
@@ -150,8 +150,8 @@
   .box.focus { outline: 0.4vh solid var(--fs-focus); outline-offset: 0.3vh; }
   .star { position: absolute; top: 0.4vh; left: 50%; translate: -50% 0; color: var(--fs-accent); font-size: calc(1.8vh * var(--fs-scale)); text-shadow: 0 0 0.6vh #000; }
   /* A brass name plate on the board. */
-  .plate { padding: 0.2vh 1.2vw; border-radius: 2px; background: linear-gradient(180deg, #e8cf8a, #b8913f); color: #3a2a10; font-size: calc(1.6vh * var(--fs-scale)); font-weight: 600; white-space: nowrap; box-shadow: 0 1px 2px #0008, inset 0 1px 0 #fff8; }
-  .none { margin: 6vh 0; text-align: center; color: #f3e6d2; font-size: calc(2.4vh * var(--fs-scale)); }
+  .plate { padding: 0.2vh 1.2vw; border-radius: 2px; background: linear-gradient(180deg, var(--fs-shelf-plate, #e8cf8a), color-mix(in srgb, var(--fs-shelf-plate, #e8cf8a) 65%, #6b4400)); color: var(--fs-shelf-plate-text, #3a2a10); font-size: calc(1.6vh * var(--fs-scale)); font-weight: 600; white-space: nowrap; box-shadow: 0 1px 2px #0008, inset 0 1px 0 #fff8; }
+  .none { margin: 6vh 0; text-align: center; color: var(--fs-shelf-text, #f3e6d2); font-size: calc(2.4vh * var(--fs-scale)); }
   @media (prefers-reduced-motion: reduce) {
     .box { transition: none; }
   }

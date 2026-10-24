@@ -78,9 +78,16 @@ pub fn descriptions(
             base.replace("{lang}", &lang),
             fetch::encode_segment(&name.replace(' ', "_"))
         );
+        let put = |f: &str, v: &str| {
+            crate::enrich::put_field(conn, *system_id, title, f, v, crate::enrich::WIKIPEDIA, false)
+        };
         let body = match fetch::get_small_optional(&url) {
             Ok(Some(b)) => b,
-            Ok(None) => continue,
+            // No such article: read, not asked again unless refreshing.
+            Ok(None) => {
+                put("description_article", &read_as)?;
+                continue;
+            }
             Err(e) => {
                 let stop = fetch::is_rate_limited(&e);
                 errors.push(format!("Wikipedia: {e}"));
@@ -91,10 +98,9 @@ pub fn descriptions(
             }
         };
         let Some((text, page)) = summary(&body) else {
+            // A disambiguation page, or no text: the same.
+            put("description_article", &read_as)?;
             continue;
-        };
-        let put = |f: &str, v: &str| {
-            crate::enrich::put_field(conn, *system_id, title, f, v, crate::enrich::WIKIPEDIA, false)
         };
         if put("description", &text)? {
             filled += 1;
@@ -171,12 +177,24 @@ mod tests {
                     h.clear();
                 }
                 log.lock().unwrap().push(path.clone());
-                let body = format!(
-                    r#"{{"type":"standard","extract":"From {path}.","content_urls":{{"desktop":{{"page":"https://fr.wikipedia.org/wiki/X"}}}}}}"#
-                );
+                let (status, body) = if path.contains("Missing") {
+                    ("404 Not Found", String::new())
+                } else if path.contains("Ambiguous") {
+                    (
+                        "200 OK",
+                        r#"{"type":"disambiguation","extract":"May mean:"}"#.to_owned(),
+                    )
+                } else {
+                    (
+                        "200 OK",
+                        format!(
+                            r#"{{"type":"standard","extract":"From {path}.","content_urls":{{"desktop":{{"page":"https://fr.wikipedia.org/wiki/X"}}}}}}"#
+                        ),
+                    )
+                };
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
             }
@@ -191,10 +209,12 @@ mod tests {
              INSERT INTO game_meta VALUES (1, 'B', 'description', 'Mine.', 'libretro');
              INSERT INTO game_meta VALUES (1, 'C', 'wikipedia', 'Game C', 'wikidata');
              INSERT INTO game_meta VALUES (1, 'D', 'wikipedia', 'List of games', 'launchbox');
-             INSERT INTO game_meta VALUES (1, 'C', 'description', 'Theirs.', 'launchbox');",
+             INSERT INTO game_meta VALUES (1, 'C', 'description', 'Theirs.', 'launchbox');
+             INSERT INTO game_meta VALUES (1, 'E', 'wikipedia', 'Missing', 'wikidata');
+             INSERT INTO game_meta VALUES (1, 'F', 'wikipedia', 'Ambiguous', 'wikidata');",
         )
         .unwrap();
-        let games: BTreeMap<(i64, String), Vec<String>> = ["A", "B", "C", "D"]
+        let games: BTreeMap<(i64, String), Vec<String>> = ["A", "B", "C", "D", "E", "F"]
             .into_iter()
             .map(|t| ((1, t.to_owned()), Vec::new()))
             .collect();
@@ -223,7 +243,11 @@ mod tests {
         );
         let n = asked.lock().unwrap().len();
         descriptions(&conn, &base, "fr", &games, false, &mut errors).unwrap();
-        assert_eq!(asked.lock().unwrap().len(), n, "not asked again");
+        assert_eq!(
+            asked.lock().unwrap().len(),
+            n,
+            "not asked again, a missing or disambiguation page neither"
+        );
         assert!(errors.is_empty(), "{errors:?}");
     }
 }

@@ -235,4 +235,45 @@ mod tests {
             assert!(standalone(none, &dir, &bios).is_none(), "{none}");
         }
     }
+
+    /// melonDS's DSi files are set like the DS ones, and a key for a file
+    /// no longer there is taken out.
+    #[test]
+    fn melonds_dsi_keys_and_files_gone() {
+        let t = tempfile::tempdir().unwrap();
+        let (dir, bios) = (t.path().join("cfg"), t.path().join("Bios/melonDS"));
+        std::fs::create_dir_all(&bios).unwrap();
+        for f in [
+            "bios9.bin",
+            "bios7.bin",
+            "firmware.bin",
+            "dsi_bios9.bin",
+            "dsi_nand.bin",
+        ] {
+            std::fs::write(bios.join(f), b"x").unwrap();
+        }
+        let read = || std::fs::read_to_string(dir.join("melonDS/melonDS.toml")).unwrap();
+        prepare(&standalone("melonds", &dir, &bios).unwrap()).unwrap();
+        let toml = read();
+        let dsi = toml.split("[DSi]").nth(1).unwrap_or_default().to_owned();
+        let has = |text: &str, key: &str, file: &str| {
+            text.contains(&format!("{key} = \"{}\"", bios.join(file).display()))
+        };
+        assert!(has(&dsi, "BIOS9Path", "dsi_bios9.bin"), "{toml}");
+        assert!(has(&dsi, "NANDPath", "dsi_nand.bin"), "{toml}");
+        assert!(!dsi.contains("FirmwarePath"), "{toml}");
+        assert!(toml.contains("ExternalBIOSEnable = true"), "{toml}");
+
+        std::fs::remove_file(bios.join("bios9.bin")).unwrap();
+        std::fs::remove_file(bios.join("dsi_nand.bin")).unwrap();
+        prepare(&standalone("melonds", &dir, &bios).unwrap()).unwrap();
+        let toml = read();
+        assert!(
+            !toml.contains(&bios.join("bios9.bin").display().to_string()),
+            "{toml}"
+        );
+        assert!(!toml.contains("NANDPath"), "{toml}");
+        assert!(has(&toml, "BIOS7Path", "bios7.bin"), "{toml}");
+        assert!(toml.contains("ExternalBIOSEnable = false"), "{toml}");
+    }
 }

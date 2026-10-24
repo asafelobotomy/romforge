@@ -37,7 +37,7 @@
         data-fs-selected={d === 0 ? "" : undefined}
         data-fs-art={logo ? undefined : "missing"}
         onclick={() => (d === 0 ? open() : pick(index + d))}
-        aria-label={listLabel(r)}
+        aria-label={fav.has(gameKey(r)) ? `${listLabel(r)}, favourite` : listLabel(r)}
         tabindex={Math.abs(d) === SIDE ? -1 : undefined}
       >
         {#if logo}
@@ -45,7 +45,7 @@
         {:else}
           <span class="name" data-fs-title>{listLabel(r)}</span>
         {/if}
-        {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+        {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-hidden="true">★</span>{/if}
       </button>
     {/each}
     <p class="count" aria-live="polite">{index + 1} / {games.length}</p>

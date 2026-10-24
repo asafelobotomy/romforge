@@ -220,3 +220,66 @@ fn bios_flags_come_with_the_romforge_folder() {
     vars.bios = Some(Path::new("/rf/Bios/dosbox-staging"));
     assert!(known_args(staging, &vars, &o).contains(&"romdir=/rf/Bios/dosbox-staging/mt32-roms".to_owned()));
 }
+
+/// MAME's `-rompath` (and a Flatpak's grant of the RomForge folder) only
+/// when `Bios/mame/` holds a file: an empty folder would hide the user's
+/// own rompath.
+#[test]
+fn bios_flags_only_for_a_folder_with_files() {
+    let t = tempfile::tempdir().unwrap();
+    let flatpak = t.path().join("flatpak");
+    std::fs::create_dir_all(flatpak.join("org.mamedev.MAME")).unwrap();
+    let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
+    let env = Env {
+        flatpak_dirs: vec![flatpak],
+        home: Some(home.clone()),
+        ..Default::default()
+    };
+    let conn = crate::db::open_in_memory().unwrap();
+    let files = [(t.path().join("g/Game.chd"), String::new())];
+    let plan = || start(&conn, &env, "Game", "FM Towns", &files, None).unwrap();
+    let granted = format!("--filesystem={}", home.root().display());
+    std::fs::create_dir_all(home.bios().join("mame/sub")).unwrap();
+    let spec = plan();
+    assert!(!spec.args.contains(&"-rompath".to_owned()), "{:?}", spec.args);
+    assert!(!spec.args.contains(&granted), "{:?}", spec.args);
+    std::fs::write(home.bios().join("mame/sub/fmtowns.zip"), b"set").unwrap();
+    let spec = plan();
+    let bios = home.bios().join("mame").display().to_string();
+    assert!(
+        spec.args.windows(2).any(|w| w == ["-rompath", bios.as_str()]),
+        "{:?}",
+        spec.args
+    );
+    assert!(spec.args.contains(&granted), "{:?}", spec.args);
+}
+
+/// A user-added emulator's `{bios}` is `Bios/<its name>/` with a RomForge
+/// folder, not "".
+#[test]
+fn user_emulators_get_their_bios_folder() {
+    let t = tempfile::tempdir().unwrap();
+    let bin = t.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("towns"), "").unwrap();
+    let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
+    let env = Env {
+        home: Some(home.clone()),
+        ..Default::default()
+    };
+    let conn = crate::db::open_in_memory().unwrap();
+    let u = UserEmulator {
+        name: "towns".into(),
+        system: "FM Towns".into(),
+        program: bin.join("towns").display().to_string(),
+        args: vec!["--bios={bios}".into(), "{rom}".into()],
+        archives: false,
+    };
+    add_emulator(&conn, &u).unwrap();
+    let files = [(t.path().join("g/Game.chd"), String::new())];
+    let spec = start(&conn, &env, "Game", "FM Towns", &files, None).unwrap();
+    assert_eq!(
+        spec.args[0],
+        format!("--bios={}", home.bios().join("towns").display())
+    );
+}

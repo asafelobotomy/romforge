@@ -9,8 +9,23 @@
   // art, spine, back), else drawn: the front its title, the spine its
   // title down it, the back its screenshots, overview and facts. `detail`
   // is the game's details (null while they load); `accent` its platform's
-  // colour.
-  let { game, detail, turn = 0, accent = "#5c5c6a" } = $props();
+  // colour. By mouse: a click on the box's left or right half turns it,
+  // one beside it puts it back (`close`), its button opens the game's page
+  // (`open`); `turnBy(±1)` turns it. A modal dialog: it takes the focus
+  // while out and gives it back when put away.
+  let { game, detail, turn = 0, accent = "var(--fs-shelf-spine, #5c5c6a)", turnBy, close, open } = $props();
+  let stage = $state(null);
+  let boxEl = $state(null);
+  $effect(() => {
+    const before = document.activeElement;
+    stage?.focus();
+    return () => before?.focus?.();
+  });
+  function clicked(e) {
+    const r = boxEl?.getBoundingClientRect();
+    if (!r || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return close();
+    turnBy(e.clientX < r.left + r.width / 2 ? -1 : 1);
+  }
   let mine = $derived(detail?.row?.id === game.id ? detail : null);
   let art = $derived(mine?.art ?? {});
   let f = $derived(mine?.fields ?? {});
@@ -29,8 +44,10 @@
 
 <svelte:window bind:innerWidth={screenW} bind:innerHeight={screenH} />
 
-<div class="stage" data-fs-box aria-label="{displayTitle(game)}: box">
-  <div class="box" style="--bw: {mm[0] * k}px; --bh: {mm[1] * k}px; --bd: {mm[2] * k}px; --turn: {turn}; --c: {accent}">
+<!-- The pad's and keyboard's keys reach the mode (Fullscreen), which turns it. -->
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+<div class="stage" data-fs-box role="dialog" aria-modal="true" aria-label="{displayTitle(game)}: box" tabindex="-1" bind:this={stage} onclick={clicked}>
+  <div class="box" bind:this={boxEl} style="--bw: {mm[0] * k}px; --bh: {mm[1] * k}px; --bd: {mm[2] * k}px; --turn: {turn}; --c: {accent}">
     <div class="face front" data-fs-face="front">
       {#if front}<img src={front} alt="Front of the box" />{:else}<span class="drawn" data-fs-title>{displayTitle(game)}</span>{/if}
     </div>
@@ -53,10 +70,18 @@
     <div class="face cap top" aria-hidden="true"></div>
     <div class="face cap bottom" aria-hidden="true"></div>
   </div>
+  <div class="actions">
+    <button onclick={(e) => (e.stopPropagation(), turnBy(-1))} aria-label="Turn it left">◀</button>
+    <button class="go" onclick={(e) => (e.stopPropagation(), open())}>Open the game</button>
+    <button onclick={(e) => (e.stopPropagation(), turnBy(1))} aria-label="Turn it right">▶</button>
+  </div>
 </div>
 
 <style>
-  .stage { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: var(--fs-scrim); perspective: 160vh; }
+  .stage { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; align-content: center; gap: 4vh; background: var(--fs-scrim); perspective: 160vh; outline: 0; }
+  .actions { display: flex; gap: 1.2vw; }
+  .actions button { padding: 0.8vh 1.4vw; border: 1px solid var(--fs-line); border-radius: var(--fs-radius); background: var(--fs-panel); color: inherit; font: inherit; font-size: calc(2vh * var(--fs-scale)); cursor: pointer; }
+  .actions .go { border-color: var(--fs-accent); }
   /* The box turns about its middle; a little off square so its depth shows. */
   .box {
     position: relative;

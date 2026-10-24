@@ -7,6 +7,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+use super::details::{Choice, choices};
 use crate::Error;
 
 /// The most boxes a shelf holds in the bookcase (`vertical`), and with
@@ -36,10 +37,55 @@ pub struct Bookshelf {
     pub details: String,
 }
 
-pub const SHELF_DIRECTIONS: &[&str] = &["horizontal", "vertical"];
-pub const SHELF_GROUPS: &[&str] = &["platform", "mixed"];
-pub const SHELF_SORTS: &[&str] = &["title", "released", "newest", "played"];
-pub const SHELF_DETAILS: &[&str] = &["top", "left", "right"];
+/// Each choice the bookshelf takes, with its name in Settings and Start →
+/// Bookshelf; the first is the default's.
+pub const SHELF_DIRECTIONS: &[(&str, &str)] = &[
+    ("horizontal", "One endless shelf each"),
+    (
+        "vertical",
+        "Shelves of 30 (15 beside the details), down to the next",
+    ),
+];
+pub const SHELF_GROUPS: &[(&str, &str)] = &[
+    ("platform", "A shelf for each platform"),
+    ("mixed", "All platforms mixed"),
+];
+pub const SHELF_SORTS: &[(&str, &str)] = &[
+    ("title", "Name"),
+    ("released", "Release date, oldest first"),
+    ("newest", "Release date, newest first"),
+    ("played", "Most played"),
+];
+pub const SHELF_DETAILS: &[(&str, &str)] = &[
+    ("top", "Above the shelves"),
+    ("left", "On the left"),
+    ("right", "On the right"),
+];
+
+/// What the app needs to show the bookshelf's choices and stand its
+/// shelves: the default, the most boxes a shelf holds, and each list.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BookshelfInfo {
+    pub default: Bookshelf,
+    pub max: usize,
+    pub max_beside: usize,
+    pub directions: Vec<Choice>,
+    pub groups: Vec<Choice>,
+    pub sorts: Vec<Choice>,
+    pub details: Vec<Choice>,
+}
+
+pub fn bookshelf_info() -> BookshelfInfo {
+    BookshelfInfo {
+        default: Bookshelf::default(),
+        max: SHELF_MAX,
+        max_beside: SHELF_MAX_BESIDE,
+        directions: choices(SHELF_DIRECTIONS),
+        groups: choices(SHELF_GROUPS),
+        sorts: choices(SHELF_SORTS),
+        details: choices(SHELF_DETAILS),
+    }
+}
 
 impl Default for Bookshelf {
     fn default() -> Self {
@@ -59,8 +105,9 @@ impl Bookshelf {
     /// the details is the default's.
     pub fn cleaned(&self) -> Bookshelf {
         let d = Bookshelf::default();
-        let pick =
-            |v: &str, of: &[&str], or: String| of.iter().find(|x| **x == v).map_or(or, |x| (*x).to_owned());
+        let pick = |v: &str, of: &[(&str, &str)], or: String| {
+            of.iter().find(|x| x.0 == v).map_or(or, |x| x.0.to_owned())
+        };
         Bookshelf {
             direction: pick(&self.direction, SHELF_DIRECTIONS, d.direction),
             group: pick(&self.group, SHELF_GROUPS, d.group),
@@ -121,5 +168,17 @@ mod tests {
         );
         assert_eq!((kept.sort.as_str(), kept.details.as_str()), ("newest", "left"));
         assert_eq!(load(&c).unwrap(), kept);
+    }
+
+    #[test]
+    fn the_lists_lead_with_the_default_and_name_the_limits() {
+        let d = Bookshelf::default();
+        let first = |of: &[(&'static str, &'static str)]| of[0].0;
+        assert_eq!(first(SHELF_DIRECTIONS), d.direction);
+        assert_eq!(first(SHELF_GROUPS), d.group);
+        assert_eq!(first(SHELF_SORTS), d.sort);
+        assert_eq!(first(SHELF_DETAILS), d.details);
+        let (_, vertical) = SHELF_DIRECTIONS[1];
+        assert!(vertical.contains(&format!("of {SHELF_MAX} ({SHELF_MAX_BESIDE} beside")));
     }
 }

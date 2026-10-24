@@ -217,7 +217,11 @@ else a known standalone emulator (DuckStation, PCSX2, Dolphin, PPSSPP,
 Flycast, mGBA, melonDS, xemu, RPCS3, Mednafen, Cemu, DOSBox Staging,
 DOSBox-X, ScummVM, MAME; `PATH` or Flatpak). A Flatpak emulator is given
 the game's folder for that run (`--filesystem`), since it may see only
-your home folder.
+your home folder, and the RomForge folder too when romforge sets the
+emulator up from it (its config there) or passes it its BIOS folder
+(`-rompath`, `--extrapath`, …: only when `Bios/<emulator>/` holds a file,
+so an empty one never overrides the emulator's own paths). An emulator you
+add gets `{bios}` as `Bios/<its name>/`.
 Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
@@ -332,7 +336,8 @@ that it is a verified dump. A file with no hash in the list can only be
 *present*. Drop folders, files, zips or 7z on the page (or `firmware
 import`): each file is matched by its contents and copied where every
 emulator that wants it looks; a file whose name fits but whose hash isn't
-known is placed only when you tick it (`--also NAME`).
+known is placed only when you tick it (`--also NAME`); so is a dropped
+zip named like a MAME machine's set (`fm7.zip`), offered as it is.
 
 Each emulator is pointed at its folder when it starts: RetroArch's system
 folder; DuckStation, PCSX2, mGBA, Mednafen, melonDS and xemu through
@@ -344,8 +349,9 @@ machine's set, `fm7.zip`, `fmtowns.zip`, in `Bios/mame/`); ScummVM by
 and DOSBox-X's MT-32 folder, by their settings on the command line. An
 emulator is *ready* when every file it can't run without is accepted or
 present; files only some games load don't decide it: a sub-system's
-(Satellaview, DSi) and a cartridge chip's (bsnes's `*.program.rom`), shown
-as "only … games".
+(Satellaview, DSi, as the systems table names them) and a cartridge
+chip's (bsnes's `*.program.rom`), shown as "only Satellaview games",
+"only games with that chip".
 
 ## Manuals
 
@@ -715,7 +721,7 @@ where there is no 3D box) or **Banner** (the fanart, every banner the same
 wide shape, the game's logo over it). Every box cell
 is the same size, and each box is drawn at its platform's and region's
 true shape (SNES and Famicom boxes lie down, Genesis and DVD cases stand
-up, PlayStation jewel cases are square; `systems::box_aspect`), all the
+up, jewel cases slightly wide, hinge included; one table, `systems::BOX_SIZES`, gives both `box_aspect` and `box_size`), all the
 same height on one baseline; a scan of another shape fits inside it
 whole, never cropped. Cards keep the
 list's order, sort (a sort bar above them) and fold-out versions; pictures
@@ -882,7 +888,7 @@ cover), `--fs-flow-dim` (their brightness, `0.7`) and
 `--fs-flow-perspective` (`110vh`); `--fs-wheel-curve` (how far the wheel's
 far logos move out, `1.2vw`) and `--fs-hero-opacity` (the fanart's in the
 wheel and hero rows, `0.5`); `--fs-shelf-wood` and `--fs-shelf-back` (the
-bookshelf's board and back panel); `--fs-overview-lines` (the overview's
+bookshelf's board and back panel); `--fs-shelf-plate` and `--fs-shelf-plate-text` (the shelves' brass name plates, `#e8cf8a` and `#3a2a10`), `--fs-shelf-text` (the empty bookcase's words, `#f3e6d2`), `--fs-shelf-spine` (a box's colour when its platform has none, `#5c5c6a`); `--fs-overview-lines` (the overview's
 lines, `6`; `2` under cover flow) and `--fs-backdrop-opacity` (`0.18`).
 `--fs-scale` is the user's text size and only romforge sets it. Hooks: the
 root `[data-fs-root]` (in the CSS, `:scope`) with `data-fs-screen` (`home`,
@@ -1079,10 +1085,11 @@ scraping using the [Arcade Database](https://adb.arcadeitalia.net) by
 motoschifo, with its history text © arcade-history.com; GameCube, Wii
 and DS covers and labels from [GameTDB](https://www.gametdb.com); both
 fetched per game, never shipped. romforge's own platform icons, in flatui's style for
-platforms flatui lacks, are MIT like the rest: PC, Tandy VIS, Sega
-Lindbergh and ScummVM drawn by hand (their SVG sources beside them); the
-others generated with OpenAI's GPT Image (`gpt-image-2.5-flare`), with
-three of RetroArch's flatui icons as the style reference, and touched up
-by hand. The ScummVM icon's label carries the
+platforms flatui lacks, are MIT like the rest, except ScummVM's: PC,
+Tandy VIS, Sega Lindbergh and ScummVM drawn by hand (their SVG sources
+beside them); the others generated with OpenAI's GPT Image
+(`gpt-image-2.5-flare`), with three of RetroArch's flatui icons as the
+style reference, and touched up by hand. The ScummVM icon is the
+exception to MIT: its label carries the
 [ScummVM Team](https://www.scummvm.org)'s logo, under the
 [GPL](https://www.gnu.org/licenses/gpl-3.0.html).

@@ -278,7 +278,8 @@ pub(crate) struct Vars<'a> {
     pub core: Option<&'a Path>,
     /// romforge's config folder for the emulator, if it writes one.
     pub config: Option<&'a Path>,
-    /// Its folder in the RomForge folder's `Bios/`, when there is one.
+    /// Its folder in the RomForge folder's `Bios/`: for a known emulator
+    /// only when it holds a file (its `bios` flags come with it).
     pub bios: Option<&'a Path>,
     /// The game's system (its key).
     pub system: &'a str,

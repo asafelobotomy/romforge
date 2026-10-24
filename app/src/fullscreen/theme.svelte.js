@@ -98,6 +98,17 @@ export function themeVars(applied, dark) {
 
 // The variables and attributes for `applied` on `node` (the root), the
 // scheme following the system's when the theme has light and dark.
+// The card's shape (--fs-card-ratio) for the layouts that count what
+// fits: as the theme's scheme or options set it, else as its CSS does on
+// `el` (read again once that has loaded), else the default. Called in a
+// $derived that also reads the space, so it is read again as that changes.
+export function cardRatio(el, dark) {
+  const set = theme.applied && parseFloat(themeVars(theme.applied, dark).vars["--fs-card-ratio"]);
+  if (set) return set;
+  void theme.cssLoads;
+  return (el && parseFloat(getComputedStyle(el).getPropertyValue("--fs-card-ratio"))) || 0.74;
+}
+
 export function applyTheme(node, applied, dark) {
   for (const name of [...node.style]) if (name.startsWith("--fs-")) node.style.removeProperty(name);
   for (const a of [...node.attributes]) if (a.name.startsWith("data-fs-opt-")) node.removeAttribute(a.name);
@@ -130,3 +141,29 @@ export function watchTheme() {
   return () => clearInterval(t);
 }
 
+
+// The theme while the fullscreen mode is open (stage 2, step 4): its CSS
+// linked, its variables and attributes on the root (`rootOf()`), the
+// system's light or dark followed, and an edited user theme reloaded.
+// Called while a component sets up; its `dark` follows the system's.
+export function followTheme(rootOf) {
+  const system = $state({ dark: window.matchMedia("(prefers-color-scheme: dark)").matches });
+  loadThemes();
+  $effect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = (e) => (system.dark = e.matches);
+    mq.addEventListener("change", on);
+    const stop = watchTheme();
+    return () => {
+      mq.removeEventListener("change", on);
+      stop();
+      themeLink(null);
+    };
+  });
+  $effect(() => themeLink(theme.applied));
+  $effect(() => {
+    const root = rootOf();
+    if (root) applyTheme(root, theme.applied, system.dark);
+  });
+  return system;
+}

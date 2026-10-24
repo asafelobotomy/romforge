@@ -76,3 +76,83 @@ fn own_icons_fill_what_retroarch_lacks() {
         assert_eq!(image_ext(&data), Some("png"), "{theme}");
     }
 }
+
+/// libretro's year and month are one date: LaunchBox's day of another
+/// date doesn't stay under them.
+#[test]
+fn libretros_date_takes_the_place_of_another_whole() {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let host = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut first = String::new();
+            let _ = reader.read_line(&mut first);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            let body = if first.contains("/releaseyear/") {
+                "game ( name \"G\" releaseyear \"1991\" )\n"
+            } else if first.contains("/releasemonth/") {
+                "game ( name \"G\" releasemonth \"7\" )\n"
+            } else {
+                ""
+            };
+            let head = if body.is_empty() {
+                "404 Not Found"
+            } else {
+                "200 OK"
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {head}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    let mut conn = crate::db::open_in_memory().unwrap();
+    let gb = systems::by_key("Game Boy").unwrap();
+    for (f, v) in [
+        ("releaseyear", "1992"),
+        ("releasemonth", "3"),
+        ("releaseday", "15"),
+    ] {
+        put_field(&conn, gb.id, "G", f, v, "launchbox", false).unwrap();
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(tmp.path());
+    opts.metadata_base = host;
+    let (game, crcs) = ("G".to_owned(), Vec::new());
+    let mut report = EnrichReport::default();
+    libretro_meta(
+        &mut conn,
+        &opts,
+        gb,
+        &gb.id,
+        libretro_name(gb).unwrap(),
+        &[(&game, &crcs)],
+        &mut std::collections::HashSet::new(),
+        &mut report,
+        &mut |_| {},
+    )
+    .unwrap();
+    let date: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT field, value FROM game_meta WHERE title = 'G' AND field IN
+             ('releaseyear', 'releasemonth', 'releaseday') ORDER BY field DESC",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let date: Vec<(&str, &str)> = date.iter().map(|(f, v)| (f.as_str(), v.as_str())).collect();
+    assert_eq!(
+        date,
+        [("releaseyear", "1991"), ("releasemonth", "7")],
+        "{:?}",
+        report.errors
+    );
+}

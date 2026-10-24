@@ -287,3 +287,68 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
     }
     assert!(!row.pictures.contains_key("snap"), "only what the views show");
 }
+
+/// A source whose picture couldn't be downloaded (the image server
+/// failed) is asked again next time, not stamped as asked.
+#[test]
+fn a_failed_picture_download_asks_again() {
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(fixtures().join("dats/gb.dat"), None).unwrap();
+    lib.scan(fixtures().join("roms/gb"), Scope::All).unwrap();
+    let mut s = Settings::default();
+    s.keys.screenscraper_dev_id = Some("dev".into());
+    s.keys.screenscraper_dev_password = Some("devpw".into());
+    lib.save_settings(&s).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let asked = Arc::new(Mutex::new(0usize));
+    let count = asked.clone();
+    let host = base.clone();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut first = String::new();
+            let _ = reader.read_line(&mut first);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            let (status, body) = if first.contains("/ss/jeuInfos.php") {
+                *count.lock().unwrap() += 1;
+                let json = format!(
+                    r#"{{"response":{{"jeu":{{"medias":[{{"type":"box-2D","region":"us","url":"{host}/img/box.png"}}]}}}}}}"#
+                );
+                ("200 OK", json)
+            } else if first.contains("/img/") {
+                ("500 Internal Server Error", "down".to_owned())
+            } else {
+                ("404 Not Found", String::new())
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    let cache = tempfile::tempdir().unwrap();
+    let mut opts = EnrichOptions::new(cache.path());
+    opts.system = Some("Game Boy".into());
+    opts.art = vec![ArtKind::Boxart];
+    opts.metadata_base = format!("{base}/none");
+    opts.thumbnails_base = format!("{base}/none");
+    opts.wikidata = None;
+    opts.sources = Bases {
+        screenscraper: format!("{base}/ss"),
+        adb: format!("{base}/adb"),
+        gametdb: format!("{base}/gametdb"),
+        ..Bases::default()
+    };
+    let report = lib.enrich(&opts, |_| {}).unwrap();
+    assert!(!report.errors.is_empty(), "the picture failed");
+    let first = *asked.lock().unwrap();
+    assert!(first > 0);
+    lib.enrich(&opts, |_| {}).unwrap();
+    assert_eq!(*asked.lock().unwrap(), 2 * first, "asked again for every game");
+}

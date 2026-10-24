@@ -28,7 +28,7 @@ impl IconSources<'static> {
     pub const LIVE: Self = IconSources {
         assets: PLATFORM_ICONS_BASE,
         wikidata: crate::wikidata::ENDPOINT,
-        commons: "http://commons.wikimedia.org/wiki/Special:FilePath/",
+        commons: "https://commons.wikimedia.org/wiki/Special:FilePath/",
     };
 }
 
@@ -78,8 +78,12 @@ fn icon_name(system: &systems::System) -> Option<&'static str> {
         .or_else(|| libretro_name(system))
 }
 
-/// Forget icons kept under an older [`ICONS_REVISION`].
+/// Forget icons kept under an older [`ICONS_REVISION`]. Under a lock, so
+/// that of two lookups at once (the sidebar's icons, a splash's logo) only
+/// the first clears the folder, not the icons the other has just saved.
 fn renew(cache_dir: &Path) {
+    static RENEWING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _held = RENEWING.lock().unwrap_or_else(|e| e.into_inner());
     let dir = cache_dir.join("platform-icons");
     let stamp = dir.join("revision");
     if std::fs::read_to_string(&stamp).is_ok_and(|r| r.trim() == ICONS_REVISION) {
@@ -241,4 +245,35 @@ pub fn platform_icons(
         }
     }
     (out, first_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lookups at once over an old revision: the folder is cleared once,
+    /// never under an icon another has saved since.
+    #[test]
+    fn renew_clears_once_for_lookups_at_once() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path().join("platform-icons");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("revision"), "0").unwrap();
+        std::fs::write(dir.join("old.png"), "old").unwrap();
+        std::thread::scope(|s| {
+            for i in 0..8 {
+                let cache = t.path();
+                s.spawn(move || {
+                    renew(cache);
+                    save(&cache.join(format!("platform-icons/logo/{i}.png")), b"png").unwrap();
+                });
+            }
+        });
+        assert!(!dir.join("old.png").exists());
+        for i in 0..8 {
+            assert!(dir.join(format!("logo/{i}.png")).exists(), "{i} was cleared");
+        }
+        let kept = std::fs::read_to_string(dir.join("revision")).unwrap();
+        assert_eq!(kept, ICONS_REVISION);
+    }
 }

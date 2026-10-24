@@ -38,6 +38,7 @@ use crate::Error;
 use crate::systems::System;
 
 mod dats;
+mod download;
 mod request;
 mod small;
 mod sources;
@@ -46,6 +47,7 @@ mod tests;
 mod watch;
 
 pub use dats::*;
+pub use download::*;
 pub use request::*;
 pub use small::*;
 pub use sources::*;

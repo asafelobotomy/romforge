@@ -1696,6 +1696,8 @@ hand).
   Europe, Japan) and a rule for the rest; `GameRow::box_aspect`. Cards are
   one size (the widest box in view), boxes one height on a baseline, scans
   fitted inside (no crop). 3D boxes are drawn 15% wider for the spine.
+  The shapes' table (`BOX_SHAPES`) was later merged into `BOX_SIZES`,
+  which gives both `box_aspect` and `box_size`.
 - Pictures only (2026-10-19): no card or title behind a picture (the name
   on hover, a placeholder with the name when there's no picture); banners
   all 3.2:1, the fanart cropped to fill. Details' facts in two equal
@@ -1900,13 +1902,17 @@ In this order:
      `Databases/retrobios-emulators.json`, read whole each time (no tables
      or migration). Read leniently (`firmware/data.rs`): a hash is one
      value, a list or comma-separated; aliases fold into their target's
-     cores. Profiles cover 82 of romforge's 85 cores and emulators (not
-     yet: `o2em`).
+     cores. Profiles cover nearly all of romforge's cores and emulators
+     (a core listed with its `_libretro`, as `o2em_libretro`, is found).
    - **Systems:** the `retrobios` column lists each system's RetroBIOS ids
      (106 systems, every id checked against the list; several spellings
      each). Arcade systems have none: MAME's DATs cover their BIOS sets.
      A file tied to a RetroBIOS system is listed only for its systems; a
-     file tied to none, for every system of its emulator.
+     file tied to none, for every system of its emulator, except a MAME
+     machine's (`mame-fm7`, `mame-fmtowns`): MAME's profile covers every
+     machine, so a machine gets only its own set (`fm7.zip`, added when
+     the list has none). The `sub_systems` column names the ids that are
+     sub-systems (Satellaview, DSi, Naomi 2…), not spellings.
    - **Check:** each file at its place, `Bios/RetroArch/<path>` for
      cores, `Bios/<emulator>/<path>` for the others (read once per run).
      States: accepted (size + SHA1/MD5), present (no hash listed), wrong
@@ -1915,7 +1921,9 @@ In this order:
      except that files of one `variant_group` are alternatives and
      regional files (`region`) need one region's: "ready for
      north-america". DuckStation's three regional BIOS files are then one
-     requirement, not three.
+     requirement, not three. A file only some games need (`only_for`: a
+     sub-system's, "Satellaview games", or a coprocessor chip's, "games
+     with that chip") is listed with that need and doesn't decide it.
    - **Page:** BIOS in the sidebar under DATs: platforms with "ready n /
      m", each emulator's files with state, need, region and where it goes.
      CLI `firmware check [--system X] [--all]`.

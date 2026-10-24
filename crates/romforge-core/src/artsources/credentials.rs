@@ -30,9 +30,10 @@ pub fn download_url(source: &str, url: &str, keys: &Keys, bases: &Bases) -> Stri
     let url = without_credentials(url);
     let host = fetch::host_of(&url);
     let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
-    let ours = name == "screenscraper.fr"
-        || name.ends_with(".screenscraper.fr")
-        || host == fetch::host_of(&bases.screenscraper);
+    let ours = !fetch::has_userinfo(&url)
+        && (name == "screenscraper.fr"
+            || name.ends_with(".screenscraper.fr")
+            || host == fetch::host_of(&bases.screenscraper));
     if source != Provider::ScreenScraper.name() || !ours {
         return url;
     }

@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DETAILS, SHOWN, toggled, detailsMenu } from "../src/fullscreen/fsdetails.js";
+import { DETAILS, SHOWN, knowDetails, toggled, detailsMenu } from "../src/fullscreen/fsdetails.js";
+
+// As settings_info sends them (the core's settings::fs_details_info).
+const NAMES = [["logo", "Logo (else title)"], ["platform", "Platform"], ["released", "Release date"], ["genre", "Genre"], ["overview", "Overview"], ["backdrop", "Fanart backdrop"]];
+assert.deepEqual(DETAILS, [], "none until the core has sent them");
+knowDetails({ details: NAMES.map(([value, label]) => ({ value, label })), shown: ["logo", "genre", "overview"] });
 
 test("turning a detail on or off keeps the list in order", () => {
   assert.deepEqual(toggled(["overview", "logo"], "genre"), ["logo", "genre", "overview"]);

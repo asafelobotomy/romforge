@@ -35,14 +35,23 @@ export function shelfFits(widths, first, width) {
   return Math.max(1, n);
 }
 
-// The bookshelf's choices (the core's settings::Bookshelf) until the
-// settings have loaded, and the most boxes a bookcase shelf holds, with
-// the details above the shelves and beside them (settings::SHELF_MAX,
-// SHELF_MAX_BESIDE).
-export const SHELF_DEFAULT = { direction: "horizontal", group: "platform", favourites: false, recent: false, sort: "title", details: "top" };
-export const SHELF_MAX = 30;
-export const SHELF_MAX_BESIDE = 15;
-export const shelfMax = (p) => ((p?.details ?? "top") === "top" ? SHELF_MAX : SHELF_MAX_BESIDE);
+// The bookshelf's choices, named, its default and the most boxes a
+// bookcase shelf holds with the details above the shelves and beside them:
+// the core's (settings::bookshelf_info, sent by settings_info: knowShelf).
+// Until then a default that stands the shelves, and no lists.
+export let SHELF = {
+  default: { direction: "horizontal", group: "platform", favourites: false, recent: false, sort: "title", details: "top" },
+  max: 30,
+  max_beside: 15,
+  directions: [],
+  groups: [],
+  sorts: [],
+  details: [],
+};
+export function knowShelf(info) {
+  if (info?.default) SHELF = info;
+}
+export const shelfMax = (p) => ((p?.details ?? "top") === "top" ? SHELF.max : SHELF.max_beside);
 
 // `games` in the bookshelf's order `sort`: by title, by release year
 // (oldest or newest first, games without one last), or longest played
@@ -67,7 +76,7 @@ export function shelfSorted(games, sort, marks, keyOf) {
 // each is one endless shelf. Empty ones aren't there. `keyOf(r)` keys a
 // game as favourites and play time are kept.
 export function bookcase(all, marks, prefs, name, keyOf) {
-  const p = { ...SHELF_DEFAULT, ...prefs };
+  const p = { ...SHELF.default, ...prefs };
   const games = shelfSorted(all, p.sort, marks, keyOf);
   const max = shelfMax(p);
   const played = (r) => marks.played.get(keyOf(r));
@@ -99,44 +108,23 @@ export function bookcase(all, marks, prefs, name, keyOf) {
   return out;
 }
 
-// The bookshelf's choices as words, for Settings and Start → Bookshelf.
-export const SHELF_DIRECTIONS = [
-  { value: "horizontal", label: "One endless shelf each" },
-  { value: "vertical", label: `Shelves of ${SHELF_MAX} (${SHELF_MAX_BESIDE} beside the details), down to the next` },
-];
-export const SHELF_GROUPS = [
-  { value: "platform", label: "A shelf for each platform" },
-  { value: "mixed", label: "All platforms mixed" },
-];
-export const SHELF_DETAILS = [
-  { value: "top", label: "Above the shelves" },
-  { value: "left", label: "On the left" },
-  { value: "right", label: "On the right" },
-];
-export const SHELF_SORTS = [
-  { value: "title", label: "Name" },
-  { value: "released", label: "Release date, oldest first" },
-  { value: "newest", label: "Release date, newest first" },
-  { value: "played", label: "Most played" },
-];
-
 // Start → Bookshelf: each choice and its value; pressing one changes it
 // at once (and it is kept); `index` stays on the item pressed.
 export function bookshelfMenu(act, b, index = 0) {
-  const p = { ...SHELF_DEFAULT, ...b };
-  const other = (list, v) => list[(list.findIndex((x) => x.value === v) + 1) % list.length].value;
+  const p = { ...SHELF.default, ...b };
+  const other = (list, v) => (list.length ? list[(list.findIndex((x) => x.value === v) + 1) % list.length].value : v);
   const label = (list, v) => list.find((x) => x.value === v)?.label ?? v;
   const again = (change, i) => bookshelfMenu(act, act.setBookshelf({ ...p, ...change }), i);
   return {
     title: "Bookshelf",
     index,
     items: [
-      { label: `Shelves: ${label(SHELF_DIRECTIONS, p.direction)}`, run: () => again({ direction: other(SHELF_DIRECTIONS, p.direction) }, 0) },
-      { label: `All games: ${label(SHELF_GROUPS, p.group)}`, run: () => again({ group: other(SHELF_GROUPS, p.group) }, 1) },
-      { label: `Order: ${label(SHELF_SORTS, p.sort)}`, run: () => again({ sort: other(SHELF_SORTS, p.sort) }, 2) },
+      { label: `Shelves: ${label(SHELF.directions, p.direction)}`, run: () => again({ direction: other(SHELF.directions, p.direction) }, 0) },
+      { label: `All games: ${label(SHELF.groups, p.group)}`, run: () => again({ group: other(SHELF.groups, p.group) }, 1) },
+      { label: `Order: ${label(SHELF.sorts, p.sort)}`, run: () => again({ sort: other(SHELF.sorts, p.sort) }, 2) },
       { label: `Favourites shelf: ${p.favourites ? "On" : "Off"}`, run: () => again({ favourites: !p.favourites }, 3) },
       { label: `Recently played shelf: ${p.recent ? "On" : "Off"}`, run: () => again({ recent: !p.recent }, 4) },
-      { label: `Details: ${label(SHELF_DETAILS, p.details)}`, run: () => again({ details: other(SHELF_DETAILS, p.details) }, 5) },
+      { label: `Details: ${label(SHELF.details, p.details)}`, run: () => again({ details: other(SHELF.details, p.details) }, 5) },
     ],
   };
 }

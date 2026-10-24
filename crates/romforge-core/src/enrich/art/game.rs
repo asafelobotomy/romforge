@@ -1,5 +1,6 @@
 //! One game's art: what the database says first (on the calling thread),
-//! the downloads on a worker (libretro, then LaunchBox, then the keyed
+//! the downloads on a worker (the free sources with no key, the Arcade
+//! Database and GameTDB, then libretro, then LaunchBox, then the keyed
 //! sources, in that order: house rule 10), then what was found recorded
 //! (on the calling thread again).
 
@@ -162,6 +163,11 @@ pub(super) fn prepare(
     if input.providers.contains(&Provider::GameTdb) {
         let kinds: Vec<&str> = crate::artsources::gametdb_kinds().collect();
         input.serial = crate::artsources::serial_for(conn, system_id, game, &kinds)?;
+        // GameTDB finds games only by serial: without one (none read
+        // yet), it isn't asked, so it isn't stamped as asked either.
+        if input.serial.is_none() {
+            input.providers.retain(|p| *p != Provider::GameTdb);
+        }
     }
     if !input.providers.is_empty() {
         input.rom = crate::artsources::rom_for(conn, system_id, game)?;
@@ -260,7 +266,9 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
     GameOut {
         game,
         got,
-        missing: wanted.len(),
+        // Few systems have video snaps anywhere: one not found isn't
+        // counted as missing art.
+        missing: wanted.iter().filter(|k| **k != ArtKind::Video).count(),
     }
 }
 

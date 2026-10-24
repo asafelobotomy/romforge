@@ -326,6 +326,10 @@ fn extdb_fill(
                     .filter(|(s, _, _)| *s == source)
                     .map(|(_, f, v)| (*f, v.clone()))
                     .collect();
+                // Nothing found: what it gave before stays.
+                if mine.is_empty() {
+                    continue;
+                }
                 filled |= put_fields(conn, *system_id, game, &mine, source)?;
             }
             if filled {

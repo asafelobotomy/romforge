@@ -65,6 +65,10 @@ pub struct System {
     /// list ties to one of these, or to none, is listed for it (milestone
     /// 20). Empty for arcade systems, whose BIOS sets MAME's DATs cover.
     pub retrobios: &'static [&'static str],
+    /// Which of those ids are sub-systems (an add-on or a later model, not
+    /// another spelling), and their names: a file tied to one is needed only
+    /// for those games, so it doesn't decide whether an emulator is ready.
+    pub sub_systems: &'static [(&'static str, &'static str)],
     /// The system's folders in retrokit-manuals on archive.org (manual
     /// scans named by No-Intro title; milestone 26).
     pub manuals: &'static [&'static str],
@@ -156,6 +160,7 @@ const fn s(
         emulators: &[],
         wikidata: &[],
         retrobios: &[],
+        sub_systems: &[],
         manuals: &[],
         screenscraper: None,
         igdb: &[],
@@ -234,6 +239,11 @@ impl System {
 
     const fn retrobios(mut self, ids: &'static [&'static str]) -> Self {
         self.retrobios = ids;
+        self
+    }
+
+    const fn sub_systems(mut self, ids: &'static [(&'static str, &'static str)]) -> Self {
+        self.sub_systems = ids;
         self
     }
 

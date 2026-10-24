@@ -214,6 +214,24 @@ fn requests_never_print_their_secrets() {
 }
 
 #[test]
+fn userinfo_is_not_the_host() {
+    let url = "https://www.screenscraper.fr:x@attacker.tld/m.pdf";
+    assert_eq!(host_of(url), "attacker.tld");
+    assert!(has_userinfo(url));
+    assert!(!has_userinfo("https://a.org/x?mail=a@b.org"));
+    assert_eq!(host_of("https://a.org/x?mail=a@b.org"), "a.org");
+}
+
+#[test]
+fn the_arcade_database_gets_one_request_at_a_time() {
+    assert!(request::one_at_a_time("https://example.org/a").is_none());
+    let held = request::one_at_a_time("https://adb.arcadeitalia.net/service_scraper.php?x").unwrap();
+    assert!(request::ONE.try_lock().is_err(), "a second request waits");
+    drop(held);
+    assert!(request::ONE.try_lock().is_ok());
+}
+
+#[test]
 fn a_zip_of_dats_has_a_total_cap() {
     use std::io::Write;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

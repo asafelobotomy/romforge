@@ -1,28 +1,18 @@
 // What the fullscreen mode shows of the game in focus, each detail on or
-// off (the core's settings::FS_DETAILS, in its order): kept in Settings →
-// Display and changed there or in Start → Details. Pure, so it is tested
-// in Node.
+// off: kept in Settings → Display and changed there or in Start →
+// Details. The details, named and in order, and those shown by default
+// are the core's (settings::FS_DETAILS, sent by settings_info:
+// knowDetails); none until then. Pure, so it is tested in Node.
 
-export const DETAILS = [
-  { key: "logo", label: "Logo (else title)" },
-  { key: "platform", label: "Platform" },
-  { key: "released", label: "Release date" },
-  { key: "genre", label: "Genre" },
-  { key: "players", label: "Players" },
-  { key: "modes", label: "Modes" },
-  { key: "developer", label: "Developer" },
-  { key: "publisher", label: "Publisher" },
-  { key: "rating", label: "Age rating" },
-  { key: "community", label: "Community rating" },
-  { key: "edition", label: "Region and edition" },
-  { key: "derived", label: "Hack or translation of" },
-  { key: "played", label: "Play time" },
-  { key: "overview", label: "Overview" },
-  { key: "backdrop", label: "Fanart backdrop" },
-];
+export let DETAILS = [];
+export let SHOWN = [];
 
-// Shown until the settings have loaded (as the core's defaults).
-export const SHOWN = ["logo", "platform", "released", "genre", "players", "developer", "community", "derived", "played", "overview"];
+// settings_info's fs_details: { details: [{ value, label }], shown }.
+export function knowDetails(info) {
+  if (!info?.details) return;
+  DETAILS = info.details.map((d) => ({ key: d.value, label: d.label }));
+  SHOWN = info.shown ?? [];
+}
 
 // `shown` with `key` turned on or off, in DETAILS' order.
 export function toggled(shown, key) {

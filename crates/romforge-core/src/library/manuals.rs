@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use rusqlite::OptionalExtension;
+
 use crate::{Error, Library, manual, settings};
 
 /// A row's system key, title and its files' SHA1s.
@@ -105,7 +107,7 @@ impl Library {
                 [&g.system, &g.title],
                 |r| r.get(0),
             )
-            .ok();
+            .optional()?;
         if let Some(url) = ss {
             out.push(manual::ManualOffer {
                 source: "ScreenScraper".into(),

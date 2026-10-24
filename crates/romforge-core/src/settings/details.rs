@@ -6,27 +6,28 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-/// Every detail, in the order they are shown and listed: the logo (else
-/// the title), the platform, the release date, genre, players, game
-/// modes, developer, publisher, age rating, community rating, region and
-/// edition, what a hack or translation was made from, play time, the
-/// overview, and the fanart behind the home screen.
-pub const FS_DETAILS: &[&str] = &[
-    "logo",
-    "platform",
-    "released",
-    "genre",
-    "players",
-    "modes",
-    "developer",
-    "publisher",
-    "rating",
-    "community",
-    "edition",
-    "derived",
-    "played",
-    "overview",
-    "backdrop",
+/// Every detail, in the order they are shown and listed, with its name
+/// in Settings and Start → Details: the logo (else the title), the
+/// platform, the release date, genre, players, game modes, developer,
+/// publisher, age rating, community rating, region and edition, what a
+/// hack or translation was made from, play time, the overview, and the
+/// fanart behind the home screen.
+pub const FS_DETAILS: &[(&str, &str)] = &[
+    ("logo", "Logo (else title)"),
+    ("platform", "Platform"),
+    ("released", "Release date"),
+    ("genre", "Genre"),
+    ("players", "Players"),
+    ("modes", "Modes"),
+    ("developer", "Developer"),
+    ("publisher", "Publisher"),
+    ("rating", "Age rating"),
+    ("community", "Community rating"),
+    ("edition", "Region and edition"),
+    ("derived", "Hack or translation of"),
+    ("played", "Play time"),
+    ("overview", "Overview"),
+    ("backdrop", "Fanart backdrop"),
 ];
 
 /// The ones shown until the user picks: the rest would make the screen
@@ -48,6 +49,32 @@ const SHOWN: &[&str] = &[
 /// (empty: none shown; no row: [`SHOWN`]).
 const KEY: &str = "fs_details";
 
+/// A choice as the app lists it: the value kept and its name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Choice {
+    pub value: &'static str,
+    pub label: &'static str,
+}
+
+pub(super) fn choices(of: &[(&'static str, &'static str)]) -> Vec<Choice> {
+    of.iter().map(|&(value, label)| Choice { value, label }).collect()
+}
+
+/// What the app needs to list the details: each one, and those shown
+/// until the user picks.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DetailsInfo {
+    pub details: Vec<Choice>,
+    pub shown: Vec<String>,
+}
+
+pub fn fs_details_info() -> DetailsInfo {
+    DetailsInfo {
+        details: choices(FS_DETAILS),
+        shown: default_fs_details(),
+    }
+}
+
 pub fn default_fs_details() -> Vec<String> {
     SHOWN.iter().map(|&d| d.to_owned()).collect()
 }
@@ -57,8 +84,8 @@ pub fn default_fs_details() -> Vec<String> {
 pub fn clean_fs_details<S: AsRef<str>>(shown: &[S]) -> Vec<String> {
     FS_DETAILS
         .iter()
-        .filter(|d| shown.iter().any(|s| s.as_ref() == **d))
-        .map(|&d| d.to_owned())
+        .filter(|(d, _)| shown.iter().any(|s| s.as_ref() == *d))
+        .map(|&(d, _)| d.to_owned())
         .collect()
 }
 
@@ -99,6 +126,11 @@ mod tests {
         let c = conn();
         assert_eq!(load(&c).unwrap(), default_fs_details());
         assert!(!default_fs_details().contains(&"backdrop".to_owned()));
+        assert!(
+            default_fs_details()
+                .iter()
+                .all(|d| FS_DETAILS.iter().any(|(k, _)| k == d))
+        );
         save_fs_details::<&str>(&c, &[]).unwrap();
         assert!(load(&c).unwrap().is_empty(), "all turned off stays off");
     }

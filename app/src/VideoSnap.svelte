@@ -9,19 +9,44 @@
 
   let url = $state(null);
   let failed = $state(false);
-  let gone = false;
+  let loading = $state(false);
+  // The load under way, aborted when the snap changes or goes (leaving
+  // mid-download doesn't fetch the rest).
+  let ctl = null;
+
+  function show(next) {
+    if (url) URL.revokeObjectURL(url);
+    url = next;
+  }
+
+  function stop() {
+    ctl?.abort();
+    ctl = null;
+    loading = false;
+  }
 
   async function load() {
+    if (loading || url) return;
+    const mine = (ctl = new AbortController());
+    loading = true;
     try {
-      const r = await fetch(src);
+      const r = await fetch(src, { signal: mine.signal });
       if (!r.ok) throw new Error(String(r.status));
       const blob = await r.blob();
-      if (gone) return;
-      url = URL.createObjectURL(blob);
+      if (mine.signal.aborted) return;
+      show(URL.createObjectURL(blob));
     } catch {
-      failed = true;
+      if (!mine.signal.aborted) failed = true;
+    } finally {
+      if (ctl === mine) ((ctl = null), (loading = false));
     }
   }
+
+  // A new snap: the last one's load stopped and its video let go.
+  $effect(() => {
+    void src;
+    return () => (stop(), show(null), (failed = false));
+  });
 
   $effect(() => {
     if (!src || controls) return;
@@ -29,17 +54,14 @@
     return () => clearTimeout(t);
   });
 
-  onDestroy(() => {
-    gone = true;
-    if (url) URL.revokeObjectURL(url);
-  });
+  onDestroy(() => (stop(), show(null)));
 </script>
 
 {#if url}
   <!-- svelte-ignore a11y_media_has_caption -->
   <video class={cls} src={url} autoplay={!controls} muted={!controls} loop={!controls} {controls} playsinline></video>
 {:else if controls && !failed}
-  <button class="play {cls}" onclick={load} aria-label="Play the video snap">▶ Video snap</button>
+  <button class="play {cls}" onclick={load} disabled={loading} aria-busy={loading} aria-label="Play the video snap">{loading ? "Loading…" : "▶ Video snap"}</button>
 {/if}
 
 <style>

@@ -4,7 +4,9 @@
 //! Every file is matched by its contents, never its name: size + SHA1 or
 //! MD5 against what each core or emulator accepts (house rule 8), so a pack
 //! that renamed everything still works. A file only whose name fits is
-//! offered, not placed, unless the user picks it. Nothing is written by
+//! offered, not placed, unless the user picks it; so is an archive
+//! dropped whole that has the name of a set an emulator loads as it is
+//! (MAME's `fm7.zip`, whose zip hashes no list can give). Nothing is written by
 //! [`plan`]; [`apply`] copies (never moves: the drop stays as it was),
 //! writes each file once and hard-links it to its other places, re-hashes
 //! what it wrote, never replaces a file, and journals every file it makes
@@ -109,6 +111,17 @@ fn places<'a>(slots: &'a [Slot<'a>]) -> BTreeMap<PathBuf, Place<'a>> {
     out
 }
 
+/// The archives emulators load as they are (a MAME machine's `fm7.zip`): a
+/// dropped one of these names is also offered whole, not only its members.
+fn sets(places: &BTreeMap<PathBuf, Place>) -> HashSet<String> {
+    places
+        .values()
+        .flat_map(|p| &p.reqs)
+        .filter(|f| f.archive)
+        .map(|f| f.name.to_ascii_lowercase())
+        .collect()
+}
+
 fn accepts(f: &FileReq, d: &crate::hash::Digest) -> bool {
     f.size.is_none_or(|s| s == d.size) && (f.sha1.contains(&d.sha1) || f.md5.contains(&d.md5))
 }
@@ -121,8 +134,10 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
     let mut out = ImportPlan::default();
     let mut claimed: HashSet<PathBuf> = HashSet::new();
     let mut found = Vec::new();
+    let sets = sets(&places);
     walk(
         paths,
+        &|name| sets.contains(&name.to_ascii_lowercase()),
         &mut |id, r, size| {
             let d = crate::hash::hash_stream(r, size)?.raw;
             found.push((id.clone(), d));
@@ -193,6 +208,9 @@ pub fn apply(
     also: &[String],
 ) -> Result<Imported, Error> {
     let plan = plan(dir, home, env, paths)?;
+    let (profiles, _) = load(dir)?;
+    let slots = slots(&profiles, home, env);
+    let sets = sets(&places(&slots));
     let mut wanted: BTreeMap<SourceId, (String, Vec<PathBuf>)> = BTreeMap::new();
     let mut taken: HashSet<PathBuf> = HashSet::new();
     for f in &plan.files {
@@ -237,6 +255,7 @@ pub fn apply(
     let mut failure = None;
     walk(
         paths,
+        &|name| sets.contains(&name.to_ascii_lowercase()),
         &mut |id, r, _| {
             let Some((sha1, places)) = wanted.get(id) else {
                 return Ok(());

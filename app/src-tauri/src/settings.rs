@@ -36,6 +36,9 @@ pub struct SettingsInfo {
     languages: &'static [(&'static str, &'static str)],
     /// What an empty language setting means here (the system's).
     system_language: &'static str,
+    /// The fullscreen mode's details and the bookshelf's choices, named.
+    fs_details: romforge_core::settings::DetailsInfo,
+    fs_bookshelf: romforge_core::settings::BookshelfInfo,
 }
 
 #[tauri::command]
@@ -44,5 +47,7 @@ pub async fn settings_info() -> Res<SettingsInfo> {
         default_staging: default_staging_dir().display().to_string(),
         languages: romforge_core::settings::LANGUAGES,
         system_language: romforge_core::settings::Settings::default().language(),
+        fs_details: romforge_core::settings::fs_details_info(),
+        fs_bookshelf: romforge_core::settings::bookshelf_info(),
     })
 }

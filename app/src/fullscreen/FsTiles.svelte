@@ -40,8 +40,8 @@
     {#each shown as r, k (r.id)}
       {@const i = first + k}
       {@const src = thumbSrc(picture(r), i === index ? big : small)}
-      <button class="card" class:sel={i === index} class:focus={focused && i === index} data-fs-card={r.id} data-fs-selected={i === index ? "" : undefined} data-fs-art={src ? undefined : "missing"} onclick={() => (i === index ? open() : pick(i))} aria-label={listLabel(r)}>
-        {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+      <button class="card" class:sel={i === index} class:focus={focused && i === index} data-fs-card={r.id} data-fs-selected={i === index ? "" : undefined} data-fs-art={src ? undefined : "missing"} onclick={() => (i === index ? open() : pick(i))} aria-label={fav.has(gameKey(r)) ? `${listLabel(r)}, favourite` : listLabel(r)}>
+        {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-hidden="true">★</span>{/if}
         {#if src}
           <img {src} alt="" loading="lazy" decoding="async" />
         {:else if theme.applied?.fallback === "platform" && icons[r.system]}

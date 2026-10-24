@@ -68,20 +68,32 @@ pub fn art_choices(
     let keys = &settings.keys;
     let prefs = settings.region_order();
     let mut session = crate::artsources::Session::default();
+    // The same for every source: read once.
+    let rom = crate::artsources::rom_for(conn, system_id, lookup)?;
+    let serial = crate::artsources::serial_for(
+        conn,
+        system_id,
+        lookup,
+        &crate::artsources::gametdb_kinds().collect::<Vec<_>>(),
+    )?;
+    // IGDB tells same-named games apart by it, as Enrich does.
+    let year: Option<i32> = conn
+        .query_row(
+            "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
+            params![system_id, lookup],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|y| y.trim().parse().ok());
     for provider in crate::artsources::Provider::available(keys, system) {
         let job = crate::artsources::Job {
             system,
             title: lookup,
-            rom: crate::artsources::rom_for(conn, system_id, lookup)?,
+            rom: rom.clone(),
             prefs: &prefs,
             language: settings.language(),
-            year: None,
-            serial: crate::artsources::serial_for(
-                conn,
-                system_id,
-                lookup,
-                &crate::artsources::gametdb_kinds().collect::<Vec<_>>(),
-            )?,
+            year,
+            serial: serial.clone(),
             video: false,
         };
         match crate::artsources::lookup(provider, keys, &opts.sources, &mut session, &job) {

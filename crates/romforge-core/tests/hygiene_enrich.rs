@@ -178,6 +178,12 @@ fn credentials_go_back_only_to_screenscraper() {
         elsewhere
     );
     assert_eq!(artsources::download_url("igdb", &clean, &keys, &bases), clean);
+    let disguised = "https://www.screenscraper.fr:x@attacker.tld/m.pdf";
+    assert_eq!(
+        artsources::download_url("screenscraper", disguised, &keys, &bases),
+        disguised,
+        "no credentials for a host hidden behind userinfo"
+    );
 }
 
 fn dos(_: &str, target: &str) -> Option<Vec<u8>> {

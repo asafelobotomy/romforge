@@ -1,7 +1,7 @@
 <script>
   import { thumbSrc, artSrc } from "../lib.js";
   import { listLabel } from "../listLabel.js";
-  import { theme, themeVars } from "./theme.svelte.js";
+  import { theme, cardRatio } from "./theme.svelte.js";
   import { gameKey } from "./fshome.js";
 
   // The cover flow layout: a platform's games as one row of box art, the
@@ -9,20 +9,14 @@
   // either side. Only SIDE covers each side are drawn (the outermost
   // faded out), keyed by game so they slide when the focus moves. `rows`
   // is bound back as the covers in view, so the shoulders page by them.
-  let { games, index, focused, art = "boxart", icons = {}, fav = new Set(), rows = $bindable(7), pick, open } = $props();
+  let { games, index, focused, art = "boxart", icons = {}, fav = new Set(), dark = false, rows = $bindable(7), pick, open } = $props();
 
   const SIDE = 4;
   let w = $state(1200);
   let h = $state(600);
   let el = $state(null);
   // The card's shape is the theme's (--fs-card-ratio), as in the grid.
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  let ratio = $derived.by(() => {
-    const set = theme.applied && parseFloat(themeVars(theme.applied, dark).vars["--fs-card-ratio"]);
-    if (set) return set;
-    void (w + h + theme.cssLoads);
-    return (el && parseFloat(getComputedStyle(el).getPropertyValue("--fs-card-ratio"))) || 0.74;
-  });
+  let ratio = $derived((void (w + h), cardRatio(el, dark)));
   // Tall enough to fill the row, narrow enough for three a side.
   let coverH = $derived(Math.max(120, Math.min(h * 0.82, w / 4.4 / ratio)));
   let coverW = $derived(coverH * ratio);
@@ -53,10 +47,10 @@
           data-fs-selected={d === 0 ? "" : undefined}
           data-fs-art={src ? undefined : "missing"}
           onclick={() => (d === 0 ? open() : pick(i))}
-          aria-label={listLabel(r)}
+          aria-label={fav.has(gameKey(r)) ? `${listLabel(r)}, favourite` : listLabel(r)}
           tabindex={Math.abs(d) === SIDE ? -1 : undefined}
         >
-          {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+          {#if fav.has(gameKey(r))}<span class="star" data-fs-fav aria-hidden="true">★</span>{/if}
           {#if src}
             <img {src} alt="" loading="lazy" decoding="async" />
           {:else if theme.applied?.fallback === "platform" && icons[r.system]}

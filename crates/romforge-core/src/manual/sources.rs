@@ -251,6 +251,9 @@ pub fn find_manuals(
 fn known_source(url: &str) -> bool {
     let host = crate::fetch::host_of(url);
     let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    if crate::fetch::has_userinfo(url) {
+        return false;
+    }
     url.starts_with(DOWNLOAD)
         || (url.starts_with("https://")
             && (name == "adb.arcadeitalia.net"

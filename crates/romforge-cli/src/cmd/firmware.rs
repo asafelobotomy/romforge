@@ -51,8 +51,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                             State::Missing => "missing",
                         };
                         let need = match (f.required, f.hle, f.only_for.as_deref()) {
-                            (true, _, Some("chip")) => "only games with its chip".to_owned(),
-                            (true, _, Some(sys)) => format!("only {sys} games"),
+                            (true, _, Some(games)) => format!("only {games}"),
                             (true, false, None) => "required".to_owned(),
                             (true, true, None) => "required, runs without (HLE)".to_owned(),
                             _ => "optional".to_owned(),

@@ -1,7 +1,7 @@
 <script>
   import { thumbSrc, artSrc } from "../lib.js";
   import { listLabel } from "../listLabel.js";
-  import { theme } from "./theme.svelte.js";
+  import { theme, cardRatio } from "./theme.svelte.js";
   import { gameKey } from "./fshome.js";
 
   // The shelves layout: a platform's games as rows (fshome.js'
@@ -10,16 +10,16 @@
   // view start one above the focused one; each strip moves only when its
   // focus would leave it. `rows` is bound back as the tiles a strip shows,
   // so the shoulders page along it.
-  let { shelves, row, col, focused, art = "boxart", icons = {}, fav = new Set(), rows = $bindable(6), pick, open } = $props();
+  let { shelves, row, col, focused, art = "boxart", icons = {}, fav = new Set(), dark = false, rows = $bindable(6), pick, open } = $props();
 
   let w = $state(1200);
   let h = $state(600);
   // The focused row's tiles, and the others' (both as heights).
   let big = $derived(Math.max(80, Math.round(h * 0.42)));
   let small = $derived(Math.round(big * 0.6));
-  // The card's shape, near enough to count what fits (the CSS draws
-  // --fs-card-ratio's).
-  const ratio = 0.74;
+  // The card's shape, the theme's (--fs-card-ratio), to count what fits.
+  let el = $state(null);
+  let ratio = $derived((void (w + h), cardRatio(el, dark)));
   let gap = $derived(Math.round(h * 0.03));
   const fit = (tileH) => Math.max(2, Math.floor((w + gap) / (tileH * ratio + gap)));
   $effect(() => {
@@ -40,7 +40,7 @@
   const picture = (r) => r.pictures?.[art] ?? r.pictures?.boxart ?? null;
 </script>
 
-<div class="shelves" data-fs-shelves data-fs-focus={focused ? "grid" : undefined} bind:clientWidth={w} bind:clientHeight={h} style="--gap: {gap}px">
+<div class="shelves" data-fs-shelves data-fs-focus={focused ? "grid" : undefined} bind:clientWidth={w} bind:clientHeight={h} bind:this={el} style="--gap: {gap}px">
   {#if !shelves.length}
     <p class="none">No games on this platform yet.</p>
   {:else}
@@ -55,8 +55,8 @@
             {@const c = first + k}
             {@const sel = on && c === col}
             {@const src = thumbSrc(picture(g), tileH)}
-            <button class="card" class:focus={focused && sel} data-fs-card={g.id} data-fs-selected={sel ? "" : undefined} data-fs-art={src ? undefined : "missing"} onclick={() => (sel ? open() : pick(r, c))} aria-label={listLabel(g)}>
-              {#if fav.has(gameKey(g))}<span class="star" data-fs-fav aria-label="Favourite">★</span>{/if}
+            <button class="card" class:focus={focused && sel} data-fs-card={g.id} data-fs-selected={sel ? "" : undefined} data-fs-art={src ? undefined : "missing"} onclick={() => (sel ? open() : pick(r, c))} aria-label={fav.has(gameKey(g)) ? `${listLabel(g)}, favourite` : listLabel(g)}>
+              {#if fav.has(gameKey(g))}<span class="star" data-fs-fav aria-hidden="true">★</span>{/if}
               {#if src}
                 <img {src} alt="" loading="lazy" decoding="async" />
               {:else if theme.applied?.fallback === "platform" && icons[g.system]}

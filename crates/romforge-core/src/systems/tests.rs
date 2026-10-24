@@ -77,3 +77,13 @@ fn own_icons_are_for_real_platforms() {
         assert!(by_key(key).is_some(), "{key}");
     }
 }
+
+#[test]
+fn sub_systems_are_among_the_retrobios_ids() {
+    for s in SYSTEMS {
+        for (id, label) in s.sub_systems {
+            assert!(s.retrobios.contains(id), "{}: {id}", s.key);
+            assert!(!label.is_empty());
+        }
+    }
+}

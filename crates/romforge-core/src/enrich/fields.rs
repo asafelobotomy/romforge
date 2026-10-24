@@ -1,9 +1,10 @@
 //! Which source's value a game's field keeps (house rule 10): every writer
 //! of `game_meta` goes through [`put_field`].
 //!
-//! Best first: libretro, Wikidata (and Wikipedia's descriptions),
-//! ScreenScraper, IGDB, then the downloaded databases (OpenVGDB, then
-//! LaunchBox). A value replaces one that is missing or junk (`???`), one
+//! Best first: libretro; Wikidata (and Wikipedia's descriptions) and the
+//! Arcade Database (for arcade sets, which Wikidata has no items for),
+//! sharing a place; ScreenScraper, IGDB, then the downloaded databases
+//! (OpenVGDB, then LaunchBox). A value replaces one that is missing or junk (`???`), one
 //! from a later source, or its own source's. A value stored before sources
 //! were recorded (`NULL`: libretro's or Wikidata's) gives way only to those
 //! two.
@@ -90,7 +91,9 @@ pub fn put_field(
 
 /// Store `fields` from `source` ([`put_field`] each), the release date as
 /// one: its month and day only where the year (and month) stored are its
-/// own, so a date is never put together from two releases.
+/// own, so a date is never put together from two releases. Where it changes
+/// a part of the date, the finer parts it doesn't supply go, whoever gave
+/// them.
 pub fn put_fields(
     conn: &Connection,
     system_id: i64,
@@ -98,10 +101,12 @@ pub fn put_fields(
     fields: &[(&str, String)],
     source: &str,
 ) -> Result<bool, Error> {
-    let stored = |f: &str| -> Result<Option<String>, Error> {
+    let stored = |f: &str| -> Result<Option<(String, Option<String>)>, Error> {
         Ok(conn
-            .prepare_cached("SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3")?
-            .query_row(params![system_id, title, f], |r| r.get(0))
+            .prepare_cached(
+                "SELECT value, source FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3",
+            )?
+            .query_row(params![system_id, title, f], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?)
     };
     let mut wrote = false;
@@ -112,23 +117,30 @@ pub fn put_fields(
     // Where this source's date stops fitting what is stored, its own finer
     // parts (kept from when it held the coarser ones) go too.
     let mut fits = date.len();
+    // Whether this source changed a part of the date: the finer parts
+    // stored then belong to another date.
+    let mut changed = false;
     for (i, f) in date.iter().enumerate() {
         let Some((_, v)) = fields.iter().find(|(k, _)| k == f) else {
             fits = i;
             break;
         };
+        let before = stored(f)?.map(|(v, _)| v);
         wrote |= put_field(conn, system_id, title, f, v, source, false)?;
-        if stored(f)?.as_ref() != Some(v) {
+        let now = stored(f)?;
+        if now.as_ref().map(|(v, _)| v) != Some(v) {
             // An earlier source's part stands: none of this one's finer
             // parts go with it.
             fits = i + 1;
             break;
         }
+        changed |= before.as_ref() != Some(v) && now.and_then(|(_, s)| s).as_deref() == Some(source);
     }
     for f in &date[fits..] {
         conn.execute(
-            "DELETE FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3 AND source = ?4",
-            params![system_id, title, f, source],
+            "DELETE FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = ?3
+               AND (?5 OR source IS ?4)",
+            params![system_id, title, f, source, changed],
         )?;
     }
     Ok(wrote)
@@ -277,6 +289,37 @@ mod tests {
             .optional()
             .unwrap();
         assert_eq!(day, None);
+    }
+
+    #[test]
+    fn a_coarser_date_takes_the_finer_parts_of_another_with_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE game_meta (system_id INTEGER, title TEXT, field TEXT, value TEXT, source TEXT,
+               PRIMARY KEY (system_id, title, field));
+             INSERT INTO game_meta VALUES (1, 'G', 'releaseyear', '1992', 'launchbox');
+             INSERT INTO game_meta VALUES (1, 'G', 'releasemonth', '3', 'launchbox');
+             INSERT INTO game_meta VALUES (1, 'G', 'releaseday', '15', 'launchbox');
+             INSERT INTO game_meta VALUES (1, 'H', 'releaseyear', '1992', 'launchbox');
+             INSERT INTO game_meta VALUES (1, 'H', 'releasemonth', '3', 'launchbox');",
+        )
+        .unwrap();
+        let date = |t: &str| -> Vec<String> {
+            conn.prepare(
+                "SELECT value FROM game_meta WHERE title = ?1 AND field LIKE 'release_%'
+                 AND field != 'releases' ORDER BY field DESC",
+            )
+            .unwrap()
+            .query_map([t], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+        };
+        put_fields(&conn, 1, "G", &release_fields([("1991", "")]), WIKIDATA).unwrap();
+        assert_eq!(date("G"), ["1991"], "not 1991-03-15");
+        // The same year: LaunchBox's month still fits it.
+        put_fields(&conn, 1, "H", &release_fields([("1992", "")]), WIKIDATA).unwrap();
+        assert_eq!(date("H"), ["1992", "3"]);
     }
 
     #[test]

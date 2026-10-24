@@ -1,7 +1,14 @@
-//! Milestone 9, second stage: art from sources that need the owner's keys
-//! (house rule 10: ScreenScraper is tier 2, SteamGridDB and IGDB tier 3).
-//! They only fill art libretro and the downloaded LaunchBox database don't
-//! have (they are asked after both).
+//! Milestone 9, second stage: art from sources beyond libretro's
+//! thumbnails. Two are free, with no key (house rule 10's tier 1), and
+//! are asked first, before libretro (their pictures are larger):
+//!
+//! - [`adb`], the Arcade Database, for arcade sets: pictures, video snaps,
+//!   manuals and text.
+//! - [`gametdb`] by the header's serial (GameCube, Wii, DS).
+//!
+//! The rest need the owner's keys (ScreenScraper is tier 2, SteamGridDB
+//! and IGDB tier 3), and only fill what libretro and the downloaded
+//! LaunchBox database don't have (they are asked after both):
 //!
 //! - [`screenscraper`] by the ROM's hashes: pictures and text.
 //! - [`steamgriddb`] by title: hero, logo, icon.

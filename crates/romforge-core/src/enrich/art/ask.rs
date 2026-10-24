@@ -48,33 +48,78 @@ pub(super) fn is_mp4(path: &std::path::Path) -> bool {
         && &head[4..8] == b"ftyp"
 }
 
-/// Stream a video snap from `get` to the game's file; whether it was kept.
-fn video(sh: &Shared, game: &str, get: &str, source: &str, url: &str, got: &mut Vec<Got>) -> bool {
+/// A video snap's deadline, body included: the Arcade Database is asked
+/// one request at a time, so a stalled one mustn't hold it for long.
+const VIDEO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// How one download for a wanted kind went.
+enum Fetched {
+    Kept,
+    /// Not there, or not what it should be: an answer.
+    No,
+    /// Not reached (offline, rate-limited, cut short): asked again later.
+    Failed,
+}
+
+/// Stream a video snap from `get` to the game's file (via a file of its
+/// own, so a bad download never replaces a good one), unless its host
+/// rate-limited this run.
+fn video(sh: &Shared, game: &str, get: &str, source: &str, url: &str, got: &mut Vec<Got>) -> Fetched {
     let path = art_path(sh.opts, sh.system, game, ArtKind::Video, "mp4");
     if let Some(dir) = path.parent()
         && let Err(e) = std::fs::create_dir_all(dir)
     {
         got.push(Got::Error(format!("{}: {e}", dir.display())));
-        return false;
+        return Fetched::Failed;
     }
-    match fetch::download_to(get, &path, MAX_VIDEO, |_, _| {}) {
-        Ok(_) if is_mp4(&path) => {
-            got.push(Got::Saved {
-                kind: ArtKind::Video,
-                path: path.to_string_lossy().into_owned(),
-                source: source.to_owned(),
-                url: url.to_owned(),
-            });
-            true
-        }
+    let host = fetch::host_of(get).to_owned();
+    if sh
+        .halted_hosts
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&host)
+    {
+        got.push(Got::Error(format!(
+            "{source}: {host}: rate limiting, not asked again this run"
+        )));
+        return Fetched::Failed;
+    }
+    let new = path.with_extension("mp4.new");
+    let req = fetch::Request {
+        timeout: Some(VIDEO_TIMEOUT),
+        ..fetch::Request::get(get)
+    };
+    match fetch::download_with(&req, &new, MAX_VIDEO, |_, _| {}) {
+        Ok(_) if is_mp4(&new) => match std::fs::rename(&new, &path) {
+            Ok(()) => {
+                got.push(Got::Saved {
+                    kind: ArtKind::Video,
+                    path: path.to_string_lossy().into_owned(),
+                    source: source.to_owned(),
+                    url: url.to_owned(),
+                });
+                Fetched::Kept
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&new);
+                got.push(Got::Error(format!("{}: {e}", path.display())));
+                Fetched::Failed
+            }
+        },
         Ok(_) => {
-            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(&new);
             got.push(Got::Error(format!("{source}: {url} is not an MP4 video")));
-            false
+            Fetched::No
         }
         Err(e) => {
+            if fetch::is_rate_limited(&e) {
+                sh.halted_hosts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(host);
+            }
             got.push(Got::Error(format!("{source}: {e}")));
-            false
+            Fetched::Failed
         }
     }
 }
@@ -103,6 +148,8 @@ pub(super) fn ask(
     }
     match crate::artsources::lookup(provider, sh.keys, &sh.opts.sources, session, job) {
         Ok(found) => {
+            // Kinds a download of failed for.
+            let mut failed: Vec<ArtKind> = Vec::new();
             if !found.fields.is_empty() {
                 got.push(Got::Fields(provider, found.fields));
             }
@@ -111,23 +158,32 @@ pub(super) fn ask(
                     continue;
                 }
                 let get = crate::artsources::download_url(provider.name(), &url, sh.keys, &sh.opts.sources);
-                let kept = if kind == ArtKind::Video {
+                let fetched = if kind == ArtKind::Video {
                     video(sh, job.title, &get, provider.name(), &url, got)
                 } else {
                     match image(&get, sh.halted_hosts) {
-                        Ok(Some(data)) => keep(sh, job.title, kind, &data, provider.name(), &url, got),
-                        Ok(None) => false,
+                        Ok(Some(data)) if keep(sh, job.title, kind, &data, provider.name(), &url, got) => {
+                            Fetched::Kept
+                        }
+                        Ok(Some(_)) => Fetched::Failed,
+                        Ok(None) => Fetched::No,
                         Err(e) => {
                             got.push(Got::Error(e.to_string()));
-                            false
+                            Fetched::Failed
                         }
                     }
                 };
-                if kept {
-                    wanted.retain(|k| *k != kind);
+                match fetched {
+                    Fetched::Kept => wanted.retain(|k| *k != kind),
+                    Fetched::Failed => failed.push(kind),
+                    Fetched::No => {}
                 }
             }
-            got.push(Got::Asked(provider));
+            // A picture it has that wasn't reached (and no other of the
+            // kind was kept): asked again next time.
+            if !failed.iter().any(|k| wanted.contains(k)) {
+                got.push(Got::Asked(provider));
+            }
         }
         Err(e) => {
             if fetch::is_rate_limited(&e) {

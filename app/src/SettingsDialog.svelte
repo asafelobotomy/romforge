@@ -6,6 +6,7 @@
   import { edit } from "./jobs.svelte.js";
   import ThemeSettings from "./ThemeSettings.svelte";
   import FullscreenSettings from "./FullscreenSettings.svelte";
+  import { knowFsInfo } from "./fullscreen/fsinfo.js";
   import SteamSettings from "./SteamSettings.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
@@ -85,6 +86,7 @@
     defaultStaging = info?.default_staging ?? "";
     languages = info?.languages ?? [];
     systemLanguage = info?.system_language ?? "en";
+    knowFsInfo(info);
     open = true;
   }
 

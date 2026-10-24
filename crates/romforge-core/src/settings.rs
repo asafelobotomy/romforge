@@ -28,11 +28,13 @@ pub use language::LANGUAGES;
 mod regions;
 pub use regions::parse_regions;
 mod details;
-pub use details::{FS_DETAILS, clean_fs_details, default_fs_details, save_fs_details};
+pub use details::{
+    Choice, DetailsInfo, FS_DETAILS, clean_fs_details, default_fs_details, fs_details_info, save_fs_details,
+};
 mod bookshelf;
 pub use bookshelf::{
-    Bookshelf, SHELF_DETAILS, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_MAX, SHELF_MAX_BESIDE, SHELF_SORTS,
-    save_bookshelf,
+    Bookshelf, BookshelfInfo, SHELF_DETAILS, SHELF_DIRECTIONS, SHELF_GROUPS, SHELF_MAX, SHELF_MAX_BESIDE,
+    SHELF_SORTS, bookshelf_info, save_bookshelf,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

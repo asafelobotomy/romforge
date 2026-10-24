@@ -150,7 +150,6 @@ fn relative(p: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-/// Strings in a value that is a string or a list of them.
 /// One string, a list of them, or an object's keys (snes9x lists its
 /// cores as an object of notes per core).
 fn strings(v: Option<&Value>) -> Vec<String> {
