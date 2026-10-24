@@ -76,6 +76,13 @@ pub fn art_choices(
             prefs: &prefs,
             language: settings.language(),
             year: None,
+            serial: crate::artsources::serial_for(
+                conn,
+                system_id,
+                lookup,
+                &crate::artsources::gametdb_kinds().collect::<Vec<_>>(),
+            )?,
+            video: false,
         };
         match crate::artsources::lookup(provider, keys, &opts.sources, &mut session, &job) {
             Ok(f) => found.extend(

@@ -68,6 +68,8 @@ fn options(base: &str, cache: &Path) -> EnrichOptions {
         igdb_token: format!("{base}/igdb/token"),
         igdb: format!("{base}/igdb"),
         igdb_images: format!("{base}/igimg"),
+        adb: format!("{base}/adb"),
+        gametdb: format!("{base}/gametdb"),
     };
     opts
 }

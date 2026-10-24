@@ -17,12 +17,14 @@ pub const WIKIDATA: &str = "wikidata";
 pub const WIKIPEDIA: &str = "wikipedia";
 pub const SCREENSCRAPER: &str = "screenscraper";
 pub const IGDB: &str = "igdb";
+/// The Arcade Database (arcade sets have no Wikidata items: its place).
+pub const ADB: &str = "adb";
 
 /// A source's place in the order; unknown sources come last.
 pub fn rank(source: &str) -> u8 {
     match source {
         LIBRETRO => 1,
-        WIKIDATA | WIKIPEDIA => 2,
+        WIKIDATA | WIKIPEDIA | ADB => 2,
         SCREENSCRAPER => 3,
         IGDB => 4,
         "openvgdb" => 5,

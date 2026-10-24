@@ -82,5 +82,17 @@ fn only_archive_org_downloads_are_taken() {
         url: "https://example.com/x.pdf".into(),
         size: None,
     };
-    assert!(download_offer(&conn, t.path(), t.path(), "SNES", "G", &offer).is_err());
+    let keys = crate::settings::Keys::default();
+    assert!(download_offer(&conn, t.path(), t.path(), "SNES", "G", &offer, &keys).is_err());
+    assert!(super::known_source(
+        "https://adb.arcadeitalia.net/download_file.php?x=1"
+    ));
+    assert!(super::known_source(
+        "https://neoclone.screenscraper.fr/api2/mediaManuelJeu.php?x"
+    ));
+    assert!(
+        !super::known_source("http://adb.arcadeitalia.net/x.pdf"),
+        "https only"
+    );
+    assert!(!super::known_source("https://evil.example/screenscraper.fr.pdf"));
 }

@@ -98,6 +98,7 @@ pub(crate) fn host_of(url: &str) -> &str {
 /// asks for more than 30 s is not, and the error says how long it wants.
 /// A used-up quota (ScreenScraper's 430 and 431) is not asked again.
 pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
+    let _one = one_at_a_time(req.url);
     let Some(mut response) = respond(req)? else {
         return Ok(None);
     };
@@ -139,6 +140,7 @@ pub fn download_to(
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<u64, Error> {
     let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
+    let _one = one_at_a_time(url);
     let mut response = respond(&Request::get(url))?.ok_or_else(|| err("HTTP 404".into()))?;
     let total = response
         .headers()
@@ -338,6 +340,21 @@ pub fn decode_segment(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Hosts that ask for one connection at a time from each user (the Arcade
+/// Database: "a single connection per ip address at a time").
+const ONE_AT_A_TIME: &[&str] = &["adb.arcadeitalia.net"];
+
+/// Held for a whole request (answer and body) to an [`ONE_AT_A_TIME`] host.
+static ONE: Mutex<()> = Mutex::new(());
+
+fn one_at_a_time(url: &str) -> Option<std::sync::MutexGuard<'static, ()>> {
+    let host = host_of(url);
+    let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    ONE_AT_A_TIME
+        .contains(&name)
+        .then(|| ONE.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
 /// When each host may be asked next.
 static NEXT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 
@@ -367,5 +384,17 @@ pub(super) fn wait_for_host(url: &str) {
     let now = Instant::now();
     if at > now {
         std::thread::sleep(at - now);
+    }
+}
+
+#[cfg(test)]
+mod one_tests {
+    #[test]
+    fn the_arcade_database_gets_one_request_at_a_time() {
+        assert!(super::one_at_a_time("https://example.org/a").is_none());
+        let held = super::one_at_a_time("https://adb.arcadeitalia.net/service_scraper.php?x").unwrap();
+        assert!(super::ONE.try_lock().is_err(), "a second request waits");
+        drop(held);
+        assert!(super::ONE.try_lock().is_ok());
     }
 }

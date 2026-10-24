@@ -291,6 +291,14 @@
         </label>
         <p class="hint">In Details, keep a box for every kind of art (box, fanart, logo, 3D box, title screen, in-game, icon) even when there's none yet. Off: only the art there is.</p>
       </section>
+
+      <section class="setting">
+        <label class="toggle">
+          <input type="checkbox" bind:checked={draft.video_snaps} />
+          Download video snaps
+        </label>
+        <p class="hint">Enrich also fetches a short gameplay clip per game (2–30 MB each; the Arcade Database for arcade games, ScreenScraper with its keys for the rest). It plays in Details and behind a game in the fullscreen mode.</p>
+      </section>
       {:else if stab === "sources"}
       <section class="setting">
         <h3 class="sub">Online sources <span class="hint">(optional)</span></h3>
@@ -352,6 +360,11 @@
           Manuals are shown with {@render link("https://github.com/mozilla/pdf.js", "pdf.js")} and their scanned pages made searchable with
           {@render link("https://github.com/naptha/tesseract.js", "tesseract.js")} and Tesseract's language data, all licensed
           {@render link("https://www.apache.org/licenses/LICENSE-2.0", "Apache-2.0")}.
+        </p>
+        <p class="hint">
+          Arcade games' pictures, videos, facts and manuals: scraping using {@render link("https://adb.arcadeitalia.net", "Arcade Database")}
+          by motoschifo; their history text © arcade-history.com. GameCube, Wii and DS covers, full covers and disc and cartridge
+          labels from {@render link("https://www.gametdb.com", "GameTDB")}, where anyone can add missing ones.
         </p>
       </section>
       {/if}

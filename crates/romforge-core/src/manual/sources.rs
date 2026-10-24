@@ -246,7 +246,21 @@ pub fn find_manuals(
     Ok(out)
 }
 
-/// Download an offer (the user picked it) and keep it as the manual.
+/// Whether `url` is from a place romforge offers manuals from: archive.org,
+/// the Arcade Database, ScreenScraper.
+fn known_source(url: &str) -> bool {
+    let host = crate::fetch::host_of(url);
+    let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    url.starts_with(DOWNLOAD)
+        || (url.starts_with("https://")
+            && (name == "adb.arcadeitalia.net"
+                || name == "screenscraper.fr"
+                || name.ends_with(".screenscraper.fr")))
+}
+
+/// Download an offer (the user picked it) and keep it as the manual;
+/// `keys`: ScreenScraper's are put back into its address only to download.
+#[allow(clippy::too_many_arguments)]
 pub fn download_offer(
     conn: &Connection,
     media: &Path,
@@ -254,16 +268,23 @@ pub fn download_offer(
     system: &str,
     game: &str,
     offer: &ManualOffer,
+    keys: &crate::settings::Keys,
 ) -> Result<PathBuf, Error> {
-    if !offer.url.starts_with(DOWNLOAD) {
+    if !known_source(&offer.url) {
         return Err(Error::Manual(format!(
             "not a manual romforge knows: {}",
             offer.url
         )));
     }
+    let get = crate::artsources::download_url(
+        crate::artsources::Provider::ScreenScraper.name(),
+        &offer.url,
+        keys,
+        &crate::artsources::Bases::default(),
+    );
     let req = crate::fetch::Request {
         max_body: Some(512 << 20),
-        ..crate::fetch::Request::get(&offer.url)
+        ..crate::fetch::Request::get(&get)
     };
     let bytes = crate::fetch::request(&req)?.unwrap_or_default();
     if !super::is_pdf(&bytes) {

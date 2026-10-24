@@ -72,6 +72,10 @@ pub struct Settings {
     /// the system's ([`Settings::language`]).
     #[serde(default)]
     pub language: String,
+    /// Enrich downloads video snaps (short MP4 gameplay clips, 2–30 MB
+    /// each); off by default.
+    #[serde(default)]
+    pub video_snaps: bool,
     /// The sidebar's platform icons ([`crate::enrich::PLATFORM_ICON_THEMES`]:
     /// controllers, consoles or logos), or "none" for plain badges. Empty:
     /// "flatui", the controllers.
@@ -165,6 +169,7 @@ impl Default for Settings {
             show_missing_versions: false,
             regions: Vec::new(),
             language: String::new(),
+            video_snaps: false,
             platform_icons: String::new(),
             threads: 0,
             list_age_days: default_list_age(),
@@ -357,6 +362,7 @@ impl Settings {
                 t.to_owned()
             },
             language: language::cleaned(&self.language).map_err(Error::Settings)?,
+            video_snaps: self.video_snaps,
             regions: self
                 .regions
                 .iter()

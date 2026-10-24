@@ -188,6 +188,8 @@ mod pick_tests {
             prefs: &[],
             language: "en",
             year,
+            serial: None,
+            video: false,
         };
         assert!(pick(&games, &job(None)).is_none(), "two of that name, no year");
         let g = pick(&games, &job(Some(1989))).unwrap();

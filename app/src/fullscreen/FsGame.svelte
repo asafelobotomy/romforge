@@ -1,6 +1,7 @@
 <script>
   import { genres } from "../facts.js";
   import { displayTitle, released, played } from "../labels.js";
+  import VideoSnap from "../VideoSnap.svelte";
 
   // A game's own page in the fullscreen mode: its fanart dimmed behind,
   // the box, the logo (else the title), facts, the overview, and its
@@ -14,6 +15,8 @@
 
 <section class="page" data-fs-screen="game">
   {#if art.hero}<img class="hero" src={art.hero} alt="" />{/if}
+  <!-- Its video snap over the fanart once the focus rests on the game. -->
+  {#if art.video}{#key art.video}<VideoSnap src={art.video} delay={1500} cls="fs-video" />{/key}{/if}
   <div class="body">
     <div class="box">
       {#if art.box3d || art.boxart}
@@ -49,6 +52,8 @@
 <style>
   .page { position: relative; height: 100%; overflow: hidden; }
   .hero { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.22; filter: blur(0.4vh); }
+  .page :global(video.fs-video) { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; opacity: 0.32; animation: fs-video-in 0.8s ease-out; }
+  @keyframes fs-video-in { from { opacity: 0; } }
   .body { position: relative; display: grid; grid-template-columns: minmax(0, 34vw) minmax(0, 1fr); gap: 4vw; height: 100%; padding: 4vh 5vw; align-items: center; }
   .box { display: grid; place-items: center; height: 100%; max-height: 66vh; }
   .box img { max-width: 100%; max-height: 66vh; object-fit: contain; filter: drop-shadow(0 2vh 2.4vh var(--fs-shadow)); }

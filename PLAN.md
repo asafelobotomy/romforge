@@ -2552,19 +2552,26 @@ sources (licences and keys checked against house rule 10).
 - **Re-asking:** sources asked before `ASK_AGAIN_SINCE` are asked once more,
   so existing libraries get the new fields and kinds.
 
-**Step 2 (not built).** Each needs its terms confirmed by hand first, because
-their pages blocked automated reading:
-- **Arcade Database** (adb.arcadeitalia.net, by MAME set): snaps, titles,
-  marquees, cabinets, flyers, 1080p videos, manuals. It asks for a
-  credit, and a message to its author before use.
-- **GameTDB** by disc or cartridge serial (Wii, GameCube, Wii U, DS, 3DS,
-  Switch): high-res and full covers, disc and cartridge labels. This
-  needs the serial read from game headers. Its licence is unconfirmed,
-  so it is treated like LaunchBox (a user download) until it is
-  confirmed.
-- **Video snaps** (ScreenScraper `video`, ADB's videos): a setting, off by
-  default (each is several MB), played in the fullscreen mode.
-- **ScreenScraper's `manuel`** as a manual source.
+**Step 2 (built 2026-10-24).** Terms read by hand first:
+- **Arcade Database** (adb.arcadeitalia.net, release 6): one `query_mame`
+  per set, one connection at a time (`fetch`'s per-host lock): snap,
+  title, marquee, flyer, cabinet, genre, players, year, manufacturer,
+  series, and arcade-history.com's history with its copyright line.
+  Credited "Scraping using Arcade Database by motoschifo". Its manual
+  (`query_mame_media`) is asked only when the Manual tab opens.
+- **GameTDB**, by the header's game ID (GameCube, Wii, DS): cover,
+  full cover, 3D box, disc or cartridge, region from the ID. Its FAQ
+  allows use in software with a link to it.
+- Both are free and keyless, asked before libretro's thumbnails.
+- **Video snaps** (Settings, off by default): the Arcade Database's, else
+  ScreenScraper's normalized clip; streamed to `Media/<System>/video/`,
+  played from a Blob in Details and on the fullscreen game page.
+- **ScreenScraper's `manuel`** is offered in the Manual tab.
+
+**Open:**
+- Telling both projects about romforge: the owner sends it.
+- 3DS, Wii U and Switch serials once they have header readers
+  (milestones 22, 24 and 25).
 
 **Maybe:**
 - RetroAchievements (free account and key, by hash);

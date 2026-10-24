@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use super::super::*;
-use super::{image_ext, save, thumbnail_url};
+use super::{image_ext, thumbnail_url};
 use crate::artsources::{Provider, RomRef};
 
 /// What a worker needs for one game, read beforehand.
@@ -25,6 +25,8 @@ pub(super) struct GameIn {
     rom: Option<RomRef>,
     /// Its release year, if known (IGDB tells same-named games apart by it).
     year: Option<i32>,
+    /// Its header's serial (GameTDB finds games by it).
+    serial: Option<crate::ident::GameId>,
     /// Errors found while reading (LaunchBox's database).
     errors: Vec<String>,
     pub cached: usize,
@@ -63,6 +65,8 @@ pub(super) struct Shared<'a> {
     pub prefs: &'a [String],
     /// The language for text (Settings).
     pub language: &'static str,
+    /// Video snaps are wanted (Settings).
+    pub video: bool,
     /// Hosts and keyed sources that said "slow down": not asked again
     /// this run, by any worker.
     pub halted_hosts: &'a Mutex<HashSet<String>>,
@@ -79,6 +83,7 @@ pub(super) fn prepare(
     game: &str,
     keys: &crate::settings::Keys,
     prefs: &[String],
+    video: bool,
     lbdb: &Option<Connection>,
 ) -> Result<GameIn, Error> {
     let lr_game = libretro_game(conn, system, system_id, game)?;
@@ -93,10 +98,11 @@ pub(super) fn prepare(
         providers: Vec::new(),
         rom: None,
         year: None,
+        serial: None,
         errors: Vec::new(),
         cached: 0,
     };
-    for &kind in &opts.art {
+    for &kind in opts.art.iter().filter(|k| video || **k != ArtKind::Video) {
         // A miss from before the sources learnt more counts as not asked.
         let (known, chosen): (Option<Option<String>>, bool) = conn
             .query_row(
@@ -153,6 +159,10 @@ pub(super) fn prepare(
             input.providers.push(provider);
         }
     }
+    if input.providers.contains(&Provider::GameTdb) {
+        let kinds: Vec<&str> = crate::artsources::gametdb_kinds().collect();
+        input.serial = crate::artsources::serial_for(conn, system_id, game, &kinds)?;
+    }
     if !input.providers.is_empty() {
         input.rom = crate::artsources::rom_for(conn, system_id, game)?;
         input.year = conn
@@ -167,133 +177,90 @@ pub(super) fn prepare(
     Ok(input)
 }
 
-/// The downloads for one game (no database): what libretro has, then
-/// LaunchBox and the keyed sources for what is still missing.
+/// The downloads for one game (no database), each kind from the first
+/// source that has it: the free sources (the Arcade Database, GameTDB:
+/// larger pictures than libretro's), libretro's thumbnails, LaunchBox,
+/// then the keyed sources.
 pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
     let GameIn {
         game,
         libretro,
-        mut missing,
+        missing,
         launchbox,
         providers,
         rom,
         year,
+        serial,
         errors,
         ..
     } = input;
     let mut got: Vec<Got> = errors.into_iter().map(Got::Error).collect();
-    let take = |kind: ArtKind, data: &[u8], source: &str, url: &str, got: &mut Vec<Got>| -> bool {
-        let ext = image_ext(data).unwrap_or("png");
-        let path = art_path(sh.opts, sh.system, &game, kind, ext);
-        match save(&path, data) {
-            Ok(()) => {
-                got.push(Got::Saved {
-                    kind,
-                    path: path.to_string_lossy().into_owned(),
-                    source: source.to_owned(),
-                    url: url.to_owned(),
-                });
-                true
-            }
-            Err(e) => {
-                got.push(Got::Error(format!("{}: {e}", path.display())));
-                false
-            }
-        }
+    // Every kind not kept yet: libretro's, and those it can't give.
+    let mut wanted: Vec<ArtKind> = libretro.iter().map(|(k, _)| *k).chain(missing).collect();
+    let job = crate::artsources::Job {
+        system: sh.system,
+        title: &game,
+        rom,
+        prefs: sh.prefs,
+        language: sh.language,
+        year,
+        serial,
+        video: sh.video,
     };
+    // The IGDB token is cached for the whole process, so a session per
+    // game is enough.
+    let mut session = crate::artsources::Session::default();
+    let (free, keyed): (Vec<_>, Vec<_>) = providers.into_iter().partition(|p| p.is_free());
+    for provider in free {
+        super::ask::ask(sh, provider, &job, &mut wanted, &mut got, &mut session);
+    }
     'kinds: for (kind, urls) in libretro {
+        if !wanted.contains(&kind) {
+            continue;
+        }
         for url in &urls {
             match image(url, sh.halted_hosts) {
                 Ok(Some(data)) => {
-                    if !take(kind, &data, "libretro", url, &mut got) {
-                        missing.push(kind);
+                    if super::ask::keep(sh, &game, kind, &data, "libretro", url, &mut got) {
+                        wanted.retain(|k| *k != kind);
                     }
                     continue 'kinds;
                 }
                 Ok(None) => {}
+                // Not reached (offline, rate-limited): looked for again
+                // next time, neither missing nor asked elsewhere now.
                 Err(e) => {
                     got.push(Got::Error(e.to_string()));
+                    wanted.retain(|k| *k != kind);
                     continue 'kinds;
                 }
             }
         }
         got.push(Got::NotOnLibretro(kind));
-        missing.push(kind);
     }
     // LaunchBox next (free, no key; downloaded by the user): only what is
     // still missing.
     for ArtFound { kind, url, .. } in launchbox {
-        if !missing.contains(&kind) {
+        if !wanted.contains(&kind) {
             continue;
         }
         match image(&url, sh.halted_hosts) {
             Ok(Some(data)) => {
-                if take(kind, &data, "launchbox", &url, &mut got) {
-                    missing.retain(|k| *k != kind);
+                if super::ask::keep(sh, &game, kind, &data, "launchbox", &url, &mut got) {
+                    wanted.retain(|k| *k != kind);
                 }
             }
             Ok(None) => {}
             Err(e) => got.push(Got::Error(format!("LaunchBox: {e}"))),
         }
     }
-    // Keyed sources, each asked once per game unless refreshing. The IGDB
-    // token is cached for the whole process, so a session per game is enough.
-    let mut session = crate::artsources::Session::default();
-    for provider in providers {
-        if missing.is_empty() && !provider.has_text() {
-            continue;
-        }
-        if sh
-            .halted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&provider)
-        {
-            continue;
-        }
-        let job = crate::artsources::Job {
-            system: sh.system,
-            title: &game,
-            rom: rom.clone(),
-            prefs: sh.prefs,
-            language: sh.language,
-            year,
-        };
-        match crate::artsources::lookup(provider, sh.keys, &sh.opts.sources, &mut session, &job) {
-            Ok(found) => {
-                if !found.fields.is_empty() {
-                    got.push(Got::Fields(provider, found.fields));
-                }
-                for ArtFound { kind, url, .. } in found.art {
-                    if !missing.contains(&kind) {
-                        continue;
-                    }
-                    let get =
-                        crate::artsources::download_url(provider.name(), &url, sh.keys, &sh.opts.sources);
-                    match image(&get, sh.halted_hosts) {
-                        Ok(Some(data)) => {
-                            if take(kind, &data, provider.name(), &url, &mut got) {
-                                missing.retain(|k| *k != kind);
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(e) => got.push(Got::Error(e.to_string())),
-                    }
-                }
-                got.push(Got::Asked(provider));
-            }
-            Err(e) => {
-                if fetch::is_rate_limited(&e) {
-                    sh.halted.lock().unwrap_or_else(|e| e.into_inner()).push(provider);
-                }
-                got.push(Got::Error(format!("{}: {e}", provider.name())));
-            }
-        }
+    for provider in keyed {
+        super::ask::ask(sh, provider, &job, &mut wanted, &mut got, &mut session);
     }
     GameOut {
         game,
         got,
-        missing: missing.len(),
+        missing: wanted.len(),
     }
 }
 
@@ -365,7 +332,7 @@ pub(super) fn art_path(
 
 /// A picture, unless its host rate-limited this run (any worker); one that
 /// does now is added. `None`: not there, or not a picture.
-fn image(url: &str, mut halted: &Mutex<HashSet<String>>) -> Result<Option<Vec<u8>>, Error> {
+pub(super) fn image(url: &str, mut halted: &Mutex<HashSet<String>>) -> Result<Option<Vec<u8>>, Error> {
     let r = super::halting(&fetch::Request::image(url), &mut halted)?;
     Ok(r.filter(|d| image_ext(d).is_some()))
 }

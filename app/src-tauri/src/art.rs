@@ -61,6 +61,8 @@ pub fn serve_art(roots: &[PathBuf], uri_path: &str, query: Option<&str>) -> taur
         Some("png") => Some("image/png"),
         Some("jpg" | "jpeg") => Some("image/jpeg"),
         Some("webp") => Some("image/webp"),
+        // Video snaps Enrich saved (Settings), played from a Blob.
+        Some("mp4") => Some("video/mp4"),
         // Manuals (milestone 26), read with pdf.js.
         Some("pdf") => Some("application/pdf"),
         // Tesseract's language files, read by the OCR worker.

@@ -21,6 +21,9 @@ fn kind(t: &str) -> Option<ArtKind> {
         "box-texture" => ArtKind::Boxfull,
         "support-2D" | "support-texture" | "support-scan" => ArtKind::Media,
         "screenmarquee" | "marquee" | "screenmarqueesmall" => ArtKind::Marquee,
+        "flyer" => ArtKind::Flyer,
+        // The smaller, re-encoded clip before the original.
+        "video-normalized" | "video" => ArtKind::Video,
         "wheel" | "wheel-hd" => ArtKind::Logo,
         "fanart" => ArtKind::Hero,
         "sstitle" => ArtKind::Title,
@@ -61,18 +64,34 @@ pub(super) fn read(game: &Value, job: &Job) -> Found {
     let order = crate::enrich::regions::screenscraper(job.title, job.prefs);
     let rank = |r: &str| order.iter().position(|x| *x == r).unwrap_or(order.len());
     let mut art: Vec<(usize, ArtFound)> = Vec::new();
+    let mut manual: Option<(usize, String)> = None;
     for m in game["medias"].as_array().into_iter().flatten() {
-        let Some(kind) = kind(m["type"].as_str().unwrap_or_default()) else {
+        let t = m["type"].as_str().unwrap_or_default();
+        if t == "manuel"
+            && let Some(url) = m["url"].as_str()
+        {
+            let r = rank(m["region"].as_str().unwrap_or("ss"));
+            if manual.as_ref().is_none_or(|(best, _)| r < *best) {
+                manual = Some((r, without_credentials(url)));
+            }
+            continue;
+        }
+        let Some(kind) = kind(t) else {
             continue;
         };
+        if kind == ArtKind::Video && !job.video {
+            continue;
+        }
         let Some(url) = m["url"].as_str() else { continue };
         let region = m["region"].as_str().unwrap_or("ss");
         // Its media URLs carry the credentials; they are put back only to
         // download ([`super::download_url`]).
         let url = without_credentials(url);
         let sep = if url.contains('?') { '&' } else { '?' };
+        // A normalized clip before the original, whatever the region.
+        let video_rank = usize::from(kind == ArtKind::Video && t == "video") * 1000;
         art.push((
-            rank(region),
+            rank(region) + video_rank,
             ArtFound {
                 kind,
                 // ScreenScraper scales its media on request.
@@ -83,9 +102,15 @@ pub(super) fn read(game: &Value, job: &Job) -> Found {
         ));
     }
     art.sort_by_key(|(r, _)| *r);
+    let mut fields = fields(game, job.language);
+    // Its manual, offered in the Manual tab (the credentials put back only
+    // to download it).
+    if let Some((_, url)) = manual {
+        fields.push(("manual_screenscraper", url));
+    }
     Found {
         art: art.into_iter().map(|(_, f)| f).collect(),
-        fields: fields(game, job.language),
+        fields,
     }
 }
 
@@ -168,7 +193,9 @@ mod tests {
                 {"type": "box-2D", "region": "eu", "url": "https://x/eu.png"},
                 {"type": "box-texture", "region": "eu", "url": "https://x/full.png"},
                 {"type": "support-2D", "region": "eu", "url": "https://x/cart.png"},
-                {"type": "video", "region": "eu", "url": "https://x/v.mp4"}
+                {"type": "video", "region": "eu", "url": "https://x/v.mp4"},
+                {"type": "flyer", "region": "eu", "url": "https://x/fly.png"},
+                {"type": "manuel", "region": "us", "url": "https://x/m.pdf?ssid=me&sspassword=secret"}
             ]
         });
         let system = crate::systems::by_key("SNES").unwrap();
@@ -180,6 +207,8 @@ mod tests {
             prefs: &prefs,
             language: "fr",
             year: None,
+            serial: None,
+            video: false,
         };
         let found = read(&game, &job);
         let kinds: Vec<(ArtKind, &str)> = found
@@ -189,7 +218,8 @@ mod tests {
             .collect();
         assert_eq!(kinds[0], (ArtKind::Boxart, "EU"), "its own region first");
         assert!(kinds.contains(&(ArtKind::Boxfull, "EU")) && kinds.contains(&(ArtKind::Media, "EU")));
-        assert_eq!(found.art.len(), 4, "no video kind (yet)");
+        assert_eq!(found.art.len(), 5, "no video without the setting");
+        assert!(kinds.contains(&(ArtKind::Flyer, "EU")));
         let get = |k: &str| {
             found
                 .fields
@@ -204,5 +234,17 @@ mod tests {
         assert_eq!(get("genre"), Some("Platform"));
         assert_eq!(get("releaseyear"), Some("1994"));
         assert_eq!(get("releases"), Some("1994-03-19 Japan; 1994-04-18 USA"));
+        let manual = get("manual_screenscraper").unwrap();
+        assert!(
+            manual.starts_with("https://x/m.pdf") && !manual.contains("secret"),
+            "{manual}"
+        );
+        let with_video = Job { video: true, ..job };
+        assert!(
+            read(&game, &with_video)
+                .art
+                .iter()
+                .any(|a| a.kind == ArtKind::Video)
+        );
     }
 }

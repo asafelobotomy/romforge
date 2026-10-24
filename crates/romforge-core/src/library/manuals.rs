@@ -94,7 +94,41 @@ impl Library {
             .query_map([&g.system, &g.title], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         let parent = (parents.len() == 1).then(|| parents[0].as_str());
-        manual::find_manuals(&crate::enrich::default_cache_dir(), &g.system, &g.title, parent)
+        let mut out = manual::find_manuals(&crate::enrich::default_cache_dir(), &g.system, &g.title, parent)?;
+        // ScreenScraper's, seen by Enrich (it needs the keys, put back
+        // only to download).
+        let ss: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT m.value FROM game_meta m JOIN systems s ON s.system_id = m.system_id
+                 WHERE s.key = ?1 AND m.title = ?2 AND m.field = 'manual_screenscraper'",
+                [&g.system, &g.title],
+                |r| r.get(0),
+            )
+            .ok();
+        if let Some(url) = ss {
+            out.push(manual::ManualOffer {
+                source: "ScreenScraper".into(),
+                name: format!("{}.pdf", g.title),
+                langs: String::new(),
+                url,
+                size: None,
+            });
+        }
+        // An arcade set's from the Arcade Database, asked now (one call).
+        if crate::systems::by_key(&g.system).is_some_and(|s| s.arcade)
+            && let Ok(Some(url)) =
+                crate::artsources::adb_manual_url(&crate::artsources::Bases::default(), &g.title)
+        {
+            out.push(manual::ManualOffer {
+                source: "Arcade Database".into(),
+                name: format!("{}.pdf", g.title),
+                langs: String::new(),
+                url,
+                size: None,
+            });
+        }
+        Ok(out)
     }
 
     /// Download the manual the user picked from [`Self::manual_offers`].
@@ -112,6 +146,7 @@ impl Library {
             &g.system,
             &g.title,
             offer,
+            &settings::load(&self.conn)?.keys,
         )
     }
 

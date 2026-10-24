@@ -4,6 +4,7 @@
   import { genres, ratings, reviews, regionFlags, stars } from "./facts.js";
   import { displayTitle, artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
   import { ui } from "./ui.svelte.js";
+  import VideoSnap from "./VideoSnap.svelte";
 
   // Details' first tab: the pictures, an infobox of facts, the overview,
   // the other media and the files. `showEmpty`: empty media boxes too (a
@@ -132,12 +133,20 @@
   <p class="desc">{f.description}</p>
   {#if src === "wikipedia" && f.description_url}
     <p class="hint credit"><button class="linkish" onclick={() => openUrl(f.description_url)}>Read more on Wikipedia</button>; text under {f.description_licence ?? "CC BY-SA 4.0"}, shortened to its summary.</p>
+  {:else if src === "adb"}
+    <p class="hint credit">History {f.description_licence ?? "© arcade-history.com"}. Scraping using <button class="linkish" onclick={() => openUrl(f.description_url || "https://adb.arcadeitalia.net")}>Arcade Database</button> by motoschifo.</p>
   {/if}
 {/if}
+{#if Object.values(detail.art_sources ?? {}).includes("gametdb")}
+  <p class="hint credit">Covers from <button class="linkish" onclick={() => openUrl("https://www.gametdb.com")}>GameTDB</button>, where anyone can add missing ones.</p>
+{/if}
 
-{#if mediaKinds.some((k) => detail.art[k]) || showEmpty}
+{#if mediaKinds.some((k) => detail.art[k]) || detail.art.video || showEmpty}
   <h3>Media</h3>
   <div class="gallery">
+    {#if detail.art.video}
+      <figure class="media video">{#key detail.art.video}<VideoSnap src={detail.art.video} controls />{/key}<figcaption>{artLabel.video}</figcaption></figure>
+    {/if}
     {#each mediaKinds as k}
       {#if detail.art[k]}
         <figure class="media">

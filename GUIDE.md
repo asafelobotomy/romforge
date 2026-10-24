@@ -177,10 +177,25 @@ what the ones before it left; `enrich::fields` keeps the order):
    box art, title screen, snap and clear logo (another version's picture,
    best of your Preferred regions first, when the game's own is missing).
 2. Wikidata (CC0), and Wikipedia (CC BY-SA 4.0) through the article
-   Wikidata links: see below.
+   Wikidata links: see below. For arcade sets (which Wikidata doesn't
+   list) the [Arcade Database](https://adb.arcadeitalia.net) by
+   motoschifo, by set name: snap, title, marquee, flyer and cabinet, genre,
+   players, year, manufacturer, series, and the history from
+   arcade-history.com (shown with its copyright line); it takes one
+   request at a time, which romforge keeps to. For GameCube, Wii and DS
+   games, [GameTDB](https://www.gametdb.com), by the ID in the game's
+   header: covers larger than libretro's, the whole cover, the 3D box and
+   the disc or cartridge label. Both are free, without a key, and come
+   before libretro's thumbnails.
 3. With keys, ScreenScraper (by the ROM's hashes), then SteamGridDB and
    IGDB (by title).
 4. The databases you downloaded: OpenVGDB, then LaunchBox.
+
+With Settings → "Download video snaps" (off by default; 2–30 MB each),
+Enrich also fetches a short gameplay clip: the Arcade Database's for
+arcade sets, ScreenScraper's (with its keys) for the rest. It plays in
+Details (click it) and, muted, behind a game on the fullscreen mode's
+game page once the focus rests there.
 
 Details names where each field came from. Art goes into the RomForge
 folder's `Media/<System>/<kind>/` when there is one, else under
@@ -345,8 +360,10 @@ romforge-cli manual remove "Super Metroid" --yes
 
 A game's **Manual** tab finds its manual: a PDF of yours (picked or
 dropped on the tab), archive.org's scans under the game's name
-(retrokit-manuals, Kirkland's Manual Labor), or Vimm's Lair's scan, found
-through Hasheous by the game's hash. Each is downloaded only when you
+(retrokit-manuals, Kirkland's Manual Labor), ScreenScraper's (seen by
+Enrich, with its keys), the Arcade Database's for an arcade set (asked
+when the tab opens), or Vimm's Lair's scan, found through Hasheous by the
+game's hash. Each is downloaded only when you
 click it, and kept as `Media/<System>/manual/<Title>.pdf` (the art cache
 without a RomForge folder). Manuals are copyrighted scans; romforge ships
 none. The reader (pdf.js) shows a page or a spread, fit to width or page,
@@ -1057,7 +1074,11 @@ libretro team and contributors,
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), and its
 platform logos come from Wikimedia Commons through Wikidata (each under
 its own Commons terms; many are trademarks); all downloaded by the app,
-never shipped. romforge's own platform icons, in flatui's style for
+never shipped. Arcade games' pictures, videos, facts and manuals:
+scraping using the [Arcade Database](https://adb.arcadeitalia.net) by
+motoschifo, with its history text © arcade-history.com; GameCube, Wii
+and DS covers and labels from [GameTDB](https://www.gametdb.com); both
+fetched per game, never shipped. romforge's own platform icons, in flatui's style for
 platforms flatui lacks, are MIT like the rest: PC, Tandy VIS, Sega
 Lindbergh and ScummVM drawn by hand (their SVG sources beside them); the
 others generated with OpenAI's GPT Image (`gpt-image-2.5-flare`), with

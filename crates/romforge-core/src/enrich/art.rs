@@ -1,5 +1,6 @@
 use super::*;
 
+mod ask;
 mod game;
 
 /// libretro's thumbnail file name: `&*/:`<>?\|"` become `_`.
@@ -87,6 +88,7 @@ pub(super) fn system_art(
             game,
             &settings.keys,
             &prefs,
+            settings.video_snaps,
             lbdb,
         )?;
         report.art_cached += input.cached;
@@ -98,6 +100,7 @@ pub(super) fn system_art(
         keys: &settings.keys,
         prefs: &prefs,
         language: settings.language(),
+        video: settings.video_snaps,
         halted_hosts,
         halted,
     };

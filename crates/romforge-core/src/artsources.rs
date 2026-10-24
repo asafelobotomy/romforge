@@ -15,7 +15,10 @@ use crate::fetch;
 use crate::settings::Keys;
 use crate::systems::System;
 
+mod adb;
+pub use adb::manual_url as adb_manual_url;
 mod credentials;
+mod gametdb;
 mod igdb;
 mod screenscraper;
 mod steamgriddb;
@@ -29,6 +32,10 @@ pub struct Bases {
     pub igdb_token: String,
     pub igdb: String,
     pub igdb_images: String,
+    /// The Arcade Database's scraper service.
+    pub adb: String,
+    /// GameTDB's art server.
+    pub gametdb: String,
 }
 
 impl Default for Bases {
@@ -39,12 +46,18 @@ impl Default for Bases {
             igdb_token: "https://id.twitch.tv/oauth2/token".into(),
             igdb: "https://api.igdb.com/v4".into(),
             igdb_images: "https://images.igdb.com/igdb/image/upload".into(),
+            adb: "https://adb.arcadeitalia.net".into(),
+            gametdb: "https://art.gametdb.com".into(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Provider {
+    /// The Arcade Database (free, no key): arcade sets by name.
+    Adb,
+    /// GameTDB (free, no key): Nintendo discs and DS cartridges by serial.
+    GameTdb,
     ScreenScraper,
     SteamGridDb,
     Igdb,
@@ -53,11 +66,19 @@ pub enum Provider {
 impl Provider {
     /// It has text for a game too (a synopsis, genres…), not only pictures.
     pub fn has_text(self) -> bool {
-        matches!(self, Provider::ScreenScraper | Provider::Igdb)
+        matches!(self, Provider::ScreenScraper | Provider::Igdb | Provider::Adb)
+    }
+
+    /// Free and keyless (house rule 10's first tier): asked before
+    /// libretro's thumbnails, for the pictures it has larger.
+    pub fn is_free(self) -> bool {
+        matches!(self, Provider::Adb | Provider::GameTdb)
     }
 
     pub fn name(self) -> &'static str {
         match self {
+            Provider::Adb => "adb",
+            Provider::GameTdb => "gametdb",
             Provider::ScreenScraper => "screenscraper",
             Provider::SteamGridDb => "steamgriddb",
             Provider::Igdb => "igdb",
@@ -67,6 +88,16 @@ impl Provider {
     /// The sources usable for `system` with `keys`, in house rule 10 order.
     pub fn available(keys: &Keys, system: &System) -> Vec<Provider> {
         let mut out = Vec::new();
+        if system.arcade {
+            out.push(Provider::Adb);
+        }
+        if system
+            .ident
+            .iter()
+            .any(|k| gametdb::PLATFORMS.iter().any(|(id, _)| id == k))
+        {
+            out.push(Provider::GameTdb);
+        }
         if keys.screenscraper() && system.screenscraper.is_some() {
             out.push(Provider::ScreenScraper);
         }
@@ -147,6 +178,10 @@ pub struct Job<'a> {
     pub language: &'a str,
     /// The game's release year, if known: tells same-named games apart.
     pub year: Option<i32>,
+    /// Its serial from its file's header (GameTDB finds games by it).
+    pub serial: Option<crate::ident::GameId>,
+    /// Video snaps were asked for (Settings).
+    pub video: bool,
 }
 
 /// What a source has for a game: its pictures, the best of each kind
@@ -172,6 +207,8 @@ pub fn lookup(
     job: &Job,
 ) -> Result<Found, Error> {
     match provider {
+        Provider::Adb => adb::lookup(bases, job),
+        Provider::GameTdb => gametdb::lookup(bases, job),
         Provider::ScreenScraper => screenscraper::lookup(keys, bases, job),
         Provider::SteamGridDb => steamgriddb::lookup(keys, bases, job),
         Provider::Igdb => igdb::lookup(keys, bases, session, job),
@@ -180,4 +217,42 @@ pub fn lookup(
 
 fn json(body: &[u8]) -> Result<serde_json::Value, Error> {
     serde_json::from_slice(body).map_err(|e| Error::Http(format!("unexpected answer: {e}")))
+}
+
+/// The header kinds GameTDB knows games of.
+pub fn gametdb_kinds() -> impl Iterator<Item = &'static str> {
+    gametdb::PLATFORMS.iter().map(|(k, _)| *k)
+}
+
+/// The serial a game's matched files' headers gave (GameTDB, by kind), the
+/// first of those `kinds`.
+pub fn serial_for(
+    conn: &Connection,
+    system_id: i64,
+    title: &str,
+    kinds: &[&str],
+) -> Result<Option<crate::ident::GameId>, Error> {
+    let mut stmt = conn.prepare_cached(concat!(
+        "SELECT f.id_kind, f.id_serial, f.id_title, f.id_region, f.id_size, f.id_crc
+         FROM files f JOIN matches m ON m.file_id = f.file_id AND m.via IN ",
+        crate::report::strong!(),
+        "
+         JOIN roms r ON r.rom_id = m.rom_id JOIN games g ON g.game_id = r.game_id
+         JOIN dats d ON d.dat_id = g.dat_id
+         WHERE d.system_id = ?1 AND g.name = ?2 AND f.id_serial IS NOT NULL"
+    ))?;
+    let ids: Vec<crate::ident::GameId> = stmt
+        .query_map(params![system_id, title], |r| {
+            Ok(crate::ident::GameId::from_columns(
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })?
+        .filter_map(|r| r.ok().flatten())
+        .collect();
+    Ok(ids.into_iter().find(|id| kinds.contains(&id.kind)))
 }

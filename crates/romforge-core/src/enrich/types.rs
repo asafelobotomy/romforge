@@ -22,10 +22,16 @@ pub enum ArtKind {
     Media,
     /// An arcade cabinet's marquee.
     Marquee,
+    /// An arcade game's flyer.
+    Flyer,
+    /// The arcade cabinet.
+    Cabinet,
+    /// A short gameplay clip (MP4; only with Settings' video snaps).
+    Video,
 }
 
 impl ArtKind {
-    pub const ALL: [ArtKind; 12] = [
+    pub const ALL: [ArtKind; 15] = [
         ArtKind::Boxart,
         ArtKind::Title,
         ArtKind::Snap,
@@ -38,6 +44,9 @@ impl ArtKind {
         ArtKind::Boxfull,
         ArtKind::Media,
         ArtKind::Marquee,
+        ArtKind::Flyer,
+        ArtKind::Cabinet,
+        ArtKind::Video,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -54,6 +63,9 @@ impl ArtKind {
             ArtKind::Boxfull => "boxfull",
             ArtKind::Media => "media",
             ArtKind::Marquee => "marquee",
+            ArtKind::Flyer => "flyer",
+            ArtKind::Cabinet => "cabinet",
+            ArtKind::Video => "video",
         }
     }
 

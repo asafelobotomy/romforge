@@ -143,6 +143,8 @@ fn keyed_sources_fill_only_what_is_missing_in_order() {
         igdb_token: format!("{base}/igdb/token"),
         igdb: format!("{base}/igdb"),
         igdb_images: format!("{base}/igimg"),
+        adb: format!("{base}/adb"),
+        gametdb: format!("{base}/gametdb"),
     };
     let report = lib.enrich(&opts, |_| {}).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
