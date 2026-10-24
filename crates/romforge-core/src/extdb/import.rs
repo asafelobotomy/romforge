@@ -115,16 +115,5 @@ pub fn import(
 }
 
 fn now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    Connection::open_in_memory()
-        .and_then(|c| {
-            c.query_row(
-                "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ?1, 'unixepoch')",
-                [secs],
-                |r| r.get(0),
-            )
-        })
-        .unwrap_or_default()
+    crate::db::now_utc()
 }

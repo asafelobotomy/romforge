@@ -14,10 +14,10 @@ use super::items::{folder_item, safe_member_name, set_item};
 use super::parts::{named_parts, verified_parts};
 use super::{CleanupPlan, Format, How, Item, Part, Source};
 
+mod native;
 mod originals;
 
-/// Why a Wii U title folder's game is left where it is.
-pub(crate) const TITLE_FOLDER_STAYS: &str = "a Wii U title folder (code/, content/, meta/, or an eShop download) stays as it is: Cemu reads the whole folder";
+pub(crate) use native::TITLE_FOLDER_STAYS;
 
 pub(super) fn plan_as(
     conn: &Connection,
@@ -162,12 +162,13 @@ pub(super) fn plan_as(
             }
             continue;
         }
-        // A Wii U title folder's game (`code/<x>.rpx`, `title.tmd`): Cemu
-        // reads the whole folder, so it stays as it is.
+        // An eShop download (`title.tmd` and its encrypted contents): Cemu
+        // reads the whole folder, so it stays as it is. (A decrypted title
+        // folder becomes a WUA, below.)
         let mut in_folder = false;
         for f in row.file_ids() {
             let p: String = path_of.query_row([f], |r| r.get(0))?;
-            in_folder |= crate::ident::wup::in_title_folder(Path::new(&p));
+            in_folder |= native::is_eshop(Path::new(&p));
         }
         if in_folder {
             if only.is_some() {
@@ -249,19 +250,26 @@ pub(super) fn plan_as(
         }
         let disc = system.is_disc_based;
         // A CHD only for a platform whose emulators read one (the systems
-        // table lists `chd` then): never GameCube, Wii or Xbox.
-        if disc && !system.extensions.contains(&"chd") {
-            plan.skipped.push((
-                row.title.clone(),
-                format!("{} emulators don't read CHD; it stays as it is", system.key),
-            ));
-            continue;
-        }
+        // table lists `chd` then); else the format they do read, if any.
+        let native = if disc {
+            match native::native(system, &parts) {
+                Ok(n) => n,
+                Err(why) => {
+                    plan.skipped.push((row.title.clone(), why));
+                    continue;
+                }
+            }
+        } else {
+            native::Native::Chd
+        };
         let tracks: Vec<&Part> = parts
             .iter()
             .filter(|p| !p.name.to_lowercase().ends_with(".cue"))
             .collect();
-        let format = if !disc {
+        let (format, native_ext, title_folder) = native.split();
+        let format = if let Some(f) = format {
+            f
+        } else if !disc {
             Format::Zip
         } else if tracks.len() == 1 && tracks[0].name.to_lowercase().ends_with(".iso") {
             Format::ChdDvd
@@ -288,13 +296,15 @@ pub(super) fn plan_as(
         }
         // In place: beside the original (a disc's cue or image, or the
         // archive holding it). Convert keeps the original's own name.
-        let here = parts
-            .iter()
-            .find(|p| p.name.to_lowercase().ends_with(".cue"))
-            .or_else(|| tracks.first().copied())
-            .or(parts.first())
-            .map(|p| p.path.clone())
-            .unwrap_or_default();
+        let here = title_folder.clone().unwrap_or_else(|| {
+            parts
+                .iter()
+                .find(|p| p.name.to_lowercase().ends_with(".cue"))
+                .or_else(|| tracks.first().copied())
+                .or(parts.first())
+                .map(|p| p.path.clone())
+                .unwrap_or_default()
+        });
         let name = if convert {
             here.file_stem()
                 .map_or_else(|| sanitize(&row.title), |s| s.to_string_lossy().into_owned())
@@ -321,6 +331,12 @@ pub(super) fn plan_as(
                 (dir.join(sanitize(base)).join(format!("{name}{ext}")), None)
             }
             (Format::Zip, _) => (dir.join(format!("{name}.zip")), None),
+            (Format::Rvz | Format::Z3ds | Format::Wua, _) if convert => {
+                (dir.join(format!("{name}.{native_ext}")), None)
+            }
+            (Format::Rvz | Format::Z3ds | Format::Wua, _) => {
+                (dir.join(format!("{name}.{native_ext}")), Some(dir.join(&name)))
+            }
             // Convert writes the disc alone, no folder of art beside it.
             _ if convert => (dir.join(format!("{name}.chd")), None),
             _ => (dir.join(format!("{name}.chd")), Some(dir.join(&name))),
@@ -355,12 +371,17 @@ pub(super) fn plan_as(
             target,
             sidecar,
             parts,
-            trash: Vec::new(),
+            // A title folder goes to the trash whole, as a folder game does.
+            trash: title_folder
+                .iter()
+                .filter(|_| !s.keep_originals)
+                .cloned()
+                .collect(),
             kept: Vec::new(),
             copies,
             sheet,
             existing: false,
-            folder: None,
+            folder: title_folder,
             code: None,
         });
     }

@@ -6,6 +6,7 @@
 
 pub mod artsources;
 mod atomic;
+pub mod chunks;
 pub mod cleanup;
 pub mod controller;
 pub mod dat;
@@ -35,6 +36,7 @@ pub mod parallel;
 pub mod patch;
 pub mod patcher;
 mod report;
+pub mod rvz;
 pub mod scan;
 pub mod scummvm;
 pub mod search;

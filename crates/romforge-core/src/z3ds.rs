@@ -9,6 +9,9 @@
 
 use std::io::{self, Read, Seek, SeekFrom};
 
+mod write;
+pub use write::write;
+
 pub const MAGIC: [u8; 4] = *b"Z3DS";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = 0x20;
@@ -63,15 +66,75 @@ pub fn open<R: Read + Seek>(mut file: R) -> io::Result<Option<(Header, impl Read
         return Ok(None);
     };
     file.seek(SeekFrom::Start(start + header.data_offset()))?;
-    let decoder = ruzstd::decoding::StreamingDecoder::new(file.take(header.compressed_size))
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Z3DS: {e}")))?;
     Ok(Some((
         header,
         Exact {
-            inner: decoder,
+            inner: Frames::new(file.take(header.compressed_size)),
             left: header.uncompressed_size,
         },
     )))
+}
+
+/// Every zstd frame of `src` in turn, skippable frames (the seek table)
+/// passed over: seekable zstd is many frames, and `ruzstd`'s streaming
+/// decoder reads one.
+pub struct Frames<R: Read> {
+    src: R,
+    dec: ruzstd::decoding::FrameDecoder,
+    active: bool,
+}
+
+impl<R: Read> Frames<R> {
+    pub fn new(src: R) -> Frames<R> {
+        Frames {
+            src,
+            dec: ruzstd::decoding::FrameDecoder::new(),
+            active: false,
+        }
+    }
+}
+
+impl<R: Read> Read for Frames<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        use ruzstd::decoding::BlockDecodingStrategy;
+        use ruzstd::decoding::errors::{FrameDecoderError, ReadFrameHeaderError};
+        let bad = |e: FrameDecoderError| io::Error::new(io::ErrorKind::InvalidData, format!("zstd: {e}"));
+        loop {
+            if self.active {
+                if !self.dec.is_finished() && self.dec.can_collect() < buf.len() {
+                    self.dec
+                        .decode_blocks(
+                            &mut self.src,
+                            BlockDecodingStrategy::UptoBytes(buf.len().max(1 << 16)),
+                        )
+                        .map_err(bad)?;
+                }
+                let n = self.dec.read(buf)?;
+                if n > 0 || buf.is_empty() {
+                    return Ok(n);
+                }
+                if self.dec.is_finished() {
+                    self.active = false;
+                }
+                continue;
+            }
+            // The next frame, if any.
+            let mut magic = [0u8; 4];
+            if read_up_to(&mut self.src, &mut magic)? < 4 {
+                return Ok(0);
+            }
+            match self.dec.reset(io::Read::chain(&magic[..], &mut self.src)) {
+                Ok(()) => self.active = true,
+                Err(FrameDecoderError::ReadFrameHeaderError(ReadFrameHeaderError::SkipFrame {
+                    length,
+                    ..
+                })) => {
+                    io::copy(&mut (&mut self.src).take(u64::from(length)), &mut io::sink())?;
+                }
+                Err(e) => return Err(bad(e)),
+            }
+        }
+    }
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {

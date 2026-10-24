@@ -75,6 +75,17 @@ fn hash_file(path: &Path) -> std::io::Result<Hashes> {
     if let Some((header, inner)) = crate::z3ds::open(BufReader::new(File::open(path)?))? {
         return hash_stream(inner, header.uncompressed_size);
     }
+    // A GameCube RVZ is the disc image it holds, so it meets Redump's DAT
+    // (milestone 23). One romforge can't read (another compression, a cut
+    // file) is hashed as the file it is, as before.
+    if let Ok(Some(rvz)) = crate::rvz::Rvz::open(BufReader::new(File::open(path)?))
+        && rvz.disc_type == crate::rvz::GAMECUBE
+    {
+        let size = rvz.iso_size;
+        if let Ok(hashes) = rvz.iso().and_then(|iso| hash_stream(iso, size)) {
+            return Ok(hashes);
+        }
+    }
     let file = File::open(path)?;
     let size = file.metadata()?.len();
     let mut hashes = hash_stream(BufReader::new(file), size)?;
@@ -169,6 +180,25 @@ fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Resu
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_gamecube_rvz_hashes_as_its_image() {
+        let t = tempfile::tempdir().unwrap();
+        let mut img = vec![0u8; 0x50000];
+        img[..6].copy_from_slice(b"GALE01");
+        img[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
+        for (i, b) in img[0x3000..].iter_mut().enumerate() {
+            *b = (i % 253) as u8;
+        }
+        let (iso, rvz) = (t.path().join("g.iso"), t.path().join("g.rvz"));
+        std::fs::write(&iso, &img).unwrap();
+        let mut out = std::fs::File::create(&rvz).unwrap();
+        crate::rvz::write::write(|| Ok(&img[..]), img.len() as u64, 1, &mut out).unwrap();
+        drop(out);
+        let (a, b) = (super::hash_file(&iso).unwrap(), super::hash_file(&rvz).unwrap());
+        assert_eq!(a.raw, b.raw, "same size and hashes");
+        assert_eq!(b.id.unwrap().serial.as_deref(), Some("GALE01"));
+    }
+
     #[test]
     fn a_z3ds_file_hashes_as_the_rom_it_holds() {
         let rom: Vec<u8> = (0..70_000u32).map(|i| (i * 7 % 256) as u8).collect();

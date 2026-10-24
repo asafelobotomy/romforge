@@ -101,14 +101,16 @@ pub enum Command {
     /// Repack identified games from the Source folder as one file each,
     /// named by the DAT, with art and details inside
     ///
-    /// Cartridges become zips, discs CHDs with a sidecar folder, in the
+    /// Cartridges become zips, discs CHDs (GameCube RVZ, 3DS Z3DS, Wii U
+    /// WUA) with a sidecar folder, in the
     /// Library folder (else Source). Without "keep originals" the old files
     /// go to .romforge-trash next to them, for `cleanup undo`.
     #[command(subcommand)]
     Cleanup(CleanupCommand),
-    /// Turn identified disc images into CHD where they are, under their own
-    /// names (platforms whose emulators read CHD); the originals as the
-    /// cleanup setting says. Shows what it would do unless --apply
+    /// Compress identified disc images where they are, under their own
+    /// names: CHD, or the format the platform's emulators read (GameCube
+    /// RVZ, decrypted 3DS Z3DS, Wii U title folder WUA); the originals as
+    /// the cleanup setting says. Shows what it would do unless --apply
     Convert {
         /// Write it
         #[arg(long)]

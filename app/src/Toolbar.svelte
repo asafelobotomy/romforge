@@ -44,7 +44,7 @@
     onclick={() => cleanup.openCleanup(null, "cleanup", chosen)}
     items={[{ label: "Rename & Cleanup [apply now]", title: "Do it straight away without showing the plan (Undo is in the dry-run dialog)", onclick: renameCleanup }]}
   />
-  <button class="tool" onclick={() => cleanup.openCleanup(null, "convert", chosen)} disabled={!!busy || !n} title={n ? `Turn the disc images of ${games} into CHD where they are (shows what it would do first)` : pickFirst}>
+  <button class="tool" onclick={() => cleanup.openCleanup(null, "convert", chosen)} disabled={!!busy || !n} title={n ? `Compress the disc images of ${games} where they are: CHD, RVZ, Z3DS or WUA (shows what it would do first)` : pickFirst}>
     <span class="glyph">⇲</span>Convert
   </button>
   <span class="spacer"></span>

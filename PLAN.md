@@ -2195,7 +2195,40 @@ through the BIOS page (milestone 20).
   folder with updates and DLC is left to the fork (each installs them
   into its NAND).
 
-## Native compression (milestone 23; decided 2026-10-19, not built)
+## Native compression (milestone 23; decided 2026-10-19, parts built 2026-10-24)
+
+**Built:**
+- **Z3DS** (part 3): `z3ds/write.rs`, Azahar 2126.2's layout (header,
+  metadata items, seekable zstd at level 3 in 256 KiB frames, 32 MiB for
+  a CIA). Decrypted files only (`ident::z3ds_form`: NCCH NoCrypto, a CIA's
+  TMD content type). The reader now walks every frame (it read only the
+  first before) and skips the seek table.
+- **WUA from decrypted title folders** (part 4): `wua/write.rs`,
+  ZArchive's layout, checked both ways against ZArchive's own tool. A
+  folder holding a name of 128 bytes or more stays a folder, and the plan
+  says which file (ZArchive's reader, and Cemu's, misread such names; Cemu
+  reads them from a folder). The reader gained streaming files and a fix for the
+  root's unnamed entry.
+- **RVZ for GameCube** (part 1, GameCube only): `rvz/` (format, reader,
+  writer, `gc.rs` layout from the header and FST, `junk.rs`). The
+  padding's seed is solved as GF(2) equations (two seed bits never reach
+  the output); from a block's start a precomputed inverse makes it a
+  parity per bit. 256 MiB of padding packs in about 0.4 s. A GameCube RVZ
+  is scanned as its image, so it verifies. Not yet checked against
+  Dolphin itself (no Dolphin here, and the independent `nodtool` wasn't
+  installed): to try with a real disc.
+- Convert and Rename & Cleanup choose them (`cleanup/plan/native.rs`)
+  and write them (`cleanup/compress.rs`); `zstd` (BSD, libzstd built
+  from source like the bundled SQLite, so no new build tool) compresses,
+  `ruzstd` reads. `cargo deny`: licences, bans and sources pass; its
+  advisories fail only on Tauri's unmaintained GTK 3 and zbus crates, as
+  before (CI skips them).
+
+**Open:** Wii RVZ (the common key, decrypted partitions, hash
+exceptions); NSZ / XCZ (after milestone 22); WUD / WUX → WUA (the disc
+key and common key).
+
+**As decided:**
 
 Every large format whose emulators load a compressed form gets a writer
 in the core, like CHD today (the `chd` crate's encoder): no chdman,

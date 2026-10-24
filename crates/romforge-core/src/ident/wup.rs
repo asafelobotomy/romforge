@@ -79,6 +79,23 @@ pub fn meta(xml: &str) -> Option<GameId> {
     Some(game(code, maker, title))
 }
 
+/// A title's folder name in a WUA, `<16-hex title ID>_v<version>` (lower
+/// case, as Cemu's own converter writes it), from its `meta.xml`.
+pub fn wua_folder(xml: &str) -> Option<String> {
+    let field = |tag: &str| -> Option<&str> {
+        let open = xml.find(&format!("<{tag}"))?;
+        let from = open + xml[open..].find('>')? + 1;
+        let to = from + xml[from..].find(&format!("</{tag}>"))?;
+        Some(xml[from..to].trim())
+    };
+    let id = field("title_id")?;
+    if id.len() != 16 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let version: u32 = field("title_version")?.parse().ok()?;
+    Some(format!("{}_v{version}", id.to_ascii_lowercase()))
+}
+
 /// A WUA: its first base title's `meta.xml` (as Cemu picks: a game or a
 /// demo, not an update or DLC).
 pub(super) fn wua<R: Read + Seek>(f: &mut R) -> Option<GameId> {
@@ -192,5 +209,9 @@ mod tests {
         assert!(in_title_folder(&rpx) && in_title_folder(Path::new("/x/title.tmd")));
         assert_eq!(beside(&rpx).unwrap().serial.as_deref(), Some("ARPE01"));
         assert!(!in_title_folder(&t.path().join("Game/Turbo.rpx")));
+        let meta =
+            "<title_id type=\"hexBinary\">0005000010101E00</title_id><title_version>32</title_version>";
+        assert_eq!(wua_folder(meta).as_deref(), Some("0005000010101e00_v32"));
+        assert!(wua_folder("<title_id>xyz</title_id>").is_none());
     }
 }

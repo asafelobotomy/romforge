@@ -75,8 +75,9 @@ fn replace_originals_works_in_place() {
 }
 
 /// Convert: a disc becomes a CHD beside itself under its own name (not
-/// renamed or moved), the originals to the trash; a GameCube image, which
-/// its emulator can't read as a CHD, is left alone and says why.
+/// renamed or moved), the originals to the trash; a GameCube image, whose
+/// emulator can't read a CHD, becomes an RVZ, which still verifies (it is
+/// hashed as the image it holds).
 #[test]
 fn convert_makes_chds_where_the_discs_are() {
     let dir = tempfile::tempdir().unwrap();
@@ -114,32 +115,30 @@ fn convert_makes_chds_where_the_discs_are() {
     let d = d.canonicalize().unwrap();
 
     let plan = lib.convert_plan(None).unwrap();
-    assert_eq!(plan.items.len(), 1, "{plan:?}");
-    assert_eq!(plan.items[0].target, d.join(format!("{game}.chd")));
-    assert_eq!(plan.items[0].format, Format::ChdCd);
-    assert!(
-        plan.items[0].sidecar.is_none(),
-        "a CHD alone, no folder beside it"
-    );
-    assert!(
-        plan.skipped
-            .iter()
-            .any(|(t, why)| t == "Cube (USA)" && why.contains("CHD")),
-        "{:?}",
-        plan.skipped
+    assert_eq!(plan.items.len(), 2, "{plan:?}");
+    let chd = plan.items.iter().find(|i| i.title == game).unwrap();
+    assert_eq!(chd.target, d.join(format!("{game}.chd")));
+    assert_eq!(chd.format, Format::ChdCd);
+    assert!(chd.sidecar.is_none(), "a CHD alone, no folder beside it");
+    let rvz = plan.items.iter().find(|i| i.title == "Cube (USA)").unwrap();
+    assert_eq!(
+        (rvz.format, rvz.target.clone()),
+        (Format::Rvz, d.join("cube.rvz"))
     );
     let report = lib.convert_apply(None, |_, _| {}).unwrap();
     assert!(report.failed.is_empty(), "{:?}", report.failed);
     assert!(d.join(format!("{game}.chd")).exists());
     assert!(!d.join(format!("{game}.cue")).exists(), "originals to the trash");
-    assert!(d.join("cube.iso").exists(), "GameCube left alone");
+    assert!(d.join("cube.rvz").exists() && !d.join("cube.iso").exists());
     let v = lib.library_view().unwrap();
-    assert!(
-        v.rows
-            .iter()
-            .any(|r| r.title == game && r.status == RowStatus::Verified),
-        "the CHD verifies"
-    );
+    for title in [game, "Cube (USA)"] {
+        assert!(
+            v.rows
+                .iter()
+                .any(|r| r.title == title && r.status == RowStatus::Verified),
+            "{title} verifies"
+        );
+    }
     // Nothing more to convert.
     assert!(lib.convert_plan(None).unwrap().items.is_empty());
 }

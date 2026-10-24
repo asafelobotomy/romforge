@@ -15,6 +15,23 @@ macro_rules! now {
 }
 pub(crate) use now;
 
+/// The current time in UTC (`2026-10-18T22:14:54Z`) without a database
+/// at hand, formatted by SQLite as every stored timestamp is.
+pub(crate) fn now_utc() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    Connection::open_in_memory()
+        .and_then(|c| {
+            c.query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ?1, 'unixepoch')",
+                [secs],
+                |r| r.get(0),
+            )
+        })
+        .unwrap_or_default()
+}
+
 mod migrations_20_35;
 mod migrations_2_19;
 mod migrations_36_51;

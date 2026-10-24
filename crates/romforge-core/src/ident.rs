@@ -17,6 +17,7 @@ mod containers;
 mod ctr;
 pub mod wup;
 pub use containers::*;
+pub use ctr::{Z3dsForm, z3ds_form};
 
 /// Bytes of the data (in the DAT's form: header stripped, byte order fixed)
 /// the readers get. A PS1 disc's `SYSTEM.CNF` sits within the first few

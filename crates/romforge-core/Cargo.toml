@@ -25,6 +25,8 @@ thiserror = "2"
 walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "ppmd"] }
 ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+# Writing Z3DS, WUA and RVZ (milestone 23); ruzstd reads.
+zstd = { version = "0.14", default-features = false }
 ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier", "gzip"] }
 chd = { version = "0.4", default-features = false, features = ["std", "want_raw_data_sector", "encode"] }
 shiratsu-naming = "1.1"

@@ -18,6 +18,9 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
+mod write;
+pub use write::{MAX_NAME, write};
+
 const MAGIC: u32 = 0x169f_52d6;
 const VERSION: u32 = 0x61bf_3a01;
 const FOOTER_LEN: u64 = 6 * 16 + 32 + 8 + 4 + 4;
@@ -126,8 +129,35 @@ impl<R: Read + Seek> Archive<R> {
         archive.name(0).is_some_and(str::is_empty).then_some(archive)
     }
 
+    /// Every file, as (`/`-separated path, size), folders first-come.
+    pub fn files(&self) -> Vec<(String, u64)> {
+        let mut out = Vec::new();
+        let mut stack = vec![(0usize, String::new())];
+        while let Some((at, prefix)) = stack.pop() {
+            for (c, name, file) in self.children(at) {
+                let path = if prefix.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                if file {
+                    out.push((path, self.tree[c].b));
+                } else {
+                    stack.push((c, path));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
     fn name(&self, i: usize) -> Option<&str> {
-        let at = self.tree.get(i)?.name as usize;
+        let at = self.tree.get(i)?.name;
+        // ZArchive's root has no name.
+        if at == 0x7FFF_FFFF {
+            return Some("");
+        }
+        let at = at as usize;
         let b = *self.names.get(at)?;
         let (len, from) = if b & 0x80 != 0 {
             let hi = *self.names.get(at + 1)? as usize;
@@ -158,9 +188,9 @@ impl<R: Read + Seek> Archive<R> {
             .collect()
     }
 
-    /// The file at `path` (`/`-separated, names compared without case, as
-    /// ZArchive does), read whole when it is at most 1 MiB.
-    pub fn read(&mut self, path: &str) -> Option<Vec<u8>> {
+    /// The tree index of the file at `path` (`/`-separated, names
+    /// compared without case, as ZArchive does).
+    fn find(&self, path: &str) -> Option<usize> {
         let mut at = 0;
         for part in path.split('/').filter(|p| !p.is_empty()) {
             at = self
@@ -169,24 +199,30 @@ impl<R: Read + Seek> Archive<R> {
                 .find(|(_, n, _)| n.eq_ignore_ascii_case(part))?
                 .0;
         }
-        let node = *self.tree.get(at).filter(|n| n.file)?;
-        if node.b > MAX_READ {
+        self.tree.get(at).filter(|n| n.file).map(|_| at)
+    }
+
+    /// The file at `path`, read whole when it is at most 1 MiB.
+    pub fn read(&mut self, path: &str) -> Option<Vec<u8>> {
+        let size = self.tree[self.find(path)?].b;
+        if size > MAX_READ {
             return None;
         }
-        let mut out = Vec::with_capacity(node.b as usize);
-        let (start, end) = (node.a, node.a.checked_add(node.b)?);
-        let mut pos = start;
-        while pos < end {
-            let block = self.block(pos / BLOCK)?;
-            let from = (pos % BLOCK) as usize;
-            let take = ((end - pos) as usize).min(block.len().saturating_sub(from));
-            if take == 0 {
-                return None;
-            }
-            out.extend_from_slice(&block[from..from + take]);
-            pos += take as u64;
-        }
+        let mut out = Vec::with_capacity(size as usize);
+        self.open_file(path)?.read_to_end(&mut out).ok()?;
         Some(out)
+    }
+
+    /// The file at `path` as a stream; a block that can't be read is an
+    /// error.
+    pub fn open_file(&mut self, path: &str) -> Option<FileReader<'_, R>> {
+        let node = self.tree[self.find(path)?];
+        Some(FileReader {
+            pos: node.a,
+            end: node.a.checked_add(node.b)?,
+            block: None,
+            archive: self,
+        })
     }
 
     /// Block `index`, uncompressed.
@@ -211,108 +247,72 @@ impl<R: Read + Seek> Archive<R> {
     }
 }
 
+/// One file of a WUA, block by block.
+pub struct FileReader<'a, R> {
+    archive: &'a mut Archive<R>,
+    pos: u64,
+    end: u64,
+    block: Option<(u64, Vec<u8>)>,
+}
+
+impl<R: Read + Seek> Read for FileReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.end || buf.is_empty() {
+            return Ok(0);
+        }
+        let index = self.pos / BLOCK;
+        if self.block.as_ref().is_none_or(|(i, _)| *i != index) {
+            let b = self.archive.block(index).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "WUA: a block can't be read")
+            })?;
+            self.block = Some((index, b));
+        }
+        let block = &self.block.as_ref().map_or(&[][..], |(_, b)| &b[..]);
+        let from = (self.pos % BLOCK) as usize;
+        let n = ((self.end - self.pos) as usize)
+            .min(block.len().saturating_sub(from))
+            .min(buf.len());
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "WUA: a block is short",
+            ));
+        }
+        buf[..n].copy_from_slice(&block[from..from + n]);
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
 
-    /// A WUA holding `files` (path, bytes), in one raw zstd block, laid out
-    /// as ZArchive writes it.
+    /// A WUA holding `files` (path, bytes), written by romforge's writer.
     pub(crate) fn wua_of(files: &[(&str, &[u8])]) -> Vec<u8> {
-        // The tree, breadth first: folders' children are contiguous.
-        #[derive(Default)]
-        struct Dir {
-            dirs: Vec<(String, Dir)>,
-            files: Vec<(String, u64, u64)>,
-        }
-        let mut root = Dir::default();
-        let mut data = Vec::new();
-        for (path, bytes) in files {
-            let parts: Vec<&str> = path.split('/').collect();
-            let mut d = &mut root;
-            for p in &parts[..parts.len() - 1] {
-                let i = match d.dirs.iter().position(|(n, _)| n == p) {
-                    Some(i) => i,
-                    None => {
-                        d.dirs.push(((*p).to_owned(), Dir::default()));
-                        d.dirs.len() - 1
-                    }
-                };
-                d = &mut d.dirs[i].1;
-            }
-            d.files.push((
-                parts[parts.len() - 1].to_owned(),
-                data.len() as u64,
-                bytes.len() as u64,
-            ));
-            data.extend_from_slice(bytes);
-        }
-        let mut names = Vec::new();
-        let mut name = |n: &str| {
-            let at = names.len() as u32;
-            names.push(n.len() as u8);
-            names.extend_from_slice(n.as_bytes());
-            at
-        };
-        let root_name = name("");
-        let mut tree: Vec<[u32; 4]> = vec![[root_name, 0, 0, 0]];
-        let mut queue: Vec<(usize, &Dir)> = vec![(0, &root)];
-        while let Some((at, d)) = queue.pop() {
-            let first = tree.len() as u32;
-            tree[at][1] = first;
-            tree[at][2] = (d.dirs.len() + d.files.len()) as u32;
-            for (n, sub) in &d.dirs {
-                queue.push((tree.len(), sub));
-                tree.push([name(n), 0, 0, 0]);
-            }
-            for (n, off, len) in &d.files {
-                tree.push([name(n) | 0x8000_0000, *off as u32, *len as u32, 0]);
-            }
-        }
-        // One 64 KiB block (data under 64 KiB, padded with zeros as
-        // ZArchive does) as one zstd frame: the data raw, the padding as
-        // a run-length block.
-        let mut frame = vec![0x28, 0xB5, 0x2F, 0xFD, 0xE0];
-        frame.extend_from_slice(&BLOCK.to_le_bytes());
-        let raw = ((data.len() as u32) << 3) & !1;
-        frame.extend_from_slice(&raw.to_le_bytes()[..3]);
-        frame.extend_from_slice(&data);
-        let rle = (((BLOCK as u32) - data.len() as u32) << 3) | (1 << 1) | 1;
-        frame.extend_from_slice(&rle.to_le_bytes()[..3]);
-        frame.push(0);
-        let mut out = frame.clone();
-        let mut record = 0u64.to_be_bytes().to_vec();
-        record.extend_from_slice(&((frame.len() - 1) as u16).to_be_bytes());
-        record.resize(RECORD_LEN, 0);
-        let mut sections = vec![(0u64, frame.len() as u64)];
-        for part in [
-            record,
-            names.clone(),
-            tree.iter()
-                .flat_map(|e| e.iter().flat_map(|w| w.to_be_bytes()))
-                .collect(),
-        ] {
-            sections.push((out.len() as u64, part.len() as u64));
-            out.extend_from_slice(&part);
-        }
-        sections.extend([(out.len() as u64, 0), (out.len() as u64, 0)]);
-        for (at, len) in sections {
-            out.extend_from_slice(&at.to_be_bytes());
-            out.extend_from_slice(&len.to_be_bytes());
-        }
-        out.extend_from_slice(&[0; 32]);
-        let total = out.len() as u64 + 16;
-        out.extend_from_slice(&total.to_be_bytes());
-        out.extend_from_slice(&VERSION.to_be_bytes());
-        out.extend_from_slice(&MAGIC.to_be_bytes());
+        let t = tempfile::tempdir().unwrap();
+        let list: Vec<(String, std::path::PathBuf)> = files
+            .iter()
+            .enumerate()
+            .map(|(i, (path, bytes))| {
+                let src = t.path().join(i.to_string());
+                std::fs::write(&src, bytes).unwrap();
+                ((*path).to_owned(), src)
+            })
+            .collect();
+        let mut out = Vec::new();
+        write(&list, 2, &mut out).unwrap();
         out
     }
 
     #[test]
     fn a_wua_s_files_are_read_in_place() {
         let meta = b"<menu><product_code>WUP-P-ARPE</product_code></menu>";
+        let big: Vec<u8> = (0..200_000u32).map(|i| (i * 31 % 251) as u8).collect();
         let file = wua_of(&[
             ("0005000010101e00_v0/meta/meta.xml", meta),
             ("0005000010101e00_v0/code/app.xml", b"<app/>"),
+            ("0005000010101e00_v0/content/Big.bin", &big),
             ("0005000e10101e00_v16/meta/meta.xml", b"update"),
         ]);
         let mut a = Archive::open(std::io::Cursor::new(&file)).unwrap();
@@ -320,6 +320,13 @@ pub(crate) mod tests {
         assert_eq!(a.read("0005000010101e00_v0/META/meta.xml").unwrap(), meta);
         assert_eq!(a.read("0005000e10101e00_v16/meta/meta.xml").unwrap(), b"update");
         assert!(a.read("0005000010101e00_v0/meta/nothing").is_none());
+        let mut back = Vec::new();
+        a.open_file("0005000010101e00_v0/content/Big.bin")
+            .unwrap()
+            .read_to_end(&mut back)
+            .unwrap();
+        assert_eq!(back, big, "a file across blocks, streamed");
+        assert_eq!(a.files().len(), 4);
         // Cut short, or not a WUA: nothing, never a panic.
         assert!(Archive::open(std::io::Cursor::new(&file[..file.len() - 3])).is_none());
         assert!(Archive::open(std::io::Cursor::new(b"WUP-P-ARPE".to_vec())).is_none());

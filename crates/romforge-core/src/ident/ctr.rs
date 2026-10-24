@@ -49,6 +49,66 @@ pub(super) fn ctr(p: &[u8]) -> Option<GameId> {
     None
 }
 
+/// What a 3DS file is for Z3DS (milestone 23): the magic Azahar writes
+/// for it, its frame size, and whether it is decrypted. Read from plain
+/// fields only, never by decrypting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Z3dsForm {
+    pub magic: [u8; 4],
+    pub frame: usize,
+    pub decrypted: bool,
+}
+
+/// An NCCH at `at` whose flags say NoCrypto (flags byte 7, bit 0x04).
+fn plain_ncch(p: &[u8], at: usize) -> Option<bool> {
+    if p.get(at + 0x100..at + 0x104)? != b"NCCH" {
+        return None;
+    }
+    Some(p.get(at + 0x18F)? & 0x04 != 0)
+}
+
+/// Azahar 2126.2's frame sizes (`file_derived.h`): 256 KiB, a CIA 32 MiB.
+const FRAME: usize = 256 * 1024;
+const CIA_FRAME: usize = 32 * 1024 * 1024;
+
+pub fn z3ds_form(p: &[u8]) -> Option<Z3dsForm> {
+    let form = |magic: &[u8; 4], frame, decrypted| Z3dsForm {
+        magic: *magic,
+        frame,
+        decrypted,
+    };
+    if p.get(..4)? == b"3DSX" {
+        return Some(form(b"3DSX", FRAME, true));
+    }
+    if p.get(0x100..0x104) == Some(b"NCSD") {
+        let first = u32_at(p, 0x120)? * MEDIA_UNIT;
+        return Some(form(b"NCSD", FRAME, plain_ncch(p, first).unwrap_or(false)));
+    }
+    if let Some(plain) = plain_ncch(p, 0) {
+        return Some(form(b"NCCH", FRAME, plain));
+    }
+    if u32_at(p, 0)? == 0x2020 && p.get(4..6)? == [0, 0] {
+        let align = |n: usize| n.div_ceil(64) * 64;
+        let tmd = align(0x2020) + align(u32_at(p, 0x08)?) + align(u32_at(p, 0x0C)?);
+        let content = tmd + align(u32_at(p, 0x10)?);
+        // The TMD's signature type says how long its signature is; its
+        // header (0xC4) and 64 content info records (0x900) follow, then
+        // content 0's record, whose type has bit 0x0001 when encrypted.
+        let sig = u32::from_be_bytes(p.get(tmd..tmd + 4)?.try_into().ok()?);
+        let sig_len = match sig {
+            0x0001_0003 => 0x200 + 0x3C,
+            0x0001_0004 => 0x100 + 0x3C,
+            0x0001_0005 => 0x3C + 0x40,
+            _ => return Some(form(b"CIA\0", CIA_FRAME, false)),
+        };
+        let record = tmd + 4 + sig_len + 0xC4 + 0x900;
+        let kind = u16::from_be_bytes(p.get(record + 6..record + 8)?.try_into().ok()?);
+        let decrypted = kind & 0x0001 == 0 && plain_ncch(p, content).unwrap_or(false);
+        return Some(form(b"CIA\0", CIA_FRAME, decrypted));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,5 +157,49 @@ mod tests {
             ctr(&ncch_header("CTR-P-AR")).is_none(),
             "a game code is four letters"
         );
+    }
+
+    #[test]
+    fn z3ds_forms_and_decrypted_files() {
+        let decrypted = |mut h: Vec<u8>| {
+            h[0x18F] |= 0x04;
+            h
+        };
+        let cxi = ncch_header("CTR-P-AREE");
+        assert_eq!(
+            z3ds_form(&cxi),
+            Some(Z3dsForm {
+                magic: *b"NCCH",
+                frame: FRAME,
+                decrypted: false
+            })
+        );
+        assert!(z3ds_form(&decrypted(cxi.clone())).unwrap().decrypted);
+        let mut cci = vec![0u8; 0x4000];
+        cci[0x100..0x104].copy_from_slice(b"NCSD");
+        cci[0x120..0x124].copy_from_slice(&0x20u32.to_le_bytes());
+        cci.extend(decrypted(cxi.clone()));
+        assert_eq!(
+            z3ds_form(&cci).map(|f| (f.magic, f.decrypted)),
+            Some((*b"NCSD", true))
+        );
+        assert_eq!(z3ds_form(b"3DSX and more").map(|f| f.magic), Some(*b"3DSX"));
+        // A CIA: the TMD (RSA-2048 signature) says whether content 0 is
+        // encrypted; its NCCH must say NoCrypto too.
+        let tmd_at = 0x2040 + 0xA00 + 0x380;
+        let mut cia = vec![0u8; tmd_at + 0xB40];
+        cia[0..4].copy_from_slice(&0x2020u32.to_le_bytes());
+        cia[8..12].copy_from_slice(&0xA00u32.to_le_bytes());
+        cia[12..16].copy_from_slice(&0x350u32.to_le_bytes());
+        cia[16..20].copy_from_slice(&0xB34u32.to_le_bytes());
+        cia[tmd_at..tmd_at + 4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
+        cia.extend(decrypted(cxi));
+        let form = z3ds_form(&cia).unwrap();
+        assert_eq!(
+            (form.magic, form.frame, form.decrypted),
+            (*b"CIA\0", CIA_FRAME, true)
+        );
+        cia[tmd_at + 0xB04 + 7] = 0x01;
+        assert!(!z3ds_form(&cia).unwrap().decrypted, "content 0 marked encrypted");
     }
 }

@@ -100,29 +100,30 @@
       {#if converting}
         <h2 id="clean-title">Convert</h2>
         <p class="hint">
-          Each identified disc image that isn't a CHD yet (CD tracks with their cue sheet, or one DVD image) becomes a CHD beside
-          it, under its own name, for platforms whose emulators read CHD. Every new file is read back and checked against the
-          disc's hashes before the original is touched. GameCube, Wii and Xbox images stay as they are.
+          Each identified disc image becomes, beside it and under its own name, the compressed file its emulators read: a CHD
+          (CD tracks with their cue sheet, or one DVD image), an RVZ for GameCube, a Z3DS for a decrypted 3DS game, a WUA for a
+          Wii U title folder. Every new file is read back and checked against the original before the original is touched. Wii
+          and Xbox images stay as they are.
         </p>
       {:else if cleanPlan?.in_place}
         <h2 id="clean-title">Rename &amp; Cleanup: dry run</h2>
         <p class="hint">
           Nothing has been touched yet. Each identified game becomes one file named by its DAT, in its own folder (Replace
-          originals): a zip for cartridges, a CHD for discs. Every new file is read back and checked against the original hashes
-          before the original goes to the trash.
+          originals): a zip for cartridges, a CHD (or RVZ, Z3DS, WUA) for discs. Every new file is read back and checked against the
+          original hashes before the original goes to the trash.
         </p>
       {:else if homeRoot}
         <h2 id="clean-title">Rename &amp; Cleanup: dry run</h2>
         <p class="hint">
           Nothing has been touched yet. Each identified game {from ? "in this folder" : "outside RomForge"} moves into RomForge as one file named by its DAT: a
-          zip for cartridges, a CHD for discs (art and details in a folder beside it). Every new file is read back and checked
+          zip for cartridges, a CHD (or RVZ, Z3DS, WUA) for discs (art and details in a folder beside it). Every new file is read back and checked
           against the original hashes before anything else happens. Files that aren't identified stay where they are.
         </p>
         {#if from}<p class="meta">From <bdi>{from}</bdi></p>{/if}
       {:else}
         <h2 id="clean-title">Rename &amp; Cleanup: dry run</h2>
         <p class="hint">
-          Nothing has been touched yet. Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD for discs (art and
+          Nothing has been touched yet. Each identified game in the Source becomes one file named by its DAT: a zip for cartridges, a CHD (or RVZ, Z3DS, WUA) for discs (art and
           details in a folder beside it). Every new file is read back and checked against the original hashes before anything
           else happens. Nothing is ever overwritten.
         </p>
@@ -161,7 +162,7 @@
         {:else}
           <p class="hint">
             {converting
-              ? "Nothing to convert: every identified disc is a CHD already, or its platform can't use one."
+              ? "Nothing to convert: every identified disc is compressed already, or its platform has no format romforge writes."
               : `Nothing to do: no identified game ${homeRoot ? (from ? "in this folder" : "outside RomForge") : "in the Source"} that isn't processed yet.`}
           </p>
         {/if}

@@ -566,7 +566,17 @@ you, as a game or as a translation / hack of one) becomes one file named by its 
 Source when no Library is set): a zip for cartridges, holding the ROMs and
 a `romforge/` folder with the art and `<name>.romforge.md`; a CHD for discs
 (`.bin` tracks or one `.iso`), with the art and details in a folder of the
-same name next to it. ROM data is streamed from the old file or zip; only
+same name next to it. Disc platforms whose emulators don't read CHD get
+the compressed format they do read, written by romforge itself (no
+DolphinTool or Azahar needed): an **RVZ** for a GameCube image (zstd 5,
+128 KiB chunks, padding packed as its PRNG seeds, as Dolphin makes it),
+a **Z3DS** for a decrypted 3DS game (`.zcci`, `.zcxi`, `.zcia`,
+`.z3dsx`: zstd's seekable format, as Azahar makes it; an encrypted game
+stays, since Azahar plays decrypted games only), a **WUA** for a decrypted
+Wii U title folder (Cemu's archive; the whole folder goes to the trash,
+and undo brings it back, but a WUA can't be turned back into a folder
+by itself; a folder with a file name over 127 bytes stays a folder, since
+Cemu can't read such a name from a WUA, and the plan says which). Wii and Xbox images stay as they are. ROM data is streamed from the old file or zip; only
 7z members, and big zip members packed other than stored or deflated, are
 unpacked, into the staging folder. Each
 new file is read back and every ROM re-hashed before anything else
@@ -625,11 +635,13 @@ The toolbar:
   whole job at once: every identified game renamed by its DAT, repacked
   (zip, or CHD for discs) and moved into RomForge (or the Library), or
   replaced in place, as Settings says.
-- **Convert** turns identified disc images into CHD where they are, under
-  their own names, for platforms whose emulators read CHD (never GameCube,
-  Wii or Xbox): it shows what it would do first, every CHD is checked
-  against the disc's hashes, and the originals go as Settings says (to the
-  trash, or kept). `romforge-cli convert [--apply]`.
+- **Convert** compresses identified disc images where they are, under
+  their own names: CHD, or RVZ (GameCube), Z3DS (decrypted 3DS) or WUA
+  (Wii U title folders), never Wii or Xbox. It shows what it would do
+  first, every new file is read back and checked against the original, and
+  the originals go as Settings says (to the trash, or kept).
+  `romforge-cli convert [--apply]`. A GameCube RVZ is also scanned as the
+  image it holds, so it verifies against Redump.
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &
   Cleanup, Display, Sources, Steam, Credits), **Emulator Settings** (see
   [Emulators](#emulator-settings-cores-and-installs)), **Play**. Play shows a splash

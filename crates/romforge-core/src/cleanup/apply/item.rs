@@ -35,6 +35,9 @@ pub(super) struct Prepared {
 pub(super) struct Written {
     pub took_sheet: bool,
     sidecar: bool,
+    /// The new file's content (SHA-1, size) when it isn't hashed as what
+    /// it was made from (a WUA): a name you gave the game moves to it.
+    carried: Option<(String, u64)>,
 }
 
 /// Checks and reads for an item written on a worker.
@@ -87,12 +90,20 @@ pub(super) fn write(item: &Item, p: &Prepared) -> Result<Written, Error> {
         return Ok(Written {
             took_sheet: false,
             sidecar: false,
+            carried: None,
         });
     }
     let _ = std::fs::remove_file(part);
+    let mut carried = None;
     let written = match item.format {
         Format::Zip => write_zip(item, extras, staging, part).map(|()| false),
         Format::Folder => write_folder_zip(item, extras, staging, part).map(|()| false),
+        Format::Rvz | Format::Z3ds | Format::Wua => {
+            super::super::compress::write_compressed(item, staging, part).map(|c| {
+                carried = c;
+                false
+            })
+        }
         _ => super::super::chd::write_chd(item, staging, part),
     };
     let took_sheet = match written {
@@ -132,6 +143,7 @@ pub(super) fn write(item: &Item, p: &Prepared) -> Result<Written, Error> {
     Ok(Written {
         took_sheet,
         sidecar: item.sidecar.is_some(),
+        carried,
     })
 }
 
@@ -165,6 +177,16 @@ pub(super) fn forget_intent(conn: &Connection, batch: i64, item: &Item) -> Resul
 /// it wrote (a folder game, a sidecar) with what is in it, so undo takes
 /// just that and leaves anything added since.
 pub(super) fn journal(conn: &Connection, batch: i64, item: &Item, w: &Written) -> Result<(), Error> {
+    // A name you gave it, kept for the new file (the old one's stays, for
+    // undo).
+    if let (Some((sha1, size)), Some(old)) = (&w.carried, item.parts.first()) {
+        conn.execute(
+            "INSERT OR REPLACE INTO manual_ids (sha1, size, system_id, title, created_at, base, relation, tag, proof)
+             SELECT ?1, ?2, system_id, title, created_at, base, relation, tag, proof
+             FROM manual_ids WHERE sha1 = ?3 AND size = ?4",
+            params![sha1, *size as i64, old.sha1, old.size as i64],
+        )?;
+    }
     let dir = match (&item.format, w.sidecar, &item.sidecar) {
         (Format::Dir, _, _) => &item.target,
         (_, true, Some(side)) => side,

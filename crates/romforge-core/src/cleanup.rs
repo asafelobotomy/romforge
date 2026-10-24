@@ -52,6 +52,12 @@ pub enum Format {
     /// An arcade set: its zips (its own, its parent's, its BIOS's) and CHD
     /// folders, copied whole under their own names (milestone 17).
     Set,
+    /// A GameCube disc into RVZ (milestone 23).
+    Rvz,
+    /// A decrypted 3DS game into Z3DS.
+    Z3ds,
+    /// A Wii U title folder (`Item::folder`) into one WUA.
+    Wua,
 }
 
 /// One ROM of a game and where its data is now.
@@ -187,6 +193,7 @@ pub fn convert_plan(
 
 mod apply;
 mod chd;
+mod compress;
 mod items;
 mod parts;
 mod plan;
