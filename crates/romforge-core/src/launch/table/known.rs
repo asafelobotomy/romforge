@@ -26,6 +26,23 @@ pub enum FlatpakFrom {
     Fallback,
 }
 
+/// What romforge can do with an emulator's data besides starting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ability {
+    /// Bring its existing setup (settings, saves) into romforge's config
+    /// (`launch::existing`).
+    ImportSetup,
+    /// Move its game data from your folders into RomForge
+    /// (`launch::move_in`).
+    MoveData,
+    /// Gather its saves from the places it used before `Saves/`
+    /// (`saves::gather`).
+    GatherSaves,
+    /// Keep backup copies of its saves that stay in its own data
+    /// (`saves::backup`).
+    BackUpSaves,
+}
+
 /// An emulator romforge knows how to start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KnownEmulator {
@@ -75,6 +92,8 @@ pub struct KnownEmulator {
     /// the asset's name). romforge can download it (`obtain/appimage.rs`)
     /// and prefers it to the Flatpak when it is there.
     pub official_appimage: Option<(&'static str, &'static str)>,
+    /// What else romforge does with its data.
+    pub abilities: &'static [Ability],
 }
 
 pub(super) const fn emu(
@@ -103,10 +122,19 @@ pub(super) const fn emu(
         discontinued: None,
         firmware: None,
         official_appimage: None,
+        abilities: &[],
     }
 }
 
 impl KnownEmulator {
+    pub(super) const fn can(mut self, abilities: &'static [Ability]) -> Self {
+        self.abilities = abilities;
+        self
+    }
+    /// Whether romforge can do `a` with its data.
+    pub fn has(&self, a: Ability) -> bool {
+        self.abilities.contains(&a)
+    }
     pub(super) const fn fullscreen(mut self, flags: &'static [&'static str]) -> Self {
         self.fullscreen = flags;
         self

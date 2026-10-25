@@ -4,7 +4,13 @@
 use super::{Format, Key, Kind, Setting, Words, config, k};
 
 const fn ra(key: &'static str) -> Key {
-    k("retroarch", "retroarch.cfg", key, Format::RetroArch, Words::Same)
+    k(
+        "retroarch",
+        crate::launch::files::RETROARCH,
+        key,
+        Format::RetroArch,
+        Words::Same,
+    )
 }
 
 pub(super) const LAUNCH: &[Setting] = &[

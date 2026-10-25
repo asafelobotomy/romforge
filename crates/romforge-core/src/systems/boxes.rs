@@ -1,3 +1,4 @@
+use super::key;
 use super::*;
 
 /// Where a box was sold, which decides its shape.
@@ -34,10 +35,15 @@ pub(super) fn is_computer(system: &System) -> bool {
             system.manufacturer,
             "Commodore" | "Sinclair" | "Amstrad" | "Acorn" | "Apple" | "IBM" | "Sharp" | "Fujitsu"
         )
-        || matches!(
-            system.key,
-            "MSX" | "MSX2" | "PC-88" | "PC-98" | "Atari 8-bit" | "Atari ST"
-        )
+        || [
+            key!("MSX"),
+            key!("MSX2"),
+            key!("PC-88"),
+            key!("PC-98"),
+            key!("Atari 8-bit"),
+            key!("Atari ST"),
+        ]
+        .contains(&system.key)
 }
 
 /// A box's front, width / height, for `system` sold in `region`: the

@@ -1244,7 +1244,19 @@ To build the packages yourself: `cd app && npm ci && npx tauri build`
   chords), `music`, `themes`, `user_games` (favourites, the emulator
   picked per game), `steam`; one table of systems (`systems/table.rs`),
   one of copier headers and byte orders (`headers.rs`), one of game ID
-  readers (`ident.rs`), one of hotkeys (`hotkeys.rs`)
+  readers (`ident.rs`), one of hotkeys (`hotkeys.rs`), `saves` (gathering
+  and backups, milestone 27)
+- Shared names, so nothing is written twice:
+  - emulators and what romforge can do with each (`abilities`: import a
+    setup, move game data, gather saves, back them up) are rows of
+    `launch/table.rs`; `tests/emulator_names.rs` fails on a name in a
+    `match` or Emulator Settings' rows that isn't one of them;
+  - each emulator's config files are `launch/owned/files.rs`, read by the
+    config writers and Emulator Settings alike;
+  - where each emulator saved before `Saves/` is
+    `launch/owned/saves/old.rs`, read by the switch and by gathering;
+  - a system key outside the systems table is written `key!("GameCube")`
+    (`systems/checked.rs`): a key not in the table stops the build.
 - `crates/romforge-cli` — thin CLI
 - `app/` — Tauri 2 + Svelte shell
 - `fixtures/` — tiny generated test files and DATs. Regenerate with

@@ -102,7 +102,7 @@ impl Library {
         env: &launch::Env,
         report: &mut ListsReport,
     ) -> Result<(), Error> {
-        let arcade = systems::by_key("Arcade").map_or(0, |s| s.id);
+        let arcade = systems::by_key(systems::key!("Arcade")).map_or(0, |s| s.id);
         let imported: Option<String> = self
             .conn
             .query_row(

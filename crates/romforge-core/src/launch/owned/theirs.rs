@@ -80,7 +80,7 @@ pub fn rpcs3_devices(user: &UserDirs) -> Vec<(&'static str, PathBuf)> {
 
 /// Your Cemu's MLC: where its own `settings.xml` says, else its usual one.
 pub fn cemu_mlc(user: &UserDirs) -> Option<PathBuf> {
-    let own = first(usual(user, "info.cemu.Cemu", false, "Cemu/settings.xml"))
+    let own = first(usual(user, "info.cemu.Cemu", false, super::files::CEMU))
         .and_then(|f| std::fs::read_to_string(f).ok())
         .and_then(|x| {
             Some(

@@ -33,6 +33,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::files;
 use super::formats::toml_string;
 use super::{ConfigWrite, Format, Prepare};
 
@@ -55,7 +56,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
         "duckstation" => {
             p.env = env(&[("XDG_CONFIG_HOME", s(dir))]);
             p.writes.push(ini(
-                dir.join("duckstation/settings.ini"),
+                dir.join(files::DS),
                 &[
                     ("[Main]SetupWizardIncomplete", "false".into()),
                     ("[BIOS]SearchDirectory", s(bios)),
@@ -64,7 +65,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
             ));
         }
         "pcsx2" => p.writes.push(ini(
-            dir.join("PCSX2/inis/PCSX2.ini"),
+            dir.join(files::PCSX2),
             &[
                 ("[UI]SettingsVersion", "1".into()),
                 ("[UI]SetupWizardIncomplete", "false".into()),
@@ -89,7 +90,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
                 }
             }
             p.writes.push(ConfigWrite {
-                path: dir.join("mgba/config.ini"),
+                path: dir.join(files::MGBA),
                 format: Format::Ini,
                 keys,
                 remove,
@@ -98,7 +99,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
         "mednafen" => {
             p.env = env(&[("MEDNAFEN_HOME", s(dir))]);
             p.writes.push(ConfigWrite {
-                path: dir.join("mednafen.cfg"),
+                path: dir.join(files::MEDNAFEN),
                 format: Format::Spaced,
                 keys: vec![("filesys.path_firmware".into(), s(bios))],
                 remove: Vec::new(),
@@ -141,7 +142,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
             }
             keys.push(("[Emu]ExternalBIOSEnable".into(), (ds == 3).to_string()));
             p.writes.push(ConfigWrite {
-                path: dir.join("melonDS/melonDS.toml"),
+                path: dir.join(files::MELONDS),
                 format: Format::Toml,
                 keys,
                 remove,

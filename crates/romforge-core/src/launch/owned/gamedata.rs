@@ -26,6 +26,7 @@
 use std::path::{Path, PathBuf};
 
 use super::existing::UserDirs;
+use super::files;
 use super::formats::toml_string;
 use super::theirs::{RPCS3_DEVICES, cemu_mlc, moved_in, rpcs3_devices, xemu_file};
 use super::{ConfigWrite, Format, Prepare};
@@ -54,13 +55,13 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
                 .map(|(dev, path)| (format!("/{dev}/"), toml_string(&format!("{}/", s(&path)))))
                 .collect();
             p.writes.push(ConfigWrite {
-                path: dir.join("rpcs3/vfs.yml"),
+                path: dir.join(files::RPCS3_VFS),
                 format: Format::Yaml,
                 keys,
                 remove: Vec::new(),
             });
             p.writes.push(ConfigWrite {
-                path: dir.join("rpcs3/GuiConfigs/CurrentSettings.ini"),
+                path: dir.join(files::RPCS3_GUI),
                 format: Format::Ini,
                 keys: vec![("[main_window]infoBoxEnabledWelcome".into(), "false".into())],
                 remove: Vec::new(),
@@ -79,7 +80,7 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
             }
             .map(|m| s(&m));
             p.writes.push(ConfigWrite {
-                path: dir.join("Cemu/settings.xml"),
+                path: dir.join(files::CEMU),
                 format: Format::Xml,
                 keys: mlc.map(|m| ("mlc_path".to_owned(), m)).into_iter().collect(),
                 remove: Vec::new(),
@@ -113,7 +114,7 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
                 }
             }
             p.writes.push(ConfigWrite {
-                path: dir.join("xemu.toml"),
+                path: dir.join(files::XEMU),
                 format: Format::Toml,
                 keys,
                 remove: Vec::new(),

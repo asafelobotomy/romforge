@@ -36,7 +36,11 @@ impl Library {
     /// replaces it.
     pub fn mame_dat(&mut self, env: &launch::Env) -> Result<ImportedDat, Error> {
         let (xml, version) = launch::mame_listxml(env)?;
-        self.import_dat_bytes(&xml, &format!("mame -listxml ({version})"), Some("Arcade"))
+        self.import_dat_bytes(
+            &xml,
+            &format!("mame -listxml ({version})"),
+            Some(crate::systems::key!("Arcade")),
+        )
     }
 
     /// Keep libretro's `ScummVM.dat` (its names for ScummVM game ids) in

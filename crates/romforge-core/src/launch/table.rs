@@ -7,7 +7,7 @@
 
 mod known;
 use known::emu;
-pub use known::{FlatpakFrom, KnownEmulator};
+pub use known::{Ability, FlatpakFrom, KnownEmulator};
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
 
@@ -24,6 +24,7 @@ pub const RETROARCH: KnownEmulator = emu(
     &["-L", "{core}", "{rom}"],
     true,
 )
+.can(&[Ability::ImportSetup])
 .fullscreen(&["-f"])
 .config(&[
     "--config",
@@ -47,6 +48,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-fullscreen", "-nogui"]),
     // v2.8.2 (QtHost.cpp). `-datapath` keeps its data in `PCSX2/` inside
     // the folder given.
@@ -58,6 +60,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-fullscreen", "-nogui"])
     .config(&["-datapath", "{config}"]),
     // 2609a (CommandLineParse.cpp): no fullscreen flag, a config override
@@ -70,6 +73,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-b", "-e", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves, Ability::BackUpSaves])
     .fullscreen(&["-C", "Dolphin.Display.Fullscreen=True"])
     .config(&["-u", "{config}"])
     // Its Linux release is a Flatpak from its own repository (its download
@@ -89,6 +93,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["--fullscreen", "--escape-exit"]),
     // v2.7 (cfg/cl.cpp).
     emu(
@@ -99,6 +104,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-config", "window:fullscreen=yes"])
     // Flathub's isn't its developers'; its releases have an AppImage.
     .flatpak_by_others()
@@ -112,6 +118,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         true,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-f"])
     // Flathub's isn't its developers'; its releases have an AppImage.
     .flatpak_by_others()
@@ -125,6 +132,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         true,
     )
+    .can(&[Ability::GatherSaves])
     .fullscreen(&["-f"]),
     // v0.8.137 (vl.c, xemu.c).
     emu(
@@ -135,6 +143,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-dvd_path", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData])
     .fullscreen(&["-full-screen"])
     .config(&["-config_path", "{config}/xemu.toml"]),
     // v0.0.43 (rpcs3.cpp): `--fullscreen` works only with `--no-gui`.
@@ -146,6 +155,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--no-gui", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
     .fullscreen(&["--fullscreen"])
     // Its developers don't make or support a Flatpak (Flathub's asks on
     // every start whether to run an "unofficial build",
@@ -155,6 +165,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`. Not on
     // Flathub (checked 2026-10-19).
     emu("mednafen", "Mednafen", &["mednafen"], "", &["{rom}"], true)
+        .can(&[Ability::ImportSetup, Ability::GatherSaves])
         .no_flatpak()
         .fullscreen(&["-video.fs", "1"]),
     // v2.6 (LaunchSettings.cpp); `-m` moves only the MLC folder.
@@ -166,6 +177,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-g", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
     .fullscreen(&["-f"]),
     // 2126.2 (citra_qt.cpp): the game is the last argument, `-f` full
     // screen; a CIA is installed (`-i`), never started, so Play refuses
@@ -178,6 +190,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
     .fullscreen(&["-f"]),
     // Azahar's predecessors, discontinued; both play encrypted games with
     // `aes_keys.txt` (Azahar removed that in dc1ebb63, 2025-02-27), and
@@ -191,6 +204,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
     .fullscreen(&["-f"])
     .cannot_open(&["zcci", "zcia", "zcxi", "z3dsx"])
     .discontinued("2119.1 (2024-11-09)"),
@@ -205,6 +219,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-g", "{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
     .appimage("citra-qt")
     .fullscreen(&["-f"])
     .cannot_open(&["zcci", "zcia", "zcxi", "z3dsx"])
@@ -220,6 +235,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup])
     .fullscreen(&["--fullscreen"])
     .config(&["--noprimaryconf", "--conf", "{config}/dosbox-staging.conf"])
     // 0.83's `[mt32] romdir`, `[soundcanvas] soundcanvas_rom_dir` and
@@ -241,6 +257,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
+    .can(&[Ability::ImportSetup])
     .fullscreen(&["-fullscreen"])
     .config(&["-conf", "{config}/dosbox-x.conf"])
     // `[midi] mt32.romdir` (dosbox-x.reference.conf), by `-set`.
@@ -255,6 +272,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["--path={rom}", "--auto-detect"],
         false,
     )
+    .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-f"])
     .config(&["--config={config}/scummvm.ini"])
     // Engine data (`--extrapath`), laid out as RetroBIOS gives it.
@@ -270,6 +288,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["-rompath", "{dir}", "{set}"],
         true,
     )
+    .can(&[Ability::ImportSetup])
     .fullscreen(&["-nowindow"])
     .config(&["-inipath", "{config}"])
     // MAME makes only Windows builds (mamedev.org, 0.289). The Linux

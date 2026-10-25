@@ -18,6 +18,9 @@
 
 mod table;
 pub use table::*;
+mod checked;
+pub use checked::checked;
+pub(crate) use checked::key;
 mod boxes;
 pub use boxes::*;
 mod sizes;

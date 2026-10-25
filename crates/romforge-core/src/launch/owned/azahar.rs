@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use super::existing::UserDirs;
+use super::files;
 use super::theirs::{citra_storage, moved_in};
 use super::{ConfigWrite, Format, Prepare};
 
@@ -102,7 +103,7 @@ pub(super) fn citra_line(
     ]);
     p.dirs.extend([storage.join("nand"), storage.join("sdmc")]);
     p.writes.push(ConfigWrite {
-        path: dir.join(kind.folder).join("qt-config.ini"),
+        path: dir.join(kind.folder).join(files::CITRA_QT),
         format: Format::QtIni,
         keys,
         remove: Vec::new(),

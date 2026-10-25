@@ -40,7 +40,7 @@ const ICONS_REVISION: &str = "2";
 macro_rules! own {
     ($key:literal) => {
         (
-            $key,
+            $crate::systems::key!($key),
             include_bytes!(concat!("../../assets/platform-icons/", $key, ".png")),
         )
     };

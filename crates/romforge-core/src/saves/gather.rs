@@ -29,6 +29,7 @@ use rusqlite::{Connection, params};
 use crate::Error;
 use crate::home::Home;
 use crate::launch::existing::UserDirs;
+use crate::launch::old_saves::{self as old, files_under};
 use crate::systems::{self, System};
 
 /// One save file and where it goes.
@@ -54,32 +55,7 @@ pub struct GatherPlan {
 
 /// The emulators whose saves can be gathered.
 pub fn gathers(name: &str) -> bool {
-    matches!(
-        name,
-        "duckstation"
-            | "pcsx2"
-            | "ppsspp"
-            | "dolphin"
-            | "flycast"
-            | "mednafen"
-            | "mgba"
-            | "melonds"
-            | "scummvm"
-    )
-}
-
-/// Every file under `dir`, with its path below it.
-fn files_under(dir: &Path) -> Vec<(PathBuf, PathBuf)> {
-    walkdir::WalkDir::new(dir)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_file())
-        .map(|e| {
-            let rel = e.path().strip_prefix(dir).unwrap_or(e.path()).to_path_buf();
-            (e.path().to_path_buf(), rel)
-        })
-        .collect()
+    crate::launch::known(name).is_some_and(|e| e.has(crate::launch::Ability::GatherSaves))
 }
 
 /// The library's game files on `name`'s systems (matched by hash, or named
@@ -125,42 +101,21 @@ fn found(
             .map(|(f, rel)| (f, Some(to.join(rel))))
             .collect()
     };
-    match name {
-        "duckstation" => into(&dir.join("duckstation/memcards"), saves.join("PlayStation")),
-        "pcsx2" => into(&dir.join("PCSX2/memcards"), saves.join("PlayStation 2")),
-        "ppsspp" => {
-            let savedata = dir.join("ppsspp/PSP/SAVEDATA");
-            if savedata.is_symlink() {
-                return Vec::new();
-            }
-            into(&savedata, saves.join("PSP"))
-        }
-        "dolphin" => {
-            let (gc, to) = (dir.join("GC"), saves.join("GameCube"));
-            let mut out = Vec::new();
-            for e in std::fs::read_dir(&gc)
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-            {
-                let n = e.file_name().to_string_lossy().into_owned();
-                if e.path().is_dir() {
-                    out.extend(into(&e.path().join("Card A"), to.join(&n)));
-                } else if n.starts_with("MemoryCardA.") {
-                    out.push((e.path(), Some(to.join(&n))));
-                }
-            }
-            out
-        }
-        "flycast" => files_under(&dir.join("data/flycast"))
+    let placed = old::in_config(name, &dir);
+    if !placed.is_empty() {
+        return placed
             .into_iter()
-            .filter(|(_, rel)| {
-                rel.parent() == Some(Path::new("")) && rel.to_string_lossy().contains("vmu_save")
-            })
-            .map(|(f, rel)| (f, Some(saves.join("Dreamcast").join(rel))))
-            .collect(),
+            .map(|(f, rel)| (f, Some(saves.join(rel))))
+            .collect();
+    }
+    match name {
         "scummvm" => user
-            .map(|u| into(&u.xdg.data.join("scummvm/saves"), saves.join("ScummVM")))
+            .map(|u| {
+                into(
+                    &u.xdg.data.join(old::SCUMMVM_SAVES),
+                    saves.join(crate::systems::key!("ScummVM")),
+                )
+            })
             .unwrap_or_default(),
         "mednafen" => {
             // `<game>.<md5>.<ext>`: the longest game name it starts with.
@@ -173,7 +128,7 @@ fn found(
                         .insert(s.key);
                 }
             }
-            files_under(&dir.join("sav"))
+            files_under(&dir.join(old::MEDNAFEN_SAV))
                 .into_iter()
                 .filter(|(_, rel)| rel.parent() == Some(Path::new("")))
                 .map(|(f, rel)| {

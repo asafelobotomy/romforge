@@ -51,10 +51,7 @@ pub struct BackedUp {
 
 /// Whether `name` keeps saves outside `Saves/` that get backup copies.
 pub fn backs_up(name: &str) -> bool {
-    matches!(
-        name,
-        "rpcs3" | "cemu" | "azahar" | "lime3ds" | "citra" | "dolphin"
-    )
+    crate::launch::known(name).is_some_and(|e| e.has(crate::launch::Ability::BackUpSaves))
 }
 
 /// Where `tree`'s copies of `name` go.

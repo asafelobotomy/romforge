@@ -19,6 +19,7 @@ use super::existing::UserDirs;
 use super::theirs;
 use crate::Error;
 use crate::home::Home;
+use crate::systems::key;
 
 /// One folder or file to move.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -47,7 +48,7 @@ pub struct MovePlan {
 
 /// The emulators whose data can be moved in.
 pub fn movable(name: &str) -> bool {
-    matches!(name, "rpcs3" | "cemu" | "xemu" | "azahar" | "lime3ds" | "citra")
+    crate::launch::known(name).is_some_and(|e| e.has(crate::launch::Ability::MoveData))
 }
 
 /// (what, yours, RomForge's place for it) for `name`.
@@ -74,7 +75,7 @@ fn sources(name: &str, home: &Home, user: &UserDirs) -> Vec<(String, PathBuf, Pa
         _ => super::azahar::folders(name)
             .and_then(|(_, reads)| theirs::citra_storage(user, reads))
             .map(|at| {
-                let saves = home.saves().join("Nintendo 3DS");
+                let saves = home.saves().join(key!("Nintendo 3DS"));
                 [("NAND", "nand"), ("SD card", "sdmc")]
                     .into_iter()
                     .filter(|(_, d)| at.join(d).exists())

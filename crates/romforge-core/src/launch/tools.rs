@@ -204,8 +204,7 @@ pub fn install_ps3_firmware(env: &Env) -> Result<PathBuf, Error> {
     let runner = env
         .known(e)
         .ok_or_else(|| Error::Launch("RPCS3 isn't installed".into()))?;
-    let system =
-        systems::by_key("PlayStation 3").ok_or_else(|| Error::UnknownSystem("PlayStation 3".into()))?;
+    let system = systems::by_key(systems::key!("PlayStation 3")).expect("in the table");
     let (dir, prep) = owned::owned(e, home, system, &env.options(e), env.user.as_ref())
         .ok_or_else(|| Error::Launch("romforge doesn't set RPCS3 up".into()))?;
     prepare(&prep)?;
@@ -278,7 +277,7 @@ pub fn mame_write_defaults(env: &Env) -> Result<PathBuf, Error> {
         .stderr(std::process::Stdio::null());
     let out =
         output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
-    let ini = dir.join("mame.ini");
+    let ini = dir.join(owned::files::MAME);
     if !out.status.success() || !ini.is_file() {
         return Err(Error::Launch(format!(
             "MAME didn't write {} ({})",

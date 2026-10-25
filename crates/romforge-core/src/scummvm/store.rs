@@ -176,7 +176,7 @@ pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, E
     } else {
         detect(&entries, &top)
     };
-    let system = systems::by_key("ScummVM").map_or(0, |s| s.id);
+    let system = systems::by_key(systems::key!("ScummVM")).map_or(0, |s| s.id);
     conn.execute("DELETE FROM folder_games", [])?;
     let mut insert = conn.prepare(
         "INSERT OR IGNORE INTO folder_games (path, system_id, title, code, files, size)

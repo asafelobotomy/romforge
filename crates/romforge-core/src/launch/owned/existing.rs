@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
+use super::files;
 use crate::Error;
 use crate::home::Home;
 use crate::launch::KnownEmulator;
@@ -86,21 +87,21 @@ fn skip_for(name: &str) -> &'static [&'static str] {
 /// imported files replace these, then romforge's keys go back in.
 fn settings_files(name: &str) -> &'static [&'static str] {
     match name {
-        "retroarch" => &["retroarch.cfg"],
-        "duckstation" => &["duckstation/settings.ini"],
-        "pcsx2" => &["PCSX2/inis/PCSX2.ini"],
-        "mgba" => &["mgba/config.ini"],
-        "mednafen" => &["mednafen.cfg"],
-        "rpcs3" => &["rpcs3/vfs.yml", "rpcs3/GuiConfigs/CurrentSettings.ini"],
-        "cemu" => &["Cemu/settings.xml"],
-        "xemu" => &["xemu.toml"],
+        "retroarch" => &[files::RETROARCH],
+        "duckstation" => &[files::DS],
+        "pcsx2" => &[files::PCSX2],
+        "mgba" => &[files::MGBA],
+        "mednafen" => &[files::MEDNAFEN],
+        "rpcs3" => &[files::RPCS3_VFS, files::RPCS3_GUI],
+        "cemu" => &[files::CEMU],
+        "xemu" => &[files::XEMU],
         "azahar" => &["azahar-emu/qt-config.ini"],
         "lime3ds" => &["lime3ds-emu/qt-config.ini"],
         "citra" => &["citra-emu/qt-config.ini"],
-        "dosbox-staging" => &["dosbox-staging.conf"],
-        "dosbox-x" => &["dosbox-x.conf"],
-        "scummvm" => &["scummvm.ini"],
-        "mame" => &["mame.ini"],
+        "dosbox-staging" => &[files::STAGING],
+        "dosbox-x" => &[files::DOSBOX_X],
+        "scummvm" => &[files::SCUMMVM],
+        "mame" => &[files::MAME],
         _ => &[],
     }
 }
@@ -130,7 +131,7 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
         // (autoconfig, assets, remaps) are read where they are, through the
         // paths in it.
         "retroarch" => [
-            both("retroarch/retroarch.cfg", dir.join("retroarch.cfg"), false),
+            both("retroarch/retroarch.cfg", dir.join(files::RETROARCH), false),
             both("retroarch/config", dir.join("config"), false),
         ]
         .concat(),
@@ -154,7 +155,7 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
             both("Cemu", dir.join("data/Cemu"), true),
         ]
         .concat(),
-        "xemu" => both("xemu/xemu/xemu.toml", dir.join("xemu.toml"), true),
+        "xemu" => both("xemu/xemu/xemu.toml", dir.join(files::XEMU), true),
         // Citra's line: its config and system files, and those of the older
         // ones it reads; its NAND and SD card are used where they are
         // (`azahar.rs`).
@@ -184,14 +185,10 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
         // Their one settings file (DOSBox Staging 0.83.0's
         // `get_platform_config_dir`, DOSBox-X's `dosbox-x.conf` beside its
         // versioned ones, ScummVM's XDG one, MAME's `~/.mame`).
-        "dosbox-staging" => both(
-            "dosbox/dosbox-staging.conf",
-            dir.join("dosbox-staging.conf"),
-            false,
-        ),
-        "dosbox-x" => both("dosbox-x/dosbox-x.conf", dir.join("dosbox-x.conf"), false),
-        "scummvm" => both("scummvm/scummvm.ini", dir.join("scummvm.ini"), false),
-        "mame" => at(home_dir.join(".mame/mame.ini"), dir.join("mame.ini")),
+        "dosbox-staging" => both("dosbox/dosbox-staging.conf", dir.join(files::STAGING), false),
+        "dosbox-x" => both("dosbox-x/dosbox-x.conf", dir.join(files::DOSBOX_X), false),
+        "scummvm" => both("scummvm/scummvm.ini", dir.join(files::SCUMMVM), false),
+        "mame" => at(home_dir.join(".mame/mame.ini"), dir.join(files::MAME)),
         _ => Vec::new(),
     }
 }
@@ -214,27 +211,7 @@ pub(super) fn seed(e: &KnownEmulator, dir: &Path, user: Option<&UserDirs>) -> Op
 /// Emulators that can have their setup imported: RetroArch and the
 /// standalone ones romforge sets up.
 pub fn importable(name: &str) -> bool {
-    matches!(
-        name,
-        "retroarch"
-            | "duckstation"
-            | "pcsx2"
-            | "mgba"
-            | "ppsspp"
-            | "flycast"
-            | "mednafen"
-            | "dolphin"
-            | "rpcs3"
-            | "cemu"
-            | "xemu"
-            | "azahar"
-            | "lime3ds"
-            | "citra"
-            | "dosbox-staging"
-            | "dosbox-x"
-            | "scummvm"
-            | "mame"
-    )
+    crate::launch::known(name).is_some_and(|e| e.has(crate::launch::Ability::ImportSetup))
 }
 
 /// What `e`'s existing setup holds (`conn`: the library, to tell

@@ -35,10 +35,14 @@
 use std::path::{Path, PathBuf};
 
 use super::existing::UserDirs;
+use super::files;
 use super::formats::toml_string;
 use super::{ConfigWrite, Format, Prepare};
 use crate::home::Home;
 use crate::systems::System;
+use crate::systems::key;
+
+pub(crate) mod old;
 
 /// One key romforge sets for the saves.
 struct Key {
@@ -70,38 +74,23 @@ pub(crate) fn point(
     let beside_rom = rom.with_extension("sav").is_file();
     let (keys, kept, to) = match name {
         "duckstation" => (
-            vec![key(
-                "duckstation/settings.ini",
-                Format::Ini,
-                "[MemoryCards]Directory",
-                s(&to),
-            )],
-            holds_file(&dir.join("duckstation/memcards")),
+            vec![key(files::DS, Format::Ini, "[MemoryCards]Directory", s(&to))],
+            !old::in_config(name, dir).is_empty(),
             to,
         ),
         "pcsx2" => (
-            vec![key(
-                "PCSX2/inis/PCSX2.ini",
-                Format::Ini,
-                "[Folders]MemoryCards",
-                s(&to),
-            )],
-            holds_file(&dir.join("PCSX2/memcards")),
+            vec![key(files::PCSX2, Format::Ini, "[Folders]MemoryCards", s(&to))],
+            !old::in_config(name, dir).is_empty(),
             to,
         ),
         "mgba" => (
-            vec![key(
-                "mgba/config.ini",
-                Format::Ini,
-                "[ports.qt]savegamePath",
-                s(&to),
-            )],
+            vec![key(files::MGBA, Format::Ini, "[ports.qt]savegamePath", s(&to))],
             beside_rom,
             to,
         ),
         "melonds" => (
             vec![key(
-                "melonDS/melonDS.toml",
+                files::MELONDS,
                 Format::Toml,
                 "[Instance0]SaveFilePath",
                 toml_string(&s(&to)),
@@ -111,33 +100,27 @@ pub(crate) fn point(
         ),
         "mednafen" => {
             let stem = rom.file_stem().map(|f| format!("{}.", f.to_string_lossy()));
-            let kept = stem.is_some_and(|st| any_file(&dir.join("sav"), |n| n.starts_with(&st)));
+            let kept = stem.is_some_and(|st| any_file(&dir.join(old::MEDNAFEN_SAV), |n| n.starts_with(&st)));
             (
-                vec![key("mednafen.cfg", Format::Spaced, "filesys.path_sav", s(&to))],
+                vec![key(files::MEDNAFEN, Format::Spaced, "filesys.path_sav", s(&to))],
                 kept,
                 to,
             )
         }
         "ppsspp" => {
-            let savedata = dir.join("ppsspp/PSP/SAVEDATA");
-            if !holds_file(&savedata) {
+            let savedata = dir.join(old::PPSSPP_SAVEDATA);
+            if old::in_config(name, dir).is_empty() {
                 p.folder_links.push((to.clone(), savedata));
             }
             (Vec::new(), false, to)
         }
         "dolphin" => {
-            let to = home.saves().join("GameCube");
-            let gc = dir.join("GC");
-            let kept = any_file(&gc, |n| n.starts_with("MemoryCard"))
-                || std::fs::read_dir(&gc)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Result::ok)
-                    .any(|r| holds_file(&r.path().join("Card A")));
+            let to = home.saves().join(key!("GameCube"));
+            let kept = !old::in_config(name, dir).is_empty();
             let keys = vec![
-                key("Config/Dolphin.ini", Format::Ini, "[Core]GCIFolderAPath", s(&to)),
+                key(files::DOLPHIN, Format::Ini, "[Core]GCIFolderAPath", s(&to)),
                 key(
-                    "Config/Dolphin.ini",
+                    files::DOLPHIN,
                     Format::Ini,
                     "[Core]MemcardAPath",
                     s(&to.join("MemoryCardA.raw")),
@@ -146,12 +129,12 @@ pub(crate) fn point(
             (keys, kept, to)
         }
         "flycast" => {
-            let data = dir.join("data/flycast");
-            if system.key == "Dreamcast" {
-                let kept = any_file(&data, |n| n.contains("vmu_save"));
+            let data = dir.join(old::FLYCAST_DATA);
+            if system.key == key!("Dreamcast") {
+                let kept = !old::in_config(name, dir).is_empty();
                 (
                     vec![key(
-                        "flycast/emu.cfg",
+                        files::FLYCAST,
                         Format::Ini,
                         "[config]Dreamcast.VMUPath",
                         s(&to),
@@ -164,7 +147,7 @@ pub(crate) fn point(
                 let kept = file.is_some_and(|f| any_file(&data, |n| n.starts_with(&f)));
                 (
                     vec![key(
-                        "flycast/emu.cfg",
+                        files::FLYCAST,
                         Format::Ini,
                         "[config]Dreamcast.SavePath",
                         s(&to),
@@ -175,14 +158,14 @@ pub(crate) fn point(
             }
         }
         "scummvm" => {
-            let elsewhere = user.is_some_and(|u| holds_file(&u.xdg.data.join("scummvm/saves")));
-            let k = key("scummvm.ini", Format::Ini, "[scummvm]savepath", s(&to));
+            let elsewhere = user.is_some_and(|u| holds_file(&u.xdg.data.join(old::SCUMMVM_SAVES)));
+            let k = key(files::SCUMMVM, Format::Ini, "[scummvm]savepath", s(&to));
             let kept = elsewhere || set_elsewhere(&k, p, |v| v != k.value);
             (vec![k], kept, to)
         }
         "mame" => {
             let k = key(
-                "mame.ini",
+                files::MAME,
                 Format::Spaced,
                 "nvram_directory",
                 format!("\"{}\"", s(&to)),

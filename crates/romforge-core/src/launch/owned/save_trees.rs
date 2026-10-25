@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use super::existing::UserDirs;
 use super::theirs::{cemu_mlc, citra_storage, moved_in, rpcs3_devices};
 use crate::home::Home;
+use crate::systems::key;
 
 /// A data tree: its system, its root, and where its save folders are below
 /// it (`*` any one folder).
@@ -41,25 +42,29 @@ pub fn save_tree(name: &str, home: &Home, user: Option<&UserDirs>) -> Option<Sav
                     .map(|(_, p)| p)
             };
             let hdd = hdd.unwrap_or_else(|| dir.join("rpcs3/dev_hdd0"));
-            ("PlayStation 3", hdd.join("home/00000001"), &["savedata", "*"])
+            (
+                key!("PlayStation 3"),
+                hdd.join("home/00000001"),
+                &["savedata", "*"],
+            )
         }
         "cemu" => {
             let mlc = user.filter(|_| !moved_in(&dir)).and_then(cemu_mlc);
             let mlc = mlc.unwrap_or_else(|| dir.join("data/Cemu/mlc01"));
-            ("Wii U", mlc, &["usr", "save", "*", "*"])
+            (key!("Wii U"), mlc, &["usr", "save", "*", "*"])
         }
-        "azahar" | "lime3ds" | "citra" => {
-            let (_, reads) = super::azahar::folders(name)?;
+        n if super::azahar::folders(n).is_some() => {
+            let (_, reads) = super::azahar::folders(n)?;
             let storage = user
                 .filter(|_| !moved_in(&dir))
                 .and_then(|u| citra_storage(u, reads))?;
             (
-                "Nintendo 3DS",
+                key!("Nintendo 3DS"),
                 storage.join("sdmc/Nintendo 3DS"),
                 &["*", "*", "title", "*", "*", "data"],
             )
         }
-        "dolphin" => ("Wii", dir.join("Wii"), &["title", "*", "*", "data"]),
+        "dolphin" => (key!("Wii"), dir.join("Wii"), &["title", "*", "*", "data"]),
         _ => return None,
     };
     Some(SaveTree {

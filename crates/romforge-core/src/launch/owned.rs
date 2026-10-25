@@ -22,6 +22,7 @@ mod formats;
 pub use formats::Format;
 pub(crate) use formats::{merge, read};
 mod azahar;
+pub(crate) mod files;
 mod gamedata;
 pub mod move_in;
 pub(super) mod per_game;
@@ -126,7 +127,7 @@ pub(super) fn owned(
                 dirs: vec![bios, saves, states, shots],
                 writes: vec![
                     ConfigWrite {
-                        path: dir.join("retroarch.cfg"),
+                        path: dir.join(files::RETROARCH),
                         format: Format::RetroArch,
                         keys,
                         remove,
@@ -164,10 +165,10 @@ pub(super) fn owned(
 /// that copy started from the user's own.
 fn file_only(e: &KnownEmulator, dir: &Path, user: Option<&existing::UserDirs>) -> Option<Prepare> {
     let (file, format) = match e.settings_name() {
-        "dosbox-staging" => ("dosbox-staging.conf", Format::Ini),
-        "dosbox-x" => ("dosbox-x.conf", Format::Ini),
-        "scummvm" => ("scummvm.ini", Format::Ini),
-        "mame" => ("mame.ini", Format::Spaced),
+        "dosbox-staging" => (files::STAGING, Format::Ini),
+        "dosbox-x" => (files::DOSBOX_X, Format::Ini),
+        "scummvm" => (files::SCUMMVM, Format::Ini),
+        "mame" => (files::MAME, Format::Spaced),
         _ => return None,
     };
     Some(Prepare {

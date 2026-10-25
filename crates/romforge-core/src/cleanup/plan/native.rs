@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::parts::open_part;
 use super::super::{Format, Part};
+use crate::systems::key;
 
 /// Why an eShop download (or, for organize, any Wii U title folder) is
 /// left where it is.
@@ -57,10 +58,13 @@ pub(super) fn native(system: &crate::systems::System, parts: &[Part]) -> Result<
         return Err(stays());
     };
     let e = ext(&part.name);
+    const GAMECUBE: &str = key!("GameCube");
+    const N3DS: &str = key!("Nintendo 3DS");
+    const WII_U: &str = key!("Wii U");
     match system.key {
-        "GameCube" if matches!(e.as_str(), "iso" | "gcm") => Ok(Native::Rvz),
-        "GameCube" if e == "rvz" => Err("it is an RVZ already".into()),
-        "Nintendo 3DS" if matches!(e.as_str(), "3ds" | "cci" | "cxi" | "cia" | "3dsx") => {
+        GAMECUBE if matches!(e.as_str(), "iso" | "gcm") => Ok(Native::Rvz),
+        GAMECUBE if e == "rvz" => Err("it is an RVZ already".into()),
+        N3DS if matches!(e.as_str(), "3ds" | "cci" | "cxi" | "cia" | "3dsx") => {
             // Inside a 7z the header can't be read without unpacking.
             let zip = part
                 .path
@@ -92,8 +96,8 @@ pub(super) fn native(system: &crate::systems::System, parts: &[Part]) -> Result<
                 None => Err("its 3DS header isn't one romforge reads".into()),
             }
         }
-        "Nintendo 3DS" if e.starts_with('z') => Err("it is a Z3DS already".into()),
-        "Wii U" if e == "rpx" && part.member.is_empty() && crate::ident::wup::in_title_folder(&part.path) => {
+        N3DS if e.starts_with('z') => Err("it is a Z3DS already".into()),
+        WII_U if e == "rpx" && part.member.is_empty() && crate::ident::wup::in_title_folder(&part.path) => {
             let dir = part
                 .path
                 .parent()
