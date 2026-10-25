@@ -361,13 +361,23 @@ RomForge/
   Emulators/                 AppImages you put there; cores/ (downloaded cores)
   Emulators/config/<emu>/    romforge's own copy of each emulator's config
   Bios/                      BIOS files (Bios/RetroArch/ is RetroArch's system folder)
-  Saves/<System>/            SRAM and memory cards
+  Saves/<System>/            in-game saves: SRAM, memory cards, save folders
   States/<System>/           save states
   Screenshots/<System>/
   Themes/<id>/               your fullscreen themes
   .romforge                  the marker: this folder is a RomForge folder
   .romforge-staging/  .romforge-trash/
 ```
+
+Every emulator romforge starts is pointed at `Saves/<System>/` where it
+lets itself be: RetroArch, DuckStation, PCSX2, mGBA, melonDS, Mednafen,
+Dolphin's GameCube cards (`Saves/GameCube/<region>/`, Wii games' too),
+Flycast, ScummVM, MAME and the 3DS emulators; PPSSPP has no setting for
+it, so its `PSP/SAVEDATA` is a link to `Saves/PSP/`. An emulator whose
+old save place still holds a save (or, for mGBA, melonDS and Mednafen,
+the game being started) keeps saving there, so nothing goes missing; a
+save folder you set in Emulator Settings stays yours. RPCS3, Cemu, xemu
+and Dolphin's Wii NAND keep saves inside their own data.
 
 ```bash
 romforge-cli home create ~        # creates ~/RomForge; an existing library moves in

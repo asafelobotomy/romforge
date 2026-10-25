@@ -25,6 +25,7 @@ mod azahar;
 mod gamedata;
 pub mod move_in;
 pub(super) mod per_game;
+pub(super) mod saves;
 mod standalone;
 pub mod theirs;
 
@@ -48,6 +49,10 @@ pub struct Prepare {
     /// under `to`, where nothing is yet (an emulator with no key for its
     /// BIOS files).
     pub links: Vec<(PathBuf, PathBuf)>,
+    /// (folder, link): a folder of romforge's linked where an emulator with
+    /// no key for it looks (PPSSPP's `SAVEDATA`); made only where nothing
+    /// is, or an empty folder.
+    pub folder_links: Vec<(PathBuf, PathBuf)>,
     /// How romforge reaches it while it runs, for the hotkeys.
     pub control: Option<super::controls::Channel>,
     /// (theirs, ours): the user's own settings file, copied to start
@@ -249,6 +254,19 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
     }
     for (from, to) in &p.links {
         link_tree(from, from, to)?;
+    }
+    for (folder, link) in &p.folder_links {
+        std::fs::create_dir_all(folder)?;
+        if link.is_dir() && !link.is_symlink() {
+            // Fails, and so stays, unless it is empty.
+            let _ = std::fs::remove_dir(link);
+        }
+        if link.symlink_metadata().is_err() {
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::os::unix::fs::symlink(std::path::absolute(folder)?, link)?;
+        }
     }
     Ok(())
 }

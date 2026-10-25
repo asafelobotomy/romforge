@@ -2813,7 +2813,7 @@ sources (licences and keys checked against house rule 10).
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
 
-## Saves (milestone 27; researched 2026-10-25, not built)
+## Saves (milestone 27; researched 2026-10-25, stage 1 partly built)
 
 A **Saves** page in the sidebar, above DATs, with one tab per system
 that has saves. Each tab shows that system's in-game saves (SRAM, memory
@@ -2823,27 +2823,54 @@ Built in stages, each usable on its own.
 ### Stage 1: every save in `Saves/` (first)
 
 Owner's rule: all save files live in `RomForge/Saves/<system key>/`
-wherever the emulator allows it. Today only RetroArch
-(`launch/owned.rs`, `savefile_directory`) and Azahar/Lime3DS/Citra
-(`[Data Storage]`) are pointed there. The others save into their own
-config folder (`Emulators/config/<emulator>/`), next to the ROM, or
-somewhere romforge doesn't set. Each owned config gets one more key,
-read from the emulator's source at its release (as 1.3 did):
+wherever the emulator allows it. RetroArch (`savefile_directory`) and
+Azahar/Lime3DS/Citra (`[Data Storage]`) were pointed there already.
 
-| Emulator | Today | Key (to check against source) |
+*(Built 2026-10-25: the keys.)* `launch/owned/saves.rs` sets one more
+key per emulator on every start, read in each one's source (pinned in
+the module):
+
+| Emulator | Saved until now | Now |
 |---|---|---|
 | DuckStation | `config/duckstation/memcards/` | `[MemoryCards] Directory` |
 | PCSX2 | `config/PCSX2/memcards/` | `[Folders] MemoryCards` |
-| mGBA | next to the ROM | `savegamePath` |
-| melonDS | next to the ROM | `SaveFilePath` |
+| mGBA | next to the ROM | `[ports.qt] savegamePath` (GB and GBC too) |
+| melonDS | next to the ROM | `[Instance0] SaveFilePath` |
 | Mednafen | `config/sav/` | `filesys.path_sav` |
-| PPSSPP | `config/ppsspp/PSP/SAVEDATA/` | its memory stick folder (how it is set on Linux: to check) |
-| Dolphin | `config/GC/<region>/Card A/`, `config/Wii/title/…` | `GCIFolderAPath`/`GCIFolderBPath`; Wii: `NANDRootPath` or only `title/` (to decide). The Flatpak ignores `-u`: to check |
-| Flycast | `config/data/flycast/` (VMUs) | to find |
-| ScummVM | `~/.local/share/scummvm/saves/` | `savepath` in `[scummvm]` |
-| MAME | `nvram/` relative to romforge's working folder | `-nvram_directory` |
-| DOSBox Staging | inside the game's folder | an overlay mount: the game folder stays as it is, writes go to `Saves/DOS/<game>/` |
-| DOSBox-X | inside the game's folder | to check (overlay support) |
+| PPSSPP | `config/ppsspp/PSP/SAVEDATA/` | no key on Linux: `SAVEDATA` linked to `Saves/PSP/` |
+| Dolphin | `config/GC/<region>/Card A/` | `[Core] GCIFolderAPath`, `MemcardAPath`: `Saves/GameCube/<region>/` for Wii games too |
+| Flycast | `config/data/flycast/` | `[config] Dreamcast.VMUPath` (Dreamcast), `Dreamcast.SavePath` (Naomi, Atomiswave) |
+| ScummVM | `~/.local/share/scummvm/saves/` | `[scummvm] savepath` |
+| MAME | `nvram/` from romforge's working folder | `nvram_directory` |
+
+Nothing is lost by the switch: while the place an emulator saved until
+now holds a save (its folder in romforge's config, or for mGBA, melonDS
+and Mednafen this game's own save, and for ScummVM and MAME a save folder
+named in the user's own settings), that place stays and the key is taken
+out. A key set in Emulator Settings is the user's and stays.
+
+**Not yet:**
+- *Gathering* the saves already in those places into `Saves/` (below),
+  after which each emulator switches by itself.
+- DOSBox Staging and DOSBox-X: an overlay mount (`mount C <game>` then
+  `mount C <overlay> -t overlay`; both support it, checked in 0.82.2 and
+  2026.10.01) so writes go to `Saves/DOS/<game>/`; it changes their
+  launch arguments.
+- Dolphin's Wii NAND (`[General] NANDRootPath`): to decide (it holds the
+  Wii Menu too).
+- Flycast writes a disc without a game ID's VMU in its data folder
+  whatever `VMUPath` says (`oslib.cpp`).
+- The Dolphin Flatpak gets `host:ro` only; romforge's `--filesystem`
+  grant for the RomForge folder is what lets it write `Saves/`: to
+  check on a real install.
+
+**Gathering existing saves** (to build next): a plan like the game-data
+move-in, from each "saved until now" place above to `Saves/<system>/`
+(mGBA, melonDS and Mednafen saves matched to their system by the
+library's games, as the RetroArch import does; one that can't be told
+stays): a dry run listing each file and where it goes, moved (never
+overwritten: a name clash keeps both, the plan says so), journaled for
+undo. Never while that emulator is running.
 
 RPCS3, Cemu, xemu and the 3DS keep their saves inside a data tree
 (`dev_hdd0/home/…/savedata/`, `mlc01/usr/save/`, the Xbox HDD image,
@@ -2869,11 +2896,6 @@ never while that emulator is running.
 (`xbox_hdd.qcow2`, up to 8 GiB), and copying the whole image is
 deferred. xemu saves get no backup until romforge can read single saves
 out of the image (to research, below).
-
-**Saves already made elsewhere** come in with a plan like the game-data
-move-in: a dry run listing each file and where it goes, moved (never
-overwritten: a name clash keeps both, the plan says so), journaled for
-undo. Never while that emulator is running.
 
 **One `.srm` per core?** RetroArch's sort-by-core is off, so every core
 of a system shares one file per game. That is right when the cores'
@@ -2958,7 +2980,6 @@ never while its emulator is running. Save sync (Launcher stage 4)
 builds on the same index.
 
 **Open:**
-- The keys marked "to check" above, from each emulator's source.
 - Whether Dolphin's whole NAND or only its `title/` folder goes in
   `Saves/Wii/` (the NAND also holds the Wii Menu).
 - Per-game memory cards: DuckStation's per-title cards are its default;

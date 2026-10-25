@@ -214,6 +214,9 @@ pub(super) fn start(
                 if let (Some(dir), Some(p), "duckstation") = (&config, &mut prepare, e.name) {
                     owned::per_game::duckstation(conn, dir, system, &game, p)?;
                 }
+                if let (Some(dir), Some(p), Some(h)) = (&config, &mut prepare, &env.home) {
+                    owned::saves::point(e.settings_name(), h, system, &rom, dir, env.user.as_ref(), p);
+                }
                 // Its BIOS folder's flags only when the folder holds a file:
                 // they override the emulator's own paths (a MAME rompath
                 // with the machine's set in it), so not for nothing.
