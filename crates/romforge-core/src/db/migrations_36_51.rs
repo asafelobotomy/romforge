@@ -160,4 +160,15 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         moved_to  TEXT NOT NULL,
         PRIMARY KEY (gather_id, original)
     );",
+    // 47: milestone 27, stage 1: a save folder put back from its backup
+    // copy, the one it replaced kept in the trash for undo
+    // (`saves::backup::restore`).
+    "CREATE TABLE save_restores (
+        restore_id INTEGER PRIMARY KEY,
+        emulator   TEXT NOT NULL,
+        target     TEXT NOT NULL,
+        trashed    TEXT,
+        created_at TEXT NOT NULL,
+        undone_at  TEXT
+    );",
 ];

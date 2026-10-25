@@ -36,6 +36,8 @@ pub(super) const PATH_COLUMNS: &[(&str, &str)] = &[
     ("data_move_items", "trashed"),
     ("save_gather_files", "original"),
     ("save_gather_files", "moved_to"),
+    ("save_restores", "target"),
+    ("save_restores", "trashed"),
     // An emulator set up by hand may be a program in the folder.
     ("emulators", "program"),
     ("settings", "value"),

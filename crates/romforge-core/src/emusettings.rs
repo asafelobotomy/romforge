@@ -66,6 +66,10 @@ pub struct EmulatorTab {
     /// gathered there (`saves::gather`).
     #[serde(default)]
     pub gathers: bool,
+    /// It keeps saves outside `Saves/` that get backup copies
+    /// (`saves::backup`).
+    #[serde(default)]
+    pub backs_up: bool,
 }
 
 /// What the Emulator Settings dialog shows.
@@ -324,6 +328,7 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
             }),
             movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
             gathers: env.home.is_some() && crate::saves::gather::gathers(e.settings_name()),
+            backs_up: env.home.is_some() && crate::saves::backup::backs_up(e.settings_name()),
             existing: env
                 .home
                 .as_ref()

@@ -69,6 +69,44 @@ pub async fn undo_gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Re
     with(&db, move |lib| lib.undo_gather_saves(&emulator)).await
 }
 
+/// Copy an emulator's saves that stay outside Saves/.
+#[tauri::command]
+pub async fn backup_saves(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<romforge_core::saves::backup::BackedUp> {
+    read(&db, move |lib| lib.backup_saves(&emulator)).await
+}
+
+/// Its backed-up save folders and their copies.
+#[tauri::command]
+pub async fn save_backups(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<Vec<romforge_core::saves::backup::Backed>> {
+    read(&db, move |lib| lib.save_backups(&emulator)).await
+}
+
+/// Put a save folder back from its copy (the newest unless `version`).
+#[tauri::command]
+pub async fn restore_save(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+    save: std::path::PathBuf,
+    version: Option<String>,
+) -> Res<i64> {
+    with(&db, move |lib| {
+        lib.restore_save(&emulator, &save, version.as_deref())
+    })
+    .await
+}
+
+/// Take the last restore back.
+#[tauri::command]
+pub async fn undo_restore_save(db: tauri::State<'_, Db>, emulator: String) -> Res<std::path::PathBuf> {
+    with(&db, move |lib| lib.undo_restore_save(&emulator)).await
+}
+
 #[tauri::command]
 pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
     with(&db, move |lib| lib.undo_emulator_setup(&emulator)).await

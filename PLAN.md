@@ -2850,10 +2850,6 @@ named in the user's own settings), that place stays and the key is taken
 out. A key set in Emulator Settings is the user's and stays.
 
 **Not yet:**
-- DOSBox Staging and DOSBox-X: an overlay mount (`mount C <game>` then
-  `mount C <overlay> -t overlay`; both support it, checked in 0.82.2 and
-  2026.10.01) so writes go to `Saves/DOS/<game>/`; it changes their
-  launch arguments.
 - Dolphin's Wii NAND (`[General] NANDRootPath`): to decide (it holds the
   Wii Menu too).
 - Flycast writes a disc without a game ID's VMU in its data folder
@@ -2895,6 +2891,35 @@ only ever read. Each copy keeps its earlier versions (the last N, a
 setting), so a broken save doesn't overwrite the good one. Restore is a
 dry run first, the current save goes to the trash, journaled for undo,
 never while that emulator is running.
+
+*(Built 2026-10-25: DOSBox.)* DOSBox Staging and DOSBox-X have no save
+folder, so a DOS game that is a program in a folder starts with its
+folder mounted as `C:` and `Saves/DOS/<game>/` over it as an overlay
+(`-c "mount C <folder>" -c "mount C <overlay> -t overlay" -c C: -c
+<program>`; both support it, checked in 0.82.2 and 2026.10.01): the game
+sees its files as they are, what it writes lands in the overlay, and
+saves already in its folder are still read. A game in an archive, or a
+program name with a space, starts as before. An `[autoexec]` of the
+user's own that mounts `C:` itself would clash: to see on a real setup.
+
+*(Built 2026-10-25: backups.)* `saves/backup.rs` and
+`launch/owned/save_trees.rs`: RPCS3 (`dev_hdd0/home/00000001/savedata/
+<title>/`), Cemu (`<mlc>/usr/save/<high>/<low>/`), the 3DS emulators on
+your own SD card (`<id0>/<id1>/title/<high>/<low>/data/`) and Dolphin's
+Wii NAND (`title/<high>/<low>/data/`), each tree the one romforge's config
+points at. Each game's save folder is copied to
+`Saves/<system>/backup/<emulator>/<its path>/<UTC time>/` when it differs
+from its last copy (files, sizes and SHA1s; mtimes aren't kept by a copy,
+so they aren't compared), written as `.part` and renamed when whole; the
+last 5 (`backup::KEEP`) are kept. Made after a game romforge started
+ends (`Library::record_play`; a failure there doesn't stop the end of
+the game) and on demand (`saves backup <emulator>`, "Back up now"); a
+copy of a save gone from the emulator is kept and listed. Restore
+(`saves restore <emulator> <save> [--version] [--apply|--undo]`, or
+"Save backups" on the emulator's tab): a plan first; the save there now
+goes to the trash, the copy is written beside it and renamed into place,
+journaled (`save_restores`, migration 47); undo puts the replaced one
+back (the restored one to the trash). Refused while the emulator runs.
 
 **Exception: xemu.** Its saves are inside the HDD image
 (`xbox_hdd.qcow2`, up to 8 GiB), and copying the whole image is
@@ -2990,7 +3015,7 @@ builds on the same index.
   PCSX2's folder cards would make PS2 saves browsable one game at a
   time, but change how existing cards load.
 - Which of `psxmem` and `ps2mc` to use or to write ourselves.
-- How many backup versions to keep by default.
+- Whether the 5 copies kept of each save should be a setting.
 - **To research: reading `xbox_hdd.qcow2`.** Read qcow2 as a stream
   (header, L1/L2 tables, clusters; compressed clusters and backing files
   if xemu writes them), then the Xbox partition layout and FATX, down to

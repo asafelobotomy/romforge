@@ -25,6 +25,7 @@
 //! - ScummVM 2026.4.0: `[scummvm] savepath`.
 //! - MAME 0289: `nvram_directory` (default `nvram`, from the working
 //!   folder).
+//! - DOSBox Staging and DOSBox-X: no key; an overlay ([`dos_overlay`]).
 //!
 //! Nothing is lost by the switch: while the place it saved until now holds
 //! a save (the emulator's folder in romforge's config, or for mGBA,
@@ -195,6 +196,51 @@ pub(crate) fn point(
     for k in keys {
         set(p, k, kept);
     }
+}
+
+/// DOSBox Staging (0.82.2) and DOSBox-X (2026.10.01) have no save folder:
+/// a game writes into its own. So its folder is mounted as `C:` and
+/// `Saves/DOS/<game>/` over it as an overlay (`mount C <dir> -t overlay`):
+/// the game sees its files as they are, what it writes lands in the
+/// overlay, and its folder is never written. `args` has the program where
+/// `{rom}` was; it becomes the mounts and the program's name. Only for a
+/// program in a folder (an archive is handed over as it is).
+pub(crate) fn dos_overlay(
+    name: &str,
+    home: &Home,
+    system: &System,
+    game: &str,
+    rom: &Path,
+    args: &mut Vec<String>,
+    p: &mut Prepare,
+) {
+    if !matches!(name, "dosbox-staging" | "dosbox-x") || !rom.is_file() {
+        return;
+    }
+    let program = rom.file_name().map(|f| f.to_string_lossy().into_owned());
+    let (Some(program), Some(folder)) = (program, rom.parent()) else {
+        return;
+    };
+    let lower = program.to_ascii_lowercase();
+    if program.contains(' ') || ![".exe", ".com", ".bat"].iter().any(|x| lower.ends_with(x)) {
+        return;
+    }
+    let Some(at) = args.iter().position(|a| Path::new(a) == rom) else {
+        return;
+    };
+    let overlay = home
+        .saves()
+        .join(system.key)
+        .join(crate::organize::sanitize(game));
+    let s = |p: &Path| p.to_string_lossy().into_owned();
+    let cmds = [
+        format!("mount C \"{}\"", s(folder)),
+        format!("mount C \"{}\" -t overlay", s(&overlay)),
+        "C:".to_owned(),
+        program,
+    ];
+    args.splice(at..=at, cmds.into_iter().flat_map(|c| ["-c".to_owned(), c]));
+    p.dirs.push(overlay);
 }
 
 /// Whether `k` already has a value (in romforge's copy of the file, else

@@ -162,8 +162,11 @@ impl Library {
 
     /// Record a game that ended (play time); a run under ten seconds isn't
     /// counted.
+    /// Its saves that live outside `Saves/` get a backup copy then.
     pub fn record_play(&mut self, ended: &launch::Ended) -> Result<bool, Error> {
-        launch::record_play(&self.conn, ended)
+        let kept = launch::record_play(&self.conn, ended)?;
+        self.backup_after_play(&ended.playing.emulator);
+        Ok(kept)
     }
 
     /// How much a game (system key, title) has been played.
@@ -211,39 +214,13 @@ impl Library {
         launch::move_in::undo(&self.conn, e.settings_name(), home)
     }
 
-    /// What gathering `emulator`'s saves into `Saves/` would do.
-    pub fn gather_saves_plan(&self, emulator: &str) -> Result<crate::saves::gather::GatherPlan, Error> {
-        let (home, e, _) = self.setup_target(emulator)?;
-        let user = self.env()?.user;
-        let mut plan = crate::saves::gather::plan(&self.conn, e.settings_name(), home, user.as_ref());
-        if plan.problem.is_none() && launch::running(e) {
-            plan.problem = Some(format!("{} is running: close it first", e.label));
-        }
-        Ok(plan)
-    }
-
-    /// Gather `emulator`'s saves into `Saves/`: (gathering id, files moved).
-    pub fn gather_saves(&mut self, emulator: &str) -> Result<(i64, usize), Error> {
-        let (home, e, _) = self.setup_target(emulator)?;
-        not_running(e)?;
-        let user = self.env()?.user;
-        crate::saves::gather::apply(&self.conn, e.settings_name(), home, user.as_ref())
-    }
-
-    /// Put the last gathering of `emulator`'s saves back.
-    pub fn undo_gather_saves(&mut self, emulator: &str) -> Result<usize, Error> {
-        let (_, e, _) = self.setup_target(emulator)?;
-        not_running(e)?;
-        crate::saves::gather::undo(&self.conn, e.settings_name())
-    }
-
     /// Take back the last setup import of `emulator`.
     pub fn undo_emulator_setup(&mut self, emulator: &str) -> Result<usize, Error> {
         let (_, e, _) = self.setup_target(emulator)?;
         launch::existing::undo(&self.conn, e.settings_name())
     }
 
-    fn setup_target(
+    pub(super) fn setup_target(
         &self,
         emulator: &str,
     ) -> Result<
@@ -346,7 +323,7 @@ impl Library {
 }
 
 /// Refuse while `e` is running: its files must not change under it.
-fn not_running(e: &launch::KnownEmulator) -> Result<(), Error> {
+pub(super) fn not_running(e: &launch::KnownEmulator) -> Result<(), Error> {
     if launch::running(e) {
         return Err(Error::Launch(format!("{} is running: close it first", e.label)));
     }

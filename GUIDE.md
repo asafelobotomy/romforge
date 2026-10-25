@@ -390,6 +390,24 @@ romforge-cli saves gather duckstation --apply   # moves them
 romforge-cli saves gather duckstation --undo    # puts them back
 ```
 
+A DOS game in a folder starts with `Saves/DOS/<game>/` mounted over its
+folder as a DOSBox overlay: what the game writes lands there, and its own
+folder is never written.
+
+RPCS3, Cemu, the 3DS emulators (when they use your own SD card) and
+Dolphin's Wii NAND keep saves in their own data, so romforge copies each
+game's save folder into `Saves/<system>/backup/<emulator>/` after every
+game, when it changed, keeping the last five copies. xemu's saves, inside
+its hard-disk image, aren't copied yet.
+
+```bash
+romforge-cli saves backup rpcs3                    # copy the changed ones now
+romforge-cli saves backups rpcs3                   # each save and its copies
+romforge-cli saves restore rpcs3 savedata/BLUS30443-SAVE00          # the plan
+romforge-cli saves restore rpcs3 savedata/BLUS30443-SAVE00 --apply  # the one there now to the trash
+romforge-cli saves restore rpcs3 --undo
+```
+
 ```bash
 romforge-cli home create ~        # creates ~/RomForge; an existing library moves in
 romforge-cli home show

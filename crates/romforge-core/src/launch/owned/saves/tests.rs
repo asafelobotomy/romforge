@@ -222,3 +222,65 @@ fn scummvm_and_mame_keep_a_save_folder_of_the_users() {
     let to = home.saves().join("ScummVM");
     assert!(ini.contains(&format!("savepath = {}", to.display())), "{ini}");
 }
+
+#[test]
+fn a_dos_game_writes_into_an_overlay_in_saves() {
+    let (t, home, _, _) = setup();
+    let exe = t.path().join("games/Commander Keen/KEEN4E.EXE");
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"MZ").unwrap();
+    let dos = by_key("DOS").unwrap();
+    let mut args = vec!["--fullscreen".to_owned(), exe.display().to_string()];
+    let mut p = Prepare::default();
+    dos_overlay(
+        "dosbox-staging",
+        &home,
+        dos,
+        "Commander Keen 4",
+        &exe,
+        &mut args,
+        &mut p,
+    );
+    let overlay = home.saves().join("DOS/Commander Keen 4");
+    assert_eq!(
+        args,
+        [
+            "--fullscreen".to_owned(),
+            "-c".into(),
+            format!("mount C \"{}\"", exe.parent().unwrap().display()),
+            "-c".into(),
+            format!("mount C \"{}\" -t overlay", overlay.display()),
+            "-c".into(),
+            "C:".into(),
+            "-c".into(),
+            "KEEN4E.EXE".into(),
+        ]
+    );
+    assert_eq!(p.dirs, [overlay]);
+
+    // An archive, or another emulator: as it was.
+    let zip = t.path().join("games/Keen.zip");
+    std::fs::write(&zip, b"PK").unwrap();
+    let mut args = vec![zip.display().to_string()];
+    dos_overlay(
+        "dosbox-x",
+        &home,
+        dos,
+        "Keen",
+        &zip,
+        &mut args,
+        &mut Prepare::default(),
+    );
+    assert_eq!(args, [zip.display().to_string()]);
+    let mut args = vec![exe.display().to_string()];
+    dos_overlay(
+        "mame",
+        &home,
+        dos,
+        "Keen",
+        &exe,
+        &mut args,
+        &mut Prepare::default(),
+    );
+    assert_eq!(args.len(), 1);
+}

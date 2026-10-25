@@ -16,4 +16,27 @@ pub enum SavesCommand {
         #[arg(long)]
         undo: bool,
     },
+    /// Copy an emulator's saves that stay outside Saves/ (RPCS3, Cemu, the
+    /// 3DS emulators on your own SD card, Dolphin's Wii NAND) into
+    /// Saves/<system>/backup/ (each changed one; also done after each game)
+    Backup { emulator: String },
+    /// List an emulator's backed-up save folders and their copies
+    Backups { emulator: String },
+    /// Put a save folder back from its copy (shows the plan unless
+    /// --apply; the save there now goes to the trash)
+    Restore {
+        emulator: String,
+        /// The save folder, as `saves backups` lists it
+        #[arg(required_unless_present = "undo")]
+        save: Option<std::path::PathBuf>,
+        /// The copy (as listed), else the newest
+        #[arg(long)]
+        version: Option<String>,
+        /// Do it now (journaled)
+        #[arg(long)]
+        apply: bool,
+        /// Take back the last restore instead
+        #[arg(long)]
+        undo: bool,
+    },
 }

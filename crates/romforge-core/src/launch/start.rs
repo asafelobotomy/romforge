@@ -233,7 +233,10 @@ pub(super) fn start(
                     bios: bios.as_deref(),
                     system: system.key,
                 };
-                let args = known_args(e, &vars, &env.options(e));
+                let mut args = known_args(e, &vars, &env.options(e));
+                if let (Some(p), Some(h)) = (&mut prepare, &env.home) {
+                    owned::saves::dos_overlay(e.settings_name(), h, system, &game, &rom, &mut args, p);
+                }
                 let uses_home = prepare.is_some() || (bios.is_some() && !e.bios.is_empty());
                 return Ok(passed_over(
                     &why_not,

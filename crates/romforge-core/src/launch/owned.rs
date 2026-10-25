@@ -25,6 +25,7 @@ mod azahar;
 mod gamedata;
 pub mod move_in;
 pub(super) mod per_game;
+pub(super) mod save_trees;
 pub(super) mod saves;
 mod standalone;
 pub mod theirs;

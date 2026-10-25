@@ -25,6 +25,7 @@ pub use emulators::*;
 mod plan;
 pub use plan::*;
 mod owned;
+pub(crate) use owned::save_trees::{SaveTree, save_tree};
 pub use owned::{ConfigWrite, Format, Prepare, existing, move_in, prepare};
 pub(crate) use owned::{managed, merge, read};
 mod plays;
