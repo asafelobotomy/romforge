@@ -1,5 +1,31 @@
 //! One entry of the emulator table and the builders its rows use.
 
+/// Where an emulator's official Flatpak comes from: only a Flatpak from
+/// there is used or installed. Checked on 2026-10-25 against Flathub's
+/// verification (the app published by its own developers) and each
+/// project's own download page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlatpakFrom {
+    /// Flathub, published there by its developers (or the one its own
+    /// site gives as its Linux download: DOSBox-X's).
+    Flathub,
+    /// Its developers' own Flatpak repository (Dolphin's): the remote's
+    /// name romforge adds, its `.flatpakrepo` and the repository's URL.
+    Own {
+        remote: &'static str,
+        repo: &'static str,
+        url: &'static str,
+    },
+    /// Only others build it while its developers make their own Linux
+    /// build (Flathub's RPCS3, mGBA, Flycast): never used or installed.
+    Others,
+    /// Its developers make no Linux build (MAME): Flathub's, the Linux
+    /// build most used (Flathub's install counts), is the fallback. Used
+    /// after one on `PATH`, installed when asked, always shown as not
+    /// official.
+    Fallback,
+}
+
 /// An emulator romforge knows how to start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KnownEmulator {
@@ -11,6 +37,8 @@ pub struct KnownEmulator {
     /// Executable names to look for on `PATH` and in emulator folders.
     pub programs: &'static [&'static str],
     pub flatpak: Option<&'static str>,
+    /// Where that Flatpak must come from to be used.
+    pub flatpak_from: FlatpakFrom,
     /// How its AppImage's file name starts (any case), when it isn't
     /// `name`: `<appimage>*.AppImage`.
     pub appimage: Option<&'static str>,
@@ -47,8 +75,6 @@ pub struct KnownEmulator {
     /// the asset's name). romforge can download it (`obtain/appimage.rs`)
     /// and prefers it to the Flatpak when it is there.
     pub official_appimage: Option<(&'static str, &'static str)>,
-    /// Shown on its tab when it runs as a Flatpak.
-    pub flatpak_note: Option<&'static str>,
 }
 
 pub(super) const fn emu(
@@ -65,6 +91,7 @@ pub(super) const fn emu(
         shares: None,
         programs,
         flatpak: Some(flatpak),
+        flatpak_from: FlatpakFrom::Flathub,
         appimage: None,
         args,
         fullscreen: &[],
@@ -76,7 +103,6 @@ pub(super) const fn emu(
         discontinued: None,
         firmware: None,
         official_appimage: None,
-        flatpak_note: None,
     }
 }
 
@@ -117,8 +143,24 @@ impl KnownEmulator {
         self.official_appimage = Some((repo, suffix));
         self
     }
-    pub(super) const fn flatpak_note(mut self, note: &'static str) -> Self {
-        self.flatpak_note = Some(note);
+    /// Its Flatpak is only built by others: not used, not installed.
+    pub(super) const fn flatpak_by_others(mut self) -> Self {
+        self.flatpak_from = FlatpakFrom::Others;
+        self
+    }
+    /// No Linux build by its developers: Flathub's is the fallback.
+    pub(super) const fn flatpak_fallback(mut self) -> Self {
+        self.flatpak_from = FlatpakFrom::Fallback;
+        self
+    }
+    /// Its Flatpak comes from its developers' own repository.
+    pub(super) const fn flatpak_own(
+        mut self,
+        remote: &'static str,
+        repo: &'static str,
+        url: &'static str,
+    ) -> Self {
+        self.flatpak_from = FlatpakFrom::Own { remote, repo, url };
         self
     }
     pub(super) const fn firmware(mut self, profile: &'static str) -> Self {

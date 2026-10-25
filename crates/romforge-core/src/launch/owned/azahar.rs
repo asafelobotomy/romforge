@@ -103,7 +103,7 @@ pub(super) fn citra_line(
     p.dirs.extend([storage.join("nand"), storage.join("sdmc")]);
     p.writes.push(ConfigWrite {
         path: dir.join(kind.folder).join("qt-config.ini"),
-        format: Format::Ini,
+        format: Format::QtIni,
         keys,
         remove: Vec::new(),
     });

@@ -149,7 +149,10 @@ pub(super) fn start(
             };
             match env.core(core) {
                 Some(c) => {
-                    let (config, prepare) = owned(&RETROARCH).unzip();
+                    let (config, mut prepare) = owned(&RETROARCH).unzip();
+                    if let (Some(dir), Some(p)) = (&config, &mut prepare) {
+                        owned::per_game::retroarch(conn, dir, core, &content, system, &game, p)?;
+                    }
                     let vars = Vars {
                         rom: &content,
                         set: &set,
@@ -186,7 +189,10 @@ pub(super) fn start(
         }
         match env.known(e) {
             Some(r) => {
-                let (config, prepare) = owned(e).unzip();
+                let (config, mut prepare) = owned(e).unzip();
+                if let (Some(dir), Some(p), "duckstation") = (&config, &mut prepare, e.name) {
+                    owned::per_game::duckstation(conn, dir, system, &game, p)?;
+                }
                 // Its BIOS folder's flags only when the folder holds a file:
                 // they override the emulator's own paths (a MAME rompath
                 // with the machine's set in it), so not for nothing.

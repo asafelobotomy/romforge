@@ -2,6 +2,7 @@
 
 pub mod cleanup;
 pub mod dat;
+pub mod emulator_config;
 pub mod enrich;
 pub mod firmware;
 pub mod games;

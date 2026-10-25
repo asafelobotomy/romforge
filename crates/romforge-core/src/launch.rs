@@ -25,7 +25,8 @@ pub use emulators::*;
 mod plan;
 pub use plan::*;
 mod owned;
-pub use owned::{ConfigWrite, Prepare, existing, move_in, prepare};
+pub use owned::{ConfigWrite, Format, Prepare, existing, move_in, prepare};
+pub(crate) use owned::{managed, merge, read};
 mod plays;
 pub use plays::*;
 mod session;
@@ -38,14 +39,18 @@ pub use running::running;
 pub use table::*;
 mod tools;
 pub use tools::*;
+mod command;
+use command::command;
+mod flatpak;
 
 /// How a program is started.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Runner {
     /// An executable path.
     Program(PathBuf),
-    /// `flatpak run <id>`.
-    Flatpak(String),
+    /// `flatpak run <id>`; `command`: the app's own command, from its
+    /// `metadata` (for setting its environment, [`command`]).
+    Flatpak { id: String, command: Option<String> },
 }
 
 /// What [`plan`] decided: run `program` with `args`.
@@ -118,10 +123,10 @@ pub struct LaunchOptions {
     pub windowed: bool,
     /// Put after the fullscreen flags, before the game's arguments.
     pub args: Vec<String>,
-    /// Keys set in romforge's copy of its config.
-    pub config: Vec<(String, String)>,
-    /// Keys romforge manages that aren't set: taken out of that copy.
-    pub unset: Vec<String>,
+    /// Emulator Settings' keys, by file (each `path` from romforge's
+    /// config folder for it): set ones written, unset ones (`remove`) taken
+    /// out, so the emulator's own default applies.
+    pub config: Vec<ConfigWrite>,
     /// romforge's game pad hotkeys on (`launch::controls` writes what the
     /// emulator needs for them).
     pub hotkeys: bool,
@@ -178,13 +183,6 @@ impl Env {
             .find(|c| is_executable(c))
     }
 
-    fn flatpak(&self, id: &str) -> Option<String> {
-        self.flatpak_dirs
-            .iter()
-            .any(|d| d.join(id).is_dir())
-            .then(|| id.to_owned())
-    }
-
     fn retroarch(&self) -> Option<Runner> {
         self.known(&RETROARCH)
     }
@@ -199,13 +197,14 @@ impl Env {
             .user_paths
             .get(e.settings_name())
             .filter(|p| is_executable(p));
-        // Its official AppImage, where it has one, before its Flatpak.
+        // Its official AppImage, where it has one, before its official
+        // Flatpak (one from elsewhere is never used, `launch/flatpak.rs`).
         let official = || e.official_appimage.and_then(|_| self.in_emulator_dirs(e));
         user.cloned()
             .or_else(|| e.programs.iter().find_map(|p| self.which(p)))
             .or_else(official)
             .map(Runner::Program)
-            .or_else(|| e.flatpak.and_then(|id| self.flatpak(id)).map(Runner::Flatpak))
+            .or_else(|| self.flatpak(e))
             .or_else(|| self.in_emulator_dirs(e).map(Runner::Program))
     }
 
@@ -242,37 +241,6 @@ fn is_executable(p: &Path) -> bool {
     #[cfg(not(unix))]
     {
         p.is_file()
-    }
-}
-
-/// The command line for `runner`. A Flatpak sees only what it was given
-/// (often just home), so it gets `grants` (the game's folder, and the
-/// RomForge folder for romforge's config) for this run: a game on another
-/// drive opens too, and nothing is changed for good.
-///
-/// `env` is set for the emulator: in the process for a program, as
-/// `--env=` for a Flatpak (which sets its own XDG folders otherwise). The
-/// third part is what the process gets ([`Session::start`], [`spawn`]).
-fn command(
-    runner: &Runner,
-    args: Vec<String>,
-    grants: &[PathBuf],
-    env: &[(String, String)],
-) -> (PathBuf, Vec<String>, Vec<(String, String)>) {
-    match runner {
-        Runner::Program(p) => (p.clone(), args, env.to_vec()),
-        Runner::Flatpak(id) => {
-            let mut a = vec!["run".to_owned()];
-            for g in grants {
-                a.push(format!("--filesystem={}", g.display()));
-            }
-            for (k, v) in env {
-                a.push(format!("--env={k}={v}"));
-            }
-            a.push(id.clone());
-            a.extend(args);
-            (PathBuf::from("flatpak"), a, Vec::new())
-        }
     }
 }
 
@@ -367,17 +335,12 @@ impl Env {
         self.known(e).map(|r| describe(&r))
     }
 
-    /// Whether `e` is found only as a Flatpak (what romforge would start).
-    pub fn is_flatpak(&self, e: &KnownEmulator) -> bool {
-        matches!(self.known(e), Some(Runner::Flatpak(_)))
-    }
-
     /// Where RetroArch's core `name` is found.
     pub fn core_path(&self, name: &str) -> Option<PathBuf> {
         self.core(name)
     }
 
-    fn options(&self, e: &KnownEmulator) -> LaunchOptions {
+    pub(crate) fn options(&self, e: &KnownEmulator) -> LaunchOptions {
         self.options.get(e.settings_name()).cloned().unwrap_or_default()
     }
 }

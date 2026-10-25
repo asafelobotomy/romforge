@@ -8,7 +8,7 @@ use super::*;
 fn a_3ds_cia_is_refused_and_a_cartridge_starts() {
     let t = tempfile::tempdir().unwrap();
     let flatpak = t.path().join("flatpak");
-    std::fs::create_dir_all(flatpak.join("org.azahar_emu.Azahar")).unwrap();
+    flatpak::fake(&flatpak, "org.azahar_emu.Azahar", flatpak::FLATHUB_URL);
     let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
     let env = Env {
         flatpak_dirs: vec![flatpak],
@@ -45,7 +45,7 @@ fn a_3ds_cia_is_refused_and_a_cartridge_starts() {
 fn lime3ds_starts_a_cartridge_but_not_a_z3ds_file() {
     let t = tempfile::tempdir().unwrap();
     let flatpak = t.path().join("flatpak");
-    std::fs::create_dir_all(flatpak.join("io.github.lime3ds.Lime3DS")).unwrap();
+    flatpak::fake(&flatpak, "io.github.lime3ds.Lime3DS", flatpak::FLATHUB_URL);
     let env = Env {
         flatpak_dirs: vec![flatpak],
         ..Default::default()
@@ -103,7 +103,7 @@ fn the_3ds_cores_get_their_files_in_the_save_folder() {
 #[test]
 fn cemu_starts_every_wii_u_form() {
     let t = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(t.path().join("flatpak/info.cemu.Cemu")).unwrap();
+    flatpak::fake(&t.path().join("flatpak"), "info.cemu.Cemu", flatpak::FLATHUB_URL);
     let env = Env {
         flatpak_dirs: vec![t.path().join("flatpak")],
         ..Default::default()

@@ -1,11 +1,17 @@
 //! The one table of Emulator Settings (house rule 4). A setting is applied
 //! when romforge starts an emulator (fullscreen, program, arguments), or
 //! written into romforge's own copy of the emulator's config, under the
-//! keys listed for it (`keys`); an emulator without such a key doesn't
-//! show the setting. Config keys are checked in each emulator's own
-//! config (RetroArch 1.22.2).
+//! keys listed for it (`keys`), each in that emulator's own words
+//! ([`Words`]); an emulator without such a key doesn't show the setting.
+//! Every key was read from the emulator's source at the release its entry
+//! names (milestone 21, 2026-10-25), never written from memory.
 
-use crate::launch::KnownEmulator;
+use crate::launch::{Format, KnownEmulator};
+
+mod files;
+mod launch;
+mod renderer;
+mod video;
 
 /// What a setting holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -19,6 +25,74 @@ pub enum Kind {
     Path,
     /// Command-line arguments, split at spaces.
     Args,
+}
+
+/// How romforge's value is written in one emulator's config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "as", content = "with", rename_all = "lowercase")]
+pub enum Words {
+    /// As it is.
+    Same,
+    /// `true` / `false` written as these two.
+    Bool(&'static str, &'static str),
+    /// Each of romforge's values that the emulator has, as it writes it; a
+    /// value it lacks leaves the key out (its own default applies).
+    Map(&'static [(&'static str, &'static str)]),
+    /// A whole number times this (Flycast's resolution is 480 × the scale).
+    Times(u32),
+}
+
+impl Words {
+    /// `v` in the emulator's words; `None`: leave the key out.
+    pub fn of(&self, v: &str) -> Option<String> {
+        match self {
+            Words::Same => Some(v.to_owned()),
+            Words::Bool(on, off) => match v {
+                "true" => Some((*on).to_owned()),
+                "false" => Some((*off).to_owned()),
+                _ => None,
+            },
+            Words::Map(pairs) => pairs.iter().find(|(r, _)| *r == v).map(|(_, e)| (*e).to_owned()),
+            Words::Times(n) => v.parse::<u32>().ok().map(|x| (x * n).to_string()),
+        }
+    }
+
+    /// The values of romforge's it can write, for a choice (all: `None`).
+    pub fn choices(&self) -> Option<Vec<&'static str>> {
+        match self {
+            Words::Map(pairs) => Some(pairs.iter().map(|(r, _)| *r).collect()),
+            _ => None,
+        }
+    }
+}
+
+/// Where one emulator keeps a setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct Key {
+    pub emulator: &'static str,
+    /// Its file, from romforge's config folder for the emulator.
+    pub file: &'static str,
+    /// As the writer for `format` names it (`[Section]Key`, `Video/Renderer`).
+    pub key: &'static str,
+    pub format: Format,
+    pub words: Words,
+}
+
+/// A key (table shorthand).
+const fn k(
+    emulator: &'static str,
+    file: &'static str,
+    key: &'static str,
+    format: Format,
+    words: Words,
+) -> Key {
+    Key {
+        emulator,
+        file,
+        key,
+        format,
+        words,
+    }
 }
 
 /// One setting.
@@ -35,134 +109,62 @@ pub struct Setting {
     pub default: &'static str,
     /// For [`Kind::Choice`]: value and label.
     pub choices: &'static [(&'static str, &'static str)],
-    /// Where it is written: (emulator, key in its config). Every key listed
-    /// for an emulator gets the value.
-    pub keys: &'static [(&'static str, &'static str)],
+    /// Where it is written; every key listed for an emulator gets the value.
+    pub keys: &'static [Key],
 }
 
-const fn config(
-    key: &'static str,
-    label: &'static str,
-    hint: &'static str,
-    global: bool,
-    keys: &'static [(&'static str, &'static str)],
-) -> Setting {
+/// A yes-or-no setting written to config files (table shorthand).
+const fn config(key: &'static str, label: &'static str, hint: &'static str, keys: &'static [Key]) -> Setting {
     Setting {
         key,
         label,
         hint,
         kind: Kind::Bool,
-        global,
+        global: true,
         default: "",
         choices: &[],
         keys,
     }
 }
 
-pub const SETTINGS: &[Setting] = &[
+/// A choice written to config files (table shorthand).
+const fn choice(
+    key: &'static str,
+    label: &'static str,
+    hint: &'static str,
+    choices: &'static [(&'static str, &'static str)],
+    keys: &'static [Key],
+) -> Setting {
     Setting {
-        key: "hotkeys",
-        label: "Game pad hotkeys",
-        hint: "romforge's own hotkeys while a game runs (Select+Start quits; the Hotkeys tab lists them all). The emulators' own pad hotkeys stay off.",
-        kind: Kind::Bool,
-        global: true,
-        default: "true",
-        choices: &[],
-        keys: &[],
-    },
-    Setting {
-        key: "fullscreen",
-        label: "Fullscreen",
-        hint: "Start games fullscreen, without the emulator's own window and menus.",
-        kind: Kind::Bool,
-        global: true,
-        default: "true",
-        choices: &[],
-        keys: &[],
-    },
-    Setting {
-        key: "program",
-        label: "Program",
-        hint: "Start this program instead of the copy romforge finds.",
-        kind: Kind::Path,
-        global: false,
-        default: "",
-        choices: &[],
-        keys: &[],
-    },
-    Setting {
-        key: "args",
-        label: "Extra arguments",
-        hint: "Added before the game's own arguments, split at spaces (no quoting).",
-        kind: Kind::Args,
-        global: false,
-        default: "",
-        choices: &[],
-        keys: &[],
-    },
-    Setting {
-        key: "video_driver",
-        label: "Video driver",
-        hint: "How the game is drawn. Vulkan suits most current graphics cards; OpenGL works almost everywhere.",
+        key,
+        label,
+        hint,
         kind: Kind::Choice,
-        global: false,
+        global: true,
         default: "",
-        choices: &[("gl", "OpenGL"), ("glcore", "OpenGL core"), ("vulkan", "Vulkan")],
-        keys: &[("retroarch", "video_driver")],
-    },
-    config(
-        "vsync",
-        "VSync",
-        "Wait for the screen's refresh: no tearing, a little more input lag.",
-        true,
-        &[("retroarch", "video_vsync")],
-    ),
-    config(
-        "smooth",
-        "Smooth picture",
-        "Bilinear filtering: softer pixels instead of sharp ones.",
-        true,
-        &[("retroarch", "video_smooth")],
-    ),
-    config(
-        "integer_scale",
-        "Integer scaling",
-        "Scale only by whole numbers, so every pixel is the same size (borders around the picture).",
-        true,
-        &[("retroarch", "video_scale_integer")],
-    ),
-    config(
-        "rewind",
-        "Rewind",
-        "Keep the last moments of play to step back through (uses memory and some speed).",
-        true,
-        &[("retroarch", "rewind_enable")],
-    ),
-    config(
-        "run_ahead",
-        "Run-ahead",
-        "Run a frame ahead to cut input lag (needs a faster computer).",
-        true,
-        &[("retroarch", "run_ahead_enabled")],
-    ),
-    config(
-        "auto_state",
-        "Resume where you left off",
-        "Save a state when the game closes and load it when it starts again.",
-        true,
-        &[
-            ("retroarch", "savestate_auto_save"),
-            ("retroarch", "savestate_auto_load"),
-        ],
-    ),
-    config(
-        "show_fps",
-        "Show FPS",
-        "Show frames per second over the game.",
-        true,
-        &[("retroarch", "fps_show")],
-    ),
-];
+        choices,
+        keys,
+    }
+}
+
+/// Parts of the table, one after the other.
+const fn concat<T: Copy, const N: usize>(parts: &[&[T]]) -> [T; N] {
+    let mut out = [parts[0][0]; N];
+    let (mut p, mut n) = (0, 0);
+    while p < parts.len() {
+        let mut i = 0;
+        while i < parts[p].len() {
+            out[n] = parts[p][i];
+            (i, n) = (i + 1, n + 1);
+        }
+        p += 1;
+    }
+    assert!(n == N);
+    out
+}
+
+pub const SETTINGS: &[Setting] =
+    &concat::<Setting, { launch::LAUNCH.len() + video::VIDEO.len() }>(&[launch::LAUNCH, video::VIDEO]);
 
 pub(super) fn setting(key: &str) -> Option<&'static Setting> {
     SETTINGS.iter().find(|s| s.key == key)
@@ -173,6 +175,22 @@ pub(super) fn applies(s: &Setting, e: &KnownEmulator) -> bool {
     match s.key {
         "fullscreen" => !e.fullscreen.is_empty(),
         "program" | "args" => true,
-        _ => s.keys.iter().any(|(name, _)| *name == e.settings_name()),
+        _ => s.keys.iter().any(|k| k.emulator == e.settings_name()),
     }
+}
+
+/// The choices of `s` that `e` has; `None`: all (one of its keys takes
+/// any value).
+pub(super) fn choices_for(s: &Setting, e: &KnownEmulator) -> Option<Vec<&'static str>> {
+    let mut out: Option<Vec<&'static str>> = None;
+    for k in s.keys.iter().filter(|k| k.emulator == e.settings_name()) {
+        let c = k.words.choices()?;
+        let all = out.get_or_insert_with(Vec::new);
+        for v in c {
+            if !all.contains(&v) {
+                all.push(v);
+            }
+        }
+    }
+    out
 }

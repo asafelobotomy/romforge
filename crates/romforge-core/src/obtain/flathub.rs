@@ -1,15 +1,17 @@
-//! Installing an emulator from Flathub into the user's Flatpak
-//! installation: `flatpak remote-add --user --if-not-exists flathub …`,
-//! then `flatpak install --user --noninteractive flathub <id>`. The ids are
-//! the table's, checked on Flathub.
+//! Installing an emulator's official Flatpak into the user's Flatpak
+//! installation: `flatpak remote-add --user --if-not-exists <remote> …`,
+//! then `flatpak install --user --noninteractive <remote> <id>`, from
+//! Flathub or its developers' own repository (`FlatpakFrom`), or, for an
+//! emulator whose developers make no Linux build, Flathub's as the
+//! fallback. One only others build is never installed. The ids are the table's.
 
 use crate::Error;
-use crate::launch::{self, Env};
+use crate::launch::{self, Env, FlatpakFrom};
 
 const FLATHUB_REPO: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
 
-/// Install emulator `name` (as `emulator list` names it, `retroarch`
-/// included) from Flathub. Returns its Flatpak id.
+/// Install emulator `name`'s official Flatpak (as `emulator list` names
+/// it, `retroarch` included). Returns its Flatpak id.
 pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
     let e = launch::known(name).ok_or_else(|| Error::Launch(format!("no emulator named {name:?}")))?;
     if let Some(last) = e.discontinued {
@@ -20,7 +22,23 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
     }
     let id = e
         .flatpak
-        .ok_or_else(|| Error::Launch(format!("{} isn't on Flathub", e.label)))?;
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| Error::Launch(format!("{} has no Flatpak", e.label)))?;
+    let (remote, repo) = match e.flatpak_from {
+        FlatpakFrom::Flathub | FlatpakFrom::Fallback => ("flathub", FLATHUB_REPO),
+        FlatpakFrom::Own { remote, repo, .. } => (remote, repo),
+        FlatpakFrom::Others => {
+            let instead = if e.official_appimage.is_some() {
+                "download its official AppImage instead"
+            } else {
+                "install it from your distribution instead"
+            };
+            return Err(Error::Launch(format!(
+                "{}'s Flatpak isn't made by its developers: {instead}",
+                e.label
+            )));
+        }
+    };
     let flatpak = env
         .path
         .iter()
@@ -48,7 +66,13 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
             args[0], out.status
         )))
     };
-    run(&["remote-add", "--user", "--if-not-exists", "flathub", FLATHUB_REPO])?;
-    run(&["install", "--user", "--noninteractive", "-y", "flathub", id])?;
+    run(&["remote-add", "--user", "--if-not-exists", remote, repo])?;
+    // One from elsewhere (Flathub's community Dolphin) is replaced.
+    let mut install = vec!["install", "--user", "--noninteractive", "-y"];
+    if env.unofficial_flatpak(e) {
+        install.push("--reinstall");
+    }
+    install.extend([remote, id]);
+    run(&install)?;
     Ok(id.to_owned())
 }

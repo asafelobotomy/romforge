@@ -228,10 +228,12 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         }
         Command::Emulator(EmulatorCommand::Install { emulator, apply, .. }) => {
             if !apply {
-                println!("would install {emulator} from Flathub into your Flatpak (run again with --apply)");
+                println!(
+                    "would install {emulator}'s official Flatpak into your Flatpak (run again with --apply)"
+                );
                 return Ok(());
             }
-            println!("installing {emulator} from Flathub (this takes a while)…");
+            println!("installing {emulator}'s official Flatpak (this takes a while)…");
             let id = lib.install_emulator(&emulator)?;
             println!("installed {id}");
         }

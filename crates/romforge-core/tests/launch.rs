@@ -40,6 +40,19 @@ fn fake() -> Fake {
     Fake { _dir: dir, root, env }
 }
 
+/// `id` installed as a Flatpak from Flathub.
+fn flatpak(f: &Fake, id: &str) {
+    let active = f.root.join("flatpak").join(id).join("current/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(active.join("deploy"), b"flathub\0").unwrap();
+    std::fs::create_dir_all(f.root.join("repo")).unwrap();
+    std::fs::write(
+        f.root.join("repo/config"),
+        "[remote \"flathub\"]\nurl=https://dl.flathub.org/repo/\n",
+    )
+    .unwrap();
+}
+
 fn core(f: &Fake, name: &str) -> PathBuf {
     let p = f
         .root
@@ -98,20 +111,19 @@ fn retroarch_gets_the_archive_and_the_best_installed_core() {
 fn standalone_emulators_never_get_a_rom_inside_an_archive() {
     let lib = library();
     let f = fake();
-    // mGBA reads archives itself.
-    std::fs::create_dir(f.root.join("flatpak/io.mgba.mGBA")).unwrap();
-    let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
-    assert_eq!(spec.program, PathBuf::from("flatpak"));
-    // The game's folder is granted for this run (a Flatpak sees only home).
-    let folder = spec.rom.parent().unwrap().display().to_string();
-    assert_eq!(
-        spec.args[..3],
-        [
-            "run".to_owned(),
-            format!("--filesystem={folder}"),
-            "io.mgba.mGBA".to_owned()
-        ]
-    );
+    // Flathub's mGBA isn't its developers': not used.
+    flatpak(&f, "io.mgba.mGBA");
+    let err = lib.launch_plan(&f.env, "Test GBA", None).unwrap_err().to_string();
+    assert!(err.contains("mgba not installed"), "{err}");
+    // Its official AppImage reads archives itself.
+    let apps = f.root.join("apps");
+    std::fs::create_dir(&apps).unwrap();
+    script(&apps.join("mGBA-0.10.5-appimage-x64.appimage"), "exit 0");
+    let mut env = f.env.clone();
+    env.emulator_dirs = vec![apps.clone()];
+    let spec = lib.launch_plan(&env, "Test GBA", None).unwrap();
+    assert_eq!(spec.program, apps.join("mGBA-0.10.5-appimage-x64.appimage"));
+    assert!(spec.rom.extension().is_some_and(|x| x == "zip"), "{:?}", spec.rom);
 
     // A user emulator that can't is skipped for the zipped ROM.
     let mut lib = lib;
@@ -163,7 +175,7 @@ fn a_disc_starts_from_its_cue_sheet() {
     lib.scan(&roms, Scope::All).unwrap();
 
     let f = fake();
-    std::fs::create_dir(f.root.join("flatpak/org.duckstation.DuckStation")).unwrap();
+    flatpak(&f, "org.duckstation.DuckStation");
     let spec = lib.launch_plan(&f.env, "Disc", None).unwrap();
     assert_eq!(spec.emulator, "duckstation");
     let cue_path = std::fs::canonicalize(roms.join("Disc (USA).cue")).unwrap();
@@ -232,7 +244,7 @@ fn a_disc_with_its_own_cue_starts_from_that_cue() {
     lib.import_dat(&dat, None).unwrap();
     lib.scan(&roms, Scope::All).unwrap();
     let f = fake();
-    std::fs::create_dir(f.root.join("flatpak/org.duckstation.DuckStation")).unwrap();
+    flatpak(&f, "org.duckstation.DuckStation");
     let spec = lib.launch_plan(&f.env, "Disc (USA)", None).unwrap();
     assert_eq!(spec.rom, std::fs::canonicalize(roms.join("mine.cue")).unwrap());
 }
@@ -318,8 +330,12 @@ fn retroarch_runs_from_romforge_s_own_config() {
     f.env.options.insert(
         "retroarch".into(),
         romforge_core::launch::LaunchOptions {
-            config: vec![("video_vsync".into(), "false".into())],
-            unset: vec!["video_driver".into()],
+            config: vec![romforge_core::launch::ConfigWrite {
+                path: "retroarch.cfg".into(),
+                format: romforge_core::launch::Format::RetroArch,
+                keys: vec![("video_vsync".into(), "false".into())],
+                remove: vec!["video_driver".into()],
+            }],
             ..Default::default()
         },
     );

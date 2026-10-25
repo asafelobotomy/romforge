@@ -21,7 +21,13 @@ fn get(conn: &Connection, system: &str, title: &str, key: &str) -> Result<Option
         .optional()?)
 }
 
-fn set(conn: &Connection, system: &str, title: &str, key: &str, value: Option<&str>) -> Result<(), Error> {
+pub(crate) fn set(
+    conn: &Connection,
+    system: &str,
+    title: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<(), Error> {
     match value {
         Some(v) => conn.execute(
             "INSERT INTO user_games (system, title, key, value) VALUES (?1, ?2, ?3, ?4)

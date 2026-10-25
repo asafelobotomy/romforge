@@ -1,10 +1,10 @@
 //! Emulator Settings: settings for every emulator at once (Global) and for
 //! each one, an emulator taking the global value unless it sets its own.
 //!
-//! One table of settings, [`SETTINGS`] (like `headers.rs`). Today they are
-//! the ones romforge applies when it starts an emulator; the settings
-//! written into romforge's own copy of each emulator's config come with
-//! milestone 18, 1.3, as more rows. Stored in the database's `settings`
+//! One table of settings, [`SETTINGS`] (like `headers.rs`): the ones
+//! romforge applies when it starts an emulator, and the ones written into
+//! romforge's own copy of each emulator's config, in each one's own words
+//! (milestone 21). Stored in the database's `settings`
 //! table as `emu.<global or emulator>.<key>`, so the CLI and the app share
 //! them.
 
@@ -16,10 +16,13 @@ use rusqlite::{Connection, params};
 use crate::launch::{self, Env, KNOWN_EMULATORS, KnownEmulator, LaunchOptions, RETROARCH};
 use crate::{Error, systems};
 
+mod per_game;
+pub use per_game::*;
+pub mod raw;
 mod scope;
 mod table;
 pub use table::*;
-use table::{applies, setting};
+use table::{applies, choices_for, setting};
 
 /// Setting key → value; a setting not in it isn't set.
 pub type Values = BTreeMap<String, String>;
@@ -45,18 +48,20 @@ pub struct EmulatorTab {
     pub systems: Vec<&'static str>,
     /// The keys of [`SETTINGS`] that apply to it.
     pub settings: Vec<&'static str>,
+    /// For a choice it has only some values of: those.
+    pub choices: BTreeMap<&'static str, Vec<&'static str>>,
     /// Its setup in its usual folders, which "Import my existing setup"
     /// copies into romforge's (with a RomForge folder, for emulators
     /// romforge sets up).
     pub existing: Option<launch::existing::ExistingSetup>,
+    /// Its developers make no Linux build and it runs as the fallback (the
+    /// Linux build most used): why, for its tab.
+    #[serde(default)]
+    pub fallback: Option<String>,
     /// It keeps game data outside romforge's config that can be moved into
     /// RomForge (`launch::move_in`).
     #[serde(default)]
     pub movable: bool,
-    /// Started as a Flatpak where it has an official AppImage romforge can
-    /// download instead, and why that's better (RPCS3's warning).
-    #[serde(default)]
-    pub flatpak_note: Option<&'static str>,
 }
 
 /// What the Emulator Settings dialog shows.
@@ -70,12 +75,18 @@ pub struct EmulatorSettingsView {
     pub not_installed: Vec<NotInstalled>,
 }
 
-/// A known emulator that isn't installed, and whether Flathub has it.
+/// A known emulator that isn't installed, and where its official build
+/// can be installed from.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct NotInstalled {
     pub name: &'static str,
     pub label: &'static str,
-    pub flathub: bool,
+    /// Its official Flatpak can be installed: from where ("Flathub", ...).
+    pub flatpak: Option<&'static str>,
+    /// A Flatpak of it is installed that isn't its developers' (romforge
+    /// doesn't use it).
+    #[serde(default)]
+    pub unofficial_flatpak: bool,
     /// Its last release, when discontinued: never installed by romforge.
     pub discontinued: Option<&'static str>,
     /// Its official AppImage can be downloaded (`obtain::install_appimage`).
@@ -154,6 +165,9 @@ fn validated(s: &EmulatorSettings) -> Result<EmulatorSettings, Error> {
             let def = setting(key).filter(|d| applies(d, e));
             let def = def.ok_or_else(|| bad(format!("{} has no setting {key:?}", e.label)))?;
             if let Some(v) = checked(def, value).map_err(|err| bad(format!("{}: {err}", e.label)))? {
+                if choices_for(def, e).is_some_and(|c| !c.contains(&v.as_str())) {
+                    return Err(bad(format!("{} has no {} {v:?}", e.label, def.label)));
+                }
                 kept.insert(key.clone(), v);
             }
         }
@@ -218,20 +232,38 @@ pub fn apply(s: &EmulatorSettings, env: &mut Env) {
             hotkeys: hotkeys_on(s),
             ..LaunchOptions::default()
         };
-        // Config keys: set ones written, unset ones taken out (the
-        // emulator's own default then applies).
+        // Config keys: set ones written in the emulator's words, unset ones
+        // (or a value it lacks) taken out, so its own default applies.
         for def in SETTINGS {
             let v = value(s, e, def.key).filter(|v| !v.is_empty());
-            for (_, key) in def.keys.iter().filter(|(n, _)| *n == e.settings_name()) {
-                match v {
-                    Some(v) => options.config.push(((*key).to_owned(), v.to_owned())),
-                    None => options.unset.push((*key).to_owned()),
-                }
+            for k in def.keys.iter().filter(|k| k.emulator == e.settings_name()) {
+                add_key(&mut options.config, k, v.and_then(|v| k.words.of(v)));
             }
         }
         if options != LaunchOptions::default() {
             env.options.insert(e.name.to_owned(), options);
         }
+    }
+}
+
+/// `k` set to `v` (or taken out, with none) in its file's group of `writes`.
+pub(crate) fn add_key(writes: &mut Vec<launch::ConfigWrite>, k: &Key, v: Option<String>) {
+    let path = PathBuf::from(k.file);
+    let i = match writes.iter().position(|w| w.path == path) {
+        Some(i) => i,
+        None => {
+            writes.push(launch::ConfigWrite {
+                path,
+                format: k.format,
+                keys: Vec::new(),
+                remove: Vec::new(),
+            });
+            writes.len() - 1
+        }
+    };
+    match v {
+        Some(v) => writes[i].keys.push((k.key.to_owned(), v)),
+        None => writes[i].remove.push(k.key.to_owned()),
     }
 }
 
@@ -244,7 +276,16 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
             not_installed.push(NotInstalled {
                 name: e.name,
                 label: e.label,
-                flathub: e.flatpak.is_some() && e.discontinued.is_none(),
+                flatpak: e
+                    .flatpak
+                    .filter(|_| e.discontinued.is_none())
+                    .and(match e.flatpak_from {
+                        launch::FlatpakFrom::Flathub => Some("Flathub"),
+                        launch::FlatpakFrom::Fallback => Some("Flathub (not official)"),
+                        launch::FlatpakFrom::Own { .. } => Some("its developers' own repository"),
+                        launch::FlatpakFrom::Others => None,
+                    }),
+                unofficial_flatpak: env.unofficial_flatpak(e),
                 discontinued: e.discontinued,
                 appimage: e.official_appimage.is_some() && env.home.is_some(),
             });
@@ -267,10 +308,17 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 .map(|s| s.name)
                 .collect(),
             settings: SETTINGS.iter().filter(|d| applies(d, e)).map(|d| d.key).collect(),
+            choices: SETTINGS
+                .iter()
+                .filter_map(|d| Some((d.key, choices_for(d, e)?)))
+                .collect(),
+            fallback: env.runs_fallback(e).then(|| {
+                format!(
+                    "{} makes no Linux build of its own, so romforge uses Flathub's, the Linux build most used (not made by its developers). A {} of your own (your distribution's) is used instead when there is one.",
+                    e.label, e.label
+                )
+            }),
             movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
-            flatpak_note: e
-                .flatpak_note
-                .filter(|_| env.home.is_some() && e.official_appimage.is_some() && env.is_flatpak(e)),
             existing: env
                 .home
                 .as_ref()

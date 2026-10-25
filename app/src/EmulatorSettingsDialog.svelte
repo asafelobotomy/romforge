@@ -5,6 +5,7 @@
   import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
   import CoresPanel from "./CoresPanel.svelte";
   import HotkeysPanel from "./HotkeysPanel.svelte";
+  import RawSettings from "./RawSettings.svelte";
 
   // Emulator Settings: a Global tab for every emulator at once, then one
   // tab per installed emulator. An emulator takes the global value unless
@@ -42,6 +43,8 @@
   const usedBy = (key) => view.installed.filter((e) => e.settings.includes(key)).map((e) => e.label);
   // A setting's choices for a select: On/Off for a yes-or-no one.
   const options = (s) => (s.kind === "bool" ? [["true", "On"], ["false", "Off"]] : s.choices);
+  // Those an emulator has (Dolphin has no automatic renderer).
+  const optionsFor = (s, e) => options(s).filter(([v]) => !e.choices[s.key] || e.choices[s.key].includes(v));
 
   async function browse(name, key) {
     const file = await pickFile({ multiple: false, directory: false, title: "Program to start" });
@@ -78,7 +81,8 @@
     setupBusy = false;
   }
 
-  // Install an emulator from Flathub, then look again.
+  // Install an emulator's official Flatpak (Flathub, or its developers'
+  // own repository), then look again.
   let installing = $state("");
   // An emulator's official AppImage (RPCS3's), from its own releases, into
   // RomForge/Emulators/; romforge prefers it to the Flatpak.
@@ -101,14 +105,18 @@
   }
 
   async function install(n) {
-    const ok = await ask(`Install ${n.label} from Flathub into your Flatpak? This can take a while.`, {
+    const fallback = n.flatpak.includes("not official")
+      ? ` ${n.label} makes no Linux build of its own: this is Flathub's, the one most used, made by others.`
+      : "";
+    const replace = n.unofficial_flatpak ? ` The Flatpak of it you have now isn't its developers' and is replaced.` : "";
+    const ok = await ask(`Install ${n.label} from ${n.flatpak} into your Flatpak? This can take a while.${fallback}${replace}`, {
       title: "Install emulator",
       kind: "info",
     });
     if (!ok) return;
     error = "";
     installing = n.name;
-    const id = await run(`Installing ${n.label} from Flathub…`, "install_emulator", { emulator: n.name }, { key: `install:${n.name}` });
+    const id = await run(`Installing ${n.label} from ${n.flatpak}…`, "install_emulator", { emulator: n.name }, { key: `install:${n.name}` });
     if (id) note = `${n.label} installed (${id}).`;
     if (id && open) {
       const keep = draft;
@@ -177,20 +185,21 @@
         {#if view.not_installed.length}
           <section class="setting">
             <span class="flabel">Not installed</span>
-            <p class="hint">Installed from Flathub into your own Flatpak installation (no password needed); it shows up here once done.</p>
+            <p class="hint">Each emulator's official build: its developers' Flatpak (from Flathub or their own repository) into your own Flatpak installation (no password needed), or their AppImage into RomForge's Emulators folder. For one whose developers make no Linux build, the Linux build most used, marked as not official. It shows up here once done.</p>
             <ul class="missing">
               {#each view.not_installed as n}
                 <li>
                   {n.label}
-                  {#if n.flathub}
-                    <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : "Install from Flathub"}</button>
+                  {#if n.flatpak}
+                    <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : n.flatpak === "Flathub" ? "Install from Flathub" : n.flatpak.includes("not official") ? "Install Flathub's (not official)" : "Install its official Flatpak"}</button>
                   {/if}
                   {#if n.appimage}
                     <button onclick={() => appimage(n)} disabled={!!installing}>{installing === `appimage:${n.name}` ? "Downloading…" : "Download official AppImage"}</button>
                   {/if}
-                  {#if n.flathub || n.appimage}{""}
+                  {#if n.unofficial_flatpak}<span class="hint">· the Flatpak you have isn't its developers': not used</span>{/if}
+                  {#if n.flatpak || n.appimage}{""}
                   {:else if n.discontinued}<span class="hint">· discontinued (last release {n.discontinued}): romforge uses your own install and never downloads it</span>
-                  {:else}<span class="hint">· not on Flathub: install it yourself</span>{/if}
+                  {:else}<span class="hint">· no official Flatpak or AppImage: install it from your distribution</span>{/if}
                 </li>
               {/each}
             </ul>
@@ -220,11 +229,10 @@
             {/if}
           </section>
         {/if}
-        {#if e.flatpak_note}
+        {#if e.fallback}
           <section class="setting">
-            <span class="flabel">Started as a Flatpak</span>
-            <p class="hint">{e.flatpak_note}</p>
-            <div class="pick"><button onclick={() => appimage(e)} disabled={!!installing}>{installing === `appimage:${e.name}` ? "Downloading…" : "Download official AppImage"}</button></div>
+            <span class="flabel">Not an official build</span>
+            <p class="hint">{e.fallback}</p>
           </section>
         {/if}
         {#if e.movable}<GameDataPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
@@ -235,7 +243,7 @@
               <p class="hint">{s.hint}</p>
               <select id="emu-{s.key}" value={mine[s.key] ?? ""} onchange={(ev) => (mine[s.key] = ev.currentTarget.value)}>
                 <option value="">{s.global ? `As Global (${shown(s, globalValue(s.key))})` : "Emulator's own"}</option>
-                {#each options(s) as [v, label]}<option value={v}>{label}</option>{/each}
+                {#each optionsFor(s, e) as [v, label]}<option value={v}>{label}</option>{/each}
               </select>
             {:else if s.kind === "path"}
               <label for="emu-{s.key}">{s.label}</label>
@@ -252,6 +260,7 @@
             {/if}
           </section>
         {/each}
+        <RawSettings emulator={e.name} label={e.label} bind:note bind:error />
       {/if}
       </div>
 

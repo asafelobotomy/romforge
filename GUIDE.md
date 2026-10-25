@@ -266,23 +266,69 @@ romforge-cli emulator install duckstation [--apply]    # from Flathub
 romforge-cli emulator install rpcs3 --appimage --apply  # its official AppImage
 romforge-cli emulator import-setup pcsx2 [--apply | --undo]
 romforge-cli emulator move-data rpcs3 [--apply | --undo]
+romforge-cli emulator set global renderer vulkan        # every emulator, in its own words
+romforge-cli emulator config duckstation               # All settings: every key in romforge's copy
+romforge-cli emulator config duckstation --set 'duckstation/settings.ini:[Audio]Backend=SDL'
+romforge-cli emulator config duckstation --undo
+romforge-cli emulator config mame --write-defaults     # MAME's -createconfig, then list
+romforge-cli emulator game-settings PlayStation "Some Game" vsync false
 ```
 
 **Emulator Settings** (toolbar) has a Global tab for every emulator at
 once (fullscreen, game pad hotkeys) and a tab per installed emulator,
 which takes the global value unless it sets its own, plus its own
-**Program**, extra arguments and config settings (RetroArch's video
-driver, VSync, ...). RetroArch's tab lists its cores: where
+**Program**, extra arguments and config settings. The picture settings
+(renderer, internal resolution, VSync, show frame rate, aspect ratio,
+widescreen hack, a DS or 3DS game's screen layout) reach every emulator
+that has them, each written into romforge's copy of its config in that
+emulator's own words (Dolphin's `True`, Flycast's `yes`, PCSX2's
+renderer `14` for Vulkan, RPCS3's `Video/Renderer`, Cemu's
+`<Graphic><api>`); an emulator without a value (Dolphin has no automatic
+renderer) only offers the ones it has, and one left unset gets its own
+default back. The keys were read from each emulator's source, and checked
+on the installed emulators. DOSBox Staging, DOSBox-X, ScummVM and MAME
+also run from romforge's copy of their one settings file, which starts as
+a copy of yours (your MAME rompath, your ScummVM games) the first time.
+**All settings**, at the end of each tab, lists every key in romforge's
+copy of the emulator's config as the emulator names it (`[Section]Key`
+in an INI file), with a toggle, a number or text, and lets you change any
+of them or add one by its exact name. The keys romforge sets itself
+(folders, BIOS files, hotkeys, the settings above) are locked, with why.
+Changes are written when saved there, journaled with the old value, so
+**Undo last change** takes the last save back; they are refused while the
+emulator runs (it would write its own over them on exit). An emulator
+writes its file the first time romforge starts it; most write every
+setting then, MAME only on **Write MAME's defaults** (`-createconfig`),
+and the rest (Dolphin, melonDS, mGBA, xemu, ScummVM, DOSBox-X) only the
+ones changed, so add others by name. **Settings for this game** (a game's
+Settings tab) sets RetroArch's and DuckStation's settings for one game:
+RetroArch gets a game override (`config/<core>/<game>.cfg` in romforge's
+copy, which `rgui_config_directory` points at; it wins over the rest),
+DuckStation `gamesettings/<serial>.ini` (the serial from the disc, as
+scanned: `SLUS_007.07` is `SLUS-00707`). Import my existing setup also
+copies RetroArch's own overrides. RetroArch's tab lists its cores: where
 each is installed, its licence (non-commercial ones are flagged and asked
 about), and what the libretro buildbot has; a download goes into
-`RomForge/Emulators/cores/`, which romforge looks in first. An emulator
-that isn't installed can be installed from Flathub into your own Flatpak
-installation (`flatpak install --user`, no password). RPCS3's Flatpak asks
-on every start whether to run an "unofficial build" (its developers don't
-support Flatpak builds, and there is no setting for it), so romforge
-prefers RPCS3's official AppImage when it is in `RomForge/Emulators/` or
-`~/Applications`, and RPCS3's tab offers to download it from RPCS3's own
-GitHub releases (checked against the SHA-256 published with it). **Import my existing
+`RomForge/Emulators/cores/`, which romforge looks in first. romforge uses
+only each emulator's official build. A Flatpak is used only when it comes
+from where its developers publish it: Flathub for those that publish
+there themselves (verified on Flathub), Dolphin's own repository
+(`flatpak.dolphin-emu.org`) for Dolphin. Flathub's RPCS3, mGBA, Flycast
+and MAME are made by others, so romforge never uses or installs them: it
+offers RPCS3's, mGBA's and Flycast's own AppImages from their GitHub
+releases instead (checked against the SHA-256 GitHub publishes, or the
+size it gives where a release has none), An emulator whose
+developers make no Linux build falls back to the Linux build most used,
+always marked as not official on its tab and when installing: MAME makes
+only Windows builds, so a MAME of your own (your distribution's) comes
+first, then Flathub's (over a million installs). Mednafen publishes only
+source code and has no Flatpak: it comes from your distribution. romforge tells where an
+installed Flatpak came from by reading Flatpak's own files. A program on
+your `PATH`, or one you pick as an emulator's **Program**, is used as it
+is. An emulator that isn't installed can be installed from its official
+source with one click (a Flatpak into your own installation with
+`flatpak install --user`, no password; an AppImage into
+`RomForge/Emulators/`, which romforge looks in). **Import my existing
 setup** copies what an emulator keeps in its usual folders (memory cards,
 saves, controller mappings, settings) into romforge's copy for it; undo
 takes it back. **Your game data** (on the tabs of RPCS3, Cemu, xemu,

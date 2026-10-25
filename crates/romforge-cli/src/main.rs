@@ -11,7 +11,7 @@ use clap::Parser;
 use romforge_core::{Library, enrich, systems};
 
 use crate::args::{Cli, Command};
-use crate::subcommands::{DatCommand, HomeCommand, ThemesCommand};
+use crate::subcommands::{DatCommand, EmulatorCommand, HomeCommand, ThemesCommand};
 
 fn main() -> Result<()> {
     // Like other command-line tools, end quietly when the reader of our
@@ -132,6 +132,9 @@ fn main() -> Result<()> {
         }
         c @ Command::Patch { .. } => cmd::patch::run(&mut lib, c)?,
         c @ (Command::Enrich { .. } | Command::Info { .. }) => cmd::enrich::run(&mut lib, c)?,
+        Command::Emulator(c @ (EmulatorCommand::Config { .. } | EmulatorCommand::GameSettings { .. })) => {
+            cmd::emulator_config::run(&mut lib, c)?
+        }
         c @ (Command::Launch { .. } | Command::Emulator(_)) => cmd::launch::run(&mut lib, c)?,
         c @ Command::Firmware(_) => cmd::firmware::run(&mut lib, c)?,
         c @ Command::Manual(_) => cmd::manual::run(&mut lib, c)?,

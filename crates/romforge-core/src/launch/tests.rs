@@ -33,15 +33,31 @@ fn known_emulators_cover_the_systems_table() {
 
 #[test]
 fn flatpak_commands() {
-    let (p, a, _) = command(&Runner::Flatpak("org.x.Y".into()), vec!["{rom}".into()], &[], &[]);
+    let flatpak = |command: Option<&str>| Runner::Flatpak {
+        id: "org.x.Y".into(),
+        command: command.map(str::to_owned),
+    };
+    let (p, a, _) = command(&flatpak(Some("y-qt")), vec!["{rom}".into()], &[], &[]);
     assert_eq!(p, PathBuf::from("flatpak"));
-    assert_eq!(a, ["run", "org.x.Y", "{rom}"]);
-    let (_, a, _) = command(
-        &Runner::Flatpak("org.x.Y".into()),
-        vec!["/m/g/a.zip".into()],
-        &["/m/g".into(), "/h/RomForge".into()],
-        &[("XDG_CONFIG_HOME".into(), "/h/c".into())],
+    assert_eq!(a, ["run", "org.x.Y", "{rom}"], "nothing to set: as it is");
+    let grants = ["/m/g".into(), "/h/RomForge".into()];
+    let env = [("XDG_CONFIG_HOME".to_owned(), "/h/c".to_owned())];
+    let (_, a, _) = command(&flatpak(Some("y-qt")), vec!["/m/g/a.zip".into()], &grants, &env);
+    assert_eq!(
+        a,
+        [
+            "run",
+            "--filesystem=/m/g",
+            "--filesystem=/h/RomForge",
+            "--command=env",
+            "org.x.Y",
+            "XDG_CONFIG_HOME=/h/c",
+            "y-qt",
+            "/m/g/a.zip"
+        ],
+        "Flatpak sets its XDG folders over --env="
     );
+    let (_, a, _) = command(&flatpak(None), vec!["/m/g/a.zip".into()], &grants, &env);
     assert_eq!(
         a,
         [
@@ -51,7 +67,8 @@ fn flatpak_commands() {
             "--env=XDG_CONFIG_HOME=/h/c",
             "org.x.Y",
             "/m/g/a.zip"
-        ]
+        ],
+        "its command unknown"
     );
     let env = [("MEDNAFEN_HOME".to_owned(), "/h/m".to_owned())];
     let (p, a, e) = command(
@@ -131,13 +148,37 @@ fn find_rules_in_order() {
     // ~/Applications comes first.
     program(&t.join("Applications/DuckStation-x64.AppImage"));
     let apps = Runner::Program(t.join("Applications/DuckStation-x64.AppImage"));
-    assert_eq!(env.known(duck), Some(apps));
+    assert_eq!(env.known(duck), Some(apps.clone()));
     // A Flatpak before either.
     env.flatpak_dirs = vec![t.join("flatpak")];
     std::fs::create_dir_all(t.join("flatpak/org.duckstation.DuckStation")).unwrap();
     assert_eq!(
         env.known(duck),
-        Some(Runner::Flatpak("org.duckstation.DuckStation".into()))
+        Some(apps.clone()),
+        "where it came from unknown: not used"
+    );
+    flatpak::fake(
+        &t.join("flatpak"),
+        "org.duckstation.DuckStation",
+        flatpak::FLATHUB_URL,
+    );
+    assert_eq!(
+        env.known(duck),
+        Some(Runner::Flatpak {
+            id: "org.duckstation.DuckStation".into(),
+            command: None
+        })
+    );
+    let active = t.join("flatpak/org.duckstation.DuckStation/current/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join("metadata"),
+        "[Application]\nname=org.duckstation.DuckStation\ncommand=duckstation-qt\n",
+    )
+    .unwrap();
+    assert!(
+        matches!(env.known(duck), Some(Runner::Flatpak { command: Some(c), .. }) if c == "duckstation-qt"),
+        "its command from its metadata"
     );
     // PATH before that.
     program(&t.join("bin/duckstation-qt"));
@@ -221,28 +262,26 @@ fn bios_flags_come_with_the_romforge_folder() {
     assert!(known_args(staging, &vars, &o).contains(&"romdir=/rf/Bios/dosbox-staging/mt32-roms".to_owned()));
 }
 
-/// MAME's `-rompath` (and a Flatpak's grant of the RomForge folder) only
-/// when `Bios/mame/` holds a file: an empty folder would hide the user's
-/// own rompath.
+/// MAME's `-rompath` only when `Bios/mame/` holds a file: an empty folder
+/// would hide the rompath of the user's own `mame.ini` (romforge's copy
+/// starts from it).
 #[test]
 fn bios_flags_only_for_a_folder_with_files() {
     let t = tempfile::tempdir().unwrap();
-    let flatpak = t.path().join("flatpak");
-    std::fs::create_dir_all(flatpak.join("org.mamedev.MAME")).unwrap();
+    let bin = t.path().join("bin");
+    program(&bin.join("mame"));
     let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
     let env = Env {
-        flatpak_dirs: vec![flatpak],
+        path: vec![bin],
         home: Some(home.clone()),
         ..Default::default()
     };
     let conn = crate::db::open_in_memory().unwrap();
     let files = [(t.path().join("g/Game.chd"), String::new())];
     let plan = || start(&conn, &env, "Game", "FM Towns", &files, None).unwrap();
-    let granted = format!("--filesystem={}", home.root().display());
     std::fs::create_dir_all(home.bios().join("mame/sub")).unwrap();
     let spec = plan();
     assert!(!spec.args.contains(&"-rompath".to_owned()), "{:?}", spec.args);
-    assert!(!spec.args.contains(&granted), "{:?}", spec.args);
     std::fs::write(home.bios().join("mame/sub/fmtowns.zip"), b"set").unwrap();
     let spec = plan();
     let bios = home.bios().join("mame").display().to_string();
@@ -251,7 +290,6 @@ fn bios_flags_only_for_a_folder_with_files() {
         "{:?}",
         spec.args
     );
-    assert!(spec.args.contains(&granted), "{:?}", spec.args);
 }
 
 /// A user-added emulator's `{bios}` is `Bios/<its name>/` with a RomForge
@@ -285,26 +323,48 @@ fn user_emulators_get_their_bios_folder() {
 }
 
 mod consoles;
+mod sources;
 
-/// RPCS3's official AppImage, when there, before its Flatpak (which warns on
-/// every start); without it, the Flatpak.
+/// MAME's copy of `mame.ini` starts from the user's own (their rompath
+/// kept) and gets Emulator Settings' keys; theirs is never written.
 #[test]
-fn rpcs3_s_appimage_comes_before_its_flatpak() {
+fn a_file_only_emulator_starts_from_the_users_settings() {
     let t = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(t.path().join("flatpak/net.rpcs3.RPCS3")).unwrap();
-    let apps = t.path().join("apps");
-    std::fs::create_dir_all(&apps).unwrap();
-    let env = Env {
-        flatpak_dirs: vec![t.path().join("flatpak")],
-        emulator_dirs: vec![apps.clone()],
-        ..Default::default()
+    let user = existing::UserDirs {
+        home: t.path().join("u"),
+        xdg: existing::Xdg {
+            config: t.path().join("u/.config"),
+            data: t.path().join("u/.local/share"),
+        },
     };
-    let rpcs3 = known("rpcs3").unwrap();
-    assert!(env.is_flatpak(rpcs3));
-    let image = apps.join("rpcs3-v0.0.43-20397_linux64.AppImage");
-    std::fs::write(&image, b"#!/bin/sh\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(!env.is_flatpak(rpcs3));
-    assert_eq!(env.find(rpcs3), Some(image.display().to_string()));
+    let theirs = user.home.join(".mame/mame.ini");
+    std::fs::create_dir_all(theirs.parent().unwrap()).unwrap();
+    std::fs::write(&theirs, "rompath /my/roms\nwaitvsync 0\n").unwrap();
+    let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
+    let mut s = crate::emusettings::EmulatorSettings::default();
+    s.global.insert("vsync".into(), "true".into());
+    let mut env = Env::default();
+    crate::emusettings::apply(&s, &mut env);
+    let mame = known("mame").unwrap();
+    let system = crate::systems::SYSTEMS
+        .iter()
+        .find(|s| s.emulators.contains(&"mame"))
+        .unwrap();
+    let (dir, prep) = owned::owned(mame, &home, system, &env.options(mame), Some(&user)).unwrap();
+    prepare(&prep).unwrap();
+    let ours = std::fs::read_to_string(dir.join("mame.ini")).unwrap();
+    assert!(ours.contains("rompath /my/roms"), "{ours}");
+    assert!(ours.contains("waitvsync 1"), "{ours}");
+    assert_eq!(
+        std::fs::read_to_string(&theirs).unwrap(),
+        "rompath /my/roms\nwaitvsync 0\n"
+    );
+    // Once there, romforge's copy is the one kept.
+    std::fs::write(&theirs, "rompath /elsewhere\n").unwrap();
+    prepare(&prep).unwrap();
+    assert!(
+        std::fs::read_to_string(dir.join("mame.ini"))
+            .unwrap()
+            .contains("/my/roms")
+    );
 }

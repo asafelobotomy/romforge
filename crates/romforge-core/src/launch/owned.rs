@@ -20,9 +20,11 @@ use crate::{Error, systems::System};
 pub mod existing;
 mod formats;
 pub use formats::Format;
+pub(crate) use formats::{merge, read};
 mod azahar;
 mod gamedata;
 pub mod move_in;
+pub(super) mod per_game;
 mod standalone;
 pub mod theirs;
 
@@ -48,6 +50,9 @@ pub struct Prepare {
     pub links: Vec<(PathBuf, PathBuf)>,
     /// How romforge reaches it while it runs, for the hotkeys.
     pub control: Option<super::controls::Channel>,
+    /// (theirs, ours): the user's own settings file, copied to start
+    /// romforge's from when it has none yet ([`existing::seed`]).
+    pub seeds: Vec<(PathBuf, PathBuf)>,
 }
 
 /// romforge's config for `e` running a game of `system`: its folder (the
@@ -80,6 +85,8 @@ pub(super) fn owned(
             );
             let base = [
                 ("system_directory", s(bios.clone())),
+                // Game overrides (`owned/per_game.rs`) beside it.
+                ("rgui_config_directory", s(dir.join("config"))),
                 ("config_save_on_exit", "false".into()),
                 ("pause_nonactive", "false".into()),
                 ("savefiles_in_content_dir", "false".into()),
@@ -101,10 +108,8 @@ pub(super) fn owned(
                 keys.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
             };
             let mut keys = pairs(&base);
-            keys.extend(options.config.iter().cloned());
-            let (hot, mut remove, control) = super::controls::retroarch(options.hotkeys);
+            let (hot, remove, control) = super::controls::retroarch(options.hotkeys);
             keys.extend(hot);
-            remove.extend(options.unset.iter().cloned());
             let links = USER_DIR_IN_SAVES
                 .iter()
                 .filter(|(core, _)| system.cores.contains(core))
@@ -130,6 +135,7 @@ pub(super) fn owned(
                 control,
                 ..Prepare::default()
             };
+            let prepare = with_settings(prepare, &dir, options);
             Some((dir, prepare))
         }
         name => {
@@ -137,12 +143,86 @@ pub(super) fn owned(
             standalone::standalone(name, &dir, &bios)
                 .or_else(|| gamedata::gamedata(name, &dir, &bios, user))
                 .or_else(|| azahar::citra_line(name, &dir, &bios, &home.saves().join(system.key), user))
+                .or_else(|| file_only(e, &dir, user))
                 .map(|mut p| {
                     super::controls::bind(name, options.hotkeys, &mut p.writes);
+                    let p = with_settings(p, &dir, options);
                     (dir, p)
                 })
         }
     }
+}
+
+/// The emulators romforge only points at its own settings file (the
+/// table's `config` flags): DOSBox Staging, DOSBox-X, ScummVM and MAME,
+/// that copy started from the user's own.
+fn file_only(e: &KnownEmulator, dir: &Path, user: Option<&existing::UserDirs>) -> Option<Prepare> {
+    let (file, format) = match e.settings_name() {
+        "dosbox-staging" => ("dosbox-staging.conf", Format::Ini),
+        "dosbox-x" => ("dosbox-x.conf", Format::Ini),
+        "scummvm" => ("scummvm.ini", Format::Ini),
+        "mame" => ("mame.ini", Format::Spaced),
+        _ => return None,
+    };
+    Some(Prepare {
+        dirs: vec![dir.to_path_buf()],
+        writes: vec![ConfigWrite {
+            path: dir.join(file),
+            format,
+            keys: Vec::new(),
+            remove: Vec::new(),
+        }],
+        seeds: existing::seed(e, dir, user).into_iter().collect(),
+        ..Prepare::default()
+    })
+}
+
+/// `p` with Emulator Settings' keys (`options.config`) merged into its
+/// writes of the same files; romforge's own keys there stay as they are.
+fn with_settings(mut p: Prepare, dir: &Path, options: &LaunchOptions) -> Prepare {
+    for set in &options.config {
+        let path = dir.join(&set.path);
+        let own = |k: &String| {
+            p.writes
+                .iter()
+                .any(|w| w.path == path && w.keys.iter().any(|(o, _)| o == k))
+        };
+        let keys: Vec<_> = set.keys.iter().filter(|(k, _)| !own(k)).cloned().collect();
+        let remove: Vec<_> = set.remove.iter().filter(|k| !own(k)).cloned().collect();
+        match p.writes.iter_mut().find(|w| w.path == path) {
+            Some(w) => {
+                w.keys.extend(keys);
+                w.remove.extend(remove);
+            }
+            None => p.writes.push(ConfigWrite {
+                path,
+                format: set.format,
+                keys,
+                remove,
+            }),
+        }
+    }
+    p
+}
+
+/// romforge's config for `e` as any of its games would have it (the first
+/// system it runs), with `options`; `None` for one it doesn't write.
+pub(crate) fn managed(
+    e: &KnownEmulator,
+    home: &Home,
+    options: &LaunchOptions,
+    user: Option<&existing::UserDirs>,
+) -> Option<(PathBuf, Prepare)> {
+    let system = crate::systems::SYSTEMS.iter().find(|s| {
+        if e.settings_name() == "retroarch" {
+            !s.cores.is_empty()
+        } else {
+            s.emulators
+                .iter()
+                .any(|n| super::known(n).is_some_and(|k| k.settings_name() == e.settings_name()))
+        }
+    })?;
+    owned(e, home, system, options, user)
 }
 
 /// Make the folders, set the keys (each file written whole, with others'
@@ -150,6 +230,11 @@ pub(super) fn owned(
 pub fn prepare(p: &Prepare) -> Result<(), Error> {
     for d in &p.dirs {
         std::fs::create_dir_all(d)?;
+    }
+    for (theirs, ours) in &p.seeds {
+        if !ours.exists() {
+            crate::atomic::write(ours, &std::fs::read(theirs)?)?;
+        }
     }
     for w in &p.writes {
         let old = match std::fs::read_to_string(&w.path) {

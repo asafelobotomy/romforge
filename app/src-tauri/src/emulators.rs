@@ -100,3 +100,55 @@ pub async fn install_appimage(db: tauri::State<'_, Db>, emulator: String) -> Res
 pub async fn install_emulator(db: tauri::State<'_, Db>, emulator: String) -> Res<String> {
     read_net(&db, move |lib| lib.install_emulator(&emulator)).await
 }
+
+/// All settings: every key in romforge's copy of an emulator's config.
+#[tauri::command]
+pub async fn raw_settings(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<romforge_core::emusettings::raw::RawView> {
+    read(&db, move |lib| lib.raw_settings(&emulator)).await
+}
+
+#[tauri::command]
+pub async fn edit_raw_settings(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+    edits: Vec<romforge_core::emusettings::raw::RawEdit>,
+) -> Res<i64> {
+    edit(&db, move |lib| lib.edit_raw_settings(&emulator, &edits)).await
+}
+
+#[tauri::command]
+pub async fn undo_raw_settings(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
+    edit(&db, move |lib| lib.undo_raw_settings(&emulator)).await
+}
+
+/// MAME's `-createconfig` into romforge's `mame.ini`.
+#[tauri::command]
+pub async fn mame_write_defaults(db: tauri::State<'_, Db>) -> Res<String> {
+    read_net(&db, move |lib| {
+        lib.mame_write_defaults().map(|p| p.display().to_string())
+    })
+    .await
+}
+
+/// Settings for one game.
+#[tauri::command]
+pub async fn game_settings(
+    db: tauri::State<'_, Db>,
+    system: String,
+    title: String,
+) -> Res<romforge_core::emusettings::GameSettingsView> {
+    read(&db, move |lib| lib.game_settings(&system, &title)).await
+}
+
+#[tauri::command]
+pub async fn set_game_settings(
+    db: tauri::State<'_, Db>,
+    system: String,
+    title: String,
+    values: romforge_core::emusettings::Values,
+) -> Res<romforge_core::emusettings::Values> {
+    edit(&db, move |lib| lib.set_game_settings(&system, &title, &values)).await
+}

@@ -6,6 +6,7 @@ mod dat_import;
 mod dat_lists;
 mod dats;
 mod edit;
+mod emulator_config;
 mod emulators;
 mod files;
 mod folders;

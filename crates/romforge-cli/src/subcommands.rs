@@ -276,7 +276,8 @@ pub enum EmulatorCommand {
         #[arg(long)]
         yes: bool,
     },
-    /// Install an emulator from Flathub (your own Flatpak installation)
+    /// Install an emulator's official Flatpak (from Flathub or its
+    /// developers' own repository) into your own Flatpak installation
     ///
     /// Shows what it would do unless --apply.
     Install {
@@ -314,6 +315,32 @@ pub enum EmulatorCommand {
         /// Take back the last move instead (until the trash is emptied)
         #[arg(long)]
         undo: bool,
+    },
+    /// Every setting in romforge's copy of an emulator's config, or change
+    /// some (refused while it runs; journaled for --undo)
+    Config {
+        emulator: String,
+        /// FILE:KEY=VALUE, e.g. `duckstation/settings.ini:[Audio]Backend=SDL`
+        #[arg(long)]
+        set: Vec<String>,
+        /// FILE:KEY: take it out (the emulator's own default applies)
+        #[arg(long)]
+        unset: Vec<String>,
+        /// Take back the last change instead
+        #[arg(long)]
+        undo: bool,
+        /// Have MAME write all its settings first (`-createconfig`)
+        #[arg(long)]
+        write_defaults: bool,
+    },
+    /// A game's own settings (RetroArch and DuckStation): list them, or set
+    /// KEY to VALUE (no value: the emulator's setting)
+    GameSettings {
+        /// The platform (e.g. `PlayStation`)
+        system: String,
+        title: String,
+        key: Option<String>,
+        value: Option<String>,
     },
 }
 

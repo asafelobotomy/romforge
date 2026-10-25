@@ -805,7 +805,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     writes the AUR's `romforge-bin` PKGBUILD (repackaging the `.deb`, all
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
-    Every tag from v0.1.0 to v0.11.0 was built and released by the
+    Every tag from v0.1.0 to v0.12.0 was built and released by the
     workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
     (the owner's account); Debian's and Fedora's package names for the
     recommended packages are unchecked (Fedora's libav plugin may be
@@ -2088,7 +2088,7 @@ other than RetroArch's (romforge launches RetroArch and standalone
 emulators, whose BIOS folders come from their profiles in
 `emulators.json`).
 
-## Emulator settings (milestone 21; decided 2026-10-19, partly built)
+## Emulator settings (milestone 21; decided 2026-10-19, built 2026-10-25)
 
 romforge has full control of its own copy of each emulator's config
 (milestone 18, 1.3: `RomForge/Emulators/config/<emulator>/`), so users
@@ -2150,6 +2150,82 @@ romforge, is never touched. Milestone 20 uses this to set BIOS paths.
   (milestone 18, 1.4); romforge never ships any.
 - Each config format and key is checked against the emulator's source
   (pinned to a release), never written from memory.
+- *Built 2026-10-25* (the owner chose: everything each emulator offers;
+  per game now, RetroArch and DuckStation). Two layers:
+  - *Curated settings* (`emusettings/table/`): each row lists its keys
+    as `Key { emulator, file, key, format, words }`, `words` turning
+    romforge's value into the emulator's (`Bool("True","False")`, a map,
+    `Times(480)` for Flycast's resolution); a value an emulator lacks is
+    not offered on its tab and, set globally, leaves its key out. Rows:
+    renderer, internal resolution, VSync, show frame rate, aspect ratio,
+    widescreen hack, screen layout, plus RetroArch's. Written at launch
+    into the same file's write as romforge's own keys (`owned.rs`
+    `with_settings`), never over one of romforge's. New writers: RPCS3's
+    nested `config.yml`, Cemu's nested XML, Qt's `key\default=false`
+    (Azahar, Lime3DS, Citra), each also taking keys out. DOSBox Staging,
+    DOSBox-X, ScummVM and MAME now run from romforge's copy of their one
+    file (their table `config` flags were never passed before), started
+    from the user's own file when romforge has none (`existing::seed`),
+    and importable.
+  - *All settings* (`emusettings/raw.rs`): every key of romforge's
+    copy, read back in each format (`formats/read.rs`), romforge's own
+    keys locked with why; edits journaled in `config_edits` (migration
+    44) with the old value, undo by batch, refused while the emulator
+    runs; MAME's `-createconfig` on request (`launch::mame_write_defaults`).
+  - *Per game* (`emusettings/per_game.rs`, `launch/owned/per_game.rs`):
+    stored in `user_games` as `emu.<setting>`. RetroArch: romforge's
+    `retroarch.cfg` sets `rgui_config_directory` to `config/` beside it;
+    a game's override is `config/<corename>/<content name>.cfg`, the core
+    name from the fetched core info, else `/usr/share/libretro/info`
+    (no name: no override). DuckStation: `gamesettings/<serial>.ini`, the
+    serial from the scanned disc's boot file. App: the Settings tab of a
+    game; CLI `emulator game-settings`, `emulator config`.
+  - *Checked on this machine* (2026-10-25, the eleven console emulators
+    installed from Flathub into the owner's user Flatpak, each run once
+    from a scratch folder and closed by process id; MAME, ScummVM,
+    RetroArch native, DOSBox Staging and DOSBox-X from their system
+    Flatpaks). Found: **Flatpak 1.18.2 sets the XDG folders over
+    `--env=`**, so every Flatpak emulator romforge pointed at its config
+    through `XDG_CONFIG_HOME` (DuckStation, PPSSPP, Flycast, mGBA,
+    melonDS, the Citra line) had been using its own folder since
+    milestone 18. romforge now starts a Flatpak's own command (from its
+    `metadata`) through the runtime's `env` when it sets anything
+    (`launch.rs` `command`); DuckStation then wrote its whole
+    `settings.ini` into the scratch folder. Keys seen in the written files
+    match the table (DuckStation, PCSX2, RPCS3, Azahar with its
+    `key\default` pairs, mGBA's files, MAME, DOSBox Staging, DOSBox-X);
+    Dolphin, xemu, ScummVM, Flycast and PPSSPP write only what was changed
+    or on a clean exit (their key names were found in their programs);
+    Cemu and melonDS wrote nothing before their first-run screens. RPCS3
+    refuses to run from a config folder under `/tmp` (a RomForge folder
+    there won't work with it). Added from
+    the check: ScummVM's `stretch_mode` and 3D `renderer`, DOSBox-X's
+    `default` output.
+- *Official builds only* (the owner's rule, 2026-10-25): romforge uses
+  and installs only each emulator's developers' own build.
+  `KnownEmulator::flatpak_from` says where its Flatpak must come from:
+  Flathub (verified there as published by its developers, checked on
+  Flathub's API on 2026-10-25: DuckStation, PCSX2, PPSSPP, melonDS, xemu,
+  Cemu, Azahar, Lime3DS, Citra, RetroArch, ScummVM, DOSBox Staging; and
+  DOSBox-X, unverified but its own site's Linux download), its own
+  repository (Dolphin: `flatpak.dolphin-emu.org/releases`; Flathub's is a
+  community build), or nowhere (RPCS3, mGBA, Flycast, MAME). An installed
+  Flatpak's origin is read from its `deploy` file and the installation's
+  `repo/config` (`launch/flatpak.rs`); one from elsewhere is never
+  started, and installing the official one replaces it (`--reinstall`).
+  Official AppImages: RPCS3, mGBA (no SHA-256 published for 0.10.5: its
+  size is checked), Flycast. Programs on `PATH` and ones set as
+  **Program** stay the user's choice.
+- *Fallbacks* (the owner's rule, 2026-10-25): an emulator whose
+  developers make no Linux build falls back to the Linux build most used
+  (`FlatpakFrom::Fallback`), after one on `PATH`, installable on request,
+  and shown as not official (its tab, the install button and question).
+  Checked 2026-10-25: MAME makes only Windows builds; Flathub's
+  `org.mamedev.MAME` (1.09 million installs, 6,061 last month) is its
+  fallback. Mednafen publishes source only and nothing of it is on
+  Flathub but a separate front-end (Mednaffe): distribution packages,
+  found on `PATH`, stay its only source. Every other emulator has an
+  official Linux build.
 
 ## Nintendo Switch (milestone 22; decided 2026-10-19, not built)
 

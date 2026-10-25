@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn describe(r: &Runner) -> String {
     match r {
         Runner::Program(p) => p.display().to_string(),
-        Runner::Flatpak(id) => format!("flatpak run {id}"),
+        Runner::Flatpak { id, .. } => format!("flatpak run {id}"),
     }
 }
 

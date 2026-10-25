@@ -1,8 +1,10 @@
 //! An emulator's official AppImage, from its own project's GitHub releases
-//! (`KnownEmulator::official_appimage`; RPCS3's), into the RomForge
-//! folder's `Emulators/`, where romforge looks for AppImages. The release's
-//! newest asset whose name ends as the table says is downloaded, checked
-//! against the SHA-256 GitHub publishes for it, and made executable.
+//! (`KnownEmulator::official_appimage`: RPCS3's, mGBA's, Flycast's), into
+//! the RomForge folder's `Emulators/`, where romforge looks for AppImages.
+//! The latest release's x86-64 asset whose name ends as the table says is
+//! downloaded, checked against the SHA-256 GitHub publishes for it (or,
+//! for a release from before GitHub published them, mGBA's 0.10.5, against
+//! the size it gives), and made executable.
 
 use std::path::PathBuf;
 
@@ -26,7 +28,15 @@ pub fn install_appimage(home: &Home, name: &str) -> Result<PathBuf, Error> {
         .as_array()
         .into_iter()
         .flatten()
-        .find(|a| a["name"].as_str().is_some_and(|n| n.ends_with(suffix)))
+        .find(|a| {
+            a["name"].as_str().is_some_and(|n| {
+                let lower = n.to_ascii_lowercase();
+                n.ends_with(suffix)
+                    && !["arm64", "aarch64", "armhf"]
+                        .iter()
+                        .any(|arch| lower.contains(arch))
+            })
+        })
         .ok_or_else(|| Error::Launch(format!("{}'s latest release has no {suffix}", e.label)))?;
     let file = asset["name"].as_str().unwrap_or_default();
     let url = asset["browser_download_url"].as_str().unwrap_or_default();
@@ -41,8 +51,14 @@ pub fn install_appimage(home: &Home, name: &str) -> Result<PathBuf, Error> {
     let digest = asset["digest"]
         .as_str()
         .and_then(|d| d.strip_prefix("sha256:"))
-        .ok_or_else(|| Error::Launch(format!("{}'s release gives no SHA-256 to check it by", e.label)))?
-        .to_ascii_lowercase();
+        .map(str::to_ascii_lowercase);
+    let size = asset["size"].as_u64().filter(|&n| n > 0);
+    if digest.is_none() && size.is_none() {
+        return Err(Error::Launch(format!(
+            "{}'s release gives nothing to check it by",
+            e.label
+        )));
+    }
     let dest = home.emulators().join(file);
     if dest.exists() {
         return Ok(dest); // the latest is there already
@@ -63,10 +79,14 @@ pub fn install_appimage(home: &Home, name: &str) -> Result<PathBuf, Error> {
         }
         crate::hash::hex(&h.finalize())
     };
-    if got != digest {
+    let whole = match &digest {
+        Some(d) => got == *d,
+        None => std::fs::metadata(&part)?.len() == size.unwrap_or(0),
+    };
+    if !whole {
         let _ = std::fs::remove_file(&part);
         return Err(Error::Launch(format!(
-            "{file} didn't download whole (its SHA-256 doesn't match)"
+            "{file} didn't download whole (it doesn't match what GitHub gives for it)"
         )));
     }
     {

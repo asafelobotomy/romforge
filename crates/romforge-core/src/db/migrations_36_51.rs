@@ -119,4 +119,19 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         trashed  TEXT,
         PRIMARY KEY (move_id, original)
     );",
+    // 44: milestone 21's All settings: each key changed by hand in
+    // romforge's copy of an emulator's config, with the value it had
+    // (NULL: it wasn't there), so undo puts it back. One save is a batch.
+    "CREATE TABLE config_edits (
+        edit_id    INTEGER PRIMARY KEY,
+        batch      INTEGER NOT NULL,
+        emulator   TEXT NOT NULL,
+        file       TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        old_value  TEXT,
+        new_value  TEXT,
+        created_at TEXT NOT NULL,
+        undone_at  TEXT
+    );
+    CREATE INDEX config_edits_by_emulator ON config_edits (emulator, batch);",
 ];

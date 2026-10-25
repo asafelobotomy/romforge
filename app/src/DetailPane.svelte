@@ -5,11 +5,12 @@
   import SeriesTab from "./SeriesTab.svelte";
   import VersionsTab from "./VersionsTab.svelte";
   import LinksTab from "./LinksTab.svelte";
+  import GameSettings from "./GameSettings.svelte";
   import { displayTitle, statusLabel } from "./labels.js";
   import { ui } from "./ui.svelte.js";
 
   // Details of the picked game: its name, status and what can be done
-  // with it, over five tabs.
+  // with it, over its tabs.
   let { row, detail, lib, busy, listSort, showEmpty, regionFlags = true, open, forget, applyPatchRow, patcher, artPicker, note = $bindable(""), error = $bindable() } = $props();
 </script>
 
@@ -43,7 +44,7 @@
       </p>
     </div>
     <div class="tabs" role="tablist">
-      {#each [["details", "Details"], ["manual", "Manual"], ["development", "Development"], ["series", "Series"], ["versions", "Versions"], ["links", "Links"]] as [k, label]}
+      {#each [["details", "Details"], ["manual", "Manual"], ["development", "Development"], ["series", "Series"], ["versions", "Versions"], ["links", "Links"], ["settings", "Settings"]] as [k, label]}
         <button role="tab" aria-selected={ui.tab === k} class:active={ui.tab === k} onclick={() => (ui.tab = k)}>{label}</button>
       {/each}
     </div>
@@ -58,6 +59,8 @@
       <VersionsTab {row} {lib} {listSort} {open} {regionFlags} />
     {:else if ui.tab === "series"}
       <SeriesTab {detail} {lib} {open} />
+    {:else if ui.tab === "settings"}
+      {#if row.system && row.playable}<GameSettings {row} bind:note bind:error />{:else}<p class="hint">Settings are for identified games.</p>{/if}
     {:else}
       <LinksTab {detail} bind:error />
     {/if}

@@ -6,8 +6,8 @@
 //! `config` means not checked yet, not "has none".
 
 mod known;
-pub use known::KnownEmulator;
 use known::emu;
+pub use known::{FlatpakFrom, KnownEmulator};
 
 pub const RETROARCH_FLATPAK: &str = "org.libretro.RetroArch";
 
@@ -71,7 +71,14 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["-C", "Dolphin.Display.Fullscreen=True"])
-    .config(&["-u", "{config}"]),
+    .config(&["-u", "{config}"])
+    // Its Linux release is a Flatpak from its own repository (its download
+    // page, 2026-10-25); Flathub's is a community build.
+    .flatpak_own(
+        "dolphin",
+        "https://flatpak.dolphin-emu.org/releases.flatpakrepo",
+        "https://flatpak.dolphin-emu.org/releases",
+    ),
     // v1.20.4 (NativeApp.cpp). It reads an ISO inside a zip but not a 7z,
     // so archives stay off.
     emu(
@@ -92,7 +99,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         false,
     )
-    .fullscreen(&["-config", "window:fullscreen=yes"]),
+    .fullscreen(&["-config", "window:fullscreen=yes"])
+    // Flathub's isn't its developers'; its releases have an AppImage.
+    .flatpak_by_others()
+    .official_appimage("flyinghead/flycast", ".AppImage"),
     // 0.10.5 (commandline.c).
     emu(
         "mgba",
@@ -102,7 +112,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         &["{rom}"],
         true,
     )
-    .fullscreen(&["-f"]),
+    .fullscreen(&["-f"])
+    // Flathub's isn't its developers'; its releases have an AppImage.
+    .flatpak_by_others()
+    .official_appimage("mgba-emu/mgba", "-appimage-x64.appimage"),
     // 1.1 (CLI.cpp); archives need a build with archive support.
     emu(
         "melonds",
@@ -134,13 +147,11 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .fullscreen(&["--fullscreen"])
-    // Its Flatpak asks on every start whether to run an "unofficial build"
-    // (`gui_application.cpp`, whenever `FLATPAK_ID` is set; no setting).
-    // The official AppImage doesn't: it is preferred, and offered.
-    .official_appimage("RPCS3/rpcs3-binaries-linux", "_linux64.AppImage")
-    .flatpak_note(
-        "RPCS3's Flatpak asks on every start whether to run an unofficial build (its developers don't support Flatpak builds). The official AppImage doesn't ask; romforge uses it instead once it is downloaded.",
-    ),
+    // Its developers don't make or support a Flatpak (Flathub's asks on
+    // every start whether to run an "unofficial build",
+    // `gui_application.cpp`): their AppImage only.
+    .flatpak_by_others()
+    .official_appimage("RPCS3/rpcs3-binaries-linux", "_linux64.AppImage"),
     // 1.32.1: any setting is a flag; its folder is `MEDNAFEN_HOME`. Not on
     // Flathub (checked 2026-10-19).
     emu("mednafen", "Mednafen", &["mednafen"], "", &["{rom}"], true)
@@ -260,7 +271,11 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         true,
     )
     .fullscreen(&["-nowindow"])
-    .config(&["-inipath", "{config}"]),
+    .config(&["-inipath", "{config}"])
+    // MAME makes only Windows builds (mamedev.org, 0.289). The Linux
+    // build most used is Flathub's (1.09 million installs, 2026-10-25):
+    // the fallback after a MAME of your own (your distribution's).
+    .flatpak_fallback(),
     // MAME needs the machine's own ROM set in its rompath: `Bios/mame/`.
     emu(
         "mame-fm7",
@@ -271,6 +286,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .appimage("mame")
+    .flatpak_fallback()
     .shares("mame")
     .machine("fm7")
     .fullscreen(&["-nowindow"])
@@ -285,6 +301,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .appimage("mame")
+    .flatpak_fallback()
     .shares("mame")
     .machine("fmtowns")
     .fullscreen(&["-nowindow"])

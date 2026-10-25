@@ -245,3 +245,46 @@ pub fn install_ps3_firmware(env: &Env) -> Result<PathBuf, Error> {
     }
     Ok(flash)
 }
+
+/// Have MAME write every one of its settings into romforge's `mame.ini`
+/// (`-createconfig`, which writes the file in the folder it runs in, with
+/// the values it read from it kept), for All settings to list.
+pub fn mame_write_defaults(env: &Env) -> Result<PathBuf, Error> {
+    let home = env
+        .home
+        .as_ref()
+        .ok_or_else(|| Error::Launch("MAME's settings are kept in a RomForge folder: none is set".into()))?;
+    let e = known("mame").ok_or_else(|| Error::Launch("MAME is not in the table".into()))?;
+    if running(e) {
+        return Err(Error::Launch("MAME is running: close it first".into()));
+    }
+    let runner = env
+        .known(e)
+        .ok_or_else(|| Error::Launch("MAME isn't installed".into()))?;
+    let (dir, prep) = owned::managed(e, home, &env.options(e), env.user.as_ref())
+        .ok_or_else(|| Error::Launch("romforge doesn't set MAME up".into()))?;
+    prepare(&prep)?;
+    let args = vec![
+        "-inipath".to_owned(),
+        dir.to_string_lossy().into_owned(),
+        "-createconfig".to_owned(),
+    ];
+    let (program, args, envs) = command(&runner, args, std::slice::from_ref(&dir), &prep.env);
+    let mut cmd = std::process::Command::new(&program);
+    cmd.args(&args)
+        .envs(envs)
+        .current_dir(&dir)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let out =
+        output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    let ini = dir.join("mame.ini");
+    if !out.status.success() || !ini.is_file() {
+        return Err(Error::Launch(format!(
+            "MAME didn't write {} ({})",
+            ini.display(),
+            out.status
+        )));
+    }
+    Ok(ini)
+}

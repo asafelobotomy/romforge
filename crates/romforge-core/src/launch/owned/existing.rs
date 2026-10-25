@@ -18,6 +18,9 @@ use crate::Error;
 use crate::home::Home;
 use crate::launch::KnownEmulator;
 
+mod dirs;
+pub use dirs::{UserDirs, Xdg};
+
 /// One folder to copy: from the emulator's usual place to romforge's.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SetupSource {
@@ -80,6 +83,10 @@ fn settings_files(name: &str) -> &'static [&'static str] {
         "azahar" => &["azahar-emu/qt-config.ini"],
         "lime3ds" => &["lime3ds-emu/qt-config.ini"],
         "citra" => &["citra-emu/qt-config.ini"],
+        "dosbox-staging" => &["dosbox-staging.conf"],
+        "dosbox-x" => &["dosbox-x.conf"],
+        "scummvm" => &["scummvm.ini"],
+        "mame" => &["mame.ini"],
         _ => &[],
     }
 }
@@ -104,9 +111,15 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
     };
     let at = |from: PathBuf, to: PathBuf| vec![SetupSource { from, to }];
     match e.settings_name() {
-        // Its settings file only: its other folders (autoconfig, assets,
-        // remaps) are read where they are, through the paths in it.
-        "retroarch" => both("retroarch/retroarch.cfg", dir.join("retroarch.cfg"), false),
+        // Its settings file and overrides (romforge points
+        // `rgui_config_directory` at its own): its other folders
+        // (autoconfig, assets, remaps) are read where they are, through the
+        // paths in it.
+        "retroarch" => [
+            both("retroarch/retroarch.cfg", dir.join("retroarch.cfg"), false),
+            both("retroarch/config", dir.join("config"), false),
+        ]
+        .concat(),
         "duckstation" => [
             both("duckstation", dir.join("duckstation"), true),
             both("duckstation", dir.join("duckstation"), false),
@@ -154,49 +167,34 @@ fn candidates(e: &KnownEmulator, dir: &Path, home_dir: &Path, xdg: &Xdg) -> Vec<
             both("dolphin-emu", dir.to_path_buf(), true),
         ]
         .concat(),
+        // Their one settings file (DOSBox Staging 0.83.0's
+        // `get_platform_config_dir`, DOSBox-X's `dosbox-x.conf` beside its
+        // versioned ones, ScummVM's XDG one, MAME's `~/.mame`).
+        "dosbox-staging" => both(
+            "dosbox/dosbox-staging.conf",
+            dir.join("dosbox-staging.conf"),
+            false,
+        ),
+        "dosbox-x" => both("dosbox-x/dosbox-x.conf", dir.join("dosbox-x.conf"), false),
+        "scummvm" => both("scummvm/scummvm.ini", dir.join("scummvm.ini"), false),
+        "mame" => at(home_dir.join(".mame/mame.ini"), dir.join("mame.ini")),
         _ => Vec::new(),
     }
 }
 
-/// The user's home and XDG folders: where emulators keep their usual
-/// setup.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UserDirs {
-    pub home: PathBuf,
-    pub xdg: Xdg,
-}
-
-impl UserDirs {
-    /// From `$HOME` and the `$XDG_*` romforge runs with.
-    pub fn detect() -> Option<UserDirs> {
-        let home = PathBuf::from(std::env::var_os("HOME")?);
-        Some(UserDirs {
-            xdg: Xdg::detect(&home),
-            home,
-        })
-    }
-}
-
-/// The XDG base folders romforge itself runs with.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Xdg {
-    pub config: PathBuf,
-    pub data: PathBuf,
-}
-
-impl Xdg {
-    pub fn detect(home_dir: &Path) -> Xdg {
-        let var = |v: &str, fallback: &str| {
-            std::env::var_os(v)
-                .map(PathBuf::from)
-                .filter(|p| p.is_absolute())
-                .unwrap_or_else(|| home_dir.join(fallback))
-        };
-        Xdg {
-            config: var("XDG_CONFIG_HOME", ".config"),
-            data: var("XDG_DATA_HOME", ".local/share"),
-        }
-    }
+/// The user's own settings file for `e` to start romforge's copy from,
+/// when it has none yet (the emulators whose usual setup holds what they
+/// need to find games: MAME's rompath, ScummVM's games): (theirs, ours).
+pub(super) fn seed(e: &KnownEmulator, dir: &Path, user: Option<&UserDirs>) -> Option<(PathBuf, PathBuf)> {
+    let user = user?;
+    let ours: Vec<PathBuf> = settings_files(e.settings_name())
+        .iter()
+        .map(|f| dir.join(f))
+        .collect();
+    candidates(e, dir, &user.home, &user.xdg)
+        .into_iter()
+        .find(|c| c.from.is_file() && ours.contains(&c.to))
+        .map(|c| (c.from, c.to))
 }
 
 /// Emulators that can have their setup imported: RetroArch and the
@@ -218,6 +216,10 @@ pub fn importable(name: &str) -> bool {
             | "azahar"
             | "lime3ds"
             | "citra"
+            | "dosbox-staging"
+            | "dosbox-x"
+            | "scummvm"
+            | "mame"
     )
 }
 

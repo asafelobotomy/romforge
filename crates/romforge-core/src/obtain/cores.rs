@@ -108,6 +108,29 @@ fn info_of(zip: Option<&mut zip::ZipArchive<std::fs::File>>, core: &str) -> BTre
         .collect()
 }
 
+/// Where distributions put RetroArch's core info files.
+const SYSTEM_INFO: &str = "/usr/share/libretro/info";
+
+/// The name `core` gives itself (its info's `corename`), which RetroArch
+/// names its override folder by: from the core info romforge fetched into
+/// `db_dir`, else the system's.
+pub fn library_name(db_dir: Option<&Path>, core: &str) -> Option<String> {
+    let mut zip = db_dir
+        .and_then(|d| std::fs::File::open(d.join(INFO_FILE)).ok())
+        .and_then(|f| zip::ZipArchive::new(f).ok());
+    let from_zip = info_of(zip.as_mut(), core).remove("corename");
+    from_zip
+        .or_else(|| {
+            let text =
+                std::fs::read_to_string(Path::new(SYSTEM_INFO).join(format!("{core}_libretro.info"))).ok()?;
+            text.lines().find_map(|l| {
+                let (k, v) = l.split_once('=')?;
+                (k.trim() == "corename").then(|| v.trim().trim_matches('"').to_owned())
+            })
+        })
+        .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && n != "." && n != "..")
+}
+
 fn manifest(home: &Home) -> BTreeMap<String, Ours> {
     std::fs::read(cores_dir(home).join(MANIFEST))
         .ok()
