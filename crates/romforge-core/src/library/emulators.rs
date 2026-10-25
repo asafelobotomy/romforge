@@ -211,6 +211,32 @@ impl Library {
         launch::move_in::undo(&self.conn, e.settings_name(), home)
     }
 
+    /// What gathering `emulator`'s saves into `Saves/` would do.
+    pub fn gather_saves_plan(&self, emulator: &str) -> Result<crate::saves::gather::GatherPlan, Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        let user = self.env()?.user;
+        let mut plan = crate::saves::gather::plan(&self.conn, e.settings_name(), home, user.as_ref());
+        if plan.problem.is_none() && launch::running(e) {
+            plan.problem = Some(format!("{} is running: close it first", e.label));
+        }
+        Ok(plan)
+    }
+
+    /// Gather `emulator`'s saves into `Saves/`: (gathering id, files moved).
+    pub fn gather_saves(&mut self, emulator: &str) -> Result<(i64, usize), Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        not_running(e)?;
+        let user = self.env()?.user;
+        crate::saves::gather::apply(&self.conn, e.settings_name(), home, user.as_ref())
+    }
+
+    /// Put the last gathering of `emulator`'s saves back.
+    pub fn undo_gather_saves(&mut self, emulator: &str) -> Result<usize, Error> {
+        let (_, e, _) = self.setup_target(emulator)?;
+        not_running(e)?;
+        crate::saves::gather::undo(&self.conn, e.settings_name())
+    }
+
     /// Take back the last setup import of `emulator`.
     pub fn undo_emulator_setup(&mut self, emulator: &str) -> Result<usize, Error> {
         let (_, e, _) = self.setup_target(emulator)?;

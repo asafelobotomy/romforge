@@ -37,6 +37,7 @@ pub mod patch;
 pub mod patcher;
 mod report;
 pub mod rvz;
+pub mod saves;
 pub mod scan;
 pub mod scummvm;
 pub mod search;

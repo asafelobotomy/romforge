@@ -48,6 +48,27 @@ pub async fn undo_move_data(db: tauri::State<'_, Db>, emulator: String) -> Res<u
     with(&db, move |lib| lib.undo_move_data(&emulator)).await
 }
 
+/// What gathering an emulator's saves into Saves/ would do.
+#[tauri::command]
+pub async fn gather_saves_plan(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<romforge_core::saves::gather::GatherPlan> {
+    read(&db, move |lib| lib.gather_saves_plan(&emulator)).await
+}
+
+/// Gather them: (gathering id, files moved).
+#[tauri::command]
+pub async fn gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Res<(i64, usize)> {
+    with(&db, move |lib| lib.gather_saves(&emulator)).await
+}
+
+/// Put the last gathering back.
+#[tauri::command]
+pub async fn undo_gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
+    with(&db, move |lib| lib.undo_gather_saves(&emulator)).await
+}
+
 #[tauri::command]
 pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
     with(&db, move |lib| lib.undo_emulator_setup(&emulator)).await

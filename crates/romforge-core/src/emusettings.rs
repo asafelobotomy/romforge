@@ -62,6 +62,10 @@ pub struct EmulatorTab {
     /// RomForge (`launch::move_in`).
     #[serde(default)]
     pub movable: bool,
+    /// It has saves in the places it used before `Saves/` that can be
+    /// gathered there (`saves::gather`).
+    #[serde(default)]
+    pub gathers: bool,
 }
 
 /// What the Emulator Settings dialog shows.
@@ -319,6 +323,7 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 )
             }),
             movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
+            gathers: env.home.is_some() && crate::saves::gather::gathers(e.settings_name()),
             existing: env
                 .home
                 .as_ref()

@@ -2850,8 +2850,6 @@ named in the user's own settings), that place stays and the key is taken
 out. A key set in Emulator Settings is the user's and stays.
 
 **Not yet:**
-- *Gathering* the saves already in those places into `Saves/` (below),
-  after which each emulator switches by itself.
 - DOSBox Staging and DOSBox-X: an overlay mount (`mount C <game>` then
   `mount C <overlay> -t overlay`; both support it, checked in 0.82.2 and
   2026.10.01) so writes go to `Saves/DOS/<game>/`; it changes their
@@ -2864,13 +2862,19 @@ out. A key set in Emulator Settings is the user's and stays.
   grant for the RomForge folder is what lets it write `Saves/`: to
   check on a real install.
 
-**Gathering existing saves** (to build next): a plan like the game-data
-move-in, from each "saved until now" place above to `Saves/<system>/`
-(mGBA, melonDS and Mednafen saves matched to their system by the
-library's games, as the RetroArch import does; one that can't be told
-stays): a dry run listing each file and where it goes, moved (never
-overwritten: a name clash keeps both, the plan says so), journaled for
-undo. Never while that emulator is running.
+*(Built 2026-10-25: gathering.)* `saves/gather.rs`, `saves gather
+<emulator> [--apply|--undo]` and "Your saves" on the emulator's tab in
+Emulator Settings: the saves in each "saved until now" place above move
+to `Saves/<system>/` (Dolphin's keep their region folder; mGBA's and
+melonDS's beside the game's file, and Mednafen's, go by the game's system
+in the library, and one whose game isn't there stays). A plan first;
+each file moved and journaled (`save_gathers`, migration 46; its paths
+heal with the folder); one whose place in `Saves/` is taken stays where
+it is; refused while the emulator runs; undo puts them back. ScummVM's is
+your own save folder, outside RomForge: your own ScummVM no longer finds
+them there, and the plan shows where they go. Not gathered: Flycast's
+Naomi and Atomiswave flash (named by the ROM file, to match), MAME's
+`nvram/` (relative to wherever it last ran).
 
 RPCS3, Cemu, xemu and the 3DS keep their saves inside a data tree
 (`dev_hdd0/home/…/savedata/`, `mlc01/usr/save/`, the Xbox HDD image,

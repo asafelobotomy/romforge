@@ -379,6 +379,17 @@ the game being started) keeps saving there, so nothing goes missing; a
 save folder you set in Emulator Settings stays yours. RPCS3, Cemu, xemu
 and Dolphin's Wii NAND keep saves inside their own data.
 
+Saves made before that, in an emulator's old places, move in when you
+ask (Emulator Settings → the emulator → Your saves, or the command
+below): a plan first, never over a file already in `Saves/`, journaled,
+refused while the emulator runs, and undone with `--undo`.
+
+```bash
+romforge-cli saves gather duckstation           # the plan
+romforge-cli saves gather duckstation --apply   # moves them
+romforge-cli saves gather duckstation --undo    # puts them back
+```
+
 ```bash
 romforge-cli home create ~        # creates ~/RomForge; an existing library moves in
 romforge-cli home show

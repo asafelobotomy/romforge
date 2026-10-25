@@ -146,4 +146,18 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
     );
     CREATE INDEX firmware_hashes_sha1 ON firmware_hashes (sha1, size);
     CREATE INDEX firmware_hashes_md5 ON firmware_hashes (md5, size);",
+    // 46: milestone 27, stage 1: an emulator's saves gathered into Saves/,
+    // each file journaled so undo puts it back (`saves::gather`).
+    "CREATE TABLE save_gathers (
+        gather_id  INTEGER PRIMARY KEY,
+        emulator   TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        undone_at  TEXT
+    );
+    CREATE TABLE save_gather_files (
+        gather_id INTEGER NOT NULL REFERENCES save_gathers(gather_id),
+        original  TEXT NOT NULL,
+        moved_to  TEXT NOT NULL,
+        PRIMARY KEY (gather_id, original)
+    );",
 ];

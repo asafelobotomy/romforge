@@ -8,7 +8,7 @@ use romforge_core::organize;
 
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
-    ManualCommand, OrganizeCommand, ScummvmCommand, SearchCommand, SteamCommand, ThemesCommand,
+    ManualCommand, OrganizeCommand, SavesCommand, ScummvmCommand, SearchCommand, SteamCommand, ThemesCommand,
 };
 
 #[derive(Parser)]
@@ -169,6 +169,9 @@ pub enum Command {
     /// BIOS files: what each system's emulators need, and what you have
     #[command(subcommand)]
     Firmware(FirmwareCommand),
+    /// In-game saves in the RomForge folder's Saves/
+    #[command(subcommand)]
+    Saves(SavesCommand),
     /// A game's manual (a PDF): yours, archive.org's or Vimm's Lair's scan
     #[command(subcommand)]
     Manual(ManualCommand),

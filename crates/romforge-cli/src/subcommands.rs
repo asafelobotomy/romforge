@@ -7,7 +7,9 @@ use clap::Subcommand;
 use crate::args::OrganizeArgs;
 
 mod firmware;
+mod saves;
 pub use firmware::FirmwareCommand;
+pub use saves::SavesCommand;
 
 #[derive(Subcommand)]
 pub enum DatCommand {

@@ -1,5 +1,6 @@
 <script>
   import GameDataPanel from "./GameDataPanel.svelte";
+  import SavesPanel from "./SavesPanel.svelte";
   import { edit, run } from "./jobs.svelte.js";
   import { size } from "./lib.js";
   import { ask, open as pickFile } from "@tauri-apps/plugin-dialog";
@@ -236,6 +237,7 @@
           </section>
         {/if}
         {#if e.movable}<GameDataPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
+        {#if e.gathers}<SavesPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
         {#each e.settings.map(def) as s}
           <section class="setting">
             {#if s.kind === "bool" || s.kind === "choice"}
