@@ -21,10 +21,13 @@ use crate::launch::{self, Env, KNOWN_EMULATORS, RETROARCH};
 use crate::{Error, systems};
 
 mod data;
+pub mod gate;
 pub use data::{FileReq, Member, Profile};
 mod check;
 mod import;
 use check::{Checker, digest};
+mod index;
+pub(crate) use index::{BiosIndex, index};
 mod journal;
 pub use journal::undo;
 pub mod find;
@@ -309,6 +312,9 @@ pub fn report(
     home: &Home,
     env: &Env,
 ) -> Result<FirmwareReport, Error> {
+    // The library's BIOS rows follow the list (step 6); a database busy
+    // with a scan only leaves them for the next time.
+    let _ = index(conn, dir);
     let (profiles, generated_at) = load(dir)?;
     let mut check = Checker::with_picked(journal::picked(conn)?);
     let mut out: Vec<SystemFirmware> = Vec::new();

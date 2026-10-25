@@ -12,6 +12,7 @@ impl Library {
             env = env.with_emulators_dir(&h.emulators());
             env.home = Some(h.clone());
         }
+        env.firmware_list = self.firmware_dirs().ok().map(|(_, dir)| dir);
         emusettings::apply(&emusettings::load(&self.conn)?, &mut env);
         Ok(env)
     }
@@ -27,7 +28,9 @@ impl Library {
             .extdb_dir()
             .ok_or_else(|| Error::Settings("no folder for downloaded lists".into()))?;
         std::fs::create_dir_all(&dir)?;
-        firmware::download(&dir)
+        let n = firmware::download(&dir)?;
+        firmware::index(&self.conn, &dir)?;
+        Ok(n)
     }
 
     /// The RomForge folder and the downloaded lists' folder, for BIOS work.
@@ -49,6 +52,21 @@ impl Library {
     /// without a RomForge folder or RetroBIOS's list.
     pub fn firmware_needs(&self) -> Vec<firmware::BiosNeed> {
         self.firmware_report().map(|r| r.needs).unwrap_or_default()
+    }
+
+    /// The scanned files that are BIOS files (milestone 20, step 6; a
+    /// member of an archive by its archive), all of them or only the file
+    /// `file_id`, for an import plan like a drop's.
+    pub fn firmware_in_library(&self, file_id: Option<i64>) -> Result<Vec<std::path::PathBuf>, Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT f.path FROM files f JOIN firmware_hashes h ON h.size = f.size
+               AND (h.sha1 = lower(f.sha1) OR h.md5 = lower(f.md5))
+             WHERE f.status = 'unknown' AND (?1 IS NULL OR f.file_id = ?1) ORDER BY f.path",
+        )?;
+        let paths = stmt
+            .query_map([file_id], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(paths.into_iter().map(std::path::PathBuf::from).collect())
     }
 
     /// The usual BIOS places that exist on this computer (RetroArch's

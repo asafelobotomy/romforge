@@ -8,6 +8,13 @@
   import GameSettings from "./GameSettings.svelte";
   import { displayTitle, statusLabel } from "./labels.js";
   import { ui } from "./ui.svelte.js";
+  import { invoke } from "@tauri-apps/api/core";
+
+  // A BIOS file's row: plan importing it on the BIOS page.
+  async function toBios(row) {
+    const paths = await invoke("firmware_in_library", { fileId: Number(row.id.slice(2)) }).catch(() => []);
+    if (paths.length) ui.biosPaths = paths;
+  }
 
   // Details of the picked game: its name, status and what can be done
   // with it, over its tabs.
@@ -35,6 +42,10 @@
           {:else}
             <span class="hint">{row.system ? "Add the game it is for to apply it" : "No game found for it"}</span>
           {/if}
+        {/if}
+        {#if row.status === "firmware"}
+          <span class="hint">{row.bios} for {row.system_name}, by its hash in RetroBIOS's list</span>
+          <button class="link" onclick={() => toBios(row)} disabled={!!busy} title="Put it where this platform's emulators find it (a plan first; your file isn't moved unless Settings says so)">Import to BIOS…</button>
         {/if}
         {#if row.packed}<span class="hint" title="ScummVM can't play a game from an archive">Still zipped: Rename &amp; Cleanup unpacks it into a folder to play</span>{/if}
         {#if row.likely_system}<span class="hint" title="By its file extension only: Search can name it">Looks like {row.likely_system}</span>{/if}

@@ -55,3 +55,46 @@ pub(super) fn readiness(reqs: &[&FileReq], files: &[FileState]) -> (bool, Vec<St
     let ready = plain && groups.values().all(|g| *g) && (!regional || !regions.is_empty());
     (ready, regions)
 }
+
+/// What keeps an emulator from starting games, in the terms of
+/// [`readiness`]: each required file not there, one of a group of
+/// alternatives ("a or b"), one region's file where they are regional.
+pub(super) fn lacking(reqs: &[&FileReq], files: &[FileState]) -> Vec<String> {
+    let ok = |f: &FileState| {
+        matches!(
+            f.state,
+            State::Accepted | State::Present | State::Incomplete | State::PlacedByYou
+        )
+    };
+    let mut out = Vec::new();
+    let mut groups: Vec<(&str, bool, Vec<&str>)> = Vec::new();
+    let (mut regional, mut any_region) = (Vec::new(), false);
+    for (r, f) in reqs.iter().zip(files) {
+        if !r.required || r.hle || f.only_for.is_some() {
+            continue;
+        }
+        if let Some(g) = &r.variant_group {
+            match groups.iter_mut().find(|(n, ..)| n == g) {
+                Some(e) => {
+                    e.1 |= ok(f);
+                    e.2.push(&r.name);
+                }
+                None => groups.push((g, ok(f), vec![&r.name])),
+            }
+        } else if !r.regions.is_empty() {
+            any_region |= ok(f);
+            regional.push(r.name.as_str());
+        } else if !ok(f) {
+            out.push(r.name.clone());
+        }
+    }
+    for (_, have, names) in groups {
+        if !have {
+            out.push(names.join(" or "));
+        }
+    }
+    if !regional.is_empty() && !any_region {
+        out.push(format!("one region's {}", regional.join(", ")));
+    }
+    out
+}

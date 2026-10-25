@@ -72,6 +72,7 @@ pub(super) fn start(
             args,
             env,
             prepare,
+            skipped: Vec::new(),
         }
     };
     // romforge's own config for a known emulator, when there is a RomForge
@@ -90,6 +91,18 @@ pub(super) fn start(
             .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
     };
     let wanted = |name: &str| emulator.is_none_or(|w| w.eq_ignore_ascii_case(name));
+    // Milestone 20, step 5: one without a BIOS file it can't run without
+    // is passed over, saying which (false: it lacks one).
+    let lacks = |name: &str, why_not: &mut Vec<String>| {
+        let missing = crate::firmware::gate::missing(conn, env, system, name);
+        if !missing.is_empty() {
+            why_not.push(format!(
+                "{name}: no {} (drop it on the BIOS page)",
+                missing.join(", ")
+            ));
+        }
+        missing.is_empty()
+    };
     let mut why_not = Vec::new();
 
     for u in user_emulators(conn)?
@@ -116,12 +129,15 @@ pub(super) fn start(
                     bios: bios.as_deref(),
                     system: system.key,
                 };
-                return Ok(spec(
-                    u.name.clone(),
-                    &Runner::Program(p),
-                    fill(&u.args, &vars),
-                    Prepare::default(),
-                    uses_home,
+                return Ok(passed_over(
+                    &why_not,
+                    spec(
+                        u.name.clone(),
+                        &Runner::Program(p),
+                        fill(&u.args, &vars),
+                        Prepare::default(),
+                        uses_home,
+                    ),
                 ));
             }
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
@@ -148,6 +164,7 @@ pub(super) fn start(
                 rom.clone()
             };
             match env.core(core) {
+                Some(_) if !lacks(&name, &mut why_not) => {}
                 Some(c) => {
                     let (config, mut prepare) = owned(&RETROARCH).unzip();
                     if let (Some(dir), Some(p)) = (&config, &mut prepare) {
@@ -163,7 +180,10 @@ pub(super) fn start(
                     };
                     let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
                     let uses_home = prepare.is_some();
-                    return Ok(spec(name, &ra, args, prepare.unwrap_or_default(), uses_home));
+                    return Ok(passed_over(
+                        &why_not,
+                        spec(name, &ra, args, prepare.unwrap_or_default(), uses_home),
+                    ));
                 }
                 None => why_not.push(format!("{name}: core not installed")),
             }
@@ -188,6 +208,7 @@ pub(super) fn start(
             continue;
         }
         match env.known(e) {
+            Some(_) if !lacks(e.name, &mut why_not) => {}
             Some(r) => {
                 let (config, mut prepare) = owned(e).unzip();
                 if let (Some(dir), Some(p), "duckstation") = (&config, &mut prepare, e.name) {
@@ -211,12 +232,15 @@ pub(super) fn start(
                 };
                 let args = known_args(e, &vars, &env.options(e));
                 let uses_home = prepare.is_some() || (bios.is_some() && !e.bios.is_empty());
-                return Ok(spec(
-                    e.name.to_owned(),
-                    &r,
-                    args,
-                    prepare.unwrap_or_default(),
-                    uses_home,
+                return Ok(passed_over(
+                    &why_not,
+                    spec(
+                        e.name.to_owned(),
+                        &r,
+                        args,
+                        prepare.unwrap_or_default(),
+                        uses_home,
+                    ),
                 ));
             }
             None => why_not.push(format!("{} not installed", e.name)),
@@ -330,4 +354,10 @@ fn playlist_for(disk: &Path) -> Option<PathBuf> {
         };
         entries.iter().any(|e| dir.join(e) == disk)
     })
+}
+
+/// `spec`, saying what was passed over before it.
+fn passed_over(why_not: &[String], mut spec: LaunchSpec) -> LaunchSpec {
+    spec.skipped = why_not.to_vec();
+    spec
 }

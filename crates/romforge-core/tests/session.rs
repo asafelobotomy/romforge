@@ -22,6 +22,7 @@ fn spec(dir: &Path, body: &str) -> LaunchSpec {
         args: Vec::new(),
         env: Vec::new(),
         prepare: Default::default(),
+        skipped: Vec::new(),
     }
 }
 

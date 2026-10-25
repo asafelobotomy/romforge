@@ -14,7 +14,7 @@ use crate::{Error, systems};
 /// Every row of the library, before versions are grouped.
 pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
     let files: Vec<FileRec> = conn
-        .prepare("SELECT file_id, path, member, status, size, sha1 FROM files ORDER BY path, member")?
+        .prepare("SELECT file_id, path, member, status, size, sha1, md5 FROM files ORDER BY path, member")?
         .query_map([], |r| {
             Ok(FileRec {
                 id: r.get(0)?,
@@ -23,6 +23,7 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
                 status: r.get(3)?,
                 size: r.get(4)?,
                 sha1: r.get(5)?,
+                md5: r.get(6)?,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -158,6 +159,7 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
         seen_as.entry(f).or_default().insert((s, g));
     }
 
+    let bios_index = crate::firmware::BiosIndex::read(conn)?;
     let mut rows: BTreeMap<String, GameRow> = BTreeMap::new();
     let game_row = |system_id: Option<i64>, title: &str| -> GameRow {
         let sys = system_id.and_then(systems::by_id);
@@ -191,6 +193,7 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
             packed: false,
             likely_system: None,
             unmatched: false,
+            bios: None,
             base_id: None,
             system_id,
             file_ids: Vec::new(),
@@ -266,11 +269,20 @@ pub(super) fn rows_of(conn: &Connection) -> Result<Vec<GameRow>, Error> {
                 Some(Status::Manual) => RowStatus::ByYou,
                 Some(Status::Unknown) | None => RowStatus::Unknown,
             };
+            // An unknown file that is a BIOS file (milestone 20, step 6).
+            let bios = (status == RowStatus::Unknown)
+                .then(|| bios_index.get(f.size, &f.sha1, &f.md5))
+                .flatten();
+            let (system_id, status) = match &bios {
+                Some((sys, _)) => (Some(*sys), RowStatus::Firmware),
+                None => (system_id, status),
+            };
             let id = format!("f:{}", f.id);
             rows.entry(id.clone()).or_insert_with(|| {
                 let mut r = game_row(system_id, &title);
                 // A lone file is no complete game, whatever its title.
                 (r.id, r.status, r.cue_differs, r.cue_fits) = (id, status, false, false);
+                r.bios = bios.map(|(_, name)| name);
                 r
             })
         };

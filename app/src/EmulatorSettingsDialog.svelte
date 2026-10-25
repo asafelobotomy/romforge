@@ -71,7 +71,7 @@
       if (n != null) note = `Setup import taken back: ${n} file${n === 1 ? "" : "s"} removed.`;
     } else {
       const r = await run(`Copying ${name}'s setup…`, "import_emulator_setup", { emulator: name });
-      if (r) note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.kept ? `, ${r.kept} already there kept.` : ".");
+      if (r) note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.saves ? ` (${r.saves} saves and states)` : "") + (r.kept ? `, ${r.kept} already there kept.` : ".");
     }
     if (open) {
       const keep = draft;
@@ -216,7 +216,7 @@
             {#if e.existing.sources.length}
               <p class="hint">
                 romforge starts {e.label} from its own folder, so what's in its usual one isn't seen there: {e.existing.files}
-                file{e.existing.files === 1 ? "" : "s"} ({size(e.existing.bytes)}) in {e.existing.sources.map((s) => s.from).join(", ")}.
+                file{e.existing.files === 1 ? "" : "s"} ({size(e.existing.bytes)}) in {e.existing.sources.map((s) => s.from).join(", ")}{#if e.existing.saves}, and {e.existing.saves} save{e.existing.saves === 1 ? "" : "s"} and state{e.existing.saves === 1 ? "" : "s"} that go into romforge's folder for each platform{/if}{#if e.existing.unplaced} ({e.existing.unplaced} more whose platform can't be told stay where they are){/if}.
                 Importing copies them across (memory cards, saves, controller mappings, settings; caches stay behind). Your
                 files aren't touched, and nothing already in romforge's folder is replaced except its settings file.
               </p>

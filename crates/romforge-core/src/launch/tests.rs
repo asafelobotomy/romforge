@@ -322,6 +322,7 @@ fn user_emulators_get_their_bios_folder() {
     );
 }
 
+mod bios;
 mod consoles;
 mod sources;
 

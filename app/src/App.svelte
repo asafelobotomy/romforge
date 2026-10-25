@@ -180,6 +180,8 @@
     detail = d;
   }
 
+  $effect(() => void (ui.biosPaths && show("bios"))); // "Import to BIOS…": its plan on the BIOS page
+
   function show(v) {
     view = v;
     error = "";

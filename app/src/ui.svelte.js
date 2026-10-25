@@ -14,4 +14,6 @@ export const ui = $state({
   versionsMode: storedView("versions"),
   // The Series tab's sort.
   seriesSort: remembered("series", { key: "order", dir: 1 }),
+  // BIOS files to plan an import of on the BIOS page ("Import to BIOS").
+  biosPaths: null,
 });

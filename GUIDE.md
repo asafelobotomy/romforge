@@ -306,7 +306,10 @@ RetroArch gets a game override (`config/<core>/<game>.cfg` in romforge's
 copy, which `rgui_config_directory` points at; it wins over the rest),
 DuckStation `gamesettings/<serial>.ini` (the serial from the disc, as
 scanned: `SLUS_007.07` is `SLUS-00707`). Import my existing setup also
-copies RetroArch's own overrides. RetroArch's tab lists its cores: where
+copies RetroArch's own overrides, and its saves and states into romforge's
+folder for each platform (by the game each is named after, or the core
+folder RetroArch sorted it into; one whose platform can't be told stays
+where it is). RetroArch's tab lists its cores: where
 each is installed, its licence (non-commercial ones are flagged and asked
 about), and what the libretro buildbot has; a download goes into
 `RomForge/Emulators/cores/`, which romforge looks in first. romforge uses
@@ -468,6 +471,22 @@ present; files only some games load don't decide it: a sub-system's
 (Satellaview, DSi, as the systems table names them) and a cartridge
 chip's (bsnes's `*.program.rom`), shown as "only Satellaview games",
 "only games with that chip".
+
+**Play checks first.** Before starting a game, romforge checks the core or
+emulator it would use the same way. One that isn't ready is passed over
+for the platform's next one (a core that runs without the file, with its
+own high-level BIOS, still starts); if none is, Play starts nothing and
+says which file is missing and that the BIOS page takes it. The status
+line says what was passed over, and `launch --dry-run` lists it. Without
+RetroBIOS's list, or for an emulator it has no profile of, nothing is held
+back.
+
+**BIOS files among your games.** A scanned file that matches a BIOS file
+in RetroBIOS's list (size and SHA1 or MD5, for a platform other than
+arcade) shows in Unidentified as a **BIOS file** for its platform instead
+of unknown, with **Import to BIOS…**, which opens its plan on the BIOS
+page. **From your library** on the BIOS page plans all of them at once.
+A file a Redump BIOS DAT verifies stays verified.
 
 ## Manuals
 

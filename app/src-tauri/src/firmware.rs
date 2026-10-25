@@ -17,6 +17,12 @@ pub async fn firmware_found(db: tauri::State<'_, Db>) -> Res<Vec<PathBuf>> {
     read(&db, move |lib| lib.firmware_found()).await
 }
 
+/// The scanned files that are BIOS files (all, or one file's).
+#[tauri::command]
+pub async fn firmware_in_library(db: tauri::State<'_, Db>, file_id: Option<i64>) -> Res<Vec<PathBuf>> {
+    read(&db, move |lib| lib.firmware_in_library(file_id)).await
+}
+
 /// The library's BIOS badges.
 #[tauri::command]
 pub async fn firmware_needs(db: tauri::State<'_, Db>) -> Res<Vec<romforge_core::firmware::BiosNeed>> {

@@ -116,6 +116,10 @@ pub struct GameRow {
     /// bookshelf draws it to scale.
     #[serde(default)]
     pub box_size: [u16; 3],
+    /// For a [`RowStatus::Firmware`] row: the BIOS file it is (its name in
+    /// RetroBIOS's list).
+    #[serde(default)]
+    pub bios: Option<String>,
     /// Not matched to a game yet ([`RowStatus::unmatched`], or no platform
     /// found at all): listed under Unidentified, not with the games.
     pub unmatched: bool,
@@ -246,6 +250,7 @@ struct FileRec {
     status: String,
     size: u64,
     sha1: String,
+    md5: String,
 }
 
 pub fn library(conn: &Connection) -> Result<LibraryView, Error> {

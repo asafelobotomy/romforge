@@ -9,6 +9,7 @@ fn ended(game: &str, started: u64, seconds: u64) -> Ended {
             system: "SNES".into(),
             emulator: "retroarch:snes9x".into(),
             started,
+            skipped: Vec::new(),
         },
         seconds,
         code: Some(0),

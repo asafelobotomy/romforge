@@ -38,6 +38,7 @@ pub(super) fn bare_row(id: String, system_id: Option<i64>, title: &str, status: 
         packed: false,
         likely_system: None,
         unmatched: false,
+        bios: None,
         base_id: None,
         system_id,
         file_ids: Vec::new(),

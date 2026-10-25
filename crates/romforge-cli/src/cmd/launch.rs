@@ -32,6 +32,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 spec.emulator,
                 shown.join(" ")
             );
+            for why in &spec.skipped {
+                println!("  passed over {why}");
+            }
             for w in &spec.prepare.writes {
                 let verb = if dry_run { "would set" } else { "sets" };
                 println!("  {verb} {} key(s) in {}", w.keys.len(), w.path.display());
@@ -123,9 +126,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             } else {
                 let d = lib.import_emulator_setup(&emulator)?;
                 println!(
-                    "{emulator}: {} file(s) copied ({} KiB), {} already there kept",
+                    "{emulator}: {} file(s) copied ({} KiB; {} saves and states), {} already there kept",
                     d.copied,
                     d.bytes / 1024,
+                    d.saves,
                     d.kept
                 );
             }

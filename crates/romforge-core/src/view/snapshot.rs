@@ -28,6 +28,7 @@ pub fn fingerprint(conn: &Connection) -> Result<u64, Error> {
         // changes which). `games` needs no line: a DAT imported again gets
         // a new `dat_id`, so `dats` changes with its games.
         "SELECT count(*), total(fp(path)) FROM scan_roots",
+        "SELECT count(*), total(fp(size, sha1, md5, system_id, name)) FROM firmware_hashes",
     ];
     let mut text = String::new();
     for q in PARTS {

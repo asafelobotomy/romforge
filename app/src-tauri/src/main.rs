@@ -192,6 +192,7 @@ fn main() {
             firmware::firmware_report,
             firmware::firmware_needs,
             firmware::firmware_found,
+            firmware::firmware_in_library,
             firmware::firmware_download,
             firmware::firmware_import_plan,
             firmware::firmware_import,

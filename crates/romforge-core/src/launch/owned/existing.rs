@@ -20,6 +20,9 @@ use crate::launch::KnownEmulator;
 
 mod dirs;
 pub use dirs::{UserDirs, Xdg};
+mod saves;
+mod undo;
+pub use undo::undo;
 
 /// One folder to copy: from the emulator's usual place to romforge's.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -36,12 +39,23 @@ pub struct ExistingSetup {
     pub sources: Vec<SetupSource>,
     pub files: usize,
     pub bytes: u64,
+    /// RetroArch's saves and states placed in romforge's per-platform
+    /// folders ([`saves`]), and those whose platform can't be told.
+    #[serde(default)]
+    pub saves: usize,
+    #[serde(default)]
+    pub unplaced: usize,
+    #[serde(skip)]
+    save_pairs: Vec<(PathBuf, PathBuf)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct SetupImported {
     pub copied: usize,
     pub bytes: u64,
+    /// Of `copied`, saves and states.
+    #[serde(default)]
+    pub saves: usize,
     /// Already in romforge's folder, left as they were.
     pub kept: usize,
 }
@@ -223,8 +237,15 @@ pub fn importable(name: &str) -> bool {
     )
 }
 
-/// What `e`'s existing setup holds.
-pub fn existing(e: &KnownEmulator, home: &Home, home_dir: &Path, xdg: &Xdg) -> ExistingSetup {
+/// What `e`'s existing setup holds (`conn`: the library, to tell
+/// RetroArch's saves' platforms by their games).
+pub fn existing(
+    e: &KnownEmulator,
+    home: &Home,
+    home_dir: &Path,
+    xdg: &Xdg,
+    conn: Option<&Connection>,
+) -> ExistingSetup {
     let dir = home.emulator_config(e.settings_name());
     let sources: Vec<SetupSource> = candidates(e, &dir, home_dir, xdg)
         .into_iter()
@@ -239,11 +260,19 @@ pub fn existing(e: &KnownEmulator, home: &Home, home_dir: &Path, xdg: &Xdg) -> E
         })
         .ok();
     }
+    let placed = sources
+        .iter()
+        .find(|s| e.settings_name() == "retroarch" && s.from.ends_with("retroarch.cfg"))
+        .map(|s| saves::retroarch(home, &s.from, home_dir, conn))
+        .unwrap_or_default();
     ExistingSetup {
         emulator: e.settings_name().to_owned(),
         sources,
         files,
         bytes,
+        saves: placed.pairs.len(),
+        unplaced: placed.unplaced,
+        save_pairs: placed.pairs,
     }
 }
 
@@ -286,7 +315,7 @@ pub fn import(
     home_dir: &Path,
     xdg: &Xdg,
 ) -> Result<SetupImported, Error> {
-    let setup = existing(e, home, home_dir, xdg);
+    let setup = existing(e, home, home_dir, xdg, Some(conn));
     if setup.sources.is_empty() {
         return Err(Error::Launch(format!(
             "no existing {} setup found on this computer",
@@ -345,44 +374,22 @@ pub fn import(
             Ok(())
         })?;
     }
-    Ok(done)
-}
-
-/// Take back the last setup import of `emulator`: the files it copied go,
-/// settings files it replaced come back. Returns how many files went.
-pub fn undo(conn: &Connection, emulator: &str) -> Result<usize, Error> {
-    let batch: i64 = conn
-        .query_row(
-            "SELECT import_id FROM setup_imports WHERE emulator = ?1 AND undone_at IS NULL
-             ORDER BY import_id DESC LIMIT 1",
-            [emulator],
-            |r| r.get(0),
-        )
-        .map_err(|_| Error::Launch(format!("no setup import of {emulator} to undo")))?;
-    let mut stmt = conn.prepare("SELECT path, backup FROM setup_import_files WHERE import_id = ?1")?;
-    let rows: Vec<(String, Option<String>)> = stmt
-        .query_map([batch], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<Result<_, _>>()?;
-    let mut n = 0;
-    for (path, backup) in rows {
-        match std::fs::remove_file(&path) {
-            Ok(()) => n += 1,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+    // Saves and states, never over one there.
+    for (from, to) in &setup.save_pairs {
+        if to.exists() {
+            done.kept += 1;
+            continue;
         }
-        if let Some(b) = backup {
-            std::fs::rename(&b, &path)?;
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
         }
+        crate::organize::copy_checked(from, to)?;
+        journal(to, None)?;
+        done.copied += 1;
+        done.saves += 1;
+        done.bytes += from.metadata().map(|m| m.len()).unwrap_or(0);
     }
-    conn.execute(
-        concat!(
-            "UPDATE setup_imports SET undone_at = ",
-            crate::db::now!(),
-            " WHERE import_id = ?1"
-        ),
-        [batch],
-    )?;
-    Ok(n)
+    Ok(done)
 }
 
 #[cfg(test)]

@@ -805,7 +805,7 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     writes the AUR's `romforge-bin` PKGBUILD (repackaging the `.deb`, all
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
-    Every tag from v0.1.0 to v0.12.0 was built and released by the
+    Every tag from v0.1.0 to v0.13.0 was built and released by the
     workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
     (the owner's account); Debian's and Fedora's package names for the
     recommended packages are unchecked (Fedora's libav plugin may be
@@ -1856,7 +1856,7 @@ the long test files became smaller test binaries with shared helpers in
 `tests/common/`. Only the systems table (`systems/table.rs`) is exempt.
 `tests/file_length.rs` fails CI on a file over the limit.
 
-## Firmware (milestone 20; researched 2026-10-19, partly built)
+## Firmware (milestone 20; researched 2026-10-19, built 2026-10-25)
 
 romforge knows which core runs a system but not whether that core has the
 BIOS it needs: a PS1 game "launches" and RetroArch stops at a missing
@@ -2068,19 +2068,43 @@ In this order:
    file. RPCS3's devices and Cemu's MLC aren't copied (romforge points at
    them). RetroArch: its `retroarch.cfg` only, so its controller setup
    comes along and its autoconfig, assets and remaps are read where they
-   are; its core-sorted saves aren't mapped to romforge's per-system
-   folders yet.
+   are; its saves and states go to romforge's per-system folders (see
+   step 6's leftover).
 5. *Launch.* Before starting a core, check its required files. If they're
    missing, try the next core in the `cores` column whose files are
    complete (or that needs none, per its profile: an HLE BIOS), else say
    which file is missing and that the BIOS page takes it, and start
    nothing. `--dry-run` shows the check.
+   *(Built 2026-10-25.)* `firmware/gate.rs`: the launch loop asks, for
+   each core or emulator it would use, which required files it lacks
+   (only those that decide readiness are hashed: no big optional ones);
+   one lacking any is passed over with "<name>: no <file> (drop it on the
+   BIOS page)", the error names them when nothing is left, and the
+   started game carries what was passed over (`LaunchSpec::skipped`,
+   `Playing::skipped`: the app's status line, `launch --dry-run`). No
+   RomForge folder, no list or no profile: nothing is held back.
 6. *BIOS found among games.* Loose BIOS files in scanned folders show as
    unknown today. Files matching RetroBIOS system files by size +
    SHA1/MD5 become "firmware for <system>" rows instead, with "Import to
    BIOS" (system files only: its arcade sets overlap MAME's DATs and its
    game-engine data is out of scope). The Redump BIOS DATs keep verifying
    where they cover.
+   *(Built 2026-10-25.)* `firmware/index.rs`: `firmware_hashes`
+   (migration 45) holds RetroBIOS's system files with a size and a SHA1
+   or MD5, for non-arcade platforms, no BIOS zips; built from the list on
+   download and when the BIOS page finds a newer one. An unknown file
+   matching one is a `Firmware` row ("BIOS file", under Unidentified,
+   with its platform and the file's name); "Import to BIOS…" on it and
+   "From your library" on the BIOS page open the import plan
+   (`firmware_in_library`).
+   *(Built 2026-10-25, the leftover.)* "Import my existing setup" for
+   RetroArch also brings its saves and states
+   (`launch/owned/existing/saves.rs`): from the folders the user's
+   `retroarch.cfg` names, flat or sorted by core or content folder, each
+   into `Saves/<platform>/` or `States/<platform>/`, its platform from the
+   library game it is named after, else from a core folder whose core runs
+   one platform only; never over a file there, journaled for undo; one
+   whose platform can't be told stays where it is (counted).
 
 Not used: the `provenance/` catalog matches (No-Intro / Redump / TOSEC
 already verify those files directly); the per-frontend pack layouts
@@ -2788,6 +2812,168 @@ sources (licences and keys checked against house rule 10).
 - RAWG (weak on retro);
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
+
+## Saves (milestone 27; researched 2026-10-25, not built)
+
+A **Saves** page in the sidebar, above DATs, with one tab per system
+that has saves. Each tab shows that system's in-game saves (SRAM, memory
+cards, save folders; not save states) the way the console showed them.
+Built in stages, each usable on its own.
+
+### Stage 1: every save in `Saves/` (first)
+
+Owner's rule: all save files live in `RomForge/Saves/<system key>/`
+wherever the emulator allows it. Today only RetroArch
+(`launch/owned.rs`, `savefile_directory`) and Azahar/Lime3DS/Citra
+(`[Data Storage]`) are pointed there. The others save into their own
+config folder (`Emulators/config/<emulator>/`), next to the ROM, or
+somewhere romforge doesn't set. Each owned config gets one more key,
+read from the emulator's source at its release (as 1.3 did):
+
+| Emulator | Today | Key (to check against source) |
+|---|---|---|
+| DuckStation | `config/duckstation/memcards/` | `[MemoryCards] Directory` |
+| PCSX2 | `config/PCSX2/memcards/` | `[Folders] MemoryCards` |
+| mGBA | next to the ROM | `savegamePath` |
+| melonDS | next to the ROM | `SaveFilePath` |
+| Mednafen | `config/sav/` | `filesys.path_sav` |
+| PPSSPP | `config/ppsspp/PSP/SAVEDATA/` | its memory stick folder (how it is set on Linux: to check) |
+| Dolphin | `config/GC/<region>/Card A/`, `config/Wii/title/…` | `GCIFolderAPath`/`GCIFolderBPath`; Wii: `NANDRootPath` or only `title/` (to decide). The Flatpak ignores `-u`: to check |
+| Flycast | `config/data/flycast/` (VMUs) | to find |
+| ScummVM | `~/.local/share/scummvm/saves/` | `savepath` in `[scummvm]` |
+| MAME | `nvram/` relative to romforge's working folder | `-nvram_directory` |
+| DOSBox Staging | inside the game's folder | an overlay mount: the game folder stays as it is, writes go to `Saves/DOS/<game>/` |
+| DOSBox-X | inside the game's folder | to check (overlay support) |
+
+RPCS3, Cemu, xemu and the 3DS keep their saves inside a data tree
+(`dev_hdd0/home/…/savedata/`, `mlc01/usr/save/`, the Xbox HDD image,
+`sdmc/`). Those trees already move into RomForge through the
+game-data move-in; their saves stay where the tree is and the Saves
+page reads them there. User-added emulators are left alone.
+
+**A backup copy of every save that lives elsewhere** (owner's rule):
+saves that have to stay outside `Saves/` (the data trees above, the
+user's own `dev_hdd0`, MLC or 3DS storage when not moved in, anything an
+emulator won't redirect) are copied into
+`Saves/<system key>/backup/<emulator>/`, keeping the tree's own layout
+below that (`savedata/<title ID>/`, `usr/save/<tid>/`, …), so a backup
+can be restored for future use. The copy is made when a game launched by
+romforge exits (only the folders that changed, compared by size and
+mtime, then SHA1) and on demand from the Saves page. The original is
+only ever read. Each copy keeps its earlier versions (the last N, a
+setting), so a broken save doesn't overwrite the good one. Restore is a
+dry run first, the current save goes to the trash, journaled for undo,
+never while that emulator is running.
+
+**Exception: xemu.** Its saves are inside the HDD image
+(`xbox_hdd.qcow2`, up to 8 GiB), and copying the whole image is
+deferred. xemu saves get no backup until romforge can read single saves
+out of the image (to research, below).
+
+**Saves already made elsewhere** come in with a plan like the game-data
+move-in: a dry run listing each file and where it goes, moved (never
+overwritten: a name clash keeps both, the plan says so), journaled for
+undo. Never while that emulator is running.
+
+**One `.srm` per core?** RetroArch's sort-by-core is off, so every core
+of a system shares one file per game. That is right when the cores'
+formats agree (most cartridge systems) and wrong when they don't: to
+check per system before stage 2 and, where needed, a per-core folder for
+those systems only.
+
+### Stage 2: the index and a plain list
+
+A core `saves` module walks `Saves/` (and the data trees above),
+read-only, and lists each save: system, emulator, file, size, modified,
+and the game it belongs to. Cached by path, size and mtime like the
+scan.
+
+**Matching to a game** is strict, like rule 8:
+- by serial or title ID, through `dat::serial_key`: PS1 (`BASLUS-00892…`
+  in the card's directory), PS2 (`BASLUS-20062` folder), GameCube (the
+  GCI's game code and maker, `GALE01`), PSP and PS3 (`ULUS10041`,
+  `BLUS…` folders, `PARAM.SFO`), Wii, 3DS and Wii U (title ID folders);
+- by the content's file name for RetroArch, mGBA, melonDS and Mednafen
+  (`<content stem>.srm` / `.sav`; for discs the `.m3u` or sheet);
+- otherwise "not matched", never a guess by title.
+
+A game's Details gets a line ("2 saves, last 3 days ago") that opens its
+tab on the Saves page. The plain list is every system's first view and
+stays the fallback for formats without their own view.
+
+### Stage 3: each console's own view
+
+The icons, banners and titles come from the save files (the user's own
+data). The frame around them is romforge's own artwork in the spirit of
+the console: never the console maker's art, fonts or sounds. Easiest
+first:
+
+1. **PlayStation** — the Memory Card screen: two cards side by side,
+   15 blocks each in a 3 × 5 grid, the save's 16 × 16 icon (1–3 frames,
+   4-bit palette) animated, its Shift-JIS title below. Raw 128 KiB
+   cards (`.mcd`, `.mcr`, DuckStation's per-game cards). Our own parser
+   (directory frames are simple), or `psxmem` (BSD-3-Clause) if it
+   reads icons right.
+2. **GameCube** — the memory card screen with slots A and B: each GCI's
+   64-byte header gives the 96 × 32 banner, the 32 × 32 icon (up to 8
+   frames, its own speeds), the two-line comment and the block count.
+   Dolphin's GCI folders and `.raw` cards both.
+3. **PSP and PS3** — the XMB's Saved Data list: `ICON0.PNG`, `PIC1.PNG`
+   as the background, title and details from `PARAM.SFO`. These stay
+   plain even when the save data is encrypted.
+4. **Dreamcast** — the VMU file manager: 128 KiB VMUs, 32 × 32 icons in
+   16 colours, animated.
+5. **N64 and Saturn** — their memory managers were text lists: Controller
+   Pak notes (`.mpk`, the N64's own character set), Saturn internal and
+   cartridge memory (Beetle's `.bkr` / `.bcr`).
+6. **Cartridge systems** (NES, SNES, Game Boy, GBA, Genesis, DS): the
+   console had no save manager, the save was the cartridge's battery. A
+   shelf of the games' cartridge art (GameTDB, libretro) with each save's
+   size and date.
+7. **3DS and Wii U** — Data Management's list of software, with the
+   game's icon from the library (the save holds none).
+8. **ScummVM** — its saves carry their own thumbnail and name.
+9. **Wii** — Data Management's grid of banners, from `banner.bin` in
+   the NAND (plain in Dolphin's NAND; an exported `data.bin` is
+   encrypted).
+10. **PS2** — the Browser's rotating 3D icons: `icon.sys` (title,
+    background colours, lights) and the `.icn` model, animation and
+    texture, drawn with WebGL; a flat first frame until then. `ps2mc`
+    (MIT, Rust) is new and little used: read it, or write our own from
+    the ps2icon description.
+11. **Xbox** — later: saves sit inside the qcow2 HDD's FATX partition;
+    waits on reading `xbox_hdd.qcow2` (Open, below).
+
+Each format is its own core module (rule 11), and each view its own
+small component.
+
+### Stage 4: copy, delete, back up
+
+The PS1 screen's Copy, Copy All and Delete, and the same for the other
+views: between a system's cards or folders, export one save (`.mcs`,
+`.gci`, a folder as a zip), import one into a card. Rule 6's guardrails
+apply even though saves aren't ROMs: a dry run, journaled, deletes to the
+trash, a card rewritten only after the new one reads back right, and
+never while its emulator is running. Save sync (Launcher stage 4)
+builds on the same index.
+
+**Open:**
+- The keys marked "to check" above, from each emulator's source.
+- Whether Dolphin's whole NAND or only its `title/` folder goes in
+  `Saves/Wii/` (the NAND also holds the Wii Menu).
+- Per-game memory cards: DuckStation's per-title cards are its default;
+  PCSX2's folder cards would make PS2 saves browsable one game at a
+  time, but change how existing cards load.
+- Which of `psxmem` and `ps2mc` to use or to write ourselves.
+- How many backup versions to keep by default.
+- **To research: reading `xbox_hdd.qcow2`.** Read qcow2 as a stream
+  (header, L1/L2 tables, clusters; compressed clusters and backing files
+  if xemu writes them), then the Xbox partition layout and FATX, down to
+  `E:\UDATA\<title ID>\` (`TitleMeta.xbx`, `SaveImage.xbx`, each save's
+  folder). Read-only, while xemu is closed. Look for permissively
+  licensed Rust or C references (rule 9) and xemu's own image code;
+  writing back (restore into the image) is a separate, later question.
+  This unblocks xemu's backups (stage 1) and its view (stage 3).
 
 ## Code review follow-ups (2026-10-18)
 

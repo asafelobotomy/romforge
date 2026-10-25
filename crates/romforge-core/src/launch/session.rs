@@ -23,6 +23,8 @@ pub struct Playing {
     pub emulator: String,
     /// Seconds since 1970 when it started.
     pub started: u64,
+    /// What was passed over first ([`LaunchSpec::skipped`]).
+    pub skipped: Vec<String>,
 }
 
 /// How it ended.
@@ -63,6 +65,7 @@ impl Session {
                 system: spec.system.clone(),
                 emulator: spec.emulator.clone(),
                 started,
+                skipped: spec.skipped.clone(),
             },
             control: spec.prepare.control,
             child: Arc::new(Mutex::new(Some(child))),

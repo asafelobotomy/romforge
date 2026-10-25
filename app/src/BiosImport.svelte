@@ -3,6 +3,7 @@
   import { run } from "./jobs.svelte.js";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { ask, open as pick } from "@tauri-apps/plugin-dialog";
+  import { ui } from "./ui.svelte.js";
 
   // Dropping BIOS files on the BIOS page (milestone 20, step 3): a folder,
   // files, zips or 7z. The core matches each file by its contents and says
@@ -51,6 +52,25 @@
       error = String(e).replace(/^(launch|settings): /, "");
     }
     working = false;
+  }
+
+  // A BIOS file's row sent its files here ("Import to BIOS").
+  $effect(() => {
+    if (!active || !ui.biosPaths) return;
+    const p = ui.biosPaths;
+    ui.biosPaths = null;
+    look(p);
+  });
+
+  // The BIOS files your scanned folders hold (shown as "BIOS file" in
+  // Unidentified), as an import plan.
+  async function inLibrary() {
+    const found = await invoke("firmware_in_library", { fileId: null }).catch((e) => {
+      error = String(e);
+      return null;
+    });
+    if (found && !found.length) note = "No BIOS files among your scanned games (with RetroBIOS's list downloaded).";
+    else if (found) look(found);
   }
 
   // The usual BIOS places that exist here, shown as an import plan.
@@ -113,6 +133,7 @@
     <button onclick={() => choose(true)} disabled={!!busy || working}>Add folder…</button>
     <button onclick={() => choose(false)} disabled={!!busy || working}>Add files…</button>
     <button onclick={find} disabled={!!busy || working} title="Look in the usual places: RetroArch's system folder, EmuDeck's and RetroDECK's BIOS folders, the emulators' own">Find BIOS on this computer</button>
+    <button onclick={inLibrary} disabled={!!busy || working} title="BIOS files among your scanned games (Unidentified shows them as BIOS files)">From your library</button>
     <span class="spacer"></span>
     <button onclick={undo} disabled={!!busy || working} title="Take away what the last import wrote">Undo last import</button>
   </div>

@@ -67,6 +67,10 @@ pub struct LaunchSpec {
     /// romforge's config for the emulator, written first by
     /// [`Session::start`] (or [`spawn`]).
     pub prepare: Prepare,
+    /// The choices passed over before this one, and why (a core without
+    /// its BIOS file, one not installed).
+    #[serde(default)]
+    pub skipped: Vec<String>,
 }
 
 /// An emulator a user added (`emulator add`).
@@ -111,6 +115,9 @@ pub struct Env {
     /// The RomForge folder: emulators romforge writes a config for run
     /// from their copy in it. `None`: as they are set up.
     pub home: Option<crate::home::Home>,
+    /// The folder of downloaded lists holding RetroBIOS's, for the BIOS
+    /// check before a game starts (`firmware::gate`); `None`: no check.
+    pub firmware_list: Option<PathBuf>,
     /// The user's home and XDG folders, where RPCS3, Cemu and xemu keep the
     /// game data romforge's config points at.
     pub user: Option<existing::UserDirs>,

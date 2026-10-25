@@ -7,7 +7,7 @@ export async function startGame(row, art, { call, nowPlaying, setNote }) {
   if (!row) return;
   setNote(`Starting ${displayTitle(row)}…`);
   const r = await call("launch", { rowId: row.id });
-  setNote("");
+  setNote(r?.skipped?.length ? `Started with ${r.emulator}; passed over ${r.skipped.join("; ")}.` : "");
   if (!r) return;
   nowPlaying.started(r, { box3d: art?.box3d ?? null, boxart: art?.boxart ?? null, platform: art?.platform ?? row.system_name ?? r.system });
 }

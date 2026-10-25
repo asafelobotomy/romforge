@@ -11,6 +11,7 @@ export const statusLabel = {
   derivative: "Translation or hack (identified by you)",
   detected: "Identified by ScummVM's game list",
   unknown: "Unknown",
+  firmware: "BIOS file",
   missing: "Not in your library",
   patch: "Patch file",
 };

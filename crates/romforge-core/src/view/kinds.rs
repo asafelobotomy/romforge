@@ -25,6 +25,10 @@ pub enum RowStatus {
     /// MD5s of their first bytes; never counted as verified).
     Detected,
     Unknown,
+    /// No game, but a BIOS file RetroBIOS lists for a platform, by size and
+    /// SHA1 or MD5 (milestone 20, step 6): "Import to BIOS" puts it where
+    /// its emulators find it.
+    Firmware,
     /// Listed only ([`super::listing`]): the original of versions you have
     /// (translations, hacks, patches) when you don't have it.
     Missing,
@@ -86,7 +90,7 @@ impl RowStatus {
     pub fn unmatched(self) -> bool {
         matches!(
             self,
-            RowStatus::Unknown | RowStatus::Candidate | RowStatus::WrongSystem
+            RowStatus::Unknown | RowStatus::Candidate | RowStatus::WrongSystem | RowStatus::Firmware
         )
     }
 

@@ -134,4 +134,16 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         undone_at  TEXT
     );
     CREATE INDEX config_edits_by_emulator ON config_edits (emulator, batch);",
+    // 45: milestone 20, step 6: RetroBIOS's system files by size and hash,
+    // from the list downloaded (`firmware::index`), so a scanned file that
+    // is one shows as a BIOS file (house rule 8: size + SHA1 or MD5).
+    "CREATE TABLE firmware_hashes (
+        size      INTEGER NOT NULL,
+        sha1      TEXT,
+        md5       TEXT,
+        system_id INTEGER NOT NULL,
+        name      TEXT NOT NULL
+    );
+    CREATE INDEX firmware_hashes_sha1 ON firmware_hashes (sha1, size);
+    CREATE INDEX firmware_hashes_md5 ON firmware_hashes (md5, size);",
 ];

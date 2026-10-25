@@ -326,7 +326,7 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 .filter(|_| launch::existing::importable(e.name))
                 .map(|(h, user)| {
                     let user = PathBuf::from(user);
-                    launch::existing::existing(e, h, &user, &launch::existing::Xdg::detect(&user))
+                    launch::existing::existing(e, h, &user, &launch::existing::Xdg::detect(&user), Some(conn))
                 }),
         });
     }

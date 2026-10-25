@@ -46,6 +46,14 @@ impl Checker {
         }
     }
 
+    /// One of `slot`'s files, checked where it goes.
+    pub(super) fn state(&mut self, slot: &Slot, f: &FileReq) -> FileState {
+        FileState {
+            only_for: slot.only_for(f),
+            ..self.file(f, slot.place(f))
+        }
+    }
+
     fn file(&mut self, f: &FileReq, place: PathBuf) -> FileState {
         let mut missing = Vec::new();
         if !f.contents.is_empty() {

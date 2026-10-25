@@ -11,7 +11,7 @@ fn an_existing_setup_comes_across_and_goes_back() {
     };
     let home = Home::create(&t.path().join("parent")).unwrap();
     let pcsx2 = crate::launch::known("pcsx2").unwrap();
-    assert!(existing(pcsx2, &home, &user, &xdg).sources.is_empty());
+    assert!(existing(pcsx2, &home, &user, &xdg, None).sources.is_empty());
 
     // The user's PCSX2: settings with a controller mapping, a memory
     // card, a cache; and a Flatpak copy too.
@@ -32,7 +32,7 @@ fn an_existing_setup_comes_across_and_goes_back() {
     let bios = home.bios().join("pcsx2");
     prepare(&standalone("pcsx2", &dir, &bios).unwrap()).unwrap();
 
-    let found = existing(pcsx2, &home, &user, &xdg);
+    let found = existing(pcsx2, &home, &user, &xdg, None);
     assert_eq!(found.sources.len(), 2);
     assert_eq!(found.files, 3, "the cache is left out");
 
@@ -74,4 +74,76 @@ fn an_existing_setup_comes_across_and_goes_back() {
         theirs.join("memcards/Mcd001.ps2").exists(),
         "the user's own files are untouched"
     );
+}
+
+/// RetroArch's own saves and states come into romforge's per-platform
+/// folders: by their game, else by the core folder RetroArch sorted them
+/// into; one whose platform can't be told stays where it is.
+#[test]
+fn retroarch_saves_go_to_their_platforms() {
+    let t = tempfile::tempdir().unwrap();
+    let user = t.path().join("user");
+    let xdg = Xdg {
+        config: user.join(".config"),
+        data: user.join(".local/share"),
+    };
+    let home = Home::create(&t.path().join("parent")).unwrap();
+    let ra = xdg.config.join("retroarch");
+    std::fs::create_dir_all(ra.join("saves/Genesis Plus GX")).unwrap();
+    std::fs::create_dir_all(ra.join("saves/SwanStation")).unwrap();
+    std::fs::create_dir_all(ra.join("states")).unwrap();
+    std::fs::write(
+        ra.join("retroarch.cfg"),
+        "savefile_directory = \":/saves\"\nsavestate_directory = \"~/.config/retroarch/states\"\n",
+    )
+    .unwrap();
+    // Named by a game of the library; in a core's folder; neither.
+    std::fs::write(ra.join("saves/Genesis Plus GX/Sonic (USA).srm"), b"sonic").unwrap();
+    std::fs::write(ra.join("saves/SwanStation/Unknown Disc.srm"), b"psx").unwrap();
+    std::fs::write(ra.join("saves/Mystery.srm"), b"?").unwrap();
+    std::fs::write(ra.join("states/Sonic (USA).state1"), b"state").unwrap();
+    std::fs::write(ra.join("states/Sonic (USA).state1.png"), b"png").unwrap();
+
+    let conn = crate::db::open_in_memory().unwrap();
+    let md = crate::systems::by_key("Genesis").unwrap();
+    conn.execute(
+        "INSERT INTO scan_roots (root_id, path, scanned_at) VALUES (1, '/g', 'now')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO files (file_id, root_id, path, size, crc32, md5, sha1, status, scanned_at)
+         VALUES (1, 1, '/g/Sonic (USA).zip', 5, '0', 'x', 'abc', 'unknown', 'now')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO manual_ids (sha1, size, system_id, title, created_at) VALUES ('abc', 5, ?1, 'Sonic (USA)', 'now')",
+        [md.id],
+    )
+    .unwrap();
+
+    let retroarch = crate::launch::known("retroarch").unwrap();
+    let found = existing(retroarch, &home, &user, &xdg, Some(&conn));
+    // SwanStation's folder needs its core info to name it: not here.
+    let swan = crate::obtain::library_name(None, "swanstation").is_some();
+    assert_eq!(found.saves, 3 + usize::from(swan), "{found:?}");
+    let done = import(&conn, retroarch, &home, &user, &xdg).unwrap();
+    assert_eq!(done.saves, found.saves);
+    let md_saves = home.saves().join(md.key);
+    assert_eq!(std::fs::read(md_saves.join("Sonic (USA).srm")).unwrap(), b"sonic");
+    assert!(home.states().join(md.key).join("Sonic (USA).state1").is_file());
+    assert!(
+        home.states()
+            .join(md.key)
+            .join("Sonic (USA).state1.png")
+            .is_file()
+    );
+    assert!(ra.join("saves/Mystery.srm").is_file(), "theirs stay");
+    // Nothing of romforge's is replaced on a second import; undo takes them back.
+    let again = import(&conn, retroarch, &home, &user, &xdg).unwrap();
+    assert_eq!(again.saves, 0);
+    undo(&conn, "retroarch").unwrap();
+    undo(&conn, "retroarch").unwrap();
+    assert!(!md_saves.join("Sonic (USA).srm").exists());
 }
