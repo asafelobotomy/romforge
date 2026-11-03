@@ -20,6 +20,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             regions,
             threads,
             list_age_days,
+            save_copies,
             start_fullscreen,
             steamgriddb_key,
             igdb_client_id,
@@ -39,6 +40,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || regions.is_some()
                 || threads.is_some()
                 || list_age_days.is_some()
+                || save_copies.is_some()
                 || start_fullscreen.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
@@ -82,6 +84,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if let Some(d) = list_age_days {
                 s.list_age_days = d;
             }
+            if let Some(n) = save_copies {
+                s.save_copies = n;
+            }
             if let Some(f) = start_fullscreen {
                 s.start_fullscreen = f;
             }
@@ -121,6 +126,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                     d => format!("{d} days"),
                 }
             );
+            println!("save copies     {}", s.save_copies);
             println!(
                 "threads         {}",
                 match s.threads {

@@ -25,7 +25,7 @@ fn a_changed_save_gets_a_copy_and_old_ones_go() {
         b"a channel, no save",
     );
 
-    let done = run(&home, "dolphin", None, 100).unwrap();
+    let done = run(&home, "dolphin", None, 100, KEEP).unwrap();
     assert_eq!((done.copied, done.same), (1, 0));
     let copies = home.saves().join("Wii/backup/dolphin").join(save);
     assert_eq!(
@@ -34,10 +34,10 @@ fn a_changed_save_gets_a_copy_and_old_ones_go() {
     );
 
     // Unchanged: no new copy. Changed: one; past KEEP, the oldest go.
-    assert_eq!(run(&home, "dolphin", None, 200).unwrap().same, 1);
+    assert_eq!(run(&home, "dolphin", None, 200, KEEP).unwrap().same, 1);
     for (i, now) in (300..300 + KEEP as u64 + 1).enumerate() {
         put(&wii.join(save).join("rmg/save.dat"), format!("v{i}").as_bytes());
-        run(&home, "dolphin", None, now).unwrap();
+        run(&home, "dolphin", None, now, KEEP).unwrap();
     }
     let v = versions(&copies);
     assert_eq!(v.len(), KEEP);
@@ -48,7 +48,7 @@ fn a_changed_save_gets_a_copy_and_old_ones_go() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].save, save);
     assert_eq!(listed[0].versions, v);
-    assert!(run(&home, "duckstation", None, 1).unwrap() == BackedUp::default());
+    assert!(run(&home, "duckstation", None, 1, KEEP).unwrap() == BackedUp::default());
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn a_save_comes_back_from_its_copy_and_the_restore_undoes() {
     let wii = home.emulator_config("dolphin").join("Wii");
     let save = Path::new("title/00010000/524d4745/data");
     put(&wii.join(save).join("save.dat"), b"good");
-    run(&home, "dolphin", None, 100).unwrap();
+    run(&home, "dolphin", None, 100, KEEP).unwrap();
     put(&wii.join(save).join("save.dat"), b"broken");
     put(&wii.join(save).join("extra.dat"), b"new file");
 

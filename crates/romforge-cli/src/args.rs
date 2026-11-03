@@ -217,6 +217,10 @@ pub enum Command {
         /// this many days old [default: 30; 0: never]
         #[arg(long)]
         list_age_days: Option<u32>,
+        /// Copies kept of each save folder that lives outside Saves/
+        /// [default: 5; 1 to 50]
+        #[arg(long)]
+        save_copies: Option<u32>,
         /// The app opens in its fullscreen mode (for a pad and a TV)
         #[arg(long)]
         start_fullscreen: Option<bool>,

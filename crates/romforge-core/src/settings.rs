@@ -98,6 +98,9 @@ pub struct Settings {
     /// goes online for them.
     #[serde(default = "default_list_age")]
     pub list_age_days: u32,
+    /// Copies kept of each save folder that lives outside `Saves/`.
+    #[serde(default = "crate::saves::backup::default_keep")]
+    pub save_copies: u32,
     /// What romforge's window does while a game plays: "tray" (hidden,
     /// a tray icon brings it back; the default), "minimise" or "stay".
     /// It comes back by itself when the game ends.
@@ -181,6 +184,7 @@ impl Default for Settings {
             platform_icons: String::new(),
             threads: 0,
             list_age_days: default_list_age(),
+            save_copies: crate::saves::backup::default_keep(),
             while_playing: default_while_playing(),
             start_fullscreen: false,
             attract_minutes: 0,
@@ -362,6 +366,10 @@ impl Settings {
             list_age_days: match self.list_age_days {
                 0..=3650 => self.list_age_days,
                 n => return bad(format!("{n} days is too long (0 for never, at most 3650)")),
+            },
+            save_copies: match self.save_copies {
+                1..=crate::saves::backup::MOST_KEPT => self.save_copies,
+                n => return bad(format!("{n} copies of a save: from 1 to 50")),
             },
             platform_icons: {
                 let t = self.platform_icons.trim();

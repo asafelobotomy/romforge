@@ -6,7 +6,7 @@
 //! `Saves/<system>/backup/<emulator>/<its path in the tree>/<when>/`, the
 //! tree's layout kept, `<when>` a UTC time (`2026-10-25T15-00-00Z`). A copy
 //! is made only when the folder differs from the last one (its files, their
-//! sizes and SHA1s); the last [`KEEP`] copies of each are kept, older ones
+//! sizes and SHA1s); the last [`KEEP`] copies (a setting) of each are kept, older ones
 //! removed. The original is only ever read. A copy is written beside its
 //! place as `<when>.part` and renamed when whole.
 //!
@@ -24,8 +24,16 @@ use crate::launch::{SaveTree, save_tree};
 
 pub mod restore;
 
-/// The copies kept of each save folder.
+/// The copies kept of each save folder unless Settings says otherwise.
 pub const KEEP: usize = 5;
+
+/// Most copies Settings may keep of each save folder.
+pub const MOST_KEPT: u32 = 50;
+
+/// [`KEEP`] as a setting's default.
+pub fn default_keep() -> u32 {
+    KEEP as u32
+}
 
 /// One game's save folder and its copies.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -124,8 +132,15 @@ fn versions(dir: &Path) -> Vec<String> {
 }
 
 /// Copy every save folder of `name` that changed since its last copy.
-/// `now`: seconds since 1970, naming the copies.
-pub fn run(home: &Home, name: &str, user: Option<&UserDirs>, now: u64) -> Result<BackedUp, Error> {
+/// `now`: seconds since 1970, naming the copies; `keep`: how many copies
+/// of each save folder stay.
+pub fn run(
+    home: &Home,
+    name: &str,
+    user: Option<&UserDirs>,
+    now: u64,
+    keep: usize,
+) -> Result<BackedUp, Error> {
     let mut done = BackedUp::default();
     let Some(tree) = save_tree(name, home, user) else {
         return Ok(done);
@@ -168,7 +183,7 @@ pub fn run(home: &Home, name: &str, user: Option<&UserDirs>, now: u64) -> Result
         }
         std::fs::rename(&part, at.join(&when))?;
         done.copied += 1;
-        for old in versions(&at).iter().skip(KEEP) {
+        for old in versions(&at).iter().skip(keep) {
             std::fs::remove_dir_all(at.join(old))?;
             done.pruned += 1;
         }

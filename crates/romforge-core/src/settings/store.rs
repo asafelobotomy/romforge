@@ -33,6 +33,9 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         list_age_days: get("list_age_days")?
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(default_list_age),
+        save_copies: get("save_copies")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(crate::saves::backup::default_keep),
         while_playing: get("while_playing")?.unwrap_or_else(default_while_playing),
         start_fullscreen: get("start_fullscreen")?.as_deref() == Some("1"),
         attract_minutes: get("attract_minutes")?.and_then(|v| v.parse().ok()).unwrap_or(0),
@@ -123,6 +126,7 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
                 Some(s.threads).filter(|&n| n > 0).map(|n| n.to_string()),
             ),
             ("list_age_days", Some(s.list_age_days.to_string())),
+            ("save_copies", Some(s.save_copies.to_string())),
             ("while_playing", Some(s.while_playing.clone())),
             (
                 "start_fullscreen",

@@ -46,7 +46,8 @@ impl Library {
     pub fn backup_saves(&self, emulator: &str) -> Result<backup::BackedUp, Error> {
         let (home, e, _) = self.setup_target(emulator)?;
         not_running(e)?;
-        backup::run(home, e.settings_name(), self.env()?.user.as_ref(), now())
+        let keep = self.settings()?.save_copies as usize;
+        backup::run(home, e.settings_name(), self.env()?.user.as_ref(), now(), keep)
     }
 
     /// After a game of `emulator` ended: its saves outside `Saves/` copied.
@@ -58,7 +59,8 @@ impl Library {
         };
         if backup::backs_up(e.settings_name()) {
             let user = self.env().ok().and_then(|env| env.user);
-            let _ = backup::run(home, e.settings_name(), user.as_ref(), now());
+            let keep = self.settings().map_or(backup::KEEP, |s| s.save_copies as usize);
+            let _ = backup::run(home, e.settings_name(), user.as_ref(), now(), keep);
         }
     }
 

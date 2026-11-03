@@ -3031,7 +3031,12 @@ builds on the same index.
   PCSX2's folder cards would make PS2 saves browsable one game at a
   time, but change how existing cards load.
 - Which of `psxmem` and `ps2mc` to use or to write ourselves.
-- Whether the 5 copies kept of each save should be a setting.
+- *(Decided 2026-11-03.)* Dolphin's NAND stays where it is, and only its
+  `title/<high>/<low>/data/` save folders are backed up (already so, in
+  `launch/owned/save_trees.rs`); the Wii Menu's own files are never copied.
+  Nothing of the NAND goes into `Saves/Wii/` itself.
+- *(Built 2026-11-03.)* The copies kept of each save is a setting
+  (`save_copies`, 1 to 50, default 5): Settings, and `settings --save-copies`.
 - **To research: reading `xbox_hdd.qcow2`.** Read qcow2 as a stream
   (header, L1/L2 tables, clusters; compressed clusters and backing files
   if xemu writes them), then the Xbox partition layout and FATX, down to

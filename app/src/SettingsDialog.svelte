@@ -9,6 +9,7 @@
   import FullscreenSettings from "./FullscreenSettings.svelte";
   import { knowFsInfo } from "./fullscreen/fsinfo.js";
   import SteamSettings from "./SteamSettings.svelte";
+  import SaveCopiesSetting from "./SaveCopiesSetting.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -277,6 +278,8 @@
         </select>
         <p class="hint">Refresh first reads ScummVM's and MAME's lists again when the installed program changed, and downloads the DATs and lists of the systems you have files for once they are this old. Never: Refresh doesn't go online for them (Download DATs still does).</p>
       </section>
+
+      <SaveCopiesSetting bind:value={draft.save_copies} />
 
       <section class="setting">
         <label class="flabel" for="threads">Threads for long jobs</label>
