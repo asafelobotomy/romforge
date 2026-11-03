@@ -11,7 +11,7 @@ use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use super::{LaunchSpec, prepare};
+use super::{LaunchSpec, prepare, sandbox};
 use crate::Error;
 
 /// What is running.
@@ -124,6 +124,10 @@ impl Session {
             // the pid is still its own.
             unsafe {
                 libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+                // A Flatpak's wrapper doesn't pass the signal on.
+                for pid in sandbox::app_pids(child.id()) {
+                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                }
             }
         }
         let until = Instant::now() + grace;
@@ -137,6 +141,14 @@ impl Session {
         if let Some(child) = guard.as_mut()
             && child.try_wait().ok().flatten().is_none()
         {
+            #[cfg(unix)]
+            for pid in sandbox::app_pids(child.id()) {
+                // SAFETY: as above; `child` isn't reaped yet, so the
+                // wrapper it names still stands over these.
+                unsafe {
+                    libc::kill(pid as libc::pid_t, libc::SIGKILL);
+                }
+            }
             child.kill()?;
             // Reaped here (a killed process goes at once); its status stays
             // for `wait`.

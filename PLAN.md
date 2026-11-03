@@ -36,7 +36,12 @@ is listed under each milestone as **Open**.
    - **Extras** (`--extras`): libretro-database's ROM hack and homebrew DATs.
    Requests to one host are kept 1 s apart (5 s for DAT-o-MATIC, per its
    robots.txt).
-   **Open:** scan the rest of the collection.
+   Checked 2026-11-03 on a copy of the real database: refresh over the
+   Source folder (31 GB, 86 files) and `Games/` (70 files) gives 117 matched,
+   0 candidate, 0 wrong system, 10 unknown (all English-patched or hacked
+   dumps, none in a DAT), 40 identified by you.
+   **Open:** a collection with systems beyond NES, SNES, Genesis, GBA, N64,
+   PlayStation, PlayStation 2 and PSP.
 2. **Organize** — `organize plan|apply|undo|history`: rename/move matched
    files into `<dest>/<system>/…` named by the DAT, a dry run first, every
    move journaled in the database for undo, nothing ever overwritten
@@ -47,6 +52,9 @@ is listed under each milestone as **Open**.
    region order (`--regions`, default USA, World, Europe, Japan), then
    highest revision. Tried on a copy of the real library: 22 moves, rescan,
    undo restored the tree exactly.
+   Again on 2026-11-03 on a scratch copy of today's `Games/` (70 entries,
+   5 GiB): 46 moves applied, 0 failed; undo restored 46, and the tree (names
+   and sizes) matched the one before.
    **Open:** apply on the real collection (owner's call).
 3. **Enrich** — `enrich`, `info`: metadata (genre, developer, publisher,
    franchise, release date, players, some descriptions) from
@@ -64,8 +72,11 @@ is listed under each milestone as **Open**.
    padding skipped, audio byte order restored, unstored pregap as silence)
    and hashed as a member; a DVD CHD hashes as its `.iso`. A disc whose
    tracks all match but whose cue differs is "have (cue differs)".
-   **Open:** no real CHD has been scanned yet (tests write CHDs with the
-   `chd` crate's encoder); GD-ROM CHDs follow the format but are untested.
+   Real CHDs scanned 2026-11-03 (PlayStation: Blood Omen, Castlevania SotN,
+   Medal of Honor, Silent Hill, Parasite Eve, Tenchu and more): they verify
+   against Redump.
+   **Open:** GD-ROM CHDs follow the format but are untested (no Dreamcast
+   dump in the collection).
 5. **Launch** — `launch`, `emulator list|add|remove`: RetroArch (on `PATH`
    or Flatpak) with the system's first installed core from the `cores`
    column, else a standalone emulator from the `emulators` column
@@ -1159,8 +1170,12 @@ RetroDECK's `bios.json` is GPL-3.0: not used.
 - **Stop:** SIGTERM first (RetroArch 1.22.2's first SIGTERM is a clean
   quit, read in `platform_unix.c`; DuckStation, PCSX2, Dolphin and
   Mednafen likewise), a kill only after 10 seconds. The process is polled,
-  never reaped early, so the signal can't reach a reused pid. Not yet
-  checked: a Flatpak emulator (the signal reaches `flatpak run`).
+  never reaped early, so the signal can't reach a reused pid. Checked
+  2026-11-03 with the Dolphin Flatpak (Flatpak 1.18.2): `flatpak run`
+  becomes `bwrap`, which does not pass SIGINT or SIGTERM on, so the program
+  inside kept running. `launch/sandbox.rs` now signals the emulator itself
+  (read from `/proc`, below the `bwrap` wrappers), for the quit and the
+  kill. Not yet seen with an emulator that is quitting on SIGTERM.
 - **Play time:** each run of 10 seconds or more goes into
   `play_sessions` (migration 38) by system key and title; Details shows
   "Played 3.2 h · 5 times · last 19 Oct 2026". CLI: `launch --wait`
@@ -2855,8 +2870,9 @@ out. A key set in Emulator Settings is the user's and stays.
 - Flycast writes a disc without a game ID's VMU in its data folder
   whatever `VMUPath` says (`oslib.cpp`).
 - The Dolphin Flatpak gets `host:ro` only; romforge's `--filesystem`
-  grant for the RomForge folder is what lets it write `Saves/`: to
-  check on a real install.
+  grant for the RomForge folder is what lets it write `Saves/`. Checked
+  2026-11-03 on the real Dolphin Flatpak: a `--filesystem=<folder>` on the
+  command line makes the folder writable beside `host:ro`.
 
 *(Built 2026-10-25: gathering.)* `saves/gather.rs`, `saves gather
 <emulator> [--apply|--undo]` and "Your saves" on the emulator's tab in
