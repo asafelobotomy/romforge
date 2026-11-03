@@ -176,8 +176,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     was written, never with Keep originals. Journaled; undo removes the new
     files and moves the originals back. Since built: emptying the trash
     from the app (milestone 16) and multi-disc `.m3u` playlists (milestone
-    14, 5). Not yet: `.nfo` (only `.romforge.md`), GDI/Dreamcast and
-    `.img`/`.ccd` discs.
+    14, 5). Since built (2026-11-03): an `.nfo` (XML, `cleanup/nfo.rs`)
+    beside the `.romforge.md`. Not yet: GDI/Dreamcast and `.img`/`.ccd`
+    discs.
 11. **More free sources** (tier 1 of house rule 10: free, no account, no
     key; reviewed 2026-10-17), in this order:
     1. *libretro, more of it*: `Named_Logos` from the thumbnail server

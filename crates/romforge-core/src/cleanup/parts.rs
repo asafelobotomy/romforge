@@ -273,6 +273,15 @@ pub(super) fn extras(
         format!("{}{}", sanitize(&d.row.title), layout::DETAILS_SUFFIX),
         details_md(&d).into_bytes(),
     )];
+    out.push((
+        format!("{}.nfo", sanitize(&d.row.title)),
+        super::nfo::nfo(
+            &d.row.title,
+            d.row.system_name.as_deref().unwrap_or(""),
+            &d.fields,
+        )
+        .into_bytes(),
+    ));
     for (kind, path) in &d.art {
         if let Ok(data) = std::fs::read(path) {
             let ext = crate::enrich::image_ext(&data).unwrap_or("png");

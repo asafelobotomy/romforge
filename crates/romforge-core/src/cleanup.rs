@@ -4,7 +4,7 @@
 //!
 //! - Cartridge games: `<dest>/<system>/<DAT name>.zip` holding the ROMs
 //!   (DAT ROM names; your own file names for games you named) and a
-//!   `romforge/` folder with the art and `<name>.romforge.md`.
+//!   `romforge/` folder with the art, `<name>.romforge.md` and `<name>.nfo`.
 //! - Disc games: `<dest>/<system>/<DAT name>.chd` (CD tracks, or a DVD
 //!   image), with art and details in a sidecar folder of the same name (CHD
 //!   can't hold extra files).
@@ -195,6 +195,7 @@ mod apply;
 mod chd;
 mod compress;
 mod items;
+mod nfo;
 mod parts;
 mod plan;
 #[cfg(test)]

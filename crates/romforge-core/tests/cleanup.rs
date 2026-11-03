@@ -48,10 +48,23 @@ fn cartridges_are_zipped_under_their_dat_names_and_undo_restores() {
     assert_eq!(report.done, plan.items.len());
     assert_eq!(report.trashed, 1);
 
-    // The new zip: the ROM under its DAT name and the details file.
+    // The new zip: the ROM under its DAT name and the details files.
     let zip = s.library.join("Game Boy/Test GB.zip");
-    assert_eq!(zip_names(&zip), ["Test GB.gb", "romforge/Test GB.romforge.md"]);
+    assert_eq!(
+        zip_names(&zip),
+        [
+            "Test GB.gb",
+            "romforge/Test GB.nfo",
+            "romforge/Test GB.romforge.md"
+        ]
+    );
     let mut z = zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
+    let mut nfo_text = String::new();
+    z.by_name("romforge/Test GB.nfo")
+        .unwrap()
+        .read_to_string(&mut nfo_text)
+        .unwrap();
+    assert!(nfo_text.contains("<title>Test GB</title>"), "{nfo_text}");
     let mut md_text = String::new();
     z.by_name("romforge/Test GB.romforge.md")
         .unwrap()
