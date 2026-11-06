@@ -4,6 +4,13 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum SavesCommand {
+    /// List the saves in Saves/, each with its game when its serial or file
+    /// name points at exactly one (read-only)
+    List {
+        /// Only this system's folder in Saves/ (`PlayStation`, `SNES`, ...)
+        #[arg(long)]
+        system: Option<String>,
+    },
     /// Move an emulator's saves from the places it used before into
     /// Saves/<system>/ (shows the plan unless --apply; refused while it
     /// runs). A save whose place in Saves/ is taken stays where it is.

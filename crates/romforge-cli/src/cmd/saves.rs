@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use romforge_core::Library;
+use romforge_core::saves::index::MatchedBy;
 
 use crate::args::Command;
 use crate::subcommands::SavesCommand;
@@ -12,6 +13,22 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         return Ok(());
     };
     match c {
+        SavesCommand::List { system } => {
+            let saves: Vec<_> = lib
+                .list_saves()?
+                .into_iter()
+                .filter(|s| system.as_ref().is_none_or(|k| s.system.eq_ignore_ascii_case(k)))
+                .collect();
+            for s in &saves {
+                let game = match (&s.game, s.matched_by) {
+                    (Some(g), Some(how)) => format!("{g}  (by {})", how_label(how)),
+                    _ => "not matched".to_owned(),
+                };
+                println!("{}/{}  {} bytes  {game}", s.system, s.file.display(), s.size);
+            }
+            let matched = saves.iter().filter(|s| s.game.is_some()).count();
+            println!("{} saves, {matched} matched to a game", saves.len());
+        }
         SavesCommand::Gather {
             emulator,
             apply,
@@ -94,4 +111,11 @@ fn gather(lib: &mut Library, emulator: &str, apply: bool, undo: bool) -> Result<
         }
     }
     Ok(())
+}
+
+fn how_label(how: MatchedBy) -> &'static str {
+    match how {
+        MatchedBy::Serial => "serial",
+        MatchedBy::FileName => "file name",
+    }
 }

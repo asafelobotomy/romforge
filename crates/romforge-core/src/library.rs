@@ -14,6 +14,7 @@ mod lists;
 mod manuals;
 mod open;
 mod patching;
+mod save_list;
 mod saves;
 mod scan_report;
 mod scanning;
