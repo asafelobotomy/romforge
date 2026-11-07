@@ -72,7 +72,7 @@ fn rvz(item: &Item, staging: &Path, out: &Path) -> Result<(), Error> {
 
 fn z3ds(item: &Item, staging: &Path, out: &Path) -> Result<(), Error> {
     let part = item.parts.first().ok_or_else(|| failed(out, "no 3DS file"))?;
-    let mut head = vec![0u8; crate::ident::PREFIX_LEN];
+    let mut head = vec![0u8; crate::ident::ID_PREFIX_LEN];
     let n = crate::chunks::read_full(&mut open_part(part, staging)?, &mut head)?;
     let form = crate::ident::z3ds_form(&head[..n])
         .filter(|f| f.decrypted)

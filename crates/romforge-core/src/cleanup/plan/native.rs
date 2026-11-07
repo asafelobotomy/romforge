@@ -76,7 +76,7 @@ pub(super) fn native(system: &crate::systems::System, parts: &[Part]) -> Result<
             // A zip member stored with an unusual method is unpacked to a
             // folder of its own while its header is read, then removed.
             let staging = std::env::temp_dir().join(format!("romforge-header-{}", std::process::id()));
-            let mut head = vec![0u8; crate::ident::PREFIX_LEN];
+            let mut head = vec![0u8; crate::ident::ID_PREFIX_LEN];
             let read = open_part(part, &staging)
                 .map_err(|e| e.to_string())
                 .and_then(|mut r| crate::chunks::read_full(&mut r, &mut head).map_err(|e| e.to_string()));

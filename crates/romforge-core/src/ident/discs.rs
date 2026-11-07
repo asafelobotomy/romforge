@@ -39,18 +39,23 @@ impl<'a> Sectors<'a> {
         let extent = u32::from_le_bytes(root[2..6].try_into().ok()?) as usize;
         let size = u32::from_le_bytes(root[10..14].try_into().ok()?) as usize;
         let mut out = Vec::new();
+        // A sector not at hand ends the listing; a record that doesn't read
+        // is skipped. Either way the entries read so far are kept.
+        let entry = |rec: &[u8]| -> Option<(String, usize, usize)> {
+            let len = *rec.get(32)? as usize;
+            let name = rec.get(33..33 + len)?;
+            let name = name.split(|&b| b == b';').next().unwrap_or(name);
+            let lba = u32::from_le_bytes(rec.get(2..6)?.try_into().ok()?) as usize;
+            let bytes = u32::from_le_bytes(rec.get(10..14)?.try_into().ok()?) as usize;
+            Some((String::from_utf8_lossy(name).into_owned(), lba, bytes))
+        };
         for n in 0..size.div_ceil(2048).min(16) {
-            let dir = self.get(extent + n)?;
+            let Some(dir) = self.get(extent + n) else { break };
             let mut at = 0;
             while at + 33 < dir.len() && dir[at] != 0 {
                 let rec = &dir[at..(at + dir[at] as usize).min(dir.len())];
                 at += dir[at] as usize;
-                let len = *rec.get(32)? as usize;
-                let name = rec.get(33..33 + len)?;
-                let name = name.split(|&b| b == b';').next().unwrap_or(name);
-                let lba = u32::from_le_bytes(rec[2..6].try_into().ok()?) as usize;
-                let bytes = u32::from_le_bytes(rec[10..14].try_into().ok()?) as usize;
-                out.push((String::from_utf8_lossy(name).into_owned(), lba, bytes));
+                out.extend(entry(rec));
             }
         }
         Some(out)

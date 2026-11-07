@@ -318,7 +318,8 @@ impl Library {
         row_id: &str,
         emulator: Option<&str>,
     ) -> Result<launch::LaunchSpec, Error> {
-        launch::plan_row(&self.conn, env, row_id, emulator)
+        let view = self.cached_view()?;
+        launch::plan_row_in(&self.conn, env, &view, row_id, emulator)
     }
 }
 

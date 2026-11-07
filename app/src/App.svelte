@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { artSrc } from "./lib.js";
   import SettingsDialog from "./SettingsDialog.svelte";
@@ -43,7 +43,9 @@
   // A quick action a dialog is waiting on (long jobs are in the queue).
   let busy = $state("");
   let note = $state("");
-  let jobsOpen = $state(false);
+  // Which dialogs are open (Escape closes the top one; the list keys stay
+  // out of their way).
+  let shown = $state({ jobs: false, preview: false, home: false, settings: false, emu: false, clean: false, search: false, naming: false, patch: false, picker: false });
   reportTo((e) => (error = e), (n) => (note = n));
 
   let lib = $state({ platforms: [], rows: [] });
@@ -57,12 +59,11 @@
   // Refresh needs a folder from Settings (or the RomForge folder).
   let canRefresh = $state(false);
   let previewer = $state(null);
-  let previewOpen = $state(false);
   // Settings may set or clear the Source, or change the icon theme: look
   // again when it closes (at start, load() and readSettings() below do).
   let settingsWasOpen = false;
   $effect(() => {
-    if (settingsOpen) settingsWasOpen = true;
+    if (shown.settings) settingsWasOpen = true;
     else if (settingsWasOpen) {
       settingsWasOpen = false;
       call("can_refresh", undefined, true).then((v) => (canRefresh = v ?? false));
@@ -84,7 +85,6 @@
   // Rename & Cleanup (Import into the RomForge folder when there is one).
   let homeRoot = $state(null);
   let home;
-  let homeOpen = $state(false);
   $effect(() => {
     home?.check();
   });
@@ -98,22 +98,15 @@
   let emulators = $state(null);
   let nowPlaying = $state(null);
   let playing = $state(null);
-  let emuOpen = $state(false);
   let cleanup = $state(null);
   let search = $state(null);
   let patcher = $state(null);
-  let patchOpen = $state(false);
   let artPicker = $state(null);
-  let pickerOpen = $state(false);
   let dats = $state(null);
   let bios = $state(null);
   // Systems whose emulator lacks a required BIOS file (the sidebar's badge).
   let biosNeeds = $state([]);
-  let settingsOpen = $state(false);
-  let cleanOpen = $state(false);
-  let searchOpen = $state(false);
   let naming = $state(null);
-  let namingOpen = $state(false);
   let confirmUndo = $state(false);
 
   // `quiet`: a reload after an action, which keeps the action's error on
@@ -137,10 +130,13 @@
   // The library's generation the page has: the list comes again only when
   // it changed.
   let libGeneration = null;
+  let loadSeq = 0; // a load overtaken by a newer one keeps nothing
   // Asked once (it reads every BIOS file); the BIOS page keeps it current.
   let biosAsked = false;
   async function load() {
+    const mine = ++loadSeq;
     const got = await call("library_view", { known: libGeneration }, true);
+    if (mine !== loadSeq) return;
     if (got?.view) {
       lib = got.view;
       libGeneration = got.generation;
@@ -180,7 +176,7 @@
     detail = d;
   }
 
-  $effect(() => void (ui.biosPaths && show("bios"))); // "Import to BIOS…": its plan on the BIOS page
+  $effect(() => void (ui.biosPaths && untrack(() => show("bios")))); // "Import to BIOS…": its plan on the BIOS page
 
   function show(v) {
     view = v;
@@ -297,7 +293,7 @@
 
   // The selection keys (selection.js) when no text field has focus.
   function listKeys(e) {
-    const dialog = settingsOpen || emuOpen || cleanOpen || searchOpen || namingOpen || patchOpen || pickerOpen || previewOpen || homeOpen || jobsOpen || ui.viewer;
+    const dialog = Object.values(shown).some(Boolean) || ui.viewer;
     if (view !== "library" || dialog) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const s = selectKey({ picked, anchor, focus: selected }, rows, e);
@@ -305,6 +301,9 @@
     e.preventDefault();
     select(s);
   }
+
+  // The open dialog Escape closes first (the art picker not while busy).
+  const escapable = () => ["jobs", "settings", "emu", "clean", "search", "naming", "patch", "picker", "preview", "home"].find((d) => shown[d] && !(d === "picker" && busy));
 
   // Game pads: the fullscreen mode's when it is on, else the library's.
   const padLibrary = (a) => desktopPad(a, { view, rows, row, busy, platforms: lib.platforms, platform, setPlatform: (p) => (platform = p), pick, play, listKeys, settings, emulators });
@@ -337,16 +336,7 @@
     if (e.key === "F11") (e.preventDefault(), toggleFs());
     else if (fs.on) return;
     else if (e.key === "Escape" && ui.viewer) ui.viewer = null;
-    else if (e.key === "Escape" && jobsOpen) jobsOpen = false;
-    else if (e.key === "Escape" && settingsOpen) settingsOpen = false;
-    else if (e.key === "Escape" && emuOpen) emuOpen = false;
-    else if (e.key === "Escape" && cleanOpen) cleanOpen = false;
-    else if (e.key === "Escape" && searchOpen) searchOpen = false;
-    else if (e.key === "Escape" && namingOpen) namingOpen = false;
-    else if (e.key === "Escape" && patchOpen) patchOpen = false;
-    else if (e.key === "Escape" && pickerOpen && !busy) pickerOpen = false;
-    else if (e.key === "Escape" && previewOpen) previewOpen = false;
-    else if (e.key === "Escape" && homeOpen) homeOpen = false;
+    else if (e.key === "Escape" && escapable()) shown[escapable()] = false;
     else listKeys(e);
   }}
 />
@@ -354,19 +344,19 @@
 <div class="app">
   <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
 
-  <SettingsDialog bind:this={settings} bind:open={settingsOpen} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
-  <EmulatorSettingsDialog bind:this={emulators} bind:open={emuOpen} bind:note {call} />
+  <SettingsDialog bind:this={settings} bind:open={shown.settings} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
+  <EmulatorSettingsDialog bind:this={emulators} bind:open={shown.emu} bind:note {call} />
 
-  <CleanupDialog bind:this={cleanup} bind:open={cleanOpen} bind:note {homeRoot} {call} {load} />
+  <CleanupDialog bind:this={cleanup} bind:open={shown.clean} bind:note {homeRoot} {call} {load} />
 
-  <HomeDialog bind:this={home} bind:open={homeOpen} bind:root={homeRoot} bind:note {load} />
+  <HomeDialog bind:this={home} bind:open={shown.home} bind:root={homeRoot} bind:note {load} />
 
-  <NameDialog bind:this={naming} bind:open={namingOpen} bind:note {call} {load} />
-  <SearchDialog bind:this={search} bind:open={searchOpen} bind:busy bind:note {selected} {call} {load} />
+  <NameDialog bind:this={naming} bind:open={shown.naming} bind:note {call} {load} />
+  <SearchDialog bind:this={search} bind:open={shown.search} bind:busy bind:note {selected} {call} {load} />
 
-  <PatchDialog bind:this={patcher} bind:open={patchOpen} bind:note {call} {load} />
-  <ScanPreview bind:this={previewer} bind:open={previewOpen} {statusLabel} {scanned} />
-  <ArtPicker bind:this={artPicker} bind:open={pickerOpen} bind:busy bind:note view={(kind, src) => (ui.viewer = { kind, src })} reload={(id) => open(id)} />
+  <PatchDialog bind:this={patcher} bind:open={shown.patch} bind:note {call} {load} />
+  <ScanPreview bind:this={previewer} bind:open={shown.preview} {statusLabel} {scanned} />
+  <ArtPicker bind:this={artPicker} bind:open={shown.picker} bind:busy bind:note view={(kind, src) => (ui.viewer = { kind, src })} reload={(id) => open(id)} />
 
   <ImageViewer {detail} {row} />
 
@@ -386,8 +376,8 @@
     <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>
 
-  <JobsBar note={busy || note} error={busy ? "" : error} openJobs={() => (jobsOpen = true)} />
-  <JobsDialog bind:open={jobsOpen} />
+  <JobsBar note={busy || note} error={busy ? "" : error} openJobs={() => (shown.jobs = true)} />
+  <JobsDialog bind:open={shown.jobs} />
 </div>
 <!-- Outside .app: none of the desktop's shared styles reach it. -->
 {#if fs.on}<Fullscreen {lib} {icons} {iconStyle} {playing} play={playRow} desktop={(id) => (leaveFs(), (view = "library"), pick(id))} />{/if}

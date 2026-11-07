@@ -50,18 +50,19 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
     let found = candidates(conn, query)?;
     if found.is_empty() {
         // A game that is a folder (ScummVM, DOS) by its title.
-        let rows = crate::view::library(conn)?.rows;
+        let view = crate::view::library(conn)?;
         let q = query.to_lowercase();
-        let folders: Vec<&crate::view::GameRow> = rows
+        let folders: Vec<&crate::view::GameRow> = view
+            .rows
             .iter()
             .filter(|r| r.folder.is_some() && r.playable)
             .filter(|r| r.title == query || r.title.to_lowercase().contains(&q))
             .collect();
         return match folders.as_slice() {
             [] => Err(Error::Launch(format!("no matched file for {query:?}"))),
-            [one] => plan_row(conn, env, &one.id, emulator),
+            [one] => plan_row_in(conn, env, &view, &one.id, emulator),
             many => match many.iter().find(|r| r.title == query) {
-                Some(r) => plan_row(conn, env, &r.id, emulator),
+                Some(r) => plan_row_in(conn, env, &view, &r.id, emulator),
                 None => Err(Error::Launch(format!(
                     "{query:?} matches several games: {}",
                     many.iter()
@@ -106,7 +107,18 @@ pub fn plan_row(
     row_id: &str,
     emulator: Option<&str>,
 ) -> Result<LaunchSpec, Error> {
-    let v = crate::view::library(conn)?;
+    plan_row_in(conn, env, &crate::view::library(conn)?, row_id, emulator)
+}
+
+/// [`plan_row`] with the library's view already built (the library keeps
+/// one: a launch never builds it again).
+pub fn plan_row_in(
+    conn: &Connection,
+    env: &Env,
+    v: &crate::view::LibraryView,
+    row_id: &str,
+    emulator: Option<&str>,
+) -> Result<LaunchSpec, Error> {
     let row = v
         .rows
         .iter()

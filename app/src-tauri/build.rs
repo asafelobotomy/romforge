@@ -41,10 +41,25 @@ fn handler_commands(main: &str) -> Vec<&'static str> {
         return Vec::new();
     };
     let rest = &main[start + "generate_handler![".len()..];
-    let list = &rest[..rest.find(']').unwrap_or(0)];
+    // Line comments out first: a `]` or `,` in one isn't the list's.
+    let text: String = rest
+        .lines()
+        .map(|l| l.split_once("//").map_or(l, |(code, _)| code))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let list = &text[..text.find(']').unwrap_or(0)];
     list.split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| &*Box::leak(s.rsplit("::").next().unwrap_or(s).to_owned().into_boxed_str()))
+        .map(|s| {
+            // `#[cfg(...)]` and the like would be read as a name: refused,
+            // so the list is never quietly wrong.
+            assert!(
+                s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':'),
+                "generate_handler![...] holds {s:?}, which build.rs can't read as a command"
+            );
+            &*Box::leak(s.rsplit("::").next().unwrap_or(s).to_owned().into_boxed_str())
+        })
         .collect()
 }

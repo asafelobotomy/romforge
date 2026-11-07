@@ -156,7 +156,7 @@
           </tr></thead>
           <tbody>
             {#each shownDats as d (d.dat_id)}
-              <tr class:selected={d.dat_id === datId} onclick={() => openDat(d.dat_id)}>
+              <tr class:selected={d.dat_id === datId} tabindex="0" aria-selected={d.dat_id === datId} onclick={() => openDat(d.dat_id)} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openDat(d.dat_id))}>
                 <td>{d.name}{d.version ? ` · v${d.version}` : ""}</td>
                 <td>{d.system ?? "—"}</td>
                 <td class="num">{d.have} / {d.games}</td>

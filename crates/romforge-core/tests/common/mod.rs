@@ -8,6 +8,7 @@ pub mod cleanup;
 pub mod fixture_data;
 pub mod fixture_lib;
 pub mod home;
+pub mod launch;
 pub mod organize;
 pub mod patcher;
 pub mod search;

@@ -194,58 +194,11 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
         all_hits.push(hits);
     }
 
-    // Each ROM is owned by the copy whose place (an archive or a folder)
-    // holds the most of that ROM's game; the other copies are duplicates.
-    // Ties go by path. Per ROM, not per file: a track two discs share
-    // belongs, on each disc, to the copy beside that disc's other tracks.
-    let mut held: HashMap<(&str, i64), HashSet<i64>> = HashMap::new();
-    for (file, hits) in files.iter().zip(&all_hits) {
-        for h in hits.iter().filter(|h| h.in_scope && h.via.strong()) {
-            held.entry((file.place.as_str(), h.game_id))
-                .or_default()
-                .insert(h.rom_id);
-        }
-    }
-    // ROM id -> (how much of its game the owner's place holds, owner index).
-    let mut owners: HashMap<i64, (usize, usize)> = HashMap::new();
+    let places: Vec<&str> = files.iter().map(|f| f.place.as_str()).collect();
+    let owners = owners(&places, &all_hits);
     for (i, (file, hits)) in files.iter().zip(&all_hits).enumerate() {
-        for h in hits.iter().filter(|h| h.in_scope && h.via.strong()) {
-            let score = held
-                .get(&(file.place.as_str(), h.game_id))
-                .map_or(0, HashSet::len);
-            let best = owners.entry(h.rom_id).or_insert((score, i));
-            if score > best.0 {
-                *best = (score, i);
-            }
-        }
-    }
-    for (i, (file, hits)) in files.iter().zip(&all_hits).enumerate() {
-        let strong_in_scope: Vec<i64> = hits
-            .iter()
-            .filter(|h| h.in_scope && h.via.strong())
-            .map(|h| h.rom_id)
-            .collect();
-        let status = if !strong_in_scope.is_empty() {
-            if strong_in_scope
-                .iter()
-                .any(|r| owners.get(r).is_some_and(|o| o.1 == i))
-            {
-                Status::Matched
-            } else {
-                Status::Duplicate
-            }
-        } else if manual.contains(&(file.raw.sha1.clone(), file.raw.size)) {
-            // The owner's pick outranks weak evidence (a CRC32-only hit, a
-            // hash hit outside the folder's scope); only a match in scope
-            // comes first.
-            Status::Manual
-        } else if hits.iter().any(|h| h.in_scope) {
-            Status::Candidate
-        } else if hits.iter().any(|h| h.via.strong()) {
-            Status::WrongSystem
-        } else {
-            Status::Unknown
-        };
+        let named = manual.contains(&(file.raw.sha1.clone(), file.raw.size));
+        let status = status_of(i, hits, &owners, named);
         if status.as_str() != file.status {
             set_status.execute(params![file.file_id, status.as_str()])?;
         }

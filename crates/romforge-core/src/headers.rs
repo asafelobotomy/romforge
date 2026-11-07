@@ -76,7 +76,7 @@ const N64_V64: [u8; 4] = [0x37, 0x80, 0x40, 0x12];
 const N64_N64: [u8; 4] = [0x40, 0x12, 0x37, 0x80];
 
 /// Bytes of a file's start that must be read before calling [`detect`].
-pub const PREFIX_LEN: usize = 128;
+pub const HEADER_PREFIX_LEN: usize = 128;
 
 pub const HEADERS: &[HeaderRule] = &[
     // iNES and NES 2.0 share the magic and the 16-byte length.
@@ -139,7 +139,7 @@ pub const HEADERS: &[HeaderRule] = &[
 ];
 
 /// Find the header rule for a file, given its first bytes (at least
-/// [`PREFIX_LEN`] when the file is that long) and its total size.
+/// [`HEADER_PREFIX_LEN`] when the file is that long) and its total size.
 pub fn detect(prefix: &[u8], size: u64) -> Option<&'static HeaderRule> {
     HEADERS
         .iter()

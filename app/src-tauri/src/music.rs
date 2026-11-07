@@ -10,6 +10,9 @@ use std::sync::RwLock;
 
 use crate::db::{Db, Res, read};
 
+/// The biggest track sent whole: hours of lossless audio are more.
+const MAX_WHOLE: u64 = 256 << 20;
+
 /// The music folder, for the scheme (it never waits on the database).
 static DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -63,6 +66,9 @@ pub fn serve(request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<V
             let all = format!("bytes */{len}");
             return respond(416, &[("Content-Range", &all)], Vec::new());
         }
+        // Whole, as the page plays it: a track too big to hold in memory
+        // twice (here and as the page's Blob) is refused, and skipped.
+        None if len > MAX_WHOLE => return respond(413, &[], Vec::new()),
         None => (0, len.saturating_sub(1), 200),
     };
     let mut body = vec![0; if len == 0 { 0 } else { (end + 1 - start) as usize }];

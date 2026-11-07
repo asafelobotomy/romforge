@@ -98,7 +98,7 @@ pub(super) fn tag_of(name: &str) -> String {
 
 /// A header and the byte order the DAT's form takes, if any.
 pub(super) fn dat_form(data: &[u8]) -> Option<(&'static crate::headers::HeaderRule, Vec<u8>)> {
-    let prefix = &data[..data.len().min(crate::headers::PREFIX_LEN)];
+    let prefix = &data[..data.len().min(crate::headers::HEADER_PREFIX_LEN)];
     let rule = crate::headers::detect(prefix, data.len() as u64)?;
     let body = &data[rule.len..];
     let whole = body.len() - body.len() % rule.reorder.unit();

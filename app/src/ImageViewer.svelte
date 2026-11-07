@@ -27,7 +27,8 @@
   {@const k = ui.viewer.kind}
   {@const scale = viewerScale(k)}
   {@const dims = ui.dims}
-  <div class="scrim viewer" role="presentation" onclick={() => (ui.viewer = null)}>
+  <div class="scrim viewer" role="dialog" aria-modal="true" aria-label="{artLabel[k]} of {row?.title}" tabindex="-1" onclick={() => (ui.viewer = null)} onkeydown={(e) => e.key === "Escape" && (ui.viewer = null)}>
+    <button class="close" aria-label="Close" onclick={() => (ui.viewer = null)}>✕</button>
     <figure>
       <img
         src={ui.viewer.src}
@@ -43,6 +44,7 @@
 
 <style>
   figure { margin: 0; }
+  .close { position: fixed; top: 0.8rem; right: 0.8rem; }
   figcaption { font-size: 0.72rem; color: var(--muted); padding: 0.2rem 0.1rem 0; line-height: 1.3; }
   .viewer { cursor: zoom-out; }
   .viewer figure { display: flex; flex-direction: column; align-items: center; }

@@ -89,7 +89,7 @@
             <thead><tr><th>Platform</th><th class="num">Ready</th></tr></thead>
             <tbody>
               {#each report.systems as s}
-                <tr class:selected={s.key === key} onclick={() => (key = s.key)}>
+                <tr class:selected={s.key === key} tabindex="0" aria-selected={s.key === key} onclick={() => (key = s.key)} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), (key = s.key))}>
                   <td>{s.name}</td>
                   <td class="num" class:none={readyCount(s) === 0}>{readyCount(s)} / {s.emulators.length}</td>
                 </tr>

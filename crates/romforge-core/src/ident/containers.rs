@@ -47,11 +47,11 @@ pub fn read_container<R: std::io::Read + std::io::Seek>(f: &mut R) -> Option<Gam
                 return None;
             }
             let lz4 = head[0] == b'Z';
-            let blocks = (PREFIX_LEN as u64 / block.max(1)).min(total.div_ceil(block.max(1)));
+            let blocks = (ID_PREFIX_LEN as u64 / block.max(1)).min(total.div_ceil(block.max(1)));
             let mut index = vec![0u8; (blocks as usize + 1) * 4];
             read_at(f, 0x18, &mut index)?;
             let index: Vec<u32> = index.as_chunks::<4>().0.iter().map(|w| le32(w)).collect();
-            let mut prefix = Vec::with_capacity(PREFIX_LEN);
+            let mut prefix = Vec::with_capacity(ID_PREFIX_LEN);
             for w in index.windows(2) {
                 let plain = w[0] & 0x8000_0000 != 0;
                 let start = ((w[0] & 0x7FFF_FFFF) as u64) << shift;
