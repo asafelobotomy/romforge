@@ -198,29 +198,52 @@ fn last_batch(conn: &Connection, name: &str) -> Result<Option<i64>, Error> {
     )?)
 }
 
-/// Write `sets` and take out `remove` in `file`, returning each key's value
-/// before (`None`: it wasn't there).
+/// What setting `sets` and taking out `remove` in `file` makes of it: the
+/// file, its text before (`None`: there was none) and after, and each
+/// key's value before (`None`: it wasn't there). Nothing is written.
+fn changed(
+    dir: &std::path::Path,
+    m: &Managed,
+    sets: &[(String, String)],
+    remove: &[String],
+) -> Result<Planned, Error> {
+    let path = dir.join(&m.file);
+    let existed = path.exists();
+    let text = launch::read_config(&path)?;
+    let had: BTreeMap<String, String> = launch::read(m.format, &text).into_iter().collect();
+    let new = launch::merge(m.format, &text, sets, remove)?;
+    let before = sets
+        .iter()
+        .map(|(k, _)| k)
+        .chain(remove)
+        .map(|k| (k.clone(), had.get(k).cloned()))
+        .collect();
+    Ok(Planned {
+        path,
+        old: existed.then_some(text),
+        new,
+        before,
+    })
+}
+
+/// [`changed`], written at once (for undo, one key at a time).
 fn write(
     dir: &std::path::Path,
     m: &Managed,
     sets: &[(String, String)],
     remove: &[String],
 ) -> Result<BTreeMap<String, Option<String>>, Error> {
-    let path = dir.join(&m.file);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e.into()),
-    };
-    let had: BTreeMap<String, String> = launch::read(m.format, &text).into_iter().collect();
-    let new = launch::merge(m.format, &text, sets, remove)?;
-    crate::atomic::write(&path, new.as_bytes())?;
-    Ok(sets
-        .iter()
-        .map(|(k, _)| k)
-        .chain(remove)
-        .map(|k| (k.clone(), had.get(k).cloned()))
-        .collect())
+    let p = changed(dir, m, sets, remove)?;
+    crate::atomic::write(&p.path, p.new.as_bytes())?;
+    Ok(p.before)
+}
+
+/// One file's edit, worked out before anything is written.
+struct Planned {
+    path: std::path::PathBuf,
+    old: Option<String>,
+    new: String,
+    before: BTreeMap<String, Option<String>>,
 }
 
 fn refuse_running(e: &KnownEmulator) -> Result<(), Error> {
@@ -264,15 +287,20 @@ pub fn edit(conn: &mut Connection, env: &Env, name: &str, edits: &[RawEdit]) -> 
             None => entry.1.push(key.to_owned()),
         }
     }
+    // Every file worked out first, so one that can't be read or merged
+    // stops the edit before anything is written.
+    let mut planned = Vec::new();
+    for (file, (sets, remove)) in &by_file {
+        let m = files.iter().find(|m| m.file == *file).expect("checked above");
+        planned.push((*file, sets, changed(&dir, m, sets, remove)?));
+    }
     let tx = conn.transaction()?;
     let batch: i64 = tx.query_row("SELECT COALESCE(MAX(batch), 0) + 1 FROM config_edits", [], |r| {
         r.get(0)
     })?;
-    for (file, (sets, remove)) in &by_file {
-        let m = files.iter().find(|m| m.file == *file).expect("checked above");
-        let had = write(&dir, m, sets, remove)?;
+    for (file, sets, p) in &planned {
         let new: BTreeMap<&str, &str> = sets.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        for (key, old) in had {
+        for (key, old) in &p.before {
             tx.execute(
                 concat!(
                     "INSERT INTO config_edits (batch, emulator, file, key, old_value, new_value, created_at)
@@ -285,6 +313,20 @@ pub fn edit(conn: &mut Connection, env: &Env, name: &str, edits: &[RawEdit]) -> 
         }
     }
     tx.commit()?;
+    // Journaled, then written: a file that fails puts back the ones
+    // written before it, and the batch goes.
+    for (i, (_, _, p)) in planned.iter().enumerate() {
+        if let Err(e) = crate::atomic::write(&p.path, p.new.as_bytes()) {
+            for (_, _, done) in &planned[..i] {
+                let _ = match &done.old {
+                    Some(text) => crate::atomic::write(&done.path, text.as_bytes()),
+                    None => std::fs::remove_file(&done.path),
+                };
+            }
+            let _ = conn.execute("DELETE FROM config_edits WHERE batch = ?1", [batch]);
+            return Err(e.into());
+        }
+    }
     Ok(batch)
 }
 

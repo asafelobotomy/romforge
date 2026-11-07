@@ -102,11 +102,23 @@ pub fn set_game_settings(
             kept.insert(key.clone(), v);
         }
     }
-    for old in game_settings(conn, system, title)?.keys() {
-        crate::user_games::set(conn, system, title, &format!("{PREFIX}{old}"), None)?;
-    }
-    for (k, v) in &kept {
-        crate::user_games::set(conn, system, title, &format!("{PREFIX}{k}"), Some(v))?;
+    // All or nothing: a savepoint works inside a caller's transaction too.
+    conn.execute_batch("SAVEPOINT game_settings")?;
+    let replaced = (|| -> Result<(), Error> {
+        for old in game_settings(conn, system, title)?.keys() {
+            crate::user_games::set(conn, system, title, &format!("{PREFIX}{old}"), None)?;
+        }
+        for (k, v) in &kept {
+            crate::user_games::set(conn, system, title, &format!("{PREFIX}{k}"), Some(v))?;
+        }
+        Ok(())
+    })();
+    match replaced {
+        Ok(()) => conn.execute_batch("RELEASE game_settings")?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK TO game_settings; RELEASE game_settings");
+            return Err(e);
+        }
     }
     Ok(kept)
 }

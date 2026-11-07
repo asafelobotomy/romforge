@@ -2,9 +2,12 @@
 //! emulator running a game. Read in each emulator's source first:
 //!
 //! - RetroArch 1.22.2: plain-text UDP commands (`command.c`), on when
-//!   `network_cmd_enable` is set. It listens on every interface (only
-//!   master has `network_cmd_bind_address`), so romforge picks a free port
-//!   for each game. Fast forward and rewind held last one frame per
+//!   `network_cmd_enable` is set. It listens on every interface and asks
+//!   for no password, so while a game runs any machine on the network can
+//!   send it commands; romforge picks a free port for each game and sets
+//!   `network_cmd_bind_address` to `127.0.0.1`, which only RetroArch's
+//!   master reads (1.22.2 ignores it) and which then keeps it to this
+//!   machine. Fast forward and rewind held last one frame per
 //!   command, so romforge sends them again and again while held. `QUIT`
 //!   asks to confirm (`confirm_quit`), so it is sent twice. RetroArch's
 //!   own pad hotkeys are unbound (`"nul"`) so a chord never does two
@@ -135,7 +138,11 @@ pub(super) fn retroarch(on: bool) -> (Vec<(String, String)>, Vec<String>, Option
         RETROARCH_UNBIND
             .iter()
             .chain(RETROARCH_COMBOS)
-            .chain(&["network_cmd_enable", "network_cmd_port"])
+            .chain(&[
+                "network_cmd_enable",
+                "network_cmd_port",
+                "network_cmd_bind_address",
+            ])
             .map(|k| (*k).to_owned())
     };
     let Some(port) = port else {
@@ -148,6 +155,7 @@ pub(super) fn retroarch(on: bool) -> (Vec<(String, String)>, Vec<String>, Option
     keys.extend(RETROARCH_COMBOS.iter().map(|k| ((*k).to_owned(), "0".to_owned())));
     keys.push(("network_cmd_enable".into(), "true".into()));
     keys.push(("network_cmd_port".into(), port.to_string()));
+    keys.push(("network_cmd_bind_address".into(), "127.0.0.1".into()));
     (keys, Vec::new(), Some(Channel::RetroArch { port }))
 }
 

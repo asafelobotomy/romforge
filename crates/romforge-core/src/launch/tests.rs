@@ -191,6 +191,10 @@ fn find_rules_in_order() {
     program(&t.join("mine/ds"));
     env.user_paths.insert("duckstation".into(), t.join("mine/ds"));
     assert_eq!(env.known(duck), Some(Runner::Program(t.join("mine/ds"))));
+    assert_eq!(env.ignored_path(duck), None);
+    env.user_paths.insert("duckstation".into(), t.join("mine/gone"));
+    assert!(env.ignored_path(duck).is_some_and(|w| w.contains("can't be run")));
+    env.user_paths.insert("duckstation".into(), t.join("mine/ds"));
 
     // MAME's machine entries look for MAME's AppImage.
     program(&t.join("Applications/MAME-0.289.AppImage"));
@@ -300,6 +304,11 @@ fn user_emulators_get_their_bios_folder() {
     let bin = t.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::write(bin.join("towns"), "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(bin.join("towns"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
     let env = Env {
         home: Some(home.clone()),

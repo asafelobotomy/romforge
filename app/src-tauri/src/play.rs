@@ -69,9 +69,14 @@ pub async fn launch(
         });
         crate::tray::game_ended(&app);
         let _ = app.emit("game-ended", &ended);
-        if quick.is_err() {
+        if let Err(first) = quick {
             let mut lib = write.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = lib.record_play(&ended);
+            if let Err(e) = lib.record_play(&ended) {
+                eprintln!(
+                    "romforge: {}'s play time wasn't kept ({first}; then {e})",
+                    ended.playing.game
+                );
+            }
         }
     });
     Ok(playing)

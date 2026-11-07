@@ -103,7 +103,19 @@ pub(super) fn start(
         }
         missing.is_empty()
     };
-    let mut why_not = Vec::new();
+    // A program set in Emulator Settings that can't be run is said, not
+    // silently passed over for another.
+    let mut why_not: Vec<String> = std::iter::once(&RETROARCH)
+        .filter(|_| !system.cores.is_empty())
+        .chain(
+            system
+                .emulators
+                .iter()
+                .filter_map(|n| KNOWN_EMULATORS.iter().find(|e| e.name == *n)),
+        )
+        .filter(|e| wanted(e.name))
+        .filter_map(|e| env.ignored_path(e))
+        .collect();
 
     for u in user_emulators(conn)?
         .into_iter()

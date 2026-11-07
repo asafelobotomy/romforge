@@ -813,7 +813,13 @@ The toolbar:
   DuckStation and PCSX2 get the rest (PCSX2 has no rewind; rewind needs
   turning on: Emulator Settings → Rewind for RetroArch, DuckStation's own settings). Emulator Settings
   → **Hotkeys** lists them and what each installed emulator gets, and the
-  Global tab's **Game pad hotkeys** turns them off. The ring draws over a
+  Global tab's **Game pad hotkeys** turns them off. For RetroArch the
+  hotkeys go over its network command port, which RetroArch 1.22 opens on
+  every network interface with no password: while a game runs, another
+  machine on your network could send it commands (quit, load a state).
+  romforge asks for this machine only (`network_cmd_bind_address`), which
+  newer RetroArch builds honour; on a network you don't trust, turn the
+  hotkeys off or block UDP to it in your firewall. The ring draws over a
   fullscreen game where the desktop has layer-shell (KDE Plasma, wlroots)
   and `gtk-layer-shell` is installed; elsewhere it shows as a window of
   its own, which takes the focus while it is up.
@@ -1177,7 +1183,9 @@ launcher hands off). **Settings → Steam** shows what it would write first:
 
 - the entry in `userdata/<account>/config/shortcuts.vdf` (your other
   shortcuts kept as they are; the file is backed up to
-  `shortcuts.vdf.romforge-backup`), named romforge, starting the AppImage
+  `shortcuts.vdf.romforge-backup` at each change, and as it was before
+  romforge first changed it to `shortcuts.vdf.romforge-original`), named
+  romforge, starting the AppImage
   when romforge runs as one, else `romforge-app`;
 - its art in `config/grid/` (portrait and wide capsules, hero, logo, icon),
   romforge's own;

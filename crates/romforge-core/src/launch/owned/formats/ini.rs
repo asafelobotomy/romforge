@@ -36,7 +36,7 @@ pub(super) fn ini(text: &str, keys: &[(String, String)], remove: &[String]) -> S
     };
     for l in text.lines() {
         let t = l.trim();
-        if let Some(name) = t.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+        if let Some(name) = header(t) {
             flush(&mut out, &section, &mut done);
             section = name.trim().to_owned();
         } else if let Some((k, _)) = t
@@ -71,5 +71,26 @@ pub(super) fn ini(text: &str, keys: &[(String, String)], remove: &[String]) -> S
             flush(&mut out, s, &mut done);
         }
     }
+    // Written back with the line endings it had.
+    if text.contains("\r\n") {
+        out = out.replace('\n', "\r\n");
+    }
     out
+}
+
+/// A `[Section]` line's name; a comment may follow it (`[Video] ; GPU`).
+fn header(t: &str) -> Option<&str> {
+    let (name, rest) = t.strip_prefix('[')?.split_once(']')?;
+    let rest = rest.trim_start();
+    (rest.is_empty() || rest.starts_with(';') || rest.starts_with('#')).then_some(name)
+}
+
+#[cfg(test)]
+mod header_tests {
+    #[test]
+    fn line_endings_and_commented_headers_are_kept() {
+        let text = "[Video] ; the GPU\r\nScale = 1\r\n";
+        let out = super::ini(text, &[("[Video]Scale".into(), "2".into())], &[]);
+        assert_eq!(out, "[Video] ; the GPU\r\nScale = 2\r\n");
+    }
 }

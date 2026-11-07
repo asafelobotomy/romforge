@@ -118,6 +118,7 @@ fn romforge_is_added_once_and_removed_leaving_the_rest() {
         assert!(f.is_file(), "{}", f.display());
     }
     assert!(root.join("userdata/1234/config").join(BACKUP).is_file());
+    assert!(root.join("userdata/1234/config").join(ORIGINAL).is_file());
     let t = std::fs::read_to_string(root.join("controller_base/templates").join(template::FILE)).unwrap();
     let tpl = vdf::read_text(&t).unwrap();
     let Some(Value::Map(m)) = vdf::get(&tpl, "controller_mappings") else {

@@ -28,6 +28,7 @@ fn retroarch_gets_a_port_and_its_own_pad_hotkeys_unbound() {
     assert_ne!(port, 0);
     assert_eq!(get("network_cmd_port"), Some(port.to_string().as_str()));
     assert_eq!(get("network_cmd_enable"), Some("true"));
+    assert_eq!(get("network_cmd_bind_address"), Some("127.0.0.1"));
     assert_eq!(get("input_enable_hotkey_btn"), Some("nul"));
     assert_eq!(get("input_quit_gamepad_combo"), Some("0"));
 

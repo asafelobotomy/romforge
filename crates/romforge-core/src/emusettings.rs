@@ -198,9 +198,15 @@ fn checked(def: &Setting, value: &str) -> Result<Option<String>, String> {
         Kind::Choice if def.choices.iter().any(|(v, _)| *v == value) => Ok(Some(value.to_owned())),
         Kind::Choice => Err(format!("{}: {value:?} is not one of its choices", def.label)),
         Kind::Path => {
-            let p = std::fs::canonicalize(value).map_err(|e| format!("{} {value}: {e}", def.label))?;
-            if !p.is_file() {
-                return Err(format!("{} is not a program", p.display()));
+            // Absolute, its symbolic links kept: a wrapper or multi-call
+            // program goes by the name it is started as.
+            let p = std::path::absolute(value).map_err(|e| format!("{} {value}: {e}", def.label))?;
+            if !crate::launch::is_executable(&p) {
+                return Err(format!(
+                    "{} {}: not there, or not a program that can be run",
+                    def.label,
+                    p.display()
+                ));
             }
             Ok(Some(p.to_string_lossy().into_owned()))
         }

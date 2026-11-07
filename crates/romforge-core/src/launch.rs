@@ -29,7 +29,7 @@ pub(crate) use owned::files;
 pub(crate) use owned::save_trees::{SaveTree, save_tree};
 pub(crate) use owned::saves::old as old_saves;
 pub use owned::{ConfigWrite, Format, Prepare, existing, move_in, prepare};
-pub(crate) use owned::{managed, merge, read};
+pub(crate) use owned::{managed, merge, read, read_config};
 mod plays;
 pub use plays::*;
 mod sandbox;
@@ -41,6 +41,7 @@ mod running;
 mod table;
 pub use running::running;
 pub use table::*;
+mod helper_run;
 mod tools;
 pub use tools::*;
 mod command;
@@ -149,9 +150,16 @@ impl Env {
         let path = std::env::var_os("PATH")
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
+        // XDG's folders where they are moved, else under the home folder.
+        let xdg = |var: &str, under_home: &str| {
+            std::env::var_os(var)
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+                .or_else(|| home.as_ref().map(|h| h.join(under_home)))
+        };
         let mut core_dirs = Vec::new();
+        core_dirs.extend(xdg("XDG_CONFIG_HOME", ".config").map(|c| c.join("retroarch/cores")));
         if let Some(h) = &home {
-            core_dirs.push(h.join(".config/retroarch/cores"));
             core_dirs.push(h.join(format!(".var/app/{RETROARCH_FLATPAK}/config/retroarch/cores")));
         }
         for d in [
@@ -163,9 +171,12 @@ impl Env {
             core_dirs.push(PathBuf::from(d));
         }
         let mut flatpak_dirs = vec![PathBuf::from("/var/lib/flatpak/app")];
-        if let Some(h) = &home {
-            flatpak_dirs.push(h.join(".local/share/flatpak/app"));
-        }
+        // The user installation: `FLATPAK_USER_DIR`, else XDG's data folder.
+        let user_flatpak = std::env::var_os("FLATPAK_USER_DIR")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| xdg("XDG_DATA_HOME", ".local/share").map(|d| d.join("flatpak")));
+        flatpak_dirs.extend(user_flatpak.map(|d| d.join("app")));
         Env {
             path,
             core_dirs,
@@ -186,7 +197,7 @@ impl Env {
     fn which(&self, program: &str) -> Option<PathBuf> {
         let p = Path::new(program);
         if p.is_absolute() {
-            return p.is_file().then(|| p.to_path_buf());
+            return is_executable(p).then(|| p.to_path_buf());
         }
         self.path
             .iter()
@@ -201,6 +212,20 @@ impl Env {
     fn core(&self, name: &str) -> Option<PathBuf> {
         let file = format!("{name}_libretro.{}", std::env::consts::DLL_EXTENSION);
         self.core_dirs.iter().map(|d| d.join(&file)).find(|p| p.is_file())
+    }
+
+    /// The program set for `e` in Emulator Settings when it can't be run
+    /// (gone, or not executable), said so: it is passed over, never
+    /// silently.
+    fn ignored_path(&self, e: &KnownEmulator) -> Option<String> {
+        let p = self.user_paths.get(e.settings_name())?;
+        (!is_executable(p)).then(|| {
+            format!(
+                "{}: the program set for it, {}, isn't there or can't be run",
+                e.name,
+                p.display()
+            )
+        })
     }
 
     fn known(&self, e: &KnownEmulator) -> Option<Runner> {
@@ -242,7 +267,7 @@ impl Env {
     }
 }
 
-fn is_executable(p: &Path) -> bool {
+pub(crate) fn is_executable(p: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

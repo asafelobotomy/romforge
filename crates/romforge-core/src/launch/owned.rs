@@ -244,18 +244,14 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
         }
     }
     for w in &p.writes {
-        let old = match std::fs::read_to_string(&w.path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(e.into()),
-        };
+        let old = read_config(&w.path)?;
         let new = formats::merge(w.format, &old, &w.keys, &w.remove)?;
         if new != old || !w.path.exists() {
             crate::atomic::write(&w.path, new.as_bytes())?;
         }
     }
     for (from, to) in &p.links {
-        link_tree(from, from, to)?;
+        link_tree(from, from, to, 0)?;
     }
     for (folder, link) in &p.folder_links {
         std::fs::create_dir_all(folder)?;
@@ -273,18 +269,38 @@ pub fn prepare(p: &Prepare) -> Result<(), Error> {
     Ok(())
 }
 
+/// A config file's text, empty when there is none yet. One that isn't
+/// UTF-8 is refused by name: written back it would be changed.
+pub(crate) fn read_config(path: &Path) -> Result<String, Error> {
+    match std::fs::read(path) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|_| {
+            Error::Settings(format!(
+                "{} isn't plain text romforge can edit (not UTF-8): fix or remove it",
+                path.display()
+            ))
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// How deep [`link_tree`] goes: folders linked into themselves end there.
+const LINK_DEPTH: usize = 16;
+
 /// Link each file under `dir` (inside `root`) to the same place under
 /// `to`, where nothing is yet: a symbolic link to the file in `root` (the
 /// RomForge folder keeps the one copy), else a hard link, else a copy. A
 /// link of romforge's whose file has gone from `root` is made again.
-fn link_tree(root: &Path, dir: &Path, to: &Path) -> Result<(), Error> {
+fn link_tree(root: &Path, dir: &Path, to: &Path, depth: usize) -> Result<(), Error> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());
     };
     for e in entries.filter_map(Result::ok) {
         let path = e.path();
         if path.is_dir() {
-            link_tree(root, &path, to)?;
+            if depth < LINK_DEPTH {
+                link_tree(root, &path, to, depth + 1)?;
+            }
             continue;
         }
         let Ok(rel) = path.strip_prefix(root) else {
@@ -320,4 +336,17 @@ pub(super) fn grants(game: Option<&Path>, home: Option<&Home>) -> Vec<PathBuf> {
         .into_iter()
         .chain(home.map(|h| h.root().to_path_buf()))
         .collect()
+}
+
+#[cfg(test)]
+mod read_tests {
+    #[test]
+    fn a_config_that_isnt_utf8_is_refused_by_name_and_none_is_empty() {
+        let t = tempfile::tempdir().unwrap();
+        let bad = t.path().join("emu.ini");
+        std::fs::write(&bad, b"[Video]\nName = \xff\n").unwrap();
+        let e = super::read_config(&bad).unwrap_err().to_string();
+        assert!(e.contains("emu.ini") && e.contains("UTF-8"), "{e}");
+        assert_eq!(super::read_config(&t.path().join("none.ini")).unwrap(), "");
+    }
 }

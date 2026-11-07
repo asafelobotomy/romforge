@@ -106,6 +106,11 @@ impl Session {
     /// Ask it to quit (SIGTERM), and kill it only if it hasn't after
     /// `grace`. Returns whether it had to be killed.
     pub fn stop(&self, grace: Duration) -> Result<bool, Error> {
+        // A Flatpak's emulator, seen once with its start time: the wrapper
+        // may end at the SIGTERM and leave it running, its pid then out of
+        // the wrapper's reach.
+        #[cfg(unix)]
+        let app;
         {
             // The child's lock is held from the check to the signal, so the
             // thread in `wait` can't reap it (and its pid be given to
@@ -118,43 +123,68 @@ impl Session {
                 return Ok(false);
             }
             #[cfg(unix)]
-            // SAFETY: `kill` takes a pid and a signal and touches no memory;
-            // the process is ours and not reaped (checked just above, with
-            // the lock that reaping needs held until after the signal), so
-            // the pid is still its own.
-            unsafe {
-                libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
-                // A Flatpak's wrapper doesn't pass the signal on.
-                for pid in sandbox::app_pids(child.id()) {
-                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            {
+                app = sandbox::app_procs(child.id());
+                // SAFETY: `kill` takes a pid and a signal and touches no
+                // memory; the process is ours and not reaped (checked just
+                // above, with the lock that reaping needs held until after
+                // the signal), so the pid is still its own. The app's pids
+                // were read just now, below that unreaped wrapper.
+                unsafe {
+                    libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+                    // A Flatpak's wrapper doesn't pass the signal on.
+                    for p in &app {
+                        libc::kill(p.pid as libc::pid_t, libc::SIGTERM);
+                    }
                 }
             }
         }
+        #[cfg(unix)]
+        let app_running = || app.iter().any(sandbox::alive);
+        #[cfg(not(unix))]
+        let app_running = || false;
         let until = Instant::now() + grace;
         while Instant::now() < until {
-            if !self.is_running() {
+            if !self.is_running() && !app_running() {
                 return Ok(false);
             }
             std::thread::sleep(Duration::from_millis(100));
+        }
+        let mut killed = false;
+        #[cfg(unix)]
+        for p in app.iter().filter(|p| sandbox::alive(p)) {
+            // SAFETY: as above; `alive` checked its start time just now,
+            // so the pid is still the emulator's.
+            unsafe {
+                libc::kill(p.pid as libc::pid_t, libc::SIGKILL);
+            }
+            killed = true;
         }
         let mut guard = self.child.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(child) = guard.as_mut()
             && child.try_wait().ok().flatten().is_none()
         {
-            #[cfg(unix)]
-            for pid in sandbox::app_pids(child.id()) {
-                // SAFETY: as above; `child` isn't reaped yet, so the
-                // wrapper it names still stands over these.
-                unsafe {
-                    libc::kill(pid as libc::pid_t, libc::SIGKILL);
-                }
-            }
             child.kill()?;
             // Reaped here (a killed process goes at once); its status stays
             // for `wait`.
             let _ = child.wait();
-            return Ok(true);
+            killed = true;
         }
-        Ok(false)
+        Ok(killed)
+    }
+}
+
+impl Drop for Session {
+    /// A session let go of without `wait` or `stop`: its process is reaped
+    /// on a thread when it ends, never left a zombie.
+    fn drop(&mut self) {
+        let child = self.child.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(mut child) = child
+            && matches!(child.try_wait(), Ok(None))
+        {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
     }
 }

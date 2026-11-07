@@ -1,6 +1,6 @@
 //! How a program or a Flatpak is started.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::Runner;
 
@@ -25,7 +25,7 @@ pub(super) fn command(
         Runner::Program(p) => (p.clone(), args, env.to_vec()),
         Runner::Flatpak { id, command } => {
             let mut a = vec!["run".to_owned()];
-            for g in grants {
+            for g in grants.iter().filter_map(|g| grantable(g)) {
                 a.push(format!("--filesystem={}", g.display()));
             }
             match command.as_ref().filter(|_| !env.is_empty()) {
@@ -42,5 +42,35 @@ pub(super) fn command(
             a.extend(args);
             (PathBuf::from("flatpak"), a, Vec::new())
         }
+    }
+}
+
+/// What `--filesystem=` can grant for `p`: Flatpak reads `:ro`, `:rw` and
+/// `:create` after a colon, so a folder whose path has one is granted
+/// through its nearest parent without; nothing when that is `/`.
+fn grantable(p: &Path) -> Option<&Path> {
+    p.ancestors()
+        .find(|a| !a.to_string_lossy().contains(':'))
+        .filter(|a| a.is_absolute() && a.parent().is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_colon_in_a_path_is_never_read_as_a_mode() {
+        assert_eq!(grantable(Path::new("/games/nes")), Some(Path::new("/games/nes")));
+        assert_eq!(
+            grantable(Path::new("/games/Zelda: LA/rom")),
+            Some(Path::new("/games"))
+        );
+        assert_eq!(grantable(Path::new("/a:b/c")), None, "not all of /");
+        let runner = Runner::Flatpak {
+            id: "org.x.Emu".into(),
+            command: None,
+        };
+        let (_, args, _) = command(&runner, vec![], &[PathBuf::from("/g/x:ro")], &[]);
+        assert_eq!(args, ["run", "--filesystem=/g", "org.x.Emu"]);
     }
 }

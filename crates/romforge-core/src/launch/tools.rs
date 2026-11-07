@@ -6,9 +6,10 @@ pub fn scummvm_list(env: &Env) -> Result<Vec<u8>, Error> {
     let (program, out) = run_scummvm(env, &["--dump-all-detection-entries".to_owned()], None)?;
     if !out.status.success() || out.stdout.is_empty() {
         return Err(Error::Launch(format!(
-            "{} gave no detection list ({}); it needs a ScummVM with --dump-all-detection-entries",
+            "{} gave no detection list ({}){}; it needs a ScummVM with --dump-all-detection-entries",
             program.display(),
-            out.status
+            out.status,
+            stderr_tail(&out)
         )));
     }
     Ok(out.stdout)
@@ -52,58 +53,13 @@ fn run_known(
     let grants: Vec<PathBuf> = grant.map(Path::to_path_buf).into_iter().collect();
     let (program, args, env) = command(&runner, args.to_vec(), &grants, &[]);
     let mut cmd = std::process::Command::new(&program);
-    cmd.args(&args)
-        .envs(env)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+    cmd.args(&args).envs(env).stdin(std::process::Stdio::null());
     let out =
         output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
     Ok((program, out))
 }
 
-/// How long a helper run (a list, a version) gets before it is stopped:
-/// MAME's whole `-listxml` or ScummVM detecting a big folder takes a
-/// while, a hung one takes for ever.
-const RUN_LIMIT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-
-/// Run `cmd` to completion with its output read, killing it if it hasn't
-/// ended within `limit` (a `TimedOut` error then).
-pub(super) fn output_within(
-    mut cmd: std::process::Command,
-    limit: std::time::Duration,
-) -> std::io::Result<std::process::Output> {
-    use std::io::Read;
-    let mut child = cmd.stdout(std::process::Stdio::piped()).spawn()?;
-    let mut stdout = child.stdout.take();
-    // Read as it comes, so a long output doesn't fill the pipe and stall it.
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(s) = stdout.as_mut() {
-            let _ = s.read_to_end(&mut buf);
-        }
-        buf
-    });
-    let until = std::time::Instant::now() + limit;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if std::time::Instant::now() >= until {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("no answer after {} s: stopped", limit.as_secs()),
-            ));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    };
-    Ok(std::process::Output {
-        status,
-        stdout: reader.join().unwrap_or_default(),
-        stderr: Vec::new(),
-    })
-}
+pub(super) use super::helper_run::{RUN_LIMIT, output_within, stderr_tail};
 
 /// Whether the known emulator `name` is installed (Settings path, `PATH`,
 /// Flatpak, romforge's Emulators folder).
@@ -222,24 +178,18 @@ pub fn install_ps3_firmware(env: &Env) -> Result<PathBuf, Error> {
     ];
     let grants = vec![home.root().to_path_buf(), flash.clone()];
     let (program, args, envs) = command(&runner, args, &grants, &prep.env);
-    let out = std::process::Command::new(&program)
-        .args(&args)
-        .envs(envs)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
+    let mut cmd = std::process::Command::new(&program);
+    cmd.args(&args).envs(envs).stdin(std::process::Stdio::null());
+    // A hung RPCS3 (no display, a dialog waiting) is stopped like any
+    // helper run.
+    let out =
+        output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
     if !out.status.success() || !flash.join("vsh/module/vsh.self").is_file() {
-        let log = String::from_utf8_lossy(&out.stderr);
-        let tail: Vec<&str> = log.lines().rev().take(3).collect();
         return Err(Error::Launch(format!(
             "RPCS3 didn't install the firmware into {} ({}){}",
             flash.display(),
             out.status,
-            if tail.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", tail.join(" / "))
-            }
+            stderr_tail(&out)
         )));
     }
     Ok(flash)
@@ -273,16 +223,16 @@ pub fn mame_write_defaults(env: &Env) -> Result<PathBuf, Error> {
     cmd.args(&args)
         .envs(envs)
         .current_dir(&dir)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stdin(std::process::Stdio::null());
     let out =
         output_within(cmd, RUN_LIMIT).map_err(|e| Error::Launch(format!("{}: {e}", program.display())))?;
     let ini = dir.join(owned::files::MAME);
     if !out.status.success() || !ini.is_file() {
         return Err(Error::Launch(format!(
-            "MAME didn't write {} ({})",
+            "MAME didn't write {} ({}){}",
             ini.display(),
-            out.status
+            out.status,
+            stderr_tail(&out)
         )));
     }
     Ok(ini)

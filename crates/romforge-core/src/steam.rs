@@ -31,6 +31,9 @@ pub const APP_NAME: &str = "romforge";
 const TAG: &str = "romforge";
 /// The backup of `shortcuts.vdf` from before romforge last changed it.
 pub const BACKUP: &str = "shortcuts.vdf.romforge-backup";
+/// The file as it was before romforge first changed it, kept for good:
+/// [`BACKUP`] is replaced at each change.
+pub const ORIGINAL: &str = "shortcuts.vdf.romforge-original";
 
 /// romforge's art for Steam: (grid file after the id, bytes).
 const ART: &[(&str, &[u8])] = &[
@@ -212,6 +215,10 @@ fn refuse_while_running(busy: bool) -> Result<(), Error> {
 /// Rewrite `shortcuts.vdf` with `entries` (renumbered), backing it up.
 fn save(path: &Path, top: Map, entries: Vec<Map>) -> Result<(), Error> {
     if path.is_file() {
+        let original = path.with_file_name(ORIGINAL);
+        if !original.exists() {
+            std::fs::copy(path, &original)?;
+        }
         std::fs::copy(path, path.with_file_name(BACKUP))?;
     }
     let numbered: Map = entries

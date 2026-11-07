@@ -53,7 +53,11 @@ impl Words {
                 _ => None,
             },
             Words::Map(pairs) => pairs.iter().find(|(r, _)| *r == v).map(|(_, e)| (*e).to_owned()),
-            Words::Times(n) => v.parse::<u32>().ok().map(|x| (x * n).to_string()),
+            Words::Times(n) => v
+                .parse::<u32>()
+                .ok()
+                .and_then(|x| x.checked_mul(*n))
+                .map(|x| x.to_string()),
         }
     }
 
