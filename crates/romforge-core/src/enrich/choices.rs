@@ -61,14 +61,7 @@ pub fn art_choices(
         &crate::artsources::gametdb_kinds().collect::<Vec<_>>(),
     )?;
     // IGDB tells same-named games apart by it, as Enrich does.
-    let year: Option<i32> = conn
-        .query_row(
-            "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
-            params![system_id, lookup],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()?
-        .and_then(|y| y.trim().parse().ok());
+    let year = crate::enrich::release_year(conn, system_id, lookup)?;
     for provider in crate::artsources::Provider::available(keys, system) {
         let job = crate::artsources::Job {
             system,

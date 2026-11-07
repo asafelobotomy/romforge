@@ -4,12 +4,16 @@ use crate::{Error, ImportedDat, Library, fetch, launch, layout, scummvm};
 
 /// What [`Library::scummvm_import`] kept: entries in the list, ScummVM
 /// games found in the scanned folders.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct ScummvmList {
     pub entries: usize,
     pub games: usize,
     /// Folders ScummVM's --detect named (including ones its list does).
     pub asked: usize,
+    /// [`Library::scummvm_refresh`]: game ids libretro's `ScummVM.dat`
+    /// named, or why it couldn't be had (ScummVM's own names stay then).
+    pub titles: Option<usize>,
+    pub titles_problem: Option<String>,
 }
 
 impl Library {
@@ -27,7 +31,7 @@ impl Library {
         Ok(ScummvmList {
             entries,
             games,
-            asked: 0,
+            ..ScummvmList::default()
         })
     }
 
@@ -61,6 +65,26 @@ impl Library {
     pub fn scummvm_titles_download(&mut self) -> Result<usize, Error> {
         let dat = fetch::get(&format!("{}/ScummVM.dat", fetch::LIBRETRO_DAT_BASE))?;
         self.scummvm_titles(&dat)
+    }
+
+    /// ScummVM's list brought up to date as a whole: libretro's names for
+    /// its games first (its box art goes by them; a failure is said, not
+    /// fatal), then the list from `list` (a saved
+    /// `--dump-all-detection-entries`), else from the installed ScummVM.
+    pub fn scummvm_refresh(&mut self, list: Option<&[u8]>) -> Result<ScummvmList, Error> {
+        let titles = self.scummvm_titles_download();
+        let mut r = match list {
+            Some(bytes) => self.scummvm_import(bytes)?,
+            None => {
+                let env = self.env()?;
+                self.scummvm_read(&env)?
+            }
+        };
+        match titles {
+            Ok(n) => r.titles = Some(n),
+            Err(e) => r.titles_problem = Some(e.to_string()),
+        }
+        Ok(r)
     }
 
     /// Ask the installed ScummVM for its detection list, then

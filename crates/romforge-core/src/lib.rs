@@ -63,7 +63,7 @@ use rusqlite::Connection;
 pub use identify::{Scope, Status};
 pub use library::{
     DatState, DatStatus, FolderScan, ImportedDat, ListOptions, ListsReport, PlatformIcons, PreviewGame,
-    RefreshResult, ScanPreview, ScanProgress, ScanReport, ScummvmList, SkippedKind,
+    RefreshResult, Refreshed, ScanPreview, ScanProgress, ScanReport, ScummvmList, SkippedKind,
 };
 pub use report::{DatGame, DatSummary, LibraryFile, LibraryFilter, Summary, SystemInfo};
 pub use scan::ScanOptions;

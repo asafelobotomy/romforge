@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { run } from "./jobs.svelte.js";
+  import { size } from "./lib.js";
 
   // "Your game data" on an emulator's tab: the data it keeps outside
   // romforge's config (RPCS3's devices, Cemu's MLC, xemu's disk, the 3DS
@@ -11,7 +12,6 @@
 
   let plan = $state(null);
   let working = $state(false);
-  const size = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GiB` : `${Math.max(1, Math.round(b / (1 << 20)))} MiB`);
 
   async function load() {
     plan = await invoke("move_data_plan", { emulator }).catch((e) => {

@@ -334,3 +334,17 @@ pub fn known(name: &str) -> Option<&'static KnownEmulator> {
         .chain(KNOWN_EMULATORS)
         .find(|e| e.name.eq_ignore_ascii_case(name))
 }
+
+/// Whether the emulator whose settings are `settings_name`'s (its own, or
+/// the one it shares: MAME's machine entries share MAME's) runs games of
+/// `system`: RetroArch any with a core, another when the system names it
+/// or an entry sharing its settings.
+pub fn runs(system: &crate::systems::System, settings_name: &str) -> bool {
+    if settings_name == RETROARCH.settings_name() {
+        return !system.cores.is_empty();
+    }
+    system
+        .emulators
+        .iter()
+        .any(|n| known(n).is_some_and(|k| k.settings_name() == settings_name))
+}

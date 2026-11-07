@@ -2,6 +2,7 @@
   import SortButton from "./SortButton.svelte";
   import { artSrc } from "./lib.js";
   import { listLabel } from "./listLabel.js";
+  import { markOf } from "./labels.js";
 
   // Games as a table: title, platform logo (`platformCol`: All games —
   // each platform's release stays its own row, logo to the right of the
@@ -45,8 +46,6 @@
     else if (top + ROW + HEAD > scroller.scrollTop + viewH) scroller.scrollTop = top + ROW + HEAD - viewH;
   }
 
-  const mark = (s) =>
-    s === "verified" ? "✓" : s === "by_you" || s === "derivative" ? "✎" : s === "detected" ? "◆" : s === "unknown" ? "?" : s === "missing" ? "○" : s === "patch" ? "✚" : "~";
 
   // Platform logo for a main row in All games (versions share the parent's).
   function platformIcon(r) {
@@ -98,7 +97,7 @@
             </span>
           {/if}
           <span class="yr">{r.year ?? ""}</span>
-          <span class="ind {r.status}" title={statusLabel[r.status]}>{mark(r.status)}</span>
+          <span class="ind {r.status}" title={statusLabel[r.status]}>{markOf(r.status)}</span>
           <span class="ind" class:yes={r.metadata}>{r.metadata ? "✓" : "·"}</span>
           {#each ["boxart", "title", "snap"] as k}
             <span class="ind" class:yes={r.art.includes(k)}>{r.art.includes(k) ? "✓" : "·"}</span>

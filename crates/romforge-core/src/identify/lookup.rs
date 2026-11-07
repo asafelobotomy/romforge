@@ -115,3 +115,65 @@ pub(super) fn disks(conn: &Connection, sha1: &str) -> Result<Vec<RomRow>, Error>
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
+
+#[cfg(test)]
+mod guard_tests {
+    use super::Via;
+
+    /// Every way a file can match, written out so a new one is a compile
+    /// error here until it is added.
+    fn all() -> Vec<Via> {
+        let every = [Via::Sha1, Via::Md5, Via::Crc32, Via::Confirmed, Via::Disk];
+        for v in every {
+            match v {
+                Via::Sha1 | Via::Md5 | Via::Crc32 | Via::Confirmed | Via::Disk => {}
+            }
+        }
+        every.to_vec()
+    }
+
+    /// The report's SQL set of strong matches is exactly the ones
+    /// `Via::strong` counts (house rule 8: one list, never two that drift).
+    #[test]
+    fn the_reports_strong_set_is_vias_own() {
+        let mut ours: Vec<&str> = all()
+            .into_iter()
+            .filter(|v| v.strong())
+            .map(Via::as_str)
+            .collect();
+        let mut sql: Vec<&str> = crate::report::strong!()
+            .trim_matches(['(', ')'])
+            .split(',')
+            .map(|s| s.trim().trim_matches('\''))
+            .collect();
+        ours.sort_unstable();
+        sql.sort_unstable();
+        assert_eq!(ours, sql);
+        for v in all() {
+            assert_eq!(Via::parse(v.as_str()), Some(v));
+        }
+    }
+
+    /// The files table's CHECK list of statuses is `Status::ALL`.
+    #[test]
+    fn the_databases_statuses_are_the_enums() {
+        let conn = crate::db::open_in_memory().unwrap();
+        let sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'files'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let list = sql
+            .split("CHECK (status IN (")
+            .nth(1)
+            .and_then(|r| r.split(')').next())
+            .unwrap();
+        let mut db: Vec<&str> = list.split(',').map(|s| s.trim().trim_matches('\'')).collect();
+        let mut ours: Vec<&str> = crate::Status::ALL.iter().map(|s| s.as_str()).collect();
+        db.sort_unstable();
+        ours.sort_unstable();
+        assert_eq!(db, ours);
+    }
+}

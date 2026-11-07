@@ -171,14 +171,7 @@ pub(super) fn prepare(
     }
     if !input.providers.is_empty() {
         input.rom = crate::artsources::rom_for(conn, system_id, game)?;
-        input.year = conn
-            .query_row(
-                "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
-                params![system_id, game],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()?
-            .and_then(|y| y.trim().parse().ok());
+        input.year = crate::enrich::release_year(conn, system_id, game)?;
     }
     Ok(input)
 }
@@ -288,15 +281,7 @@ pub(super) fn record_out(
                 url,
             } => {
                 super::record(conn, system_id, &out.game, *kind, Some(path), source)?;
-                conn.execute(
-                    "UPDATE art SET url = ?4, chosen = 0 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
-                    params![
-                        system_id,
-                        out.game,
-                        kind.as_str(),
-                        crate::artsources::without_credentials(url)
-                    ],
-                )?;
+                super::record_url(conn, system_id, &out.game, *kind, url)?;
                 report.art_saved += 1;
             }
             Got::NotOnLibretro(kind) => super::record(conn, system_id, &out.game, *kind, None, "libretro")?,

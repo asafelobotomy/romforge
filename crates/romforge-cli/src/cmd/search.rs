@@ -37,11 +37,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             scraper,
             system,
         }) => {
-            let scraper = match scraper.as_str() {
-                "dat" => search::Scraper::Dat,
-                "wikidata" => search::Scraper::Wikidata,
-                s => bail!("unknown scraper {s:?} (dat or wikidata)"),
-            };
+            let scraper: search::Scraper = scraper.parse()?;
             let found = lib.search_find(
                 &row,
                 scraper,

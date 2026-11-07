@@ -28,6 +28,6 @@ pub use dat_lists::{DatState, DatStatus};
 pub use dats::ImportedDat;
 pub use lists::{ListOptions, ListsReport};
 pub use scan_report::{
-    FolderScan, PreviewGame, RefreshResult, ScanPreview, ScanProgress, ScanReport, SkippedKind,
+    FolderScan, PreviewGame, RefreshResult, Refreshed, ScanPreview, ScanProgress, ScanReport, SkippedKind,
 };
 pub use scummvm_io::ScummvmList;

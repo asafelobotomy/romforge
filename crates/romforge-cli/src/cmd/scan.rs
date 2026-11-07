@@ -125,10 +125,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             let results = if no_lists {
                 lib.refresh(&opts, |_, p| meter.update(p))?
             } else {
-                let lists = romforge_core::ListOptions {
-                    max_age_days: lib.settings()?.list_age_days,
-                    ..Default::default()
-                };
+                let lists = lib.list_options(Default::default())?;
                 let mut last = String::new();
                 let (report, results) = lib.refresh_with_lists(true, &opts, &lists, |s| {
                     if tty && s.detail != last {

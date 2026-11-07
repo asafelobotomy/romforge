@@ -25,11 +25,6 @@ fn dir() -> Option<PathBuf> {
     DIR.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// Where the community themes' previews are kept.
-fn previews() -> PathBuf {
-    romforge_core::enrich::default_cache_dir().join("theme-previews")
-}
-
 /// `theme://localhost/<id>/<file>`, and the community themes' previews at
 /// `theme://localhost/.preview/<file>`.
 pub fn serve(uri_path: &str) -> tauri::http::Response<Vec<u8>> {
@@ -45,17 +40,10 @@ pub fn serve(uri_path: &str) -> tauri::http::Response<Vec<u8>> {
     let path = crate::art::percent_decode(uri_path);
     let path = path.trim_start_matches('/');
     if let Some(name) = path.strip_prefix(".preview/") {
-        // The name is checked before anything is read.
-        let plain = !name.is_empty()
-            && name.ends_with(".png")
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"-.".contains(&b))
-            && !name.contains("..");
-        if !plain {
+        let Some(file) = remote::preview_file(&remote::previews_dir(), name) else {
             return not_found();
-        }
-        return match std::fs::read(previews().join(name)) {
+        };
+        return match std::fs::read(file) {
             Ok(body) => respond(200, "image/png", body),
             Err(_) => not_found(),
         };
@@ -196,10 +184,12 @@ pub async fn theme_remove(id: String) -> Res<()> {
 pub async fn theme_preview(id: String) -> Res<Option<String>> {
     blocking(move || {
         let (source, r) = offered(&id)?;
-        Ok(remote::preview(&source, &r, &previews())?.and_then(|p| {
-            p.file_name()
-                .map(|n| format!("theme://localhost/.preview/{}", n.to_string_lossy()))
-        }))
+        Ok(
+            remote::preview(&source, &r, &remote::previews_dir())?.and_then(|p| {
+                p.file_name()
+                    .map(|n| format!("theme://localhost/.preview/{}", n.to_string_lossy()))
+            }),
+        )
     })
     .await
 }

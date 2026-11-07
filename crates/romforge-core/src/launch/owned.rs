@@ -220,15 +220,9 @@ pub(crate) fn managed(
     options: &LaunchOptions,
     user: Option<&existing::UserDirs>,
 ) -> Option<(PathBuf, Prepare)> {
-    let system = crate::systems::SYSTEMS.iter().find(|s| {
-        if e.settings_name() == "retroarch" {
-            !s.cores.is_empty()
-        } else {
-            s.emulators
-                .iter()
-                .any(|n| super::known(n).is_some_and(|k| k.settings_name() == e.settings_name()))
-        }
-    })?;
+    let system = crate::systems::SYSTEMS
+        .iter()
+        .find(|s| super::runs(s, e.settings_name()))?;
     owned(e, home, system, options, user)
 }
 

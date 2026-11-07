@@ -38,13 +38,7 @@ pub struct GameSettingsView {
 /// The settings a game of `system` can have and what it has.
 pub fn game_settings_view(conn: &Connection, system: &str, title: &str) -> Result<GameSettingsView, Error> {
     let sys = crate::systems::by_key(system).ok_or_else(|| Error::UnknownSystem(system.to_owned()))?;
-    let runs = |e: &str| {
-        if e == "retroarch" {
-            !sys.cores.is_empty()
-        } else {
-            sys.emulators.contains(&e)
-        }
-    };
+    let runs = |e: &str| crate::launch::runs(sys, e);
     let settings = SETTINGS
         .iter()
         .filter_map(|s| {

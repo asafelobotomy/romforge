@@ -94,14 +94,7 @@ pub fn enrich(
         let cands = kept(conn, system.wikidata)?;
         let tx = conn.transaction()?;
         for title in todo {
-            let year: Option<i32> = tx
-                .query_row(
-                    "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
-                    params![system_id, title],
-                    |r| r.get::<_, String>(0),
-                )
-                .optional()?
-                .and_then(|y| y.parse().ok());
+            let year = crate::enrich::release_year(&tx, system_id, title)?;
             let (qid, status, others) = match pick(title, year, &cands) {
                 Ok(c) => (Some(c.qid.clone()), "matched", Vec::new()),
                 Err(many) if many.is_empty() => (None, "none", Vec::new()),

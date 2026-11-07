@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 
 use romforge_core::Library;
-use romforge_core::enrich::default_cache_dir;
 use romforge_core::home::Home;
 
 use crate::art::ArtRoots;
@@ -41,20 +40,15 @@ pub async fn home_create(
 ) -> Res<PathBuf> {
     detached(&db, &roots, move |current, _| {
         let old = db_path();
-        let parent = Path::new(&parent);
-        let art = default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
-        let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &old, &art);
-        let Some(at) = romforge_core::home::db_after_create(parent, &old, &done) else {
+        let made = romforge_core::home::create(Path::new(&parent), current.as_ref(), &old);
+        let Some(at) = made.db else {
             return Err(romforge_core::Error::Settings(format!(
                 "{}; the library couldn't be found again: restart romforge",
-                done.err().map_or_else(String::new, |e| e.to_string())
+                made.result.err().map_or_else(String::new, |e| e.to_string())
             )));
         };
-        let finish = move || {
-            let done = done?;
-            done.home().remember()?;
-            Ok(done.home().root().to_owned())
-        };
+        let result = made.result;
+        let finish = move || Ok(result?.home().root().to_owned());
         Ok((at, old, Box::new(finish) as Finish))
     })
     .await
@@ -73,13 +67,10 @@ pub async fn home_move(
             let no = || Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
             return Ok((was.clone(), was, Box::new(no) as Finish));
         };
-        let moved = romforge_core::home::relocate(&old, Path::new(&parent));
-        let at = romforge_core::home::db_after_move(&old, &moved);
-        let finish = move || {
-            let new = moved?;
-            new.remember()?;
-            Ok(new.root().to_owned())
-        };
+        let made = romforge_core::home::move_to(&old, Path::new(&parent));
+        let at = made.db.unwrap_or_else(|| old.db());
+        let result = made.result;
+        let finish = move || Ok(result?.root().to_owned());
         Ok((at, old.db(), Box::new(finish) as Finish))
     })
     .await

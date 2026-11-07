@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { artSrc } from "../lib.js";
+  import { isGame } from "../listing.js";
   import Wordmark from "../Wordmark.svelte";
   import { fs, leave, remembered, remember } from "./fs.svelte.js";
   import { homeAction, keyAction, listMove } from "./fsnav.js";
@@ -64,7 +65,7 @@
     const off = listen("game-ended", () => loadMarks());
     return () => off.then((f) => f());
   });
-  let all = $derived(lib.rows.filter((r) => r.main && !r.unmatched && r.system));
+  let all = $derived(lib.rows.filter((r) => isGame(r) && r.system));
   let platforms = $derived([...virtualPlatforms(all, marks), ...lib.platforms.filter((p) => p.system && p.games)]);
   let pIndex = $derived(Math.max(0, platforms.findIndex((p) => p.system === platformKey)));
   let games = $derived(gamesFor(platforms[pIndex]?.system ?? "*", all, marks, sort));

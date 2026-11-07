@@ -42,6 +42,18 @@ pub struct ListOptions {
     pub env: Option<launch::Env>,
 }
 
+impl Library {
+    /// How the lists step runs as Settings say (their age limit), with
+    /// `cancel`.
+    pub fn list_options(&self, cancel: Cancel) -> Result<ListOptions, Error> {
+        Ok(ListOptions {
+            max_age_days: self.settings()?.list_age_days,
+            cancel,
+            env: None,
+        })
+    }
+}
+
 fn stamp(conn: &Connection, key: &str) -> Result<Option<String>, Error> {
     Ok(conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))

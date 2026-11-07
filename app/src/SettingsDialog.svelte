@@ -33,7 +33,7 @@
     readingList = true;
     try {
       const r = await invoke("scummvm_list", { file });
-      scummvmNote = `${r.entries} entries; ScummVM itself named ${r.asked} folder${r.asked === 1 ? "" : "s"}; ${r.games} ScummVM game${r.games === 1 ? "" : "s"} in your folders.`;
+      scummvmNote = `${r.entries} entries; ScummVM itself named ${r.asked} folder${r.asked === 1 ? "" : "s"}; ${r.games} ScummVM game${r.games === 1 ? "" : "s"} in your folders.${r.titles_problem ? ` libretro's names couldn't be had (${r.titles_problem}): ScummVM's own are used.` : ""}`;
     } catch (e) {
       scummvmNote = String(e).replace(/^launch: /, "");
     }

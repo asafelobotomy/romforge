@@ -38,7 +38,7 @@
             </span>
             <span class="syear">{e.year ?? "—"}</span>
             <span class="shave">
-              {#each e.mine as m}<span class="badge verified" title="In your library on {lib.platforms.find((p) => p.system === m.system)?.name ?? m.system}">{lib.platforms.find((p) => p.system === m.system)?.short ?? m.system}</span>{/each}
+              {#each e.mine as m}<span class="badge" title="In your library on {lib.platforms.find((p) => p.system === m.system)?.name ?? m.system}">{lib.platforms.find((p) => p.system === m.system)?.short ?? m.system}</span>{/each}
             </span>
           </li>
         {/each}

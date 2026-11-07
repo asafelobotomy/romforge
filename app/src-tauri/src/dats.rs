@@ -103,16 +103,8 @@ pub async fn download_dats(
 #[tauri::command]
 pub async fn scummvm_list(db: tauri::State<'_, Db>, file: Option<String>) -> Res<romforge_core::ScummvmList> {
     write_net(&db, move |lib| {
-        // libretro's names (its box art goes by them); without them,
-        // ScummVM's own names stay.
-        let _ = lib.scummvm_titles_download();
-        match file {
-            Some(f) => lib.scummvm_import(&std::fs::read(f)?),
-            None => {
-                let env = lib.env()?;
-                lib.scummvm_read(&env)
-            }
-        }
+        let bytes = file.map(std::fs::read).transpose()?;
+        lib.scummvm_refresh(bytes.as_deref())
     })
     .await
 }

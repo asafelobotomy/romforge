@@ -326,7 +326,7 @@ use heal::PATH_COLUMNS;
 pub(crate) use heal::heal;
 mod recover;
 mod tree;
-pub use recover::{db_after_create, db_after_move};
+pub use recover::{Made, create, db_after_create, db_after_move, move_to};
 pub(crate) use tree::{merge_tree, move_tree};
 
 #[cfg(test)]

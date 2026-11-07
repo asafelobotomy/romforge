@@ -25,3 +25,14 @@ test("sizes in binary units", () => {
   assert.equal(size(3 * 2 ** 20), "3.0 MiB");
   assert.equal(size(5 * 2 ** 30), "5.0 GiB");
 });
+
+test("statuses sort and mark from one table", async () => {
+  const { statusRank, statusOrder, markOf, flagged } = await import("../src/labels.js");
+  assert.equal(statusRank("verified"), 0);
+  assert.ok(statusRank("firmware") < statusRank("unknown"), "a BIOS file never sorts first");
+  assert.equal(statusRank("nosuch"), statusOrder.length);
+  assert.equal(markOf("verified"), "✓");
+  assert.equal(markOf("by_you"), "✎", "identified by you is never ticked");
+  assert.equal(markOf("duplicate"), "~");
+  assert.ok(!flagged.has("verified") && flagged.has("missing"));
+});

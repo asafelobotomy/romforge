@@ -141,23 +141,20 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             }
         }
         Command::Scummvm(cmd) => {
-            // libretro's names for ScummVM games (its box art goes by them);
-            // without them, ScummVM's own names stay.
-            match lib.scummvm_titles_download() {
-                Ok(n) => println!("libretro's ScummVM.dat: names for {n} game ids"),
-                Err(e) => eprintln!("warning: libretro's ScummVM.dat: {e} (ScummVM's own names are used)"),
-            }
-            let r = match cmd {
-                ScummvmCommand::Read => {
-                    let env = lib.env()?;
-                    lib.scummvm_read(&env)?
-                }
+            let bytes = match cmd {
+                ScummvmCommand::Read => None,
                 ScummvmCommand::Import { file } => {
-                    let bytes =
-                        std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
-                    lib.scummvm_import(&bytes)?
+                    Some(std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?)
                 }
             };
+            let r = lib.scummvm_refresh(bytes.as_deref())?;
+            match (&r.titles, &r.titles_problem) {
+                (Some(n), _) => println!("libretro's ScummVM.dat: names for {n} game ids"),
+                (_, Some(e)) => {
+                    eprintln!("warning: libretro's ScummVM.dat: {e} (ScummVM's own names are used)")
+                }
+                _ => {}
+            }
             println!(
                 "ScummVM list: {} entries; ScummVM itself named {} folder(s); {} ScummVM game(s) in your folders",
                 r.entries, r.asked, r.games

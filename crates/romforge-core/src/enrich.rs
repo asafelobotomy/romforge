@@ -88,3 +88,16 @@ pub fn libretro_field(key: &str) -> &str {
         k => k,
     }
 }
+
+/// A game's release year as `game_meta` keeps it (IGDB and Wikidata tell
+/// same-named games apart by it).
+pub(crate) fn release_year(conn: &Connection, system_id: i64, title: &str) -> Result<Option<i32>, Error> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM game_meta WHERE system_id = ?1 AND title = ?2 AND field = 'releaseyear'",
+            params![system_id, title],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|y| y.trim().parse().ok()))
+}

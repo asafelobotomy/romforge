@@ -305,13 +305,7 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
             });
             continue;
         };
-        let runs = |s: &systems::System| {
-            if e.name == RETROARCH.name {
-                !s.cores.is_empty()
-            } else {
-                with_shared(e).any(|n| s.emulators.contains(&n))
-            }
-        };
+        let runs = |s: &systems::System| crate::launch::runs(s, e.settings_name());
         installed.push(EmulatorTab {
             name: e.name,
             label: e.label,
@@ -335,15 +329,13 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
             movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
             gathers: env.home.is_some() && crate::saves::gather::gathers(e.settings_name()),
             backs_up: env.home.is_some() && crate::saves::backup::backs_up(e.settings_name()),
+            // The user's folders as `env` found them, read once for all.
             existing: env
                 .home
                 .as_ref()
-                .zip(std::env::var_os("HOME"))
+                .zip(env.user.as_ref())
                 .filter(|_| launch::existing::importable(e.name))
-                .map(|(h, user)| {
-                    let user = PathBuf::from(user);
-                    launch::existing::existing(e, h, &user, &launch::existing::Xdg::detect(&user), Some(conn))
-                }),
+                .map(|(h, u)| launch::existing::existing(e, h, &u.home, &u.xdg, Some(conn))),
         });
     }
     Ok(EmulatorSettingsView {
@@ -352,14 +344,6 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
         installed,
         not_installed,
     })
-}
-
-/// `e`'s name and those of the entries sharing its settings.
-fn with_shared(e: &'static KnownEmulator) -> impl Iterator<Item = &'static str> {
-    KNOWN_EMULATORS
-        .iter()
-        .filter(move |k| k.settings_name() == e.name)
-        .map(|k| k.name)
 }
 
 #[cfg(test)]

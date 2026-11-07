@@ -1,6 +1,6 @@
 import { sorted } from "./sort.js";
 import { versionLines } from "./versions.js";
-import { displayTitle } from "./labels.js";
+import { displayTitle, statusRank } from "./labels.js";
 
 // How the library is shown: a list, or cards of box art, 3D boxes or
 // banners (kept for next time).
@@ -28,13 +28,16 @@ export function storeView(name, mode) {
 }
 
 // The list's sort (games by it, and the versions under each heading).
-const statusOrder = ["verified", "incomplete", "by_you", "derivative", "detected", "candidate", "duplicate", "wrong_system", "missing", "patch", "unknown"];
 const listGetters = {
   title: displayTitle,
   platform: (r) => r.system_name,
   year: (r) => r.year,
-  status: (r) => statusOrder.indexOf(r.status),
+  status: (r) => statusRank(r.status),
 };
+
+// A game of the library (not a version under it, nor a file nothing
+// identified): what All games counts and full screen shows.
+export const isGame = (r) => r.main && !r.unmatched;
 
 // One row per game: its original (listed even when you only have
 // translations, hacks or patches of it), expanding to its other versions

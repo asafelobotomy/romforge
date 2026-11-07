@@ -8,7 +8,7 @@ mod subcommands;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 
-use romforge_core::{Library, enrich, systems};
+use romforge_core::{Library, systems};
 
 use crate::args::{Cli, Command};
 use crate::subcommands::{DatCommand, EmulatorCommand, HomeCommand, ThemesCommand};
@@ -39,16 +39,16 @@ fn main() -> Result<()> {
                 Some(d) => Home::of_db(d),
                 None => home.clone(),
             };
-            let art = enrich::default_cache_dir().join(romforge_core::layout::LOOSE_ART_DIR);
-            let done = romforge_core::home::create_or_adopt(parent, current.as_ref(), &db, &art);
-            if done.is_err() {
-                match romforge_core::home::db_after_create(parent, &db, &done) {
+            let made = romforge_core::home::create(parent, current.as_ref(), &db);
+            if made.result.is_err() {
+                match &made.db {
                     Some(at) => eprintln!("the library is at {}", at.display()),
                     None => eprintln!("the library couldn't be found again"),
                 }
             }
-            let done =
-                done.with_context(|| format!("setting up the RomForge folder in {}", parent.display()))?;
+            let done = made
+                .result
+                .with_context(|| format!("setting up the RomForge folder in {}", parent.display()))?;
             let new = done.home();
             match &done {
                 Created::Existing { .. } => println!("{} is already a RomForge folder", new.root().display()),
@@ -61,7 +61,6 @@ fn main() -> Result<()> {
                 ),
                 Created::New { .. } => {}
             }
-            new.remember()?;
             println!("using {}", new.root().display());
             return Ok(());
         }
@@ -69,13 +68,11 @@ fn main() -> Result<()> {
             let Some(old) = &home else {
                 bail!("no RomForge folder yet (`romforge-cli home create <parent>`)");
             };
-            let moved = romforge_core::home::relocate(old, new_parent);
-            if moved.is_err() {
-                let at = romforge_core::home::db_after_move(old, &moved);
+            let made = romforge_core::home::move_to(old, new_parent);
+            if let (Err(_), Some(at)) = (&made.result, &made.db) {
                 eprintln!("the library is still at {}", at.display());
             }
-            let new = moved?;
-            new.remember()?;
+            let new = made.result?;
             // Opening it once fixes the paths it stores.
             Library::open(new.db())?;
             println!("moved to {}", new.root().display());
@@ -103,18 +100,7 @@ fn main() -> Result<()> {
 
     if let Command::Dat(DatCommand::Systems) = cli.command {
         for s in systems::SYSTEMS {
-            let mut sources = String::new();
-            for (has, tag) in [
-                (!s.nointro.is_empty(), "no-intro"),
-                (!s.redump.is_empty(), "redump"),
-                (!s.tosec.is_empty(), "tosec"),
-                (!s.hacks.is_empty(), "hacks"),
-                (!s.homebrew.is_empty(), "homebrew"),
-            ] {
-                if has {
-                    sources += &format!("  [{tag}]");
-                }
-            }
+            let sources: String = s.dat_sources().iter().map(|t| format!("  [{t}]")).collect();
             println!("{:<24} {}{sources}", s.key, s.name);
         }
         return Ok(());

@@ -3,6 +3,7 @@
   import { sorted } from "./sort.js";
   import { basename } from "./lib.js";
   import { run } from "./jobs.svelte.js";
+  import { statusRank } from "./labels.js";
 
   // Scan folder's dry run: what scanning a folder would find, worked out
   // without changing the library; Scan it to keep it, or leave it.
@@ -16,9 +17,8 @@
   let preview = $state(null);
   let failure = $state("");
   let sort = $state({ key: "status", dir: 1 });
-  const order = ["verified", "incomplete", "by_you", "derivative", "detected", "candidate", "duplicate", "wrong_system", "unknown"];
   const getters = {
-    status: (g) => order.indexOf(g.status),
+    status: (g) => statusRank(g.status),
     title: (g) => g.title,
     platform: (g) => g.system,
     new: (g) => (g.new ? 0 : 1),

@@ -200,6 +200,18 @@ pub(super) fn keep(
     let path = game::art_path(opts, system, game, kind, image_ext(data).unwrap_or("png"));
     save(&path, data).map_err(|e| Error::Http(format!("{}: {e}", path.display())))?;
     record(conn, system_id, game, kind, Some(&path.to_string_lossy()), source)?;
+    record_url(conn, system_id, game, kind, url)
+}
+
+/// Where a kept picture came from (no credentials), and that Enrich
+/// chose it, not you.
+pub(super) fn record_url(
+    conn: &Connection,
+    system_id: i64,
+    game: &str,
+    kind: ArtKind,
+    url: &str,
+) -> Result<(), Error> {
     conn.execute(
         "UPDATE art SET url = ?4, chosen = 0 WHERE system_id = ?1 AND title = ?2 AND kind = ?3",
         params![

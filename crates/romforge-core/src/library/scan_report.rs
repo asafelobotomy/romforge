@@ -100,6 +100,55 @@ impl SkippedKind {
 /// One source folder's rescan: its report, or the folder and why it failed.
 pub type RefreshResult = Result<ScanReport, (PathBuf, String)>;
 
+/// A Refresh in one: the lists brought up to date and every folder's
+/// rescan added up, what went wrong as lines to show.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Refreshed {
+    /// Folders rescanned.
+    pub folders: usize,
+    /// Entries hashed in them.
+    pub entries: usize,
+    pub problems: Vec<String>,
+    /// Files skipped for their extension, by kind (`.txt 5, .nfo 3`).
+    pub skipped: String,
+    /// Files of ScummVM games, named by ScummVM's list and not hashed.
+    pub in_games: usize,
+    /// The lists brought up to date first ("ScummVM's list (…)", "DATs
+    /// and lists: SNES").
+    pub lists: Vec<String>,
+}
+
+impl Refreshed {
+    /// `lists` and the folders' `results` added up.
+    pub fn of(lists: crate::ListsReport, results: Vec<RefreshResult>) -> Refreshed {
+        let mut out = Refreshed {
+            problems: lists.problems,
+            lists: lists.updated,
+            ..Refreshed::default()
+        };
+        let mut kinds = Vec::new();
+        for r in results {
+            match r {
+                Ok(report) => {
+                    out.folders += 1;
+                    out.entries += report.hashed;
+                    out.in_games += report.in_games;
+                    out.problems.extend(
+                        report
+                            .errors
+                            .iter()
+                            .map(|(p, m, e)| format!("{}#{m}: {e}", p.display())),
+                    );
+                    kinds.push(report.skipped_kinds);
+                }
+                Err((path, e)) => out.problems.push(format!("{}: {e}", path.display())),
+            }
+        }
+        out.skipped = SkippedKind::summary(&SkippedKind::merge(kinds.iter().map(Vec::as_slice)), 6);
+        out
+    }
+}
+
 /// Running totals passed to the progress callback after every file or
 /// member, and when the files to read are known and each is done.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]

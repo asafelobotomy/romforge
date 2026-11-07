@@ -1,6 +1,7 @@
 <script>
   import { thumbSrc } from "./lib.js";
   import { listLabel } from "./listLabel.js";
+  import { flagged, markOf } from "./labels.js";
 
   // The library as pictures: box art, 3D boxes or banners (fanart with the
   // game's logo over it), nothing but the picture, in the same order and
@@ -86,7 +87,6 @@
     [listLabel(r, regionFlags), r.system_name, r.year, statusLabel[r.status]].filter(Boolean).join(" · ");
   // Only what needs saying is marked: a game you don't have, a patch file,
   // a file nothing identified.
-  const MARKS = { missing: "○", patch: "✚", unknown: "?", candidate: "~", wrong_system: "~", incomplete: "~" };
   const broken = (e) => e.currentTarget.classList.add("broken");
 </script>
 
@@ -122,7 +122,7 @@
                 <span class="placeholder">{listLabel(r, regionFlags)}</span>
                 {#if src}<img class="art" {src} alt="" loading="lazy" decoding="async" onerror={broken} />{/if}
                 {#if logo}<img class="logo" src={logo} alt="" loading="lazy" onerror={broken} />{/if}
-                {#if MARKS[r.status]}<span class="mark" aria-hidden="true">{MARKS[r.status]}</span>{/if}
+                {#if flagged.has(r.status)}<span class="mark" aria-hidden="true">{markOf(r.status)}</span>{/if}
               </button>
               {#if r.main && r.versions > 1}
                 <button class="more" onclick={() => toggle(r.group)} aria-expanded={isOpen(r.group)} title="{r.versions - 1} more: other regions, editions, translations, hacks and patches">

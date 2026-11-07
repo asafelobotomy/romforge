@@ -30,7 +30,7 @@
   import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
-  import { storedView, storeView, libraryRows } from "./listing.js";
+  import { storedView, storeView, libraryRows, isGame } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
   import { ui } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
@@ -272,7 +272,7 @@
   function toggle(key) {
     expanded[key] = !isOpen(key);
   }
-  let games = $derived(lib.rows.filter((r) => r.main && !r.unmatched).length);
+  let games = $derived(lib.rows.filter(isGame).length);
   let rows = $derived(libraryRows(lib.rows, platform, filter, listSort, isOpen));
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
   // What the toolbar's jobs act on.

@@ -198,6 +198,23 @@ impl Source {
 
 /// `r`'s preview picture, fetched once into `cache` (by id and version);
 /// none when it has none.
+/// Where the community themes' previews are kept.
+pub fn previews_dir() -> PathBuf {
+    crate::enrich::default_cache_dir().join("theme-previews")
+}
+
+/// The preview named `name` (as [`preview`] names it) in `cache`, or `None`
+/// for a name that isn't one: checked before anything is read.
+pub fn preview_file(cache: &Path, name: &str) -> Option<PathBuf> {
+    let plain = !name.is_empty()
+        && name.ends_with(".png")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-.".contains(&b))
+        && !name.contains("..");
+    plain.then(|| cache.join(name))
+}
+
 pub fn preview(source: &Source, r: &Remote, cache: &Path) -> Result<Option<PathBuf>, Error> {
     if r.preview.is_empty() || mime(&r.preview) != Some("image/png") || !slug(&r.id) {
         return Ok(None);

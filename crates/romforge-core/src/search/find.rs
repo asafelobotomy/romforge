@@ -16,6 +16,21 @@ pub enum Scraper {
     Wikidata,
 }
 
+impl std::str::FromStr for Scraper {
+    type Err = crate::Error;
+
+    /// `dat` or `wikidata`, as a shell names it.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "dat" => Ok(Scraper::Dat),
+            "wikidata" => Ok(Scraper::Wikidata),
+            other => Err(crate::Error::Settings(format!(
+                "unknown scraper {other:?} (dat or wikidata)"
+            ))),
+        }
+    }
+}
+
 /// Wikidata's entity search API (not the SPARQL query service).
 pub const WIKIDATA_API: &str = "https://www.wikidata.org/w/api.php";
 

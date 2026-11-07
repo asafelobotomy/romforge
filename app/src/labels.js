@@ -15,6 +15,20 @@ export const statusLabel = {
   missing: "Not in your library",
   patch: "Patch file",
 };
+// Statuses in the order lists sort them; one not listed goes last.
+export const statusOrder = ["verified", "incomplete", "by_you", "derivative", "detected", "candidate", "duplicate", "wrong_system", "firmware", "missing", "patch", "unknown"];
+export const statusRank = (s) => {
+  const i = statusOrder.indexOf(s);
+  return i < 0 ? statusOrder.length : i;
+};
+
+// Each status's mark in the list; the picture grid marks only those that
+// need saying (`flagged`). Only a verified game gets the tick (house rule
+// 8: one identified by you never shows as verified).
+export const statusMark = { verified: "✓", by_you: "✎", derivative: "✎", detected: "◆", unknown: "?", missing: "○", patch: "✚" };
+export const markOf = (s) => statusMark[s] ?? "~";
+export const flagged = new Set(["missing", "patch", "unknown", "candidate", "wrong_system", "incomplete"]);
+
 export const artLabel = {
   boxart: "Box art",
   box3d: "3D box",
