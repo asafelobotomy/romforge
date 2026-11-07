@@ -140,9 +140,7 @@ fn attr(e: &BytesStart, name: &str) -> Result<Option<String>, Error> {
 }
 
 fn hash_attr(e: &BytesStart, name: &str) -> Result<Option<String>, Error> {
-    Ok(attr(e, name)?
-        .map(|h| h.to_ascii_lowercase())
-        .filter(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit())))
+    Ok(attr(e, name)?.and_then(|h| super::normal_hash(name, &h)))
 }
 
 pub(super) fn parse_size(s: &str) -> Option<u64> {

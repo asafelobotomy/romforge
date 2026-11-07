@@ -146,6 +146,11 @@ pub(super) fn ask(
     {
         return;
     }
+    // Nothing to ask it with yet (no hashed ROM, no serial): not asked,
+    // so not marked as asked either.
+    if !crate::artsources::can_ask(provider, sh.keys, job) {
+        return;
+    }
     match crate::artsources::lookup(provider, sh.keys, &sh.opts.sources, session, job) {
         Ok(found) => {
             // Kinds a download of failed for.
@@ -186,7 +191,7 @@ pub(super) fn ask(
             }
         }
         Err(e) => {
-            if fetch::is_rate_limited(&e) {
+            if fetch::stops_source(&e) {
                 sh.halted.lock().unwrap_or_else(|e| e.into_inner()).push(provider);
             }
             got.push(Got::Error(format!("{}: {e}", provider.name())));

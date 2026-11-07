@@ -1,8 +1,8 @@
 //! One game's art: what the database says first (on the calling thread),
 //! the downloads on a worker (the free sources with no key, the Arcade
-//! Database and GameTDB, then libretro, then LaunchBox, then the keyed
-//! sources, in that order: house rule 10), then what was found recorded
-//! (on the calling thread again).
+//! Database and GameTDB, then libretro, then the keyed sources, then
+//! LaunchBox's downloaded database, in that order: house rule 10), then
+//! what was found recorded (on the calling thread again).
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -185,8 +185,8 @@ pub(super) fn prepare(
 
 /// The downloads for one game (no database), each kind from the first
 /// source that has it: the free sources (the Arcade Database, GameTDB:
-/// larger pictures than libretro's), libretro's thumbnails, LaunchBox,
-/// then the keyed sources.
+/// larger pictures than libretro's), libretro's thumbnails, the keyed
+/// sources, then LaunchBox.
 pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
     let GameIn {
         game,
@@ -244,8 +244,11 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
         }
         got.push(Got::NotOnLibretro(kind));
     }
-    // LaunchBox next (free, no key; downloaded by the user): only what is
-    // still missing.
+    for provider in keyed {
+        super::ask::ask(sh, provider, &job, &mut wanted, &mut got, &mut session);
+    }
+    // LaunchBox last (downloaded by the user, published without a
+    // licence): only what every other source left missing (house rule 10).
     for ArtFound { kind, url, .. } in launchbox {
         if !wanted.contains(&kind) {
             continue;
@@ -259,9 +262,6 @@ pub(super) fn fetch(sh: &Shared, input: GameIn) -> GameOut {
             Ok(None) => {}
             Err(e) => got.push(Got::Error(format!("LaunchBox: {e}"))),
         }
-    }
-    for provider in keyed {
-        super::ask::ask(sh, provider, &job, &mut wanted, &mut got, &mut session);
     }
     GameOut {
         game,

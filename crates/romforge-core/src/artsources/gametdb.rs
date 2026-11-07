@@ -96,6 +96,11 @@ pub(super) fn lookup(bases: &Bases, job: &Job) -> Result<Found, Error> {
     if *platform == "wiiu" && serial.len() != 6 {
         return Ok(Found::default());
     }
+    // It comes from the file's header and goes into the URL's path: a
+    // game code is a few letters and digits, nothing else.
+    if !(4..=6).contains(&serial.len()) || !serial.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Ok(Found::default());
+    }
     let mut art = Vec::new();
     for (kind, names, ext) in types(platform) {
         for name in *names {

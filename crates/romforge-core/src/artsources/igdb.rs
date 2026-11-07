@@ -17,35 +17,42 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, session: &mut Session, job: &Jo
         let h = crate::hash::hex(&sha1::Sha1::digest(secret.as_bytes()));
         format!("{}\t{id}\t{h}", bases.igdb_token)
     };
-    if session.igdb_token.is_none() {
-        session.igdb_token = credentials::cached_igdb_token(&cache_key, None);
-    }
-    if session.igdb_token.is_none() {
-        let url = format!(
-            "{}?client_id={}&client_secret={}&grant_type=client_credentials",
-            bases.igdb_token,
-            fetch::encode_segment(id),
-            fetch::encode_segment(secret)
-        );
-        let body = fetch::request(&Request {
-            url: &url,
-            body: Some(String::new()),
-            ..Request::default()
-        })?
-        .ok_or_else(|| Error::Http("IGDB: no token".into()))?;
-        let answer = json(&body)?;
-        let token = answer["access_token"]
-            .as_str()
-            .ok_or_else(|| Error::Http("IGDB: no token in the answer".into()))?
-            .to_owned();
-        // Twitch says how long it lasts; without that, this run only.
-        session.igdb_token = match answer["expires_in"].as_u64() {
-            Some(secs) => credentials::cached_igdb_token(&cache_key, Some((token, secs))),
-            None => Some(token),
-        };
-    }
-    let token = session.igdb_token.clone().unwrap_or_default();
-    let title = crate::view::search_title(job.title).replace('"', "");
+    let token = |session: &mut Session| -> Result<String, Error> {
+        if session.igdb_token.is_none() {
+            session.igdb_token = credentials::cached_igdb_token(&cache_key, None);
+        }
+        if session.igdb_token.is_none() {
+            let url = format!(
+                "{}?client_id={}&client_secret={}&grant_type=client_credentials",
+                bases.igdb_token,
+                fetch::encode_segment(id),
+                fetch::encode_segment(secret)
+            );
+            let body = fetch::request(&Request {
+                url: &url,
+                body: Some(String::new()),
+                ..Request::default()
+            })?
+            .ok_or_else(|| Error::Http("IGDB: no token".into()))?;
+            let answer = json(&body)?;
+            let token = answer["access_token"]
+                .as_str()
+                .ok_or_else(|| Error::Http("IGDB: no token in the answer".into()))?
+                .to_owned();
+            // Twitch says how long it lasts; without that, this run only.
+            session.igdb_token = match answer["expires_in"].as_u64() {
+                Some(secs) => credentials::cached_igdb_token(&cache_key, Some((token, secs))),
+                None => Some(token),
+            };
+        }
+        Ok(session.igdb_token.clone().unwrap_or_default())
+    };
+    // Apicalypse's own syntax out of the title: quotes, escapes, the end
+    // of a clause.
+    let title: String = crate::view::search_title(job.title)
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\' | ';'))
+        .collect();
     let platforms: Vec<String> = job.system.igdb.iter().map(|p| p.to_string()).collect();
     let query = format!(
         "search \"{title}\"; fields name,summary,genres.name,first_release_date,\
@@ -53,16 +60,27 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, session: &mut Session, job: &Jo
          where platforms = ({}); limit 10;",
         platforms.join(",")
     );
-    let Some(body) = fetch::request(&Request {
-        url: &format!("{}/games", bases.igdb),
-        headers: vec![
-            ("Client-ID", id.clone()),
-            ("Authorization", format!("Bearer {token}")),
-        ],
-        body: Some(query),
-        ..Request::default()
-    })?
-    else {
+    let ask = |token: &str| {
+        fetch::request(&Request {
+            url: &format!("{}/games", bases.igdb),
+            headers: vec![
+                ("Client-ID", id.clone()),
+                ("Authorization", format!("Bearer {token}")),
+            ],
+            body: Some(query.clone()),
+            ..Request::default()
+        })
+    };
+    let answer = match ask(&token(session)?) {
+        // A token Twitch took back before it ran out: a new one, once.
+        Err(Error::Refused(_)) => {
+            credentials::forget_igdb_token(&cache_key);
+            session.igdb_token = None;
+            ask(&token(session)?)
+        }
+        other => other,
+    };
+    let Some(body) = answer? else {
         return Ok(Found::default());
     };
     let games = json(&body)?;

@@ -6,6 +6,7 @@
 
 pub mod artsources;
 mod atomic;
+pub mod cache;
 pub mod chunks;
 pub mod cleanup;
 pub mod controller;
@@ -91,6 +92,10 @@ pub enum Error {
     /// used-up quota), or a host that did earlier in the run.
     #[error("download: {0}")]
     RateLimited(String),
+    /// A server refusing the key or account it was given (401, 403;
+    /// ScreenScraper's API closed, 423): asking again won't help.
+    #[error("download: {0}")]
+    Refused(String),
     #[error("no DAT source is known for {0}")]
     NoDownload(&'static str),
     #[error("organize: {0}")]

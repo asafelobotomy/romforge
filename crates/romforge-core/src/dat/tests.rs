@@ -199,3 +199,17 @@ fn refuses_deep_nesting() {
     let ok = "clrmamepro ( name x )\ngame ( name g rom ( name r size 1 crc 00000001 ) )";
     assert_eq!(parse_cmp(ok).unwrap().games.len(), 1);
 }
+
+#[test]
+fn hashes_are_stored_at_their_width() {
+    use super::normal_hash;
+    assert_eq!(normal_hash("crc", "1234").as_deref(), Some("00001234"));
+    assert_eq!(normal_hash("crc", "DEADBEEF").as_deref(), Some("deadbeef"));
+    assert_eq!(normal_hash("crc", "123456789"), None);
+    assert_eq!(normal_hash("sha1", "abc"), None, "a cut-short SHA1 never matches");
+    assert_eq!(
+        normal_hash("md5", &"A".repeat(32)).as_deref(),
+        Some(&*"a".repeat(32))
+    );
+    assert_eq!(normal_hash("md5", "xyz"), None);
+}

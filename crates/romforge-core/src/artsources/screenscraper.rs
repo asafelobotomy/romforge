@@ -239,6 +239,13 @@ mod tests {
             manual.starts_with("https://x/m.pdf") && !manual.contains("secret"),
             "{manual}"
         );
+        // No hashed ROM yet: nothing to ask it by, so it isn't asked.
+        let keys = Keys::default();
+        assert!(!crate::artsources::can_ask(
+            crate::artsources::Provider::ScreenScraper,
+            &keys,
+            &job
+        ));
         let with_video = Job { video: true, ..job };
         assert!(
             read(&game, &with_video)

@@ -139,6 +139,11 @@ pub fn install(
     // Swap: the old download aside, the new one in, the old one gone.
     let target = dir.join(&r.id);
     let old = dir.join(format!(".old-{}", r.id));
+    // An install that stopped between its two renames left the theme
+    // aside: it goes back first, so it is never lost.
+    if old.exists() && !target.exists() {
+        std::fs::rename(&old, &target)?;
+    }
     if old.exists() {
         std::fs::remove_dir_all(&old)?;
     }

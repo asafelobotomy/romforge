@@ -118,9 +118,27 @@ fn is_edition(part: &str) -> bool {
         .any(|w| p.contains(w))
 }
 
+/// URLs longer than this go as a POST: servers refuse long request lines
+/// (414, 431), and a batch of long titles makes one.
+const MAX_GET: usize = 4000;
+
 pub(super) fn sparql(endpoint: &str, query: &str) -> Result<Vec<HashMap<String, String>>, Error> {
-    let url = format!("{endpoint}?format=json&query={}", fetch::encode_segment(query));
-    let body = fetch::get_small(&url)?;
+    let encoded = fetch::encode_segment(query);
+    let url = format!("{endpoint}?format=json&query={encoded}");
+    let body = if url.len() <= MAX_GET {
+        fetch::get_small(&url)?
+    } else {
+        let url = format!("{endpoint}?format=json");
+        fetch::request(&fetch::Request {
+            headers: vec![
+                ("Content-Type", "application/x-www-form-urlencoded".to_owned()),
+                ("Accept", "application/sparql-results+json".to_owned()),
+            ],
+            body: Some(format!("query={encoded}")),
+            ..fetch::Request::small(&url)
+        })?
+        .ok_or_else(|| Error::Http("Wikidata: HTTP 404".into()))?
+    };
     parse_results(&body)
 }
 

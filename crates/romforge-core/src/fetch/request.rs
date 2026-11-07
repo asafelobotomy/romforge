@@ -203,7 +203,7 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.trim().parse::<u64>().ok())
+                .and_then(retry_after)
                 .unwrap_or(5);
             if wait > 30 || attempt >= 2 {
                 let minutes = wait.div_ceil(60);
@@ -230,6 +230,14 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
         if status == 404 {
             return Ok(None);
         }
+        // A key or account it won't take (ScreenScraper: 423 its API
+        // closed, 426 this program refused): the same for every game.
+        if matches!(status, 401 | 403 | 423 | 426) {
+            return Err(Error::Refused(format!(
+                "{}: HTTP {status}: the server refused the request (check the key or account in Settings)",
+                short(url)
+            )));
+        }
         if status >= 400 {
             return Err(err(format!("HTTP {status}")));
         }
@@ -238,9 +246,58 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
     unreachable!("the loop returns")
 }
 
+/// A `Retry-After` value in seconds: a number, or an HTTP date
+/// (`Wed, 21 Oct 2026 07:28:00 GMT`) from now.
+pub(super) fn retry_after(v: &str) -> Option<u64> {
+    let v = v.trim();
+    if let Ok(secs) = v.parse::<u64>() {
+        return Some(secs);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(http_date(v)?.saturating_sub(now))
+}
+
+/// An IMF-fixdate's seconds since 1970.
+pub(super) fn http_date(v: &str) -> Option<u64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let mut p = v.split_whitespace().skip(1);
+    let day: u64 = p.next()?.parse().ok()?;
+    let name = p.next()?;
+    let month = MONTHS.iter().position(|m| *m == name)? as u64 + 1;
+    let year: u64 = p.next()?.parse().ok()?;
+    let mut hms = p.next()?.split(':').map(|n| n.parse::<u64>().ok());
+    let (h, m, sec) = (hms.next()??, hms.next()??, hms.next()??);
+    if year < 1970 || day == 0 || day > 31 || h > 23 || m > 59 || sec > 60 {
+        return None;
+    }
+    // Days since 1970 of a civil date (Howard Hinnant's algorithm).
+    let (y, mo) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let era = y / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * mo + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = (era * 146_097 + doe).checked_sub(719_468)?;
+    Some(days * 86_400 + h * 3600 + m * 60 + sec)
+}
+
 /// Whether an error from [`request`] is a server asking to be left alone.
 pub fn is_rate_limited(e: &Error) -> bool {
     matches!(e, Error::RateLimited(_))
+}
+
+/// Whether a source should be asked nothing more this run: it is rate
+/// limiting, or it refused the key it was given.
+pub fn stops_source(e: &Error) -> bool {
+    matches!(e, Error::RateLimited(_) | Error::Refused(_))
 }
 
 /// Percent-encode one URL path segment.
@@ -273,18 +330,27 @@ pub fn decode_segment(s: &str) -> String {
 }
 
 /// Hosts that ask for one connection at a time from each user (the Arcade
-/// Database: "a single connection per ip address at a time").
-const ONE_AT_A_TIME: &[&str] = &["adb.arcadeitalia.net"];
+/// Database: "a single connection per ip address at a time";
+/// ScreenScraper: one thread for a free account), each with its own lock,
+/// so one never waits on another. A name matches the host or any host
+/// under it.
+const ONE_AT_A_TIME: &[(&str, &Mutex<()>)] = &[
+    ("adb.arcadeitalia.net", &ONE),
+    ("screenscraper.fr", &SCREENSCRAPER),
+];
 
-/// Held for a whole request (answer and body) to an [`ONE_AT_A_TIME`] host.
+/// Held for a whole request (answer and body) to the Arcade Database.
 pub(super) static ONE: Mutex<()> = Mutex::new(());
+/// The same for ScreenScraper (its API and its media hosts).
+pub(super) static SCREENSCRAPER: Mutex<()> = Mutex::new(());
 
 pub(super) fn one_at_a_time(url: &str) -> Option<std::sync::MutexGuard<'static, ()>> {
     let host = host_of(url);
     let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
     ONE_AT_A_TIME
-        .contains(&name)
-        .then(|| ONE.lock().unwrap_or_else(|e| e.into_inner()))
+        .iter()
+        .find(|(h, _)| name == *h || name.strip_suffix(h).is_some_and(|rest| rest.ends_with('.')))
+        .map(|(_, lock)| lock.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// When each host may be asked next.

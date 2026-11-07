@@ -229,6 +229,12 @@ fn the_arcade_database_gets_one_request_at_a_time() {
     assert!(request::ONE.try_lock().is_err(), "a second request waits");
     drop(held);
     assert!(request::ONE.try_lock().is_ok());
+    // ScreenScraper has its own: never held by the Arcade Database's.
+    let ss = request::one_at_a_time("https://neoclone.screenscraper.fr/api2/x").unwrap();
+    assert!(request::ONE.try_lock().is_ok());
+    assert!(request::SCREENSCRAPER.try_lock().is_err());
+    drop(ss);
+    assert!(request::one_at_a_time("https://notscreenscraper.fr/x").is_none());
 }
 
 #[test]
@@ -293,4 +299,37 @@ fn wii_u_gets_the_digital_dat_and_the_serial_list() {
         "https://raw.githubusercontent.com/libretro/libretro-database/master/dat/Nintendo%20-%20Wii%20U.dat"
     );
     assert!(list.is_list() && !wiiu[0].is_list());
+}
+
+#[test]
+fn retry_after_takes_seconds_or_a_date() {
+    use super::request::{http_date, retry_after};
+    assert_eq!(retry_after(" 120 "), Some(120));
+    assert_eq!(http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784_111_777));
+    assert_eq!(http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+    assert_eq!(retry_after("Sun, 06 Nov 1994 08:49:37 GMT"), Some(0), "past: now");
+    assert_eq!(retry_after("soon"), None);
+}
+
+#[test]
+fn a_refused_key_stops_the_source() {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/games", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        if let Some(Ok(mut s)) = listener.incoming().next() {
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut line = String::new();
+            while r.read_line(&mut line).unwrap_or(0) > 2 {
+                line.clear();
+            }
+            let _ = write!(
+                s,
+                "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+        }
+    });
+    let e = get(&url).unwrap_err();
+    assert!(matches!(e, crate::Error::Refused(_)), "{e}");
+    assert!(stops_source(&e) && !is_rate_limited(&e));
 }

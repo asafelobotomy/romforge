@@ -164,16 +164,16 @@ pub fn parse_cmp(text: &str) -> Result<Dat, Error> {
                 .map(|r| Rom {
                     name: r.get_owned("name").unwrap_or_default(),
                     size: r.get("size").and_then(parse_size),
-                    crc32: cmp_hash(r.get("crc")),
-                    md5: cmp_hash(r.get("md5")),
-                    sha1: cmp_hash(r.get("sha1")),
+                    crc32: cmp_hash("crc", r.get("crc")),
+                    md5: cmp_hash("md5", r.get("md5")),
+                    sha1: cmp_hash("sha1", r.get("sha1")),
                     status: r.get_owned("status").or_else(|| r.get_owned("flags")),
                     disk: false,
                 })
                 .chain(g.blocks("disk").map(|d| Rom {
                     name: format!("{}.chd", d.get_owned("name").unwrap_or_default()),
-                    sha1: cmp_hash(d.get("sha1")),
-                    md5: cmp_hash(d.get("md5")),
+                    sha1: cmp_hash("sha1", d.get("sha1")),
+                    md5: cmp_hash("md5", d.get("md5")),
                     status: d.get_owned("status").or_else(|| d.get_owned("flags")),
                     disk: true,
                     ..Rom::default()
@@ -192,6 +192,10 @@ pub struct Record {
     pub title: Option<String>,
     pub fields: Vec<(String, String)>,
     pub crcs: Vec<String>,
+    /// Each ROM's CRC32 with its size (`crc:size`), where the file gives
+    /// one: what a file named by hand is looked up by (house rule 8: a
+    /// CRC alone is only a candidate).
+    pub sized: Vec<String>,
     pub serials: Vec<String>,
 }
 
@@ -224,7 +228,10 @@ pub fn parse_cmp_records(text: &str) -> Result<Vec<Record>, Error> {
             }
         }
         for r in g.blocks("rom") {
-            if let Some(crc) = cmp_hash(r.get("crc")) {
+            if let Some(crc) = cmp_hash("crc", r.get("crc")) {
+                if let Some(size) = r.get("size").and_then(|s| s.trim().parse::<u64>().ok()) {
+                    rec.sized.push(format!("{crc}:{size}"));
+                }
                 rec.crcs.push(crc);
             }
             if let Some(serial) = r.get_owned("serial") {
@@ -281,7 +288,6 @@ pub(crate) fn cmp_games(text: &str) -> Result<Vec<CmpGame>, Error> {
         .collect())
 }
 
-fn cmp_hash(h: Option<&str>) -> Option<String> {
-    h.map(str::to_ascii_lowercase)
-        .filter(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit()))
+fn cmp_hash(kind: &str, h: Option<&str>) -> Option<String> {
+    h.and_then(|h| super::normal_hash(kind, h))
 }

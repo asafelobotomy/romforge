@@ -103,6 +103,13 @@ pub fn fetch_pictures(
         if backing_off(dir, &qid) {
             continue;
         }
+        // Only Wikimedia's own hosts (over HTTPS), whatever a statement
+        // says; this machine too, for tests.
+        let Some(url) = commons_url(&url) else {
+            errors.push(format!("picture of {qid}: not a Wikimedia address"));
+            mark_failed(dir, &qid, GONE_RETRY);
+            continue;
+        };
         let sep = if url.contains('?') { '&' } else { '?' };
         let body = match fetch::get_image(&format!("{url}{sep}width=240")) {
             Ok(Some(b)) => b,
@@ -136,4 +143,35 @@ pub fn fetch_pictures(
         n += 1;
     }
     Ok(n)
+}
+
+/// `url` if it is on Wikimedia's hosts (`http:` made `https:`), or on this
+/// machine; `None` for anywhere else.
+fn commons_url(url: &str) -> Option<String> {
+    let host = fetch::host_of(url);
+    let name = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    let wikimedia = ["wikimedia.org", "wikipedia.org", "wikidata.org"]
+        .iter()
+        .any(|d| name == *d || name.strip_suffix(d).is_some_and(|r| r.ends_with('.')));
+    if wikimedia {
+        return Some(match url.strip_prefix("http://") {
+            Some(rest) => format!("https://{rest}"),
+            None => url.to_owned(),
+        });
+    }
+    matches!(name, "127.0.0.1" | "localhost" | "[::1]").then(|| url.to_owned())
+}
+
+#[cfg(test)]
+mod host_tests {
+    #[test]
+    fn pictures_come_from_wikimedia_only() {
+        let c = super::commons_url;
+        assert_eq!(
+            c("http://commons.wikimedia.org/wiki/Special:FilePath/X.svg").as_deref(),
+            Some("https://commons.wikimedia.org/wiki/Special:FilePath/X.svg")
+        );
+        assert_eq!(c("https://evil.example/x.png"), None);
+        assert_eq!(c("https://notwikimedia.org/x.png"), None);
+    }
 }

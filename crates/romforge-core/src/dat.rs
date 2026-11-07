@@ -44,6 +44,23 @@ pub struct Game {
 }
 
 /// "SLUS-00067, SLUS-00067GHA" -> both.
+/// A DAT's `crc`, `md5` or `sha1` value as romforge stores hashes: lower
+/// case hex of the right width. A CRC32 written without its leading zeros
+/// (`1234`) is padded; anything else of the wrong width is dropped (it
+/// could never match a file, so it would only hide a damaged DAT).
+pub(crate) fn normal_hash(kind: &str, h: &str) -> Option<String> {
+    let h = h.trim().to_ascii_lowercase();
+    if h.is_empty() || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    match kind {
+        "crc" if h.len() <= 8 => Some(format!("{h:0>8}")),
+        "md5" if h.len() == 32 => Some(h),
+        "sha1" if h.len() == 40 => Some(h),
+        _ => None,
+    }
+}
+
 pub fn split_serials(s: &str) -> Vec<String> {
     s.split(',')
         .map(str::trim)

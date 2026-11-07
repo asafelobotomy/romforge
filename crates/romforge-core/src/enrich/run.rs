@@ -33,10 +33,11 @@ fn games_you_have(
         }
     }
     // Games you named in Search have no DAT ROMs, but get metadata and art
-    // by title like any other (and by their files' CRC32s where a file of
-    // metadata has them: DOS.dat).
+    // by title like any other (and by their files' CRC32s and sizes where
+    // a file of metadata has them: DOS.dat; a CRC alone is only a
+    // candidate, house rule 8).
     let mut named = conn.prepare(
-        "SELECT DISTINCT m.system_id, m.title, f.crc32 FROM manual_ids m
+        "SELECT DISTINCT m.system_id, m.title, f.crc32, f.size FROM manual_ids m
          JOIN files f ON f.sha1 = m.sha1 AND f.size = m.size AND f.status = 'manual'
          WHERE ?1 IS NULL OR m.system_id = ?1",
     )?;
@@ -45,11 +46,12 @@ fn games_you_have(
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, Option<String>>(2)?,
+            r.get::<_, i64>(3)?,
         ))
     })? {
-        let (system, title, crc) = row?;
+        let (system, title, crc, size) = row?;
         let crcs = out.entry((system, title)).or_default();
-        crcs.extend(crc.map(|c| c.to_ascii_lowercase()));
+        crcs.extend(crc.map(|c| format!("{}:{size}", c.to_ascii_lowercase())));
     }
     // Folder games ScummVM named.
     let mut folders = conn
@@ -86,6 +88,9 @@ pub fn enrich(
         ),
         None => None,
     };
+    // What the cache can make again goes once it is old (art kept by
+    // Enrich isn't in those folders).
+    crate::cache::prune(&opts.cache_dir);
     let mut have = games_you_have(conn, only)?;
     if let Some(t) = &opts.title {
         // A translation or hack brings its base game along.

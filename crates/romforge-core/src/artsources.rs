@@ -7,8 +7,9 @@
 //! - [`gametdb`] by the header's serial (GameCube, Wii, DS).
 //!
 //! The rest need the owner's keys (ScreenScraper is tier 2, SteamGridDB
-//! and IGDB tier 3), and only fill what libretro and the downloaded
-//! LaunchBox database don't have (they are asked after both):
+//! and IGDB tier 3), and only fill what libretro doesn't have (they are
+//! asked after it, and before the downloaded LaunchBox database, which
+//! fills only what is left):
 //!
 //! - [`screenscraper`] by the ROM's hashes: pictures and text.
 //! - [`steamgriddb`] by title: hero, logo, icon.
@@ -219,6 +220,18 @@ pub fn lookup(
         Provider::ScreenScraper => screenscraper::lookup(keys, bases, job),
         Provider::SteamGridDb => steamgriddb::lookup(keys, bases, job),
         Provider::Igdb => igdb::lookup(keys, bases, session, job),
+    }
+}
+
+/// Whether `provider` has what it is asked by for `job` (a hashed ROM, a
+/// serial, a key): one without is not asked, and not marked as asked.
+pub fn can_ask(provider: Provider, keys: &Keys, job: &Job) -> bool {
+    match provider {
+        Provider::Adb => job.system.arcade,
+        Provider::GameTdb => job.serial.is_some(),
+        Provider::ScreenScraper => job.system.screenscraper.is_some() && job.rom.is_some(),
+        Provider::SteamGridDb => keys.steamgriddb_key.is_some(),
+        Provider::Igdb => keys.igdb_client_id.is_some() && keys.igdb_client_secret.is_some(),
     }
 }
 

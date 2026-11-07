@@ -210,6 +210,10 @@ pub fn preview(source: &Source, r: &Remote, cache: &Path) -> Result<Option<PathB
     let path = cache.join(format!("{}-{version}.png", r.id));
     if !path.is_file() {
         let bytes = source.get(&r.preview, 4 << 20)?;
+        // Served to the window as a PNG: it must be one.
+        if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(Error::Settings(format!("{}: its preview isn't a PNG", r.name)));
+        }
         std::fs::create_dir_all(cache)?;
         crate::atomic::write(&path, &bytes)?;
     }

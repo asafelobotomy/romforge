@@ -23,7 +23,7 @@ pub struct ArtChoices {
 }
 
 /// Previews kept for the picker.
-const CHOICES_DIR: &str = "art-choices";
+pub(crate) const CHOICES_DIR: &str = "art-choices";
 
 /// Every picture of `kind` the sources have for a game (`lookup`: the title
 /// to look it up by; `game`: the title it is kept under): libretro's, the
@@ -46,22 +46,6 @@ pub fn art_choices(
         let lr_game = libretro_game(conn, system, system_id, lookup)?;
         if let Some(url) = thumbnail_url(&opts.thumbnails_base, lr, kind, &lr_game) {
             found.push(("libretro".into(), ArtFound::new(kind, url)));
-        }
-    }
-    if let Some(lb) = opts
-        .extdb
-        .as_deref()
-        .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d))
-    {
-        match crate::extdb::launchbox_lookup(&lb, system, lookup, &opts.launchbox_images) {
-            Ok(Some(f)) => found.extend(
-                f.images
-                    .into_iter()
-                    .filter(|i| i.kind == kind)
-                    .map(|i| ("launchbox".to_owned(), i)),
-            ),
-            Ok(None) => {}
-            Err(e) => out.errors.push(format!("LaunchBox: {e}")),
         }
     }
     let settings = crate::settings::load(conn)?;
@@ -104,6 +88,24 @@ pub fn art_choices(
                     .map(|i| (provider.name().to_owned(), i)),
             ),
             Err(e) => out.errors.push(format!("{}: {e}", provider.name())),
+        }
+    }
+    // LaunchBox's (downloaded, unlicensed) last: after every source of
+    // the owner's own (house rule 10).
+    if let Some(lb) = opts
+        .extdb
+        .as_deref()
+        .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d))
+    {
+        match crate::extdb::launchbox_lookup(&lb, system, lookup, &opts.launchbox_images) {
+            Ok(Some(f)) => found.extend(
+                f.images
+                    .into_iter()
+                    .filter(|i| i.kind == kind)
+                    .map(|i| ("launchbox".to_owned(), i)),
+            ),
+            Ok(None) => {}
+            Err(e) => out.errors.push(format!("LaunchBox: {e}")),
         }
     }
     let current: Option<String> = conn

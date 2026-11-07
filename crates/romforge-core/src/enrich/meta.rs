@@ -48,7 +48,7 @@ pub(super) fn libretro_meta(
             .collect();
         let mut by_crc: HashMap<&str, &dat::Record> = HashMap::new();
         for r in &records {
-            for c in &r.crcs {
+            for c in r.crcs.iter().chain(&r.sized) {
                 by_crc.entry(c.as_str()).or_insert(r);
             }
         }
@@ -158,7 +158,7 @@ pub(super) fn dat_metadata<'g>(
             if let Some(t) = r.title.as_deref() {
                 by_title.entry(t).or_insert(r);
             }
-            for c in &r.crcs {
+            for c in r.crcs.iter().chain(&r.sized) {
                 by_crc.entry(c.as_str()).or_insert(r);
             }
             if let Some((_, c)) = r.fields.iter().find(|(k, _)| k == "code") {

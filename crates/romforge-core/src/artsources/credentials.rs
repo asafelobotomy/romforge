@@ -56,11 +56,20 @@ pub fn download_url(source: &str, url: &str, keys: &Keys, bases: &Bases) -> Stri
 /// IGDB tokens kept for the process, by (token URL, client id, secret's
 /// hash), until shortly before they expire: the art picker opens a new
 /// [`Session`] each time.
+type Tokens = std::sync::Mutex<Option<std::collections::HashMap<String, (String, std::time::Instant)>>>;
+static TOKENS: Tokens = std::sync::Mutex::new(None);
+
+/// Drop the cached IGDB token for `key` (Twitch refused it).
+pub(super) fn forget_igdb_token(key: &str) {
+    let mut tokens = TOKENS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(t) = tokens.as_mut() {
+        t.remove(key);
+    }
+}
+
 pub(super) fn cached_igdb_token(key: &str, new: Option<(String, u64)>) -> Option<String> {
     use std::collections::HashMap;
-    use std::sync::Mutex;
     use std::time::{Duration, Instant};
-    static TOKENS: Mutex<Option<HashMap<String, (String, Instant)>>> = Mutex::new(None);
     let mut tokens = TOKENS.lock().unwrap_or_else(|e| e.into_inner());
     let tokens = tokens.get_or_insert_with(HashMap::new);
     if let Some((token, secs)) = new {

@@ -244,3 +244,50 @@ fn wikidata_replaces_the_downloaded_databases_not_libretro() {
     assert!(replaces(WIKIDATA, had("Nintendo", Some("launchbox")).as_ref()));
     assert!(replaces(WIKIDATA, had("Nintendo", Some("openvgdb")).as_ref()));
 }
+
+/// A query too long for a URL goes in the body of a POST.
+#[test]
+fn a_long_query_is_posted() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}/sparql", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for _ in 0..2 {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut first = String::new();
+            r.read_line(&mut first).unwrap();
+            let mut len = 0;
+            loop {
+                let mut h = String::new();
+                if r.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                    break;
+                }
+                if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0u8; len];
+            r.read_exact(&mut body).unwrap();
+            seen.push((
+                first.split_whitespace().next().unwrap().to_owned(),
+                first.len(),
+                body.len(),
+            ));
+            let answer = r#"{"results":{"bindings":[]}}"#;
+            let _ = write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+                answer.len()
+            );
+        }
+        seen
+    });
+    super::matching::sparql(&endpoint, "SELECT ?g WHERE {}").unwrap();
+    super::matching::sparql(&endpoint, &"x".repeat(5000)).unwrap();
+    let seen = server.join().unwrap();
+    assert_eq!(seen[0].0, "GET");
+    assert_eq!((seen[1].0.as_str(), seen[1].2 > 5000), ("POST", true));
+    assert!(seen[1].1 < 200, "the query isn't in the URL");
+}
