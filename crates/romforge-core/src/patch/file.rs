@@ -45,6 +45,16 @@ fn write(patch: &[u8], source: &Path, out: &Path, made: &mut bool) -> Result<(),
             {
                 return Err(bad("this PPF was made for an image of another size"));
             }
+            // A record may grow the image a little (as in memory), never
+            // far: a hostile PPF3 offset would make a file of any size.
+            let limit = f.metadata()?.len().saturating_add(super::MAX_SIZE);
+            if ppf
+                .records
+                .iter()
+                .any(|(at, data)| at.checked_add(data.len() as u64).is_none_or(|end| end > limit))
+            {
+                return Err(bad("this PPF writes far past the end of the image"));
+            }
             drop(f);
             let mut w = create(made)?;
             std::io::copy(&mut std::fs::File::open(source)?, &mut w)?;
@@ -56,13 +66,17 @@ fn write(patch: &[u8], source: &Path, out: &Path, made: &mut bool) -> Result<(),
             Ok(())
         }
         Kind::Xdelta => {
-            let mut src = FileSource(std::fs::File::open(source)?, std::fs::metadata(source)?.len());
+            let len = std::fs::metadata(source)?.len();
+            let mut src = FileSource(std::fs::File::open(source)?, len);
             let plain = crate::vcdiff::plain(patch).map_err(|e| bad(&format!("xdelta: {e}")))?;
-            let mut w = std::io::BufWriter::new(create(made)?);
+            // The target's size is the patch's to say, so it is capped: twice
+            // the image, and never under 1 GiB.
+            let cap = len.saturating_mul(2).max(1 << 30);
+            let mut w = Capped(std::io::BufWriter::new(create(made)?), cap);
             oxidelta::compress::DeltaDecoder::new(&plain[..])
                 .decode_to(&mut src, &mut w)
                 .map_err(|e| bad(&format!("xdelta: {e}")))?;
-            w.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+            w.0.into_inner().map_err(|e| e.into_error())?.sync_all()?;
             Ok(())
         }
         _ => {
@@ -100,5 +114,23 @@ impl oxidelta::vcdiff::decoder::SourceProvider for FileSource {
 
     fn source_len(&self) -> Option<u64> {
         Some(self.1)
+    }
+}
+
+/// A writer that refuses to go past its byte budget.
+struct Capped<W>(W, u64);
+
+impl<W: std::io::Write> std::io::Write for Capped<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if buf.len() as u64 > self.1 {
+            return Err(std::io::Error::other("the patched file would be too big"));
+        }
+        let n = self.0.write(buf)?;
+        self.1 -= n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
     }
 }

@@ -82,3 +82,30 @@ fn the_layout_comes_from_the_header_and_fst() {
         ]
     );
 }
+
+#[test]
+fn sizes_in_a_forged_header_are_errors_not_allocations() {
+    let img = gamecube_image(0xC0000);
+    let mut out = std::io::Cursor::new(Vec::new());
+    write::write(|| Ok(&img[..]), img.len() as u64, 2, &mut out).unwrap();
+    let good = out.into_inner();
+    let forged = |at: usize, bytes: &[u8]| {
+        let mut f = good.clone();
+        f[at..at + bytes.len()].copy_from_slice(bytes);
+        Rvz::open(std::io::Cursor::new(f))
+    };
+    // An image of 2^63 bytes; a 4 GiB raw-data table; a 1 GiB chunk.
+    assert!(forged(0x24, &(1u64 << 63).to_be_bytes()).is_err());
+    assert!(forged(HEAD_LEN + 0xC0, &0xFFFF_FFF0u32.to_be_bytes()).is_err());
+    assert!(forged(HEAD_LEN + 12, &(1u32 << 30).to_be_bytes()).is_err());
+
+    // An image claiming more than its groups hold reads the rest as zeros,
+    // a little at a time.
+    let rvz = forged(0x24, &(img.len() as u64 + (3 << 20)).to_be_bytes())
+        .unwrap()
+        .unwrap();
+    let mut back = Vec::new();
+    rvz.iso().unwrap().read_to_end(&mut back).unwrap();
+    assert_eq!(back.len(), img.len() + (3 << 20));
+    assert!(back[img.len()..].iter().all(|&b| b == 0));
+}

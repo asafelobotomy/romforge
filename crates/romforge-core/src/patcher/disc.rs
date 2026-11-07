@@ -19,9 +19,14 @@ fn on_disk(part: &Part, staging: &Path) -> Result<PathBuf, Error> {
         return Ok(part.path.clone());
     }
     let to = staging.join(format!("{}.in", part.sha1));
-    if !to.exists() {
-        let mut w = std::fs::File::create(&to)?;
+    // Kept from an earlier run only when whole: written as `.tmp` and
+    // renamed once complete.
+    if std::fs::metadata(&to).map_or(true, |m| m.len() != part.size) {
+        let tmp = to.with_extension("in.tmp");
+        let mut w = std::fs::File::create(&tmp)?;
         std::io::copy(&mut cleanup::open_part(part, staging)?, &mut w)?;
+        drop(w);
+        std::fs::rename(&tmp, &to)?;
     }
     Ok(to)
 }

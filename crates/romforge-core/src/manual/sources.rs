@@ -294,7 +294,7 @@ pub fn download_offer(
         return Err(Error::Manual(format!("{} didn't send a PDF", offer.source)));
     }
     std::fs::create_dir_all(staging)?;
-    let tmp = staging.join(format!("manual-{}.pdf", std::process::id()));
+    let tmp = super::staging_pdf(staging);
     crate::atomic::write(&tmp, &bytes)?;
     let kept = super::add_manual(
         conn,

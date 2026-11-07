@@ -37,3 +37,29 @@ fn an_ips_on_a_rom_changed_since_the_plan_is_refused() {
     assert!(!plan.target.exists(), "nothing written");
     assert!(lib.cleanup_batches().unwrap().is_empty(), "no batch left");
 }
+
+/// A cartridge ROM over the in-memory limit is refused at the plan, before
+/// it is read.
+#[test]
+fn a_rom_too_big_to_patch_in_memory_is_refused_by_its_size() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let incoming = tmp.path().join("incoming");
+    std::fs::create_dir_all(&incoming).unwrap();
+    std::fs::File::create(incoming.join("Big GB.gb"))
+        .unwrap()
+        .set_len(65 << 20)
+        .unwrap();
+    let patch = tmp.path().join("Big GB English.ips");
+    std::fs::write(&patch, ips(0, b"HELLO")).unwrap();
+    let mut lib = Library::open(home.db()).unwrap();
+    lib.scan(&incoming, Scope::All).unwrap();
+    let file = row_id(&lib, "Big GB.gb");
+    lib.identify_as(&file, "Game Boy", "Big GB").unwrap();
+    let base = row_id(&lib, "Big GB");
+    let err = lib
+        .patch_plan(&base, &patch, Some(Relation::Translation), Some("English"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("at most 64 MiB"), "{err}");
+}

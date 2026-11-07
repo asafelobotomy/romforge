@@ -40,6 +40,9 @@ pub fn apply(
     mut progress: impl FnMut(usize, &str),
 ) -> Result<CleanupReport, Error> {
     let s = settings::load(conn)?;
+    // Each game's details come from one view of the library, built once
+    // (before the batch, so a failure leaves no empty batch to undo).
+    let view = crate::view::library(conn)?;
     conn.execute(
         concat!(
             "INSERT INTO cleanup_batches (created_at, keep_originals) VALUES (",
@@ -60,8 +63,6 @@ pub fn apply(
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let threads = crate::parallel::threads(s.threads);
     let items: Vec<(usize, &Item)> = plan.items.iter().enumerate().collect();
-    // Each game's details come from one view of the library, built once.
-    let view = crate::view::library(conn)?;
     // A few games per thread at a time: what they need from the database
     // (art and details) is read for one chunk only.
     for chunk in items.chunks(threads * 2) {

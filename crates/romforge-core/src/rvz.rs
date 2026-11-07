@@ -101,13 +101,17 @@ impl Group {
 }
 
 /// Decode RVZ packing: `data` (the group's bytes after decompression) at
-/// `disc_off` on the disc, into `out`.
-fn unpack(data: &[u8], mut disc_off: u64, out: &mut Vec<u8>) -> Option<()> {
+/// `disc_off` on the disc, into `out`, which never grows past `limit`
+/// bytes (a group's chunk): the lengths are the file's, untrusted.
+fn unpack(data: &[u8], mut disc_off: u64, out: &mut Vec<u8>, limit: usize) -> Option<()> {
     let mut at = 0;
     while at < data.len() {
         let size = be32(data.get(at..at + 4)?, 0);
         at += 4;
         let len = (size & 0x7FFF_FFFF) as usize;
+        if len > limit.saturating_sub(out.len()) {
+            return None;
+        }
         if size & 0x8000_0000 != 0 {
             let seed_bytes = data.get(at..at + 68)?;
             at += 68;

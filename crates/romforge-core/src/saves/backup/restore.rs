@@ -106,38 +106,73 @@ pub fn apply(
     if let Some(why) = plan.problem {
         return Err(Error::Launch(format!("can't restore {}: {why}", save.display())));
     }
-    conn.execute(
-        concat!(
-            "INSERT INTO save_restores (emulator, target, created_at) VALUES (?1, ?2, ",
-            crate::db::now!(),
-            ")"
-        ),
-        params![name, plan.to.to_string_lossy()],
-    )?;
-    let id = conn.last_insert_rowid();
-    // The copy is written whole beside its place first.
-    let part = plan.to.with_extension("romforge-restore.part");
+    // The copy is written whole beside its place first; nothing is
+    // journaled until it is, so a failed copy leaves nothing to undo.
+    let part = part_for(&plan.to);
     let _ = std::fs::remove_dir_all(&part);
-    for e in walkdir::WalkDir::new(&plan.from).follow_links(false) {
+    if let Err(e) = copy_tree(&plan.from, &part) {
+        let _ = std::fs::remove_dir_all(&part);
+        return Err(e);
+    }
+    let id = conn
+        .execute(
+            concat!(
+                "INSERT INTO save_restores (emulator, target, created_at) VALUES (?1, ?2, ",
+                crate::db::now!(),
+                ")"
+            ),
+            params![name, plan.to.to_string_lossy()],
+        )
+        .map(|_| conn.last_insert_rowid());
+    let id = match id {
+        Ok(id) => id,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&part);
+            return Err(e.into());
+        }
+    };
+    if plan.replaces {
+        // Journaled before the move: a crash between the two leaves a row
+        // whose trashed folder is missing, which undo refuses (the save is
+        // still in its place).
+        let t = trashed(home, id, "", &plan.to);
+        let moved = conn
+            .execute(
+                "UPDATE save_restores SET trashed = ?1 WHERE restore_id = ?2",
+                params![t.to_string_lossy(), id],
+            )
+            .map_err(Error::from)
+            .and_then(|_| move_dir(&plan.to, &t));
+        if let Err(e) = moved {
+            let _ = conn.execute("DELETE FROM save_restores WHERE restore_id = ?1", [id]);
+            let _ = std::fs::remove_dir_all(&part);
+            return Err(e);
+        }
+    }
+    std::fs::rename(&part, &plan.to)?;
+    Ok(id)
+}
+
+/// Where the copy of `to` is written before it is renamed into place:
+/// beside it, its whole name kept (`foo.bar` and `foo.baz` never share one).
+fn part_for(to: &Path) -> PathBuf {
+    let name = to.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+    to.with_file_name(format!("{name}.romforge-restore.part"))
+}
+
+/// Copy every file under `from` to the same place under `to`.
+fn copy_tree(from: &Path, to: &Path) -> Result<(), Error> {
+    for e in walkdir::WalkDir::new(from).follow_links(false) {
         let e = e.map_err(std::io::Error::from)?;
         if e.file_type().is_file() {
-            let target = part.join(e.path().strip_prefix(&plan.from).unwrap_or(e.path()));
+            let target = to.join(e.path().strip_prefix(from).unwrap_or(e.path()));
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
             crate::organize::copy_checked(e.path(), &target)?;
         }
     }
-    if plan.replaces {
-        let t = trashed(home, id, "", &plan.to);
-        move_dir(&plan.to, &t)?;
-        conn.execute(
-            "UPDATE save_restores SET trashed = ?1 WHERE restore_id = ?2",
-            params![t.to_string_lossy(), id],
-        )?;
-    }
-    std::fs::rename(&part, &plan.to)?;
-    Ok(id)
+    Ok(())
 }
 
 /// Take back the last restore of `name`'s: the restored folder goes to the

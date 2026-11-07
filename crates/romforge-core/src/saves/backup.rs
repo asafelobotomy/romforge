@@ -165,14 +165,19 @@ pub fn run(
             done.same += 1;
             continue;
         }
+        // Half-written copies of earlier runs (any time) go first.
+        sweep_parts(&at);
         let part = at.join(format!("{when}.part"));
-        let _ = std::fs::remove_dir_all(&part);
-        for rel in now_has.keys() {
+        let copied = now_has.keys().try_for_each(|rel| {
             let target = part.join(rel);
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            crate::organize::copy_checked(&source.join(rel), &target)?;
+            crate::organize::copy_checked(&source.join(rel), &target)
+        });
+        if let Err(e) = copied {
+            let _ = std::fs::remove_dir_all(&part);
+            return Err(e.into());
         }
         if contents(&part)? != now_has {
             let _ = std::fs::remove_dir_all(&part);
@@ -183,12 +188,26 @@ pub fn run(
         }
         std::fs::rename(&part, at.join(&when))?;
         done.copied += 1;
+        // The new copy is made: an old one that won't go is tried next run.
         for old in versions(&at).iter().skip(keep) {
-            std::fs::remove_dir_all(at.join(old))?;
-            done.pruned += 1;
+            if std::fs::remove_dir_all(at.join(old)).is_ok() {
+                done.pruned += 1;
+            }
         }
     }
     Ok(done)
+}
+
+/// Remove the `<when>.part` folders left in `at` by runs that stopped.
+fn sweep_parts(at: &Path) {
+    let Ok(entries) = std::fs::read_dir(at) else {
+        return;
+    };
+    for e in entries.filter_map(Result::ok) {
+        if e.file_name().to_string_lossy().ends_with(".part") && e.file_type().is_ok_and(|t| t.is_dir()) {
+            let _ = std::fs::remove_dir_all(e.path());
+        }
+    }
 }
 
 /// Every save folder of `name` that is in its tree or has copies.

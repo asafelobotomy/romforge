@@ -250,3 +250,21 @@ fn apply_file_refuses_a_big_image_for_in_memory_formats() {
     assert!(e.to_string().contains("at most 64 MiB"), "{e}");
     assert!(!out.exists());
 }
+
+/// A PPF record far past the image's end is refused on the file path, and
+/// nothing is left at `out`.
+#[test]
+fn apply_file_refuses_a_ppf_record_far_past_the_image() {
+    let dir = tempfile::tempdir().unwrap();
+    let (source, out) = (dir.path().join("a.bin"), dir.path().join("b.bin"));
+    std::fs::write(&source, vec![0u8; 64]).unwrap();
+    let e = apply_file(&ppf3(&[(1 << 40, b"x")]), &source, &out).unwrap_err();
+    assert!(e.to_string().contains("past the end"), "{e}");
+    assert!(!out.exists());
+    apply_file(&ppf3(&[(60, b"wxyz!")]), &source, &out).unwrap();
+    assert_eq!(
+        std::fs::metadata(&out).unwrap().len(),
+        65,
+        "a little growth is fine"
+    );
+}

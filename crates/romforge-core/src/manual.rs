@@ -97,7 +97,7 @@ pub fn add_manual(
     if !is_pdf(&head) {
         return Err(Error::Manual(format!("{} isn't a PDF", pdf.display())));
     }
-    let dest = manual_path(media, system, game);
+    let dest = manual_dest(conn, media, system, game)?;
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -114,6 +114,41 @@ pub fn add_manual(
         params![system, game, dest.to_string_lossy(), source],
     )?;
     Ok(dest)
+}
+
+/// Where `game`'s manual is kept: where it already is, else its
+/// [`manual_path`], else (when another game's manual has that name, as
+/// "A: B" and "A- B" do) the same with " (2)", " (3)"… added.
+fn manual_dest(conn: &Connection, media: &Path, system: &str, game: &str) -> Result<PathBuf, Error> {
+    if let Some(p) = manual(conn, system, game)?.path.filter(|p| p.starts_with(media)) {
+        return Ok(p);
+    }
+    let base = manual_path(media, system, game);
+    let taken = |p: &Path| -> Result<bool, Error> {
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM manuals WHERE path = ?1 AND NOT (system = ?2 AND game = ?3)",
+                params![p.to_string_lossy(), system, game],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    };
+    let mut dest = base.clone();
+    let mut n = 2;
+    while taken(&dest)? {
+        let stem = base.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+        dest = base.with_file_name(format!("{stem} ({n}).pdf"));
+        n += 1;
+    }
+    Ok(dest)
+}
+
+/// A file in `staging` for one download, its own however many run at once.
+fn staging_pdf(staging: &Path) -> PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    staging.join(format!("manual-{}-{n}.pdf", std::process::id()))
 }
 
 /// Forget the game's manual and delete romforge's copy of it.
@@ -146,6 +181,8 @@ fn vimm_id_in(json: &[u8]) -> Option<String> {
         (a.get("attributeName")?.as_str()? == "VIMMManualId")
             .then(|| a.get("value")?.as_str().map(str::to_owned))
             .flatten()
+            // It goes into a URL and a file name: digits only.
+            .filter(|id| !id.is_empty() && id.len() <= 12 && id.bytes().all(|b| b.is_ascii_digit()))
     })
 }
 
@@ -192,7 +229,7 @@ pub fn download_vimm(
         .ok_or_else(|| Error::Manual(format!("no Vimm's Lair manual is known for {game}")))?;
     let bytes = vimm::fetch_pdf(&id, dpi)?;
     std::fs::create_dir_all(staging)?;
-    let tmp = staging.join(format!("manual-{id}.pdf"));
+    let tmp = staging_pdf(staging);
     crate::atomic::write(&tmp, &bytes)?;
     let kept = add_manual(conn, media, system, game, &tmp, "Vimm's Lair, downloaded by you");
     let _ = std::fs::remove_file(&tmp);

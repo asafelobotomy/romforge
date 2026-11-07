@@ -66,6 +66,31 @@ fn hasheous_s_answer_gives_the_vimm_id() {
     assert_eq!(vimm_id_in(answer).as_deref(), Some("4770"));
     assert_eq!(vimm_id_in(br#"{"attributes":[]}"#), None);
     assert_eq!(vimm_id_in(b"not json"), None);
+    let odd = br#"{"attributes":[{"attributeName":"VIMMManualId","value":"../4770?x"}]}"#;
+    assert_eq!(vimm_id_in(odd), None, "it goes into a URL and a file name");
+}
+
+#[test]
+fn two_games_whose_names_sanitize_alike_keep_their_own_manuals() {
+    let t = tempfile::tempdir().unwrap();
+    let media = t.path().join("Media");
+    let conn = crate::db::open_in_memory().unwrap();
+    let (a, b) = (t.path().join("a.pdf"), t.path().join("b.pdf"));
+    std::fs::write(&a, b"%PDF a").unwrap();
+    std::fs::write(&b, b"%PDF b").unwrap();
+    let kept_a = add_manual(&conn, &media, "SNES", "A: B", &a, "added by you").unwrap();
+    let kept_b = add_manual(&conn, &media, "SNES", "A- B", &b, "added by you").unwrap();
+    assert_ne!(kept_a, kept_b);
+    assert_eq!(kept_b, media.join("SNES/manual/A- B (2).pdf"));
+    assert_eq!(std::fs::read(&kept_a).unwrap(), b"%PDF a");
+    // Replacing B's keeps its own place.
+    std::fs::write(&b, b"%PDF b2").unwrap();
+    assert_eq!(
+        add_manual(&conn, &media, "SNES", "A- B", &b, "added by you").unwrap(),
+        kept_b
+    );
+    assert_eq!(std::fs::read(&kept_b).unwrap(), b"%PDF b2");
+    assert_ne!(staging_pdf(t.path()), staging_pdf(t.path()));
 }
 
 #[test]

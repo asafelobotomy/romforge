@@ -212,7 +212,20 @@ pub fn apply(
     let id = conn.last_insert_rowid();
     let mut n = 0;
     for m in plan.moves.iter().filter(|m| !m.taken) {
+        // Journaled before it moves, so a stop part way leaves nothing
+        // that undo can't find.
+        conn.execute(
+            "INSERT INTO save_gather_files (gather_id, original, moved_to) VALUES (?1, ?2, ?3)",
+            params![id, m.from.to_string_lossy(), m.to.to_string_lossy()],
+        )?;
+        let row = conn.last_insert_rowid();
         if let Err(e) = crate::organize::move_file(&m.from, &m.to) {
+            // The copy is in Saves/ but the original stayed: journaled as
+            // it is, and the gathering stops.
+            if crate::organize::source_left(&e) {
+                return Err(e.into());
+            }
+            conn.execute("DELETE FROM save_gather_files WHERE rowid = ?1", [row])?;
             // One whose place filled meanwhile stays; anything else stops,
             // with what moved so far journaled for undo.
             if e.kind() == std::io::ErrorKind::AlreadyExists {
@@ -220,10 +233,6 @@ pub fn apply(
             }
             return Err(e.into());
         }
-        conn.execute(
-            "INSERT INTO save_gather_files (gather_id, original, moved_to) VALUES (?1, ?2, ?3)",
-            params![id, m.from.to_string_lossy(), m.to.to_string_lossy()],
-        )?;
         // Folders it leaves empty go, inside the emulator's config only.
         let config = home.emulator_config(name);
         crate::organize::remove_empty_parents(&m.from, |d| !d.starts_with(&config) || d == config);

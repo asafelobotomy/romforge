@@ -20,10 +20,25 @@ pub struct Rvz<R> {
     groups: Vec<Group>,
 }
 
+/// The largest chunk read (Dolphin writes 32 KiB to 2 MiB): sizes in the
+/// file are untrusted, so nothing bigger is ever held at once.
+const MAX_CHUNK: u64 = 32 << 20;
+
+/// The largest image read (a dual-layer Wii disc is 8.5 GB).
+const MAX_ISO: u64 = 16 << 30;
+
+/// Zeros are handed out at most this many at a time.
+const ZEROS: u64 = 1 << 20;
+
+/// `len` bytes at `at`. Read as they come, so a length larger than the
+/// file is an error without first allocating it.
 fn read_at<R: Read + Seek>(f: &mut R, at: u64, len: usize) -> io::Result<Vec<u8>> {
     f.seek(SeekFrom::Start(at))?;
-    let mut buf = vec![0u8; len];
-    f.read_exact(&mut buf)?;
+    let mut buf = Vec::with_capacity(len.min(ZEROS as usize));
+    f.take(len as u64).read_to_end(&mut buf)?;
+    if buf.len() < len {
+        return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+    }
     Ok(buf)
 }
 
@@ -47,8 +62,11 @@ impl<R: Read + Seek> Rvz<R> {
         if disc.compression != ZSTD && disc.compression != 0 {
             return Err(bad("a compression other than zstd"));
         }
-        if disc.chunk < 0x8000 || disc.chunk > 1 << 30 {
+        if disc.chunk < 0x8000 || disc.chunk > MAX_CHUNK {
             return Err(bad("a chunk size out of range"));
+        }
+        if iso_size > MAX_ISO {
+            return Err(bad("an image size out of range"));
         }
         // Tables: untrusted counts, so bounded by the sizes they decode to.
         let table = |f: &mut R, off: u64, size: u32, count: u32, len: usize| -> io::Result<Vec<u8>> {
@@ -115,6 +133,9 @@ impl<R: Read + Seek> Rvz<R> {
             .get(index as usize)
             .ok_or_else(|| bad("a group out of range"))?;
         let size = g.size & !Group::COMPRESSED;
+        if len > self.disc.chunk || u64::from(size) > MAX_CHUNK {
+            return Err(bad("a group larger than its chunk"));
+        }
         if size == 0 {
             return Ok(vec![0u8; len as usize]);
         }
@@ -130,7 +151,8 @@ impl<R: Read + Seek> Rvz<R> {
             let packed = plain
                 .get(..g.packed as usize)
                 .ok_or_else(|| bad("packed data cut short"))?;
-            super::unpack(packed, disc_off, &mut out).ok_or_else(|| bad("bad packed data"))?;
+            super::unpack(packed, disc_off, &mut out, self.disc.chunk as usize)
+                .ok_or_else(|| bad("bad packed data"))?;
         } else {
             out = plain;
         }
@@ -197,7 +219,7 @@ impl<R: Read + Seek> Read for Iso<R> {
                     (self.rvz.group(g, from, len)?, from)
                 }
                 next => {
-                    let until = next.map_or(size, |(_, f, _)| f).min(size);
+                    let until = next.map_or(size, |(_, f, _)| f).min(size).min(self.pos + ZEROS);
                     (vec![0u8; (until - self.pos) as usize], self.pos)
                 }
             };

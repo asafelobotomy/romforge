@@ -208,14 +208,17 @@ pub(crate) fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Er
         }
         Some("7z") => {
             let out = staging.join(format!("{}.part", part.sha1));
-            if !out.exists() {
+            // Kept from an earlier read only when whole: it is written
+            // beside as `.tmp` and renamed once complete.
+            if std::fs::metadata(&out).map_or(true, |m| m.len() != part.size) {
                 std::fs::create_dir_all(staging)?;
+                let tmp = out.with_extension("part.tmp");
                 let mut archive =
                     sevenz_rust2::ArchiveReader::open(&part.path, sevenz_rust2::Password::empty())?;
                 let mut found = false;
                 archive.for_each_entries(|entry, reader| {
                     if entry.name() == part.member {
-                        let mut f = File::create(&out)?;
+                        let mut f = File::create(&tmp)?;
                         std::io::copy(reader, &mut f)?;
                         found = true;
                         return Ok(false);
@@ -223,12 +226,14 @@ pub(crate) fn open_part(part: &Part, staging: &Path) -> Result<Box<dyn Read>, Er
                     Ok(true)
                 })?;
                 if !found {
+                    let _ = std::fs::remove_file(&tmp);
                     return Err(Error::Cleanup(format!(
                         "{} has no {}",
                         part.path.display(),
                         part.member
                     )));
                 }
+                std::fs::rename(&tmp, &out)?;
             }
             Ok(Box::new(BufReader::new(File::open(out)?)))
         }

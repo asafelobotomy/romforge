@@ -263,7 +263,7 @@ pub fn launchbox_lookup(
     );
     // "1991-08-13T00:00:00-07:00", or a year alone.
     match date.as_deref().map(|d| d.get(..10).unwrap_or(d)) {
-        Some(d) if d.len() == 10 => {
+        Some(d) if d.len() == 10 && d.is_ascii() => {
             put("releaseyear", Some(d[..4].to_owned()));
             put("releasemonth", d[5..7].parse::<u32>().ok().map(|m| m.to_string()));
             put("releaseday", d[8..10].parse::<u32>().ok().map(|m| m.to_string()));

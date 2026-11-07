@@ -73,6 +73,8 @@ pub(super) fn write_loose(
     let name = item.target.file_name().unwrap_or_default().to_string_lossy();
     let part = dir.join(layout::part(&name));
     let _ = std::fs::remove_file(&part);
+    // Journaled before it is put in place (undo drops a row for nothing).
+    journal_output(conn, batch, &item.target, "file")?;
     let result = (|| -> Result<(), Error> {
         let mut w = File::create_new(&part)?;
         copy_hashed(open_part(p, staging)?, &mut w)?;
@@ -88,23 +90,32 @@ pub(super) fn write_loose(
     })();
     if let Err(e) = result {
         let _ = std::fs::remove_file(&part);
+        forget_output(conn, batch, &item.target)?;
         return Err(e);
     }
-    journal_output(conn, batch, &item.target, "file")?;
     let side = dir.join(layout::EXTRAS_DIR).join(sanitize(&item.title));
     if !extras.is_empty() && !side.exists() {
         for d in [dir.join(layout::EXTRAS_DIR), side.clone()] {
             if !d.exists() {
-                std::fs::create_dir(&d)?;
                 journal_output(conn, batch, &d, "setdir")?;
+                std::fs::create_dir(&d)?;
             }
         }
         for (f, data) in extras {
             let to = side.join(f);
-            std::fs::write(&to, data)?;
             journal_output(conn, batch, &to, "file")?;
+            std::fs::write(&to, data)?;
         }
     }
+    Ok(())
+}
+
+/// Drop the journal row of an output that wasn't written after all.
+pub(crate) fn forget_output(conn: &Connection, batch: i64, path: &Path) -> Result<(), Error> {
+    conn.execute(
+        "DELETE FROM cleanup_outputs WHERE batch_id = ?1 AND path = ?2",
+        rusqlite::params![batch, path.to_string_lossy()],
+    )?;
     Ok(())
 }
 

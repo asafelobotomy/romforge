@@ -91,3 +91,56 @@ fn a_save_comes_back_from_its_copy_and_the_restore_undoes() {
     );
     assert!(restore::undo(&conn, &home, "dolphin").is_err());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_failed_restore_leaves_nothing_for_undo_to_take() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(&t.path().join("parent")).unwrap();
+    let conn = crate::db::open_in_memory().unwrap();
+    let wii = home.emulator_config("dolphin").join("Wii");
+    let save = Path::new("title/00010000/524d4745/data");
+    put(&wii.join(save).join("save.dat"), b"good");
+    run(&home, "dolphin", None, 100, KEEP).unwrap();
+    put(&wii.join(save).join("save.dat"), b"live");
+    // The copy can't be read, so the restore fails part way.
+    let copy = home
+        .saves()
+        .join("Wii/backup/dolphin")
+        .join(save)
+        .join(stamp(100))
+        .join("save.dat");
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::File::open(&copy).is_ok() {
+        return; // root reads anything: nothing to test
+    }
+
+    assert!(restore::apply(&conn, &home, "dolphin", None, save, None).is_err());
+    assert_eq!(std::fs::read(wii.join(save).join("save.dat")).unwrap(), b"live");
+    assert!(
+        !wii.join(save)
+            .with_file_name("data.romforge-restore.part")
+            .exists()
+    );
+    assert!(restore::undo(&conn, &home, "dolphin").is_err(), "nothing to undo");
+    assert_eq!(std::fs::read(wii.join(save).join("save.dat")).unwrap(), b"live");
+}
+
+#[test]
+fn half_written_copies_of_stopped_runs_are_swept() {
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(&t.path().join("parent")).unwrap();
+    let wii = home.emulator_config("dolphin").join("Wii");
+    let save = Path::new("title/00010000/524d4745/data");
+    put(&wii.join(save).join("save.dat"), b"one");
+    let copies = home.saves().join("Wii/backup/dolphin").join(save);
+    put(
+        &copies.join(format!("{}.part", stamp(50))).join("save.dat"),
+        b"half",
+    );
+
+    run(&home, "dolphin", None, 100, KEEP).unwrap();
+    assert!(!copies.join(format!("{}.part", stamp(50))).exists());
+    assert_eq!(versions(&copies), vec![stamp(100)]);
+}

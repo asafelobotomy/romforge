@@ -278,14 +278,16 @@ pub(super) fn write_set(conn: &Connection, batch: i64, item: &Item) -> Result<()
         }
         let folder = to.parent().unwrap_or(dir);
         if !folder.exists() {
-            std::fs::create_dir_all(folder)?;
             if folder != dir {
                 journal_output(conn, batch, folder, "setdir")?;
             }
+            std::fs::create_dir_all(folder)?;
         }
         let name = to.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let part = folder.join(layout::part(&name));
         let _ = std::fs::remove_file(&part);
+        // Journaled before it is put in place (undo drops a row for nothing).
+        journal_output(conn, batch, &to, "file")?;
         let r = (|| -> Result<(), Error> {
             let mut w = File::create_new(&part)?;
             let sum = copy_hashed(BufReader::new(File::open(&p.path)?), &mut w)?;
@@ -300,9 +302,9 @@ pub(super) fn write_set(conn: &Connection, batch: i64, item: &Item) -> Result<()
         })();
         if let Err(e) = r {
             let _ = std::fs::remove_file(&part);
+            super::write::forget_output(conn, batch, &to)?;
             return Err(e);
         }
-        journal_output(conn, batch, &to, "file")?;
     }
     Ok(())
 }

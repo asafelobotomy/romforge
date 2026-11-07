@@ -228,11 +228,23 @@ pub fn plan(
             (Form::Raw, 0),
         )
     } else {
-        // Each ROM as it is and in the DAT's form.
+        // Each ROM as it is and in the DAT's form. Patches apply in memory
+        // to at most 64 MiB, so a bigger ROM isn't read (it stays empty
+        // here, matches nothing, and is refused below if picked).
+        let too_big = |part: &Part| part.size > patch::MAX_SIZE;
+        if parts.iter().all(too_big) {
+            return Err(bad(format!(
+                "a {} patch applies to files of at most 64 MiB; {} is bigger",
+                p.kind.name(),
+                row.title
+            )));
+        }
         let mut roms = Vec::new();
         for part in &parts {
             let mut data = Vec::new();
-            cleanup::open_part(part, staging)?.read_to_end(&mut data)?;
+            if !too_big(part) {
+                cleanup::open_part(part, staging)?.read_to_end(&mut data)?;
+            }
             let dat = dat_form(&data).map(|(_, d)| d);
             roms.push((data, dat));
         }
@@ -290,6 +302,13 @@ pub fn plan(
                 (rom, form)
             }
         };
+        if too_big(&parts[rom]) {
+            return Err(bad(format!(
+                "a {} patch applies to files of at most 64 MiB; {} is bigger",
+                p.kind.name(),
+                parts[rom].name
+            )));
+        }
         let applies_to = format!(
             "{} ({})",
             parts[rom].name,
