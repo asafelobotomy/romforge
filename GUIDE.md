@@ -397,8 +397,9 @@ folder is never written.
 RPCS3, Cemu, the 3DS emulators (when they use your own SD card) and
 Dolphin's Wii NAND keep saves in their own data, so romforge copies each
 game's save folder into `Saves/<system>/backup/<emulator>/` after every
-game, when it changed, keeping the last five copies. xemu's saves, inside
-its hard-disk image, aren't copied yet.
+game, when it changed, keeping the last five copies (Settings → Display
+→ Copies of each save changes how many). xemu's saves, inside its hard-disk
+image, aren't copied yet.
 
 ```bash
 romforge-cli saves backup rpcs3                    # copy the changed ones now
@@ -406,6 +407,14 @@ romforge-cli saves backups rpcs3                   # each save and its copies
 romforge-cli saves restore rpcs3 savedata/BLUS30443-SAVE00          # the plan
 romforge-cli saves restore rpcs3 savedata/BLUS30443-SAVE00 --apply  # the one there now to the trash
 romforge-cli saves restore rpcs3 --undo
+```
+
+Everything in `Saves/` can be listed, each save with its game when its
+serial or file name points at exactly one (read-only):
+
+```bash
+romforge-cli saves list
+romforge-cli saves list --system PlayStation
 ```
 
 ```bash
@@ -678,7 +687,9 @@ compression too), or a zip holding one (its readme is kept with the copy).
   off goes back on. Written as a zip like any import. In a game of several
   ROMs, a BPS or UPS goes on the one it was made from, others on the one
   they are named after, else (said in a note) the biggest; the rest come
-  through under the DAT's names.
+  through under the DAT's names. A ROM over 64 MiB is refused by its size
+  before it is read (in-memory patching stops there; discs use the file
+  path below).
 - **Discs** (xdelta, PPF) are patched on the track they were made from,
   streamed, the other tracks kept, and written as a CHD: the track an
   xdelta names, else the first that takes it (a PPF's check block and an
@@ -718,8 +729,10 @@ by itself; a folder with a file name over 127 bytes stays a folder, since
 Cemu can't read such a name from a WUA, and the plan says which). Wii and Xbox images stay as they are. ROM data is streamed from the old file or zip; only
 7z members, and big zip members packed other than stored or deflated, are
 unpacked, into the staging folder. Each
-new file is read back and every ROM re-hashed before anything else
-happens, and nothing is ever overwritten. Without Keep originals, the old
+new file is read back and every ROM re-hashed against the DAT before
+anything else happens (a folder game, which no DAT hashes, is checked
+against its own files as they were read), and nothing is ever
+overwritten. Without Keep originals, the old
 files (and other verified copies in Source) then move to `.romforge-trash/`
 next to them, but only when everything in them was repacked; an archive
 holding anything else stays, as do originals that another game not in
@@ -741,7 +754,8 @@ A scan lists the files it skipped for their extension, by kind (`.txt 5,
 
 ## Desktop app
 
-Needs Node and the [Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
+Needs Rust 1.93 or newer (as for the CLI), Node 22 and the
+[Tauri Linux dependencies](https://tauri.app/start/prerequisites/)
 (`webkit2gtk-4.1`), and libudev for game pads (`libudev-dev` on Debian and
 Ubuntu, `systemd-libs` on Arch). CI installs `libwebkit2gtk-4.1-dev
 libayatana-appindicator3-dev librsvg2-dev libudev-dev`. It uses the same
@@ -1252,8 +1266,8 @@ To build the packages yourself: `cd app && npm ci && npx tauri build`
   chords), `music`, `themes`, `user_games` (favourites, the emulator
   picked per game), `steam`; one table of systems (`systems/table.rs`),
   one of copier headers and byte orders (`headers.rs`), one of game ID
-  readers (`ident.rs`), one of hotkeys (`hotkeys.rs`), `saves` (gathering
-  and backups, milestone 27)
+  readers (`ident.rs`), one of hotkeys (`hotkeys.rs`), `saves` (gathering,
+  backups and the index of `Saves/`, milestone 27)
 - Shared names, so nothing is written twice:
   - emulators and what romforge can do with each (`abilities`: import a
     setup, move game data, gather saves, back them up) are rows of

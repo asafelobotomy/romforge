@@ -6,3 +6,12 @@ node_modules/
 /app/dist/
 /app/src-tauri/gen/
 /app/src-tauri/target/
+# Claude Code's local worktrees.
+/.claude/
+# House rule 3: no ROMs or DATs in git. Only fixtures/ holds (tiny) ones,
+# so a DAT or a dump dropped anywhere else is never picked up by accident.
+*.dat
+*.chd
+*.iso
+*.rvz
+!/fixtures/**

@@ -6,7 +6,7 @@ all-features = false
 
 [licenses]
 confidence-threshold = 0.9
-unused-allowed-license = "allow"
+unused-allowed-license = "warn"
 allow = [
     "MIT",
     "MIT-0",
@@ -19,7 +19,6 @@ allow = [
     "ISC",
     "Unlicense",
     "CC0-1.0",
-    "BSL-1.0",
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
     # bzip2's own licence (BSD-style), via sevenz-rust2.
@@ -35,4 +34,17 @@ exceptions = [
     { name = "dtoa-short", allow = ["MPL-2.0"] },
     { name = "selectors", allow = ["MPL-2.0"] },
     { name = "option-ext", allow = ["MPL-2.0"] },
+]
+
+# Advisories are checked in CI. These four are unmaintained crates the
+# Tauri app pulls in with no maintained version to move to; none is in
+# romforge-core or the CLI. Each goes when Tauri's dependencies move on.
+[advisories]
+ignore = [
+    # proc-macro-error: GTK 3's glib-macros (tauri -> gtk 0.18).
+    { id = "RUSTSEC-2024-0370", reason = "via Tauri's GTK 3 bindings; no maintained release" },
+    # zvariant, zbus_names, zvariant_derive: zbus 5 (tauri-plugin-opener).
+    { id = "RUSTSEC-2026-0370", reason = "via zbus 5 in tauri-plugin-opener; no upgrade yet" },
+    { id = "RUSTSEC-2026-0371", reason = "via zbus 5 in tauri-plugin-opener; no upgrade yet" },
+    { id = "RUSTSEC-2026-0372", reason = "via zbus 5 in tauri-plugin-opener; no upgrade yet" },
 ]

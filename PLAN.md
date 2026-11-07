@@ -2829,7 +2829,7 @@ sources (licences and keys checked against house rule 10).
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
 
-## Saves (milestone 27; researched 2026-10-25, stage 1 partly built)
+## Saves (milestone 27; researched 2026-10-25; stage 1 partly built, stage 2 partly built 2026-11-06)
 
 A **Saves** page in the sidebar, above DATs, with one tab per system
 that has saves. Each tab shows that system's in-game saves (SRAM, memory
@@ -2866,8 +2866,6 @@ named in the user's own settings), that place stays and the key is taken
 out. A key set in Emulator Settings is the user's and stays.
 
 **Not yet:**
-- Dolphin's Wii NAND (`[General] NANDRootPath`): to decide (it holds the
-  Wii Menu too).
 - Flycast writes a disc without a game ID's VMU in its data folder
   whatever `VMUPath` says (`oslib.cpp`).
 - The Dolphin Flatpak gets `host:ro` only; romforge's `--filesystem`
@@ -2946,10 +2944,17 @@ out of the image (to research, below).
 **One `.srm` per core?** RetroArch's sort-by-core is off, so every core
 of a system shares one file per game. That is right when the cores'
 formats agree (most cartridge systems) and wrong when they don't: to
-check per system before stage 2 and, where needed, a per-core folder for
-those systems only.
+check per system (still open; stage 2's list matches by file name, so it
+doesn't depend on it) and, where needed, a per-core folder for those
+systems only.
 
 ### Stage 2: the index and a plain list
+
+**Built 2026-11-06 (41d5e0e):** `saves::index` and `Library::list_saves`
+walk `Saves/<system>/` read-only and match each save by serial or by
+content file name (rule 8: evidence only, else "not matched");
+`romforge-cli saves list [--system]` shows them. **Not yet:** the Saves
+page in the app, and the cache by path, size and mtime.
 
 A core `saves` module walks `Saves/` (and the data trees above),
 read-only, and lists each save: system, emulator, file, size, modified,
@@ -3054,6 +3059,28 @@ on someone else:
 
 - **Network.** Redump serves no HTTPS (its server resets TLS), so its DATs
   stay on HTTP until it does.
+
+## Audit follow-ups (2026-11-07)
+
+An audit of every surface fixed its findings in five commits (adef0c2,
+b5da32c, 3544f6d, 9238434, 02ccb77) and this one. Left open, each a
+choice rather than a fault:
+
+- **CLI and app.** Only the app has favourites, a game's own emulator,
+  picking art, choosing a theme, the scan preview, music and hotkeys,
+  and patches beside a game; only the CLI has `refresh --no-lists`,
+  `--jobs`, `--rehash` and undoing an older organize batch (`--batch`).
+  To decide whether both should have all of them.
+- **Scans** re-read every file's row and stored matches on each scan,
+  even for one file (`identify/run.rs`); scoping that to the files
+  touched is a change of behaviour, so it waits for a measured need.
+- **Short writes in the app** wait behind a long job's lock (`db.rs`
+  `with()`); moving them to `edit()` needs each checked on its own
+  connection first.
+- **Releases** don't wait for CI on the commit they build; branch
+  protection on `main` (requiring the CI checks) would cover it.
+- **Saves gather undo** says how many files went back, not how many
+  stayed in `Saves/` because their old place was taken.
 
 ## Later ideas (parked, do not build yet)
 

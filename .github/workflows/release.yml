@@ -21,8 +21,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Read-only by default; only the job that tags and uploads may write.
 permissions:
-  contents: write
+  contents: read
 
 # One release at a time; a run is never cut off halfway through uploading.
 concurrency:
@@ -62,6 +63,8 @@ jobs:
   packages:
     needs: version
     if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: write
     # The oldest supported Ubuntu: its glibc is older than every target's.
     runs-on: ubuntu-22.04
     env:

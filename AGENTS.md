@@ -11,8 +11,13 @@
    table of copier headers** (`headers.rs`). Never a second detector or a
    second list.
 5. **No pile of docs, reports or scripts.** README (for users: short),
-   GUIDE.md (the technical detail), PLAN.md and this file.
-   Ideas for later milestones go in PLAN.md, not into code.
+   GUIDE.md (the technical detail), PLAN.md and this file. Besides them,
+   only the community files GitHub looks for (CODE_OF_CONDUCT.md,
+   CONTRIBUTING.md, SECURITY.md, the `.github/` templates), each under
+   about 20 lines and pointing to README, GUIDE or this file rather than
+   repeating them. Ideas for later milestones go in PLAN.md, not into
+   code; PLAN.md keeps each milestone's plan, what was built and what is
+   still open, the technical detail of what was built belonging in GUIDE.
 6. **Stay in the milestone.** See PLAN.md. Scanning and identifying never
    move, rename or write ROM files; only organize and cleanup do, and only
    after a dry run, journaled for undo.
@@ -23,8 +28,10 @@
    original goes, keep originals in a trash folder for undo, and never let
    extra files (art, `.nfo`, `.romforge.md`) shadow the ROM: they go in a
    `romforge/` folder inside the archive, the ROM stays at the top level.
-   Besides the emulators (and asking them for their own lists or
-   installers: ScummVM, MAME, RPCS3), the one program romforge runs is
+   Besides the emulators (and asking them for their own lists, versions,
+   default settings or installers: ScummVM's `--dump-all-detection-entries`,
+   `--detect` and `--version`, MAME's `-listxml`, `-version` and
+   `-createconfig`, RPCS3's `--installfw`), the one program romforge runs is
    `flatpak`, to start Flatpak emulators and to install emulators from
    Flathub when the user asks (`obtain/flathub.rs`).
 8. **Matching is strict.** A match needs size + SHA1 or size + MD5. CRC32
