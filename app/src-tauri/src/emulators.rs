@@ -141,6 +141,26 @@ pub async fn download_core(
     .await
 }
 
+/// Every missing or out-of-date core, as one job; `accept`: the user
+/// agreed to the non-commercial licences too. Returns (core, date or
+/// why it failed) for each.
+#[tauri::command]
+pub async fn download_all_cores(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    accept: Option<bool>,
+    job: Option<u64>,
+) -> Res<Vec<romforge_core::obtain::CoreDownload>> {
+    let mut job = crate::jobs::Job::start(&app, job);
+    let accept = accept.unwrap_or(false);
+    read_net(&db, move |lib| {
+        lib.download_all_cores(accept, |n, total, name| {
+            job.count(n, total, format!("Downloading {name}"))
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn remove_core(db: tauri::State<'_, Db>, core: String) -> Res<()> {
     read_net(&db, move |lib| lib.remove_core(&core)).await

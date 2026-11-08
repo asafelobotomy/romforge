@@ -1,5 +1,6 @@
 <script>
   import { onDestroy } from "svelte";
+  import { ui } from "./ui.svelte.js";
 
   // A video snap (an MP4 Enrich saved), played from a Blob: WebKitGTK's
   // player can't stream from a custom scheme (as the music player found).
@@ -55,11 +56,20 @@
   });
 
   onDestroy(() => (stop(), show(null)));
+
+  // Paused while a game runs (it would compete with the emulator), playing
+  // again after when it plays by itself.
+  let video = $state(null);
+  $effect(() => {
+    if (!video) return;
+    if (ui.playing) video.pause();
+    else if (!controls) video.play().catch(() => {});
+  });
 </script>
 
 {#if url}
   <!-- svelte-ignore a11y_media_has_caption -->
-  <video class={cls} src={url} autoplay={!controls} muted={!controls} loop={!controls} {controls} playsinline></video>
+  <video bind:this={video} class={cls} src={url} autoplay={!controls} muted={!controls} loop={!controls} {controls} playsinline></video>
 {:else if controls && !failed}
   <button class="play {cls}" onclick={load} disabled={loading} aria-busy={loading} aria-label="Play the video snap">{loading ? "Loading…" : "▶ Video snap"}</button>
 {/if}

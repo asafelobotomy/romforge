@@ -140,6 +140,35 @@ impl Library {
         obtain::download_core(&dir, home, core)
     }
 
+    /// Download every core romforge's platforms use that isn't installed
+    /// (or is romforge's and out of date), after fetching the buildbot's
+    /// list. Non-commercial cores only with `accept_non_commercial`.
+    /// `progress(n, total, core)` before each; one that fails is said in
+    /// its result and the rest go on.
+    pub fn download_all_cores(
+        &self,
+        accept_non_commercial: bool,
+        mut progress: impl FnMut(usize, usize, &str),
+    ) -> Result<Vec<obtain::CoreDownload>, Error> {
+        self.refresh_emulator_cores()?;
+        let todo: Vec<obtain::CoreRow> = self
+            .emulator_cores()?
+            .cores
+            .into_iter()
+            .filter(|c| c.available.is_some() && (c.installed.is_none() || c.update))
+            .filter(|c| accept_non_commercial || !c.non_commercial)
+            .collect();
+        let mut out = Vec::new();
+        for (i, c) in todo.iter().enumerate() {
+            progress(i, todo.len(), &c.display_name);
+            let r = self
+                .download_core(&c.name, accept_non_commercial)
+                .map_err(|e| e.to_string());
+            out.push((c.name.clone(), r));
+        }
+        Ok(out)
+    }
+
     /// Remove a core romforge downloaded.
     pub fn remove_core(&self, core: &str) -> Result<(), Error> {
         let (home, _) = self.firmware_dirs()?;

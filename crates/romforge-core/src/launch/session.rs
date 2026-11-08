@@ -34,7 +34,14 @@ pub struct Ended {
     pub seconds: u64,
     /// Its exit code, when it exited on its own.
     pub code: Option<i32>,
+    /// It ended within seconds, not asked to, and not with a clean exit
+    /// (a code other than 0, or killed by a signal: a crash): its setup
+    /// is to be checked, not its play time said.
+    pub failed: bool,
 }
+
+/// How soon an ending counts as the emulator not starting the game.
+const FAILED_WITHIN: u64 = 10;
 
 /// A game being played.
 pub struct Session {
@@ -43,6 +50,8 @@ pub struct Session {
     pub control: Option<super::controls::Channel>,
     child: Arc<Mutex<Option<Child>>>,
     began: Instant,
+    /// Stop was asked for (an ending then is no failure).
+    stopping: std::sync::atomic::AtomicBool,
 }
 
 impl Session {
@@ -70,6 +79,7 @@ impl Session {
             control: spec.prepare.control,
             child: Arc::new(Mutex::new(Some(child))),
             began: Instant::now(),
+            stopping: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -96,16 +106,20 @@ impl Session {
             }
             std::thread::sleep(Duration::from_millis(250));
         };
+        let seconds = self.began.elapsed().as_secs();
+        let asked = self.stopping.load(std::sync::atomic::Ordering::SeqCst);
         Ended {
             playing: self.playing.clone(),
-            seconds: self.began.elapsed().as_secs(),
+            seconds,
             code,
+            failed: !asked && seconds < FAILED_WITHIN && code != Some(0),
         }
     }
 
     /// Ask it to quit (SIGTERM), and kill it only if it hasn't after
     /// `grace`. Returns whether it had to be killed.
     pub fn stop(&self, grace: Duration) -> Result<bool, Error> {
+        self.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
         // A Flatpak's emulator, seen once with its start time: the wrapper
         // may end at the SIGTERM and leave it running, its pid then out of
         // the wrapper's reach.

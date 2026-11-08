@@ -96,6 +96,9 @@ pub(super) fn owned(
                 ("rgui_config_directory", s(dir.join("config"))),
                 ("config_save_on_exit", "false".into()),
                 ("pause_nonactive", "false".into()),
+                // Close Content quits RetroArch (back to romforge), not to
+                // its menu (QUIT_ON_CLOSE_CONTENT_ENABLED).
+                ("quit_on_close_content", "1".into()),
                 ("savefiles_in_content_dir", "false".into()),
                 ("savestates_in_content_dir", "false".into()),
                 ("systemfiles_in_content_dir", "false".into()),
@@ -171,12 +174,21 @@ fn file_only(e: &KnownEmulator, dir: &Path, user: Option<&existing::UserDirs>) -
         "mame" => (files::MAME, Format::Spaced),
         _ => return None,
     };
+    // ScummVM goes back to its own launcher when a game ends only if told
+    // to; a config seeded from yours might.
+    let keys = match e.settings_name() {
+        "scummvm" => vec![(
+            "[scummvm]gui_return_to_launcher_at_exit".to_owned(),
+            "false".to_owned(),
+        )],
+        _ => Vec::new(),
+    };
     Some(Prepare {
         dirs: vec![dir.to_path_buf()],
         writes: vec![ConfigWrite {
             path: dir.join(file),
             format,
-            keys: Vec::new(),
+            keys,
             remove: Vec::new(),
         }],
         seeds: existing::seed(e, dir, user).into_iter().collect(),

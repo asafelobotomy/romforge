@@ -297,7 +297,10 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                         launch::FlatpakFrom::Flathub => Some("Flathub"),
                         launch::FlatpakFrom::Fallback => Some("Flathub (not official)"),
                         launch::FlatpakFrom::Own { .. } => Some("its developers' own repository"),
-                        launch::FlatpakFrom::Others => None,
+                        // Flathub's build by others: offered, but its
+                        // developers' AppImage (when there is one) comes
+                        // first and is recommended.
+                        launch::FlatpakFrom::Others => Some("Flathub (not official)"),
                     }),
                 unofficial_flatpak: env.unofficial_flatpak(e),
                 discontinued: e.discontinued,
@@ -320,12 +323,24 @@ pub fn view(conn: &Connection, env: &Env) -> Result<EmulatorSettingsView, Error>
                 .iter()
                 .filter_map(|d| Some((d.key, choices_for(d, e)?)))
                 .collect(),
-            fallback: env.runs_fallback(e).then(|| {
-                format!(
+            fallback: if env.runs_fallback(e) {
+                Some(format!(
                     "{} makes no Linux build of its own, so romforge uses Flathub's, the Linux build most used (not made by its developers). A {} of your own (your distribution's) is used instead when there is one.",
                     e.label, e.label
-                )
-            }),
+                ))
+            } else if env.runs_others_flatpak(e) {
+                let official = match (e.official_appimage, e.flatpak_from) {
+                    (Some(_), _) => "its official AppImage (Not installed → Download official AppImage, once this one is removed, or put it in ~/Applications)",
+                    (None, launch::FlatpakFrom::Own { .. }) => "its developers' own Flatpak",
+                    _ => "its developers' own build",
+                };
+                Some(format!(
+                    "This is Flathub's {}, made by others, not by {}'s developers: romforge uses it because nothing official is installed. Recommended: {official}; romforge uses that first once it is there.",
+                    e.label, e.label
+                ))
+            } else {
+                None
+            },
             movable: env.home.is_some() && launch::move_in::movable(e.settings_name()),
             gathers: env.home.is_some() && crate::saves::gather::gathers(e.settings_name()),
             backs_up: env.home.is_some() && crate::saves::backup::backs_up(e.settings_name()),

@@ -94,6 +94,12 @@ pub struct KnownEmulator {
     pub official_appimage: Option<(&'static str, &'static str)>,
     /// What else romforge does with its data.
     pub abilities: &'static [Ability],
+    /// Flags passed whatever the window: starting the game with no main
+    /// window and quitting when it ends, no confirmations.
+    pub always: &'static [&'static str],
+    /// Flags for a window rather than fullscreen (most remember fullscreen
+    /// from before, or start in it).
+    pub windowed: &'static [&'static str],
 }
 
 pub(super) const fn emu(
@@ -123,6 +129,8 @@ pub(super) const fn emu(
         firmware: None,
         official_appimage: None,
         abilities: &[],
+        always: &[],
+        windowed: &[],
     }
 }
 
@@ -137,6 +145,14 @@ impl KnownEmulator {
     }
     pub(super) const fn fullscreen(mut self, flags: &'static [&'static str]) -> Self {
         self.fullscreen = flags;
+        self
+    }
+    pub(super) const fn always(mut self, flags: &'static [&'static str]) -> Self {
+        self.always = flags;
+        self
+    }
+    pub(super) const fn windowed(mut self, flags: &'static [&'static str]) -> Self {
+        self.windowed = flags;
         self
     }
     pub(super) const fn config(mut self, flags: &'static [&'static str]) -> Self {

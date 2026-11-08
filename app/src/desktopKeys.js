@@ -6,7 +6,8 @@ export function desktopPad(action, d) {
   if (d.view !== "library") return;
   const games = d.rows.filter((r) => !r.head);
   if (action === "up" || action === "down") d.listKeys({ key: action === "up" ? "ArrowUp" : "ArrowDown", preventDefault() {} });
-  else if (action === "accept" && d.row?.playable && !d.busy) d.play();
+  // A game starts whatever job is running (play.js).
+  else if (action === "accept" && d.row?.playable) d.play();
   else if (action === "page_up" || action === "page_down") {
     const all = ["*", ...d.platforms.map((p) => p.system ?? "")];
     const i = Math.max(0, all.indexOf(d.platform));

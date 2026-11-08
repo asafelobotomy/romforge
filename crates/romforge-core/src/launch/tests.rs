@@ -333,6 +333,7 @@ fn user_emulators_get_their_bios_folder() {
 
 mod bios;
 mod consoles;
+mod exits;
 mod sources;
 
 /// MAME's copy of `mame.ini` starts from the user's own (their rompath

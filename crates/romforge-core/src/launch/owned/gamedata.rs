@@ -96,7 +96,11 @@ pub(super) fn gamedata(name: &str, dir: &Path, bios: &Path, user: Option<&UserDi
                     .map(|p| s(&p))
             };
             let ours = |file: &str| Some(bios.join(file)).filter(|f| f.is_file()).map(|f| s(&f));
-            let mut keys = vec![("[general]show_welcome".to_owned(), "false".to_owned())];
+            let mut keys = vec![
+                ("[general]show_welcome".to_owned(), "false".to_owned()),
+                // No update check on start.
+                ("[general.updates]check".to_owned(), "false".to_owned()),
+            ];
             let files = [
                 ("bootrom_path", ours("mcpx_1.0.bin")),
                 ("flashrom_path", ours("Complex_4627.bin")),

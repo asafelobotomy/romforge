@@ -3,7 +3,9 @@
 //! then `flatpak install --user --noninteractive <remote> <id>`, from
 //! Flathub or its developers' own repository (`FlatpakFrom`), or, for an
 //! emulator whose developers make no Linux build, Flathub's as the
-//! fallback. One only others build is never installed. The ids are the table's.
+//! fallback. One only others build (Flathub's RPCS3, mGBA, Flycast) is
+//! installed only when asked, its official AppImage being recommended. The
+//! ids are the table's.
 
 use crate::Error;
 use crate::launch::{self, Env, FlatpakFrom};
@@ -27,17 +29,9 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
     let (remote, repo) = match e.flatpak_from {
         FlatpakFrom::Flathub | FlatpakFrom::Fallback => ("flathub", FLATHUB_REPO),
         FlatpakFrom::Own { remote, repo, .. } => (remote, repo),
-        FlatpakFrom::Others => {
-            let instead = if e.official_appimage.is_some() {
-                "download its official AppImage instead"
-            } else {
-                "install it from your distribution instead"
-            };
-            return Err(Error::Launch(format!(
-                "{}'s Flatpak isn't made by its developers: {instead}",
-                e.label
-            )));
-        }
+        // Made by others, not its developers: installed only when asked
+        // (the Emulators page offers its official AppImage first).
+        FlatpakFrom::Others => ("flathub", FLATHUB_REPO),
     };
     let flatpak = env
         .path
@@ -67,9 +61,10 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
         )))
     };
     run(&["remote-add", "--user", "--if-not-exists", remote, repo])?;
-    // One from elsewhere (Flathub's community Dolphin) is replaced.
+    // One from elsewhere (Flathub's community Dolphin) is replaced by its
+    // developers' own.
     let mut install = vec!["install", "--user", "--noninteractive", "-y"];
-    if env.unofficial_flatpak(e) {
+    if env.unofficial_flatpak(e) && matches!(e.flatpak_from, FlatpakFrom::Own { .. }) {
         install.push("--reinstall");
     }
     install.extend([remote, id]);

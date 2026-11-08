@@ -107,9 +107,11 @@
   }
 
   async function install(n) {
-    const fallback = n.flatpak.includes("not official")
-      ? ` ${n.label} makes no Linux build of its own: this is Flathub's, the one most used, made by others.`
-      : "";
+    const fallback = !n.flatpak.includes("not official")
+      ? ""
+      : n.appimage
+        ? ` Flathub's ${n.label} is made by others, not by its developers; their official AppImage (the other button) is recommended.`
+        : ` ${n.label} makes no Linux build of its own: this is Flathub's, the one most used, made by others.`;
     const replace = n.unofficial_flatpak ? ` The Flatpak of it you have now isn't its developers' and is replaced.` : "";
     const ok = await ask(`Install ${n.label} from ${n.flatpak} into your Flatpak? This can take a while.${fallback}${replace}`, {
       title: "Install emulator",
@@ -192,13 +194,13 @@
               {#each view.not_installed as n}
                 <li>
                   {n.label}
+                  <!-- Its developers' AppImage first (recommended), Flathub's build by others as the alternative. -->
+                  {#if n.appimage}
+                    <button onclick={() => appimage(n)} disabled={!!installing}>{installing === `appimage:${n.name}` ? "Downloading…" : n.flatpak?.includes("not official") ? "Download official AppImage (recommended)" : "Download official AppImage"}</button>
+                  {/if}
                   {#if n.flatpak}
                     <button onclick={() => install(n)} disabled={!!installing}>{installing === n.name ? "Installing…" : n.flatpak === "Flathub" ? "Install from Flathub" : n.flatpak.includes("not official") ? "Install Flathub's (not official)" : "Install its official Flatpak"}</button>
                   {/if}
-                  {#if n.appimage}
-                    <button onclick={() => appimage(n)} disabled={!!installing}>{installing === `appimage:${n.name}` ? "Downloading…" : "Download official AppImage"}</button>
-                  {/if}
-                  {#if n.unofficial_flatpak}<span class="hint">· the Flatpak you have isn't its developers': not used</span>{/if}
                   {#if n.flatpak || n.appimage}{""}
                   {:else if n.discontinued}<span class="hint">· discontinued (last release {n.discontinued}): romforge uses your own install and never downloads it</span>
                   {:else}<span class="hint">· no official Flatpak or AppImage: install it from your distribution</span>{/if}

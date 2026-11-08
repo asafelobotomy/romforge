@@ -7,8 +7,11 @@
 
 use std::path::Path;
 
-/// Processes that only carry the sandbox.
-const WRAPPERS: [&str; 3] = ["bwrap", "flatpak", "xdg-dbus-proxy"];
+/// Processes that only carry the sandbox, and the shell scripts some
+/// Flatpaks start their emulator through (Dolphin's `dolphin-emu-wrapper`,
+/// Cemu's, Azahar's `azahar-launcher`): a stop goes past them to the
+/// emulator, which a signal to the script wouldn't reach.
+const WRAPPERS: [&str; 5] = ["bwrap", "flatpak", "xdg-dbus-proxy", "bash", "sh"];
 
 fn is_wrapper(proc_dir: &Path, pid: u32) -> bool {
     std::fs::read_to_string(proc_dir.join(pid.to_string()).join("comm"))
@@ -141,6 +144,16 @@ mod tests {
             format!("{pid} ({comm} x) {state} {rest} {start} 0 0"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_flatpak_s_shell_script_is_passed_through_to_the_emulator() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        process(p, 10, "bwrap", &[11]);
+        process(p, 11, "bash", &[12]);
+        process(p, 12, "dolphin-emu", &[]);
+        assert_eq!(app_pids_in(p, 10), vec![12]);
     }
 
     #[test]

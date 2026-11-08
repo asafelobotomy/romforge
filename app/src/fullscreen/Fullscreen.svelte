@@ -2,6 +2,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { artSrc } from "../lib.js";
   import { isGame } from "../listing.js";
+  import { justBack } from "../ui.svelte.js";
+  import FsToast from "./FsToast.svelte";
   import Wordmark from "../Wordmark.svelte";
   import { fs, leave, remembered, remember } from "./fs.svelte.js";
   import { homeAction, keyAction, listMove } from "./fsnav.js";
@@ -39,7 +41,7 @@
   // game's own page, menus, and a help bar; all of it by pad or keyboard.
   // `play(row, art)` starts a game as the desktop's Play does;
   // `desktop(id)` leaves for the desktop library with that game picked.
-  let { lib, icons = {}, iconStyle = "", playing = null, play, desktop } = $props();
+  let { lib, icons = {}, iconStyle = "", playing = null, play, desktop, note = "", error = "" } = $props();
 
   const saved = remembered();
   let sort = $state(saved.sort ?? "title");
@@ -260,7 +262,7 @@
 
   // One action from the pad or the keyboard.
   function handle(action) {
-    if (playing) return;
+    if (playing || justBack()) return;
     if (poke()) return wokeOn(attractGame);
     if (screen === "search" && !menu) return finder?.pad(action);
     if (menu) {
@@ -347,6 +349,7 @@
 
 <div class="fs" data-fs-root data-fs-screen={screen} data-fs-layout={layout} data-fs-shelf-details={layout === "bookshelf" && shelfPrefs.details !== "top" ? shelfPrefs.details : undefined} data-fs-aspect={aspect} bind:this={root}>
   {#if backdrop}<img class="backdrop" src={backdrop} alt="" data-fs-detail="backdrop" />{/if}
+  <FsToast {note} {error} />
   {#if screen === "home"}
     <header class="top" data-fs-wordmark><Wordmark height="3.2vh" /></header>
     <FsCarousel {platforms} index={pIndex} focused={focus === "carousel" && !menu} {icons} {iconStyle} pick={(i) => ((platformKey = platforms[i].system), (gameId = null), (focus = "carousel"))} />

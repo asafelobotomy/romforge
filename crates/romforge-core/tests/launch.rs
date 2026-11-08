@@ -50,11 +50,14 @@ fn retroarch_gets_the_archive_and_the_best_installed_core() {
 fn standalone_emulators_never_get_a_rom_inside_an_archive() {
     let lib = library();
     let f = fake();
-    // Flathub's mGBA isn't its developers': not used.
+    // Flathub's mGBA isn't its developers': used while nothing official is.
     flatpak(&f, "io.mgba.mGBA");
-    let err = lib.launch_plan(&f.env, "Test GBA", None).unwrap_err().to_string();
-    assert!(err.contains("mgba not installed"), "{err}");
-    // Its official AppImage reads archives itself.
+    let spec = lib.launch_plan(&f.env, "Test GBA", None).unwrap();
+    assert_eq!(
+        (spec.emulator.as_str(), spec.program.to_str()),
+        ("mgba", Some("flatpak"))
+    );
+    // Its official AppImage reads archives itself, and comes first.
     let apps = f.root.join("apps");
     std::fs::create_dir(&apps).unwrap();
     script(&apps.join("mGBA-0.10.5-appimage-x64.appimage"), "exit 0");

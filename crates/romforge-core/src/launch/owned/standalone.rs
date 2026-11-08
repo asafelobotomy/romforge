@@ -59,6 +59,9 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
                 dir.join(files::DS),
                 &[
                     ("[Main]SetupWizardIncomplete", "false".into()),
+                    // Its "Are you sure?" on quit would hold romforge's
+                    // Quit and Stop until the game is killed.
+                    ("[Main]ConfirmPowerOff", "false".into()),
                     ("[BIOS]SearchDirectory", s(bios)),
                 ],
                 &[],
@@ -69,6 +72,8 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
             &[
                 ("[UI]SettingsVersion", "1".into()),
                 ("[UI]SetupWizardIncomplete", "false".into()),
+                // No "Are you sure?" when its window is closed.
+                ("[UI]ConfirmShutdown", "false".into()),
                 ("[Folders]Bios", s(bios)),
             ],
             &[],

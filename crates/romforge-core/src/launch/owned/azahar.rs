@@ -91,7 +91,13 @@ pub(super) fn citra_line(
         ]
     };
     let folder = |d: &str| format!("{}/", s(&storage.join(d)));
-    let mut keys: Vec<(String, String)> = [off("[UI]firstStart"), off(kind.update_check)].concat();
+    // No first-start wizard, update check or "close?" confirmation.
+    let mut keys: Vec<(String, String)> = [
+        off("[UI]firstStart"),
+        off(kind.update_check),
+        off("[UI]confirmClose"),
+    ]
+    .concat();
     keys.extend([
         ("[Data%20Storage]use_custom_storage".to_owned(), "true".to_owned()),
         (

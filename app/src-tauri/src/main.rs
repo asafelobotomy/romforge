@@ -89,6 +89,23 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol("music", move |_ctx, request, responder| {
             pool.run(move || responder.respond(music::serve(&request)));
         })
+        // Closing romforge while a game plays asks first, then stops the game
+        // (it saves) and keeps its play time; closing the main window quits
+        // romforge whole (the hidden hotkey ring would keep it running).
+        .on_window_event(|window, event| {
+            use tauri::Manager;
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } if play::game_running(window.app_handle()) => {
+                    api.prevent_close();
+                    play::ask_to_quit(window.app_handle());
+                }
+                tauri::WindowEvent::Destroyed => window.app_handle().exit(0),
+                _ => {}
+            }
+        })
         .manage(db)
         .manage(roots)
         .manage(play::Now::default())
@@ -220,6 +237,7 @@ fn main() {
             emulators::undo_restore_save,
             emulators::emulator_cores,
             emulators::download_core,
+            emulators::download_all_cores,
             emulators::remove_core,
             emulators::install_emulator,
             settings::get_settings,

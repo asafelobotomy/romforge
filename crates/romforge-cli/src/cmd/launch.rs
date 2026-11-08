@@ -191,7 +191,27 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
             }
         }
-        Command::Emulator(EmulatorCommand::GetCore { core, yes }) => {
+        Command::Emulator(EmulatorCommand::GetCore { core: None, yes, .. }) => {
+            let results = lib.download_all_cores(yes, |n, total, name| {
+                println!("[{}/{total}] {name}", n + 1);
+            })?;
+            let failed = results.iter().filter(|(_, r)| r.is_err()).count();
+            for (core, r) in &results {
+                match r {
+                    Ok(date) => println!("{core} ({date}) downloaded"),
+                    Err(e) => eprintln!("{core}: {e}"),
+                }
+            }
+            if !yes {
+                println!("(non-commercial cores were left out: --yes to accept their licences)");
+            }
+            println!("{} downloaded, {failed} failed", results.len() - failed);
+        }
+        Command::Emulator(EmulatorCommand::GetCore {
+            core: Some(core),
+            yes,
+            ..
+        }) => {
             let list = lib.emulator_cores()?;
             let shown = list.cores.iter().find(|c| c.name == core);
             if let Some(c) = shown {

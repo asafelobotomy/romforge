@@ -230,8 +230,8 @@ fn installed_emulators_get_tabs() {
         "not on Flathub"
     );
     assert!(
-        missing("RPCS3").is_some_and(|n| n.flatpak.is_none()),
-        "Flathub's isn't its developers'"
+        missing("RPCS3").is_some_and(|n| n.flatpak == Some("Flathub (not official)")),
+        "Flathub's is offered as made by others, beside its official AppImage"
     );
     assert!(missing("Dolphin").is_some_and(|n| n.flatpak == Some("its developers' own repository")));
     assert!(missing("MAME: FM-7").is_none());

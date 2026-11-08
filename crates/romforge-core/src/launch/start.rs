@@ -249,6 +249,8 @@ pub(super) fn start(
                 if let (Some(p), Some(h)) = (&mut prepare, &env.home) {
                     owned::saves::dos_overlay(e.settings_name(), h, system, &game, &rom, &mut args, p);
                 }
+                // A DOS program closes DOSBox when it ends, back to romforge.
+                args.extend(owned::saves::dos_exit(e.settings_name(), &rom).map(str::to_owned));
                 let uses_home = prepare.is_some() || (bios.is_some() && !e.bios.is_empty());
                 return Ok(passed_over(
                     &why_not,

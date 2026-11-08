@@ -234,7 +234,9 @@ impl Env {
             .get(e.settings_name())
             .filter(|p| is_executable(p));
         // Its official AppImage, where it has one, before its official
-        // Flatpak (one from elsewhere is never used, `launch/flatpak.rs`).
+        // Flatpak; a Flatpak made by others (Flathub's build of an emulator
+        // whose developers make none) only when nothing official is there
+        // (`launch/flatpak.rs`).
         let official = || e.official_appimage.and_then(|_| self.in_emulator_dirs(e));
         user.cloned()
             .or_else(|| e.programs.iter().find_map(|p| self.which(p)))
@@ -242,6 +244,7 @@ impl Env {
             .map(Runner::Program)
             .or_else(|| self.flatpak(e))
             .or_else(|| self.in_emulator_dirs(e).map(Runner::Program))
+            .or_else(|| self.others_flatpak(e))
     }
 
     /// One of `e`'s programs, else its newest-named AppImage, in the first
@@ -344,7 +347,10 @@ fn fill(args: &[impl AsRef<str>], v: &Vars) -> Vec<String> {
 /// flags (with a RomForge folder), the extra arguments set for it, then its
 /// arguments for the game.
 fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
-    let fullscreen = if o.windowed { &[][..] } else { e.fullscreen };
+    // Always the flags that start the game alone and quit with it; then the
+    // window's: leaving the fullscreen ones out isn't enough, as most
+    // emulators remember fullscreen from before.
+    let window = if o.windowed { e.windowed } else { e.fullscreen };
     let config = if v.config.is_some() {
         fill(e.config, v)
     } else {
@@ -355,8 +361,9 @@ fn known_args(e: &KnownEmulator, v: &Vars, o: &LaunchOptions) -> Vec<String> {
     } else {
         Vec::new()
     };
-    fullscreen
+    e.always
         .iter()
+        .chain(window)
         .map(|f| (*f).to_owned())
         .chain(config)
         .chain(bios)

@@ -36,6 +36,24 @@
     await load();
   }
 
+  // Every missing core at once: the non-commercial ones only if agreed.
+  async function getAll() {
+    const missing = (list?.cores ?? []).filter((c) => c.available && (!c.installed || c.update));
+    if (!missing.length) return;
+    const nc = missing.filter((c) => c.non_commercial);
+    const accept =
+      nc.length > 0 &&
+      (await ask(`${nc.length} of these cores (${nc.map((c) => c.display_name).join(", ")}) have licences that forbid commercial use. Include them, for your own use?`, { title: "Non-commercial cores", kind: "warning" }));
+    working = "all";
+    const r = await run(`Downloading ${missing.length} cores…`, "download_all_cores", { accept }, { key: "cores:all" });
+    if (r) {
+      const failed = r.filter(([, x]) => x.Err !== undefined);
+      note = `${r.length - failed.length} cores downloaded${failed.length ? `; ${failed.length} failed (${failed.map(([c]) => c).join(", ")})` : ""}.`;
+    }
+    working = "";
+    await load();
+  }
+
   async function remove(c) {
     const ok = await ask(`Remove ${c.display_name} from romforge's Emulators/cores?`, { title: "Remove core", kind: "warning" });
     if (!ok) return;
@@ -63,6 +81,7 @@
   </p>
   <div class="pick">
     <button onclick={() => load(true)} disabled={!!working}>{working === "list" ? "Checking…" : list?.checked ? "Check for updates" : "Get the buildbot's list"}</button>
+    {#if list?.checked}<button onclick={getAll} disabled={!!working}>{working === "all" ? "Downloading…" : "Download all missing"}</button>{/if}
     <select bind:value={filter} aria-label="Which cores">
       <option value="missing">Missing or out of date</option>
       <option value="ours">Downloaded by romforge</option>

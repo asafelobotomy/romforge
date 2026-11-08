@@ -48,8 +48,13 @@ pub enum EmulatorCommand {
         refresh: bool,
     },
     /// Download a core from the buildbot into RomForge/Emulators/cores
+    /// (`--all`: every core your platforms use that isn't installed)
     GetCore {
-        core: String,
+        #[arg(required_unless_present = "all")]
+        core: Option<String>,
+        /// Every missing or out-of-date core
+        #[arg(long, conflicts_with = "core")]
+        all: bool,
         /// Accept a non-commercial licence
         #[arg(long)]
         yes: bool,

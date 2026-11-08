@@ -34,6 +34,9 @@ fn index_file(arch: &str) -> String {
     format!("libretro-cores-{arch}.index")
 }
 
+/// A core and how its download went: its buildbot date, or why not.
+pub type CoreDownload = (String, Result<String, String>);
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CoreRow {
     pub name: String,

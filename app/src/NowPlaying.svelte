@@ -5,6 +5,7 @@
   import { artSrc } from "./lib.js";
   import { duration } from "./labels.js";
   import Splash from "./Splash.svelte";
+  import { ui } from "./ui.svelte.js";
 
   // A game while it runs (milestone 18, 1.6): a fullscreen splash with its
   // art from Play until the emulator's window takes over (it takes the
@@ -38,19 +39,26 @@
   /// `art` ({ box3d, boxart, platform }) when Details has it.
   export async function started(p, art) {
     playing = p;
+    ui.playing = true;
     lastArt = { ...art, system: p.system, accent: accents[p.system] ?? "" };
     splash = { title: p.game, emulator: p.emulator, logo: null, ...lastArt };
     invoke("platform_logo", { system: p.system })
       .then((file) => file && ((lastArt.logo = artSrc(file)), splash && (splash.logo = lastArt.logo)))
       .catch(() => {});
     clearTimeout(fallback);
-    fallback = setTimeout(() => hide(true), 15000);
+    // A slow starter (RPCS3 compiling, a big disc) gets longer than the
+    // focus usually takes to move.
+    fallback = setTimeout(() => hide(true), 30000);
+    // Romforge's own fullscreen switch can move the focus: that isn't the
+    // emulator's window, so focus changes count only a moment after.
+    settling = Date.now() + 600;
     try {
       await win.setFullscreen(true);
     } catch {
       // Not allowed or not supported: the splash still covers the window.
     }
   }
+  let settling = 0;
 
   // `away`: the game is up, so the window goes out of its way as Settings
   // says (to the tray, minimised, or left); it comes back when the game
@@ -59,19 +67,23 @@
     if (!splash) return;
     splash = null;
     clearTimeout(fallback);
+    // Out of the way first, then out of fullscreen: no flash of the
+    // windowed library over the game.
+    if (away && playing) await invoke("tuck_away", { game: playing.game }).catch(() => {});
     try {
       if (!stayFullscreen) await win.setFullscreen(false);
     } catch {
       // As above.
     }
-    if (away && playing) invoke("tuck_away", { game: playing.game }).catch(() => {});
   }
 
   // The emulator's window taking the focus means it's up.
   $effect(() => {
     let off = null;
     let gone = false;
-    win.onFocusChanged(({ payload: focused }) => !focused && hide(true)).then((f) => (gone ? f() : (off = f)));
+    win
+      .onFocusChanged(({ payload: focused }) => !focused && Date.now() > settling && hide(true))
+      .then((f) => (gone ? f() : (off = f)));
     return () => {
       gone = true;
       off?.();
@@ -89,9 +101,14 @@
       clearTimeout(exitTimer);
       exitTimer = setTimeout(() => splash?.kind === "exit" && (splash = null), 1500);
       if (stayFullscreen) win.setFullscreen(true).catch(() => {});
+      // Asked for here too: by now the window is no longer minimised.
+      win.setFocus().catch(() => {});
       playing = null;
-      if (d.seconds < 10 && d.code !== 0 && d.code !== null) {
-        error = `${d.playing.emulator} closed straight away (exit code ${d.code}); check its setup in Emulator Settings.`;
+      ui.playing = false;
+      ui.returned = Date.now();
+      if (d.failed) {
+        const how = d.code === null ? "it was stopped by a signal (it crashed?)" : `exit code ${d.code}`;
+        error = `${d.playing.emulator} closed straight away (${how}); check its setup in Emulator Settings.`;
       } else {
         note = `${d.playing.game}: played ${duration(d.seconds)}.`;
       }
@@ -104,7 +121,7 @@
   });
 
   // A game still running from before the page reloaded.
-  invoke("now_playing").then((p) => p && (playing = p));
+  invoke("now_playing").then((p) => p && ((playing = p), (ui.playing = true)));
 
   $effect(() => {
     if (!playing) return;

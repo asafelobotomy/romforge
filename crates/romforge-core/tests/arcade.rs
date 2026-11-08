@@ -208,6 +208,7 @@ fn mame_sets_are_matched_imported_whole_and_started_by_name() {
     assert_eq!(
         spec.args,
         [
+            "-skip_gameinfo".to_owned(),
             "-nowindow".to_owned(),
             "-rompath".to_owned(),
             games.display().to_string(),

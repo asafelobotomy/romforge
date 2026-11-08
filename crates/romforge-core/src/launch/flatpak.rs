@@ -73,9 +73,28 @@ impl Env {
     }
 
     /// A Flatpak of `e` is installed that isn't its official one (from
-    /// another remote, or one only others build): romforge doesn't use it.
+    /// another remote, or one only others build): used only when nothing
+    /// official is installed, and said so.
     pub fn unofficial_flatpak(&self, e: &KnownEmulator) -> bool {
         self.flatpak_apps(e).next().is_some() && self.flatpak(e).is_none()
+    }
+
+    /// `e`'s installed Flatpak whoever made it, when it isn't its
+    /// official one: the last choice ([`Env::known`]).
+    pub(super) fn others_flatpak(&self, e: &KnownEmulator) -> Option<Runner> {
+        if !self.unofficial_flatpak(e) {
+            return None;
+        }
+        let app = self.flatpak_apps(e).next()?;
+        Some(Runner::Flatpak {
+            id: e.flatpak?.to_owned(),
+            command: command(&app),
+        })
+    }
+
+    /// `e` runs as a Flatpak made by others ([`Env::others_flatpak`]).
+    pub fn runs_others_flatpak(&self, e: &KnownEmulator) -> bool {
+        self.unofficial_flatpak(e) && matches!(self.known(e), Some(Runner::Flatpak { .. }))
     }
 }
 

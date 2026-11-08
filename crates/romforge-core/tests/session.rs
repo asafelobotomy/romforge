@@ -71,6 +71,7 @@ fn play_time_is_kept() {
         },
         seconds,
         code: Some(0),
+        failed: false,
     };
     assert!(lib.record_play(&long(600, 1_000)).unwrap());
     assert!(lib.record_play(&long(300, 2_000)).unwrap());

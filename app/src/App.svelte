@@ -32,7 +32,7 @@
   import { statusLabel } from "./labels.js";
   import { storedView, storeView, libraryRows, isGame } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
-  import { ui } from "./ui.svelte.js";
+  import { ui, justBack } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
   import { padAction } from "./padnav.js";
   import { click, key as selectKey, targets } from "./selection.js";
@@ -312,7 +312,7 @@
     if (p.kind === "connected") note = `Game pad connected: ${p.name}`;
     else if (p.kind === "disconnected") note = `Game pad disconnected: ${p.name}`;
     else if (!playing && fs.on) ((fs.padSeen = true), fs.pad?.(p.action));
-    else if (!playing) padAction(p.action, padLibrary);
+    else if (!playing && !justBack()) padAction(p.action, padLibrary);
   });
   onDestroy(() => unPad.then((f) => f()));
 
@@ -380,7 +380,7 @@
   <JobsDialog bind:open={shown.jobs} />
 </div>
 <!-- Outside .app: none of the desktop's shared styles reach it. -->
-{#if fs.on}<Fullscreen {lib} {icons} {iconStyle} {playing} play={playRow} desktop={(id) => (leaveFs(), (view = "library"), pick(id))} />{/if}
+{#if fs.on}<Fullscreen {lib} {icons} {iconStyle} {playing} {note} {error} play={playRow} desktop={(id) => (leaveFs(), (view = "library"), pick(id))} />{/if}
 
 <style>
   .app { display: flex; flex-direction: column; height: 100vh; }

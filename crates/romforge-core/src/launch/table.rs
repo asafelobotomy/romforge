@@ -49,7 +49,9 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
-    .fullscreen(&["-fullscreen", "-nogui"]),
+    .always(&["-batch"])
+    .fullscreen(&["-fullscreen", "-nogui"])
+    .windowed(&["-nofullscreen"]),
     // v2.8.2 (QtHost.cpp). `-datapath` keeps its data in `PCSX2/` inside
     // the folder given.
     emu(
@@ -61,7 +63,9 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
+    .always(&["-batch"])
     .fullscreen(&["-fullscreen", "-nogui"])
+    .windowed(&["-nofullscreen"])
     .config(&["-datapath", "{config}"]),
     // 2609a (CommandLineParse.cpp): no fullscreen flag, a config override
     // instead. `-u` is ignored under Flatpak, which always uses XDG.
@@ -74,7 +78,16 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves, Ability::BackUpSaves])
+    // No stop confirmation or analytics question (`-C` sets them for this
+    // run only).
+    .always(&[
+        "-C",
+        "Dolphin.Interface.ConfirmStop=False",
+        "-C",
+        "Dolphin.Analytics.PermissionAsked=True",
+    ])
     .fullscreen(&["-C", "Dolphin.Display.Fullscreen=True"])
+    .windowed(&["-C", "Dolphin.Display.Fullscreen=False"])
     .config(&["-u", "{config}"])
     // Its Linux release is a Flatpak from its own repository (its download
     // page, 2026-10-25); Flathub's is a community build.
@@ -94,7 +107,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
-    .fullscreen(&["--fullscreen", "--escape-exit"]),
+    // Its pause menu's Exit and Escape quit PPSSPP, not go to its menu.
+    .always(&["--pause-menu-exit", "--escape-exit"])
+    .fullscreen(&["--fullscreen"])
+    .windowed(&["--windowed"]),
     // v2.7 (cfg/cl.cpp).
     emu(
         "flycast",
@@ -106,6 +122,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-config", "window:fullscreen=yes"])
+    .windowed(&["-config", "window:fullscreen=no"])
     // Flathub's isn't its developers'; its releases have an AppImage.
     .flatpak_by_others()
     .official_appimage("flyinghead/flycast", ".AppImage"),
@@ -167,7 +184,8 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     emu("mednafen", "Mednafen", &["mednafen"], "", &["{rom}"], true)
         .can(&[Ability::ImportSetup, Ability::GatherSaves])
         .no_flatpak()
-        .fullscreen(&["-video.fs", "1"]),
+        .fullscreen(&["-video.fs", "1"])
+        .windowed(&["-video.fs", "0"]),
     // v2.6 (LaunchSettings.cpp); `-m` moves only the MLC folder.
     emu(
         "cemu",
@@ -178,7 +196,9 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
-    .fullscreen(&["-f"]),
+    .fullscreen(&["-f"])
+    // A bool with an implicit value: false must be given with `=`.
+    .windowed(&["--fullscreen=false"]),
     // 2126.2 (citra_qt.cpp): the game is the last argument, `-f` full
     // screen; a CIA is installed (`-i`), never started, so Play refuses
     // one (`launch/start.rs`). Decrypted games only.
@@ -191,7 +211,8 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::MoveData, Ability::BackUpSaves])
-    .fullscreen(&["-f"]),
+    .fullscreen(&["-f"])
+    .windowed(&["-w"]),
     // Azahar's predecessors, discontinued; both play encrypted games with
     // `aes_keys.txt` (Azahar removed that in dc1ebb63, 2025-02-27), and
     // neither reads Z3DS. Lime3DS 2119.1 (lime3ds-archive, lime_qt.cpp):
@@ -237,6 +258,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .can(&[Ability::ImportSetup])
     .fullscreen(&["--fullscreen"])
+    .windowed(&["--set", "fullscreen=false"])
     .config(&["--noprimaryconf", "--conf", "{config}/dosbox-staging.conf"])
     // 0.83's `[mt32] romdir`, `[soundcanvas] soundcanvas_rom_dir` and
     // `[fluidsynth] soundfont_dir`, by `--set`.
@@ -274,6 +296,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
     .fullscreen(&["-f"])
+    .windowed(&["--no-fullscreen"])
     .config(&["--config={config}/scummvm.ini"])
     // Engine data (`--extrapath`), laid out as RetroBIOS gives it.
     .bios(&["--extrapath={bios}/scummvm/extra"]),
@@ -289,7 +312,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         true,
     )
     .can(&[Ability::ImportSetup])
+    // No game-info screen waiting for a key.
+    .always(&["-skip_gameinfo"])
     .fullscreen(&["-nowindow"])
+    .windowed(&["-window"])
     .config(&["-inipath", "{config}"])
     // MAME makes only Windows builds (mamedev.org, 0.289). The Linux
     // build most used is Flathub's (1.09 million installs, 2026-10-25):
@@ -308,7 +334,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     .flatpak_fallback()
     .shares("mame")
     .machine("fm7")
+    // No game-info screen waiting for a key.
+    .always(&["-skip_gameinfo"])
     .fullscreen(&["-nowindow"])
+    .windowed(&["-window"])
     .config(&["-inipath", "{config}"])
     .bios(&["-rompath", "{bios}"]),
     emu(
@@ -323,7 +352,10 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     .flatpak_fallback()
     .shares("mame")
     .machine("fmtowns")
+    // No game-info screen waiting for a key.
+    .always(&["-skip_gameinfo"])
     .fullscreen(&["-nowindow"])
+    .windowed(&["-window"])
     .config(&["-inipath", "{config}"])
     .bios(&["-rompath", "{bios}"]),
 ];

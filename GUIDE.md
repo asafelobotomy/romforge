@@ -237,6 +237,17 @@ emulator up from it (its config there) or passes it its BIOS folder
 (`-rompath`, `--extrapath`, …: only when `Bios/<emulator>/` holds a file,
 so an empty one never overrides the emulator's own paths). An emulator you
 add gets `{bios}` as `Bios/<its name>/`.
+Each known emulator is started straight into the game and set to quit
+when the game ends, so quitting brings you back to romforge, windowed or
+fullscreen: DuckStation and PCSX2 in batch mode, Dolphin in batch mode,
+RPCS3 with no GUI, PPSSPP with its pause menu's Exit and Escape quitting,
+RetroArch's Close Content quitting, MAME past its game-info screen, a DOS
+program closing DOSBox when it ends. Their own "are you sure?" prompts
+are turned off in romforge's copy of their settings. Windowed passes each
+emulator's own windowed flag, since most remember fullscreen from
+before. Azahar has no such mode: stopping a game from its own menu goes
+back to its game list, so quit with romforge's Quit, Stop, or by closing
+its window.
 Emulators you add come first. A ROM in a zip/7z goes to RetroArch as the
 archive; standalone emulators only get archives if they read them
 (`--archives`), since romforge never extracts. A disc starts from its sheet.
@@ -312,15 +323,21 @@ folder RetroArch sorted it into; one whose platform can't be told stays
 where it is). RetroArch's tab lists its cores: where
 each is installed, its licence (non-commercial ones are flagged and asked
 about), and what the libretro buildbot has; a download goes into
-`RomForge/Emulators/cores/`, which romforge looks in first. romforge uses
-only each emulator's official build. A Flatpak is used only when it comes
-from where its developers publish it: Flathub for those that publish
+`RomForge/Emulators/cores/`, which romforge looks in first; **Download
+all missing** gets every core your platforms use in one go (`romforge-cli
+emulator get-core --all`, `--yes` to include the non-commercial ones).
+romforge prefers each emulator's official build. An official Flatpak is
+one from where its developers publish it: Flathub for those that publish
 there themselves (verified on Flathub), Dolphin's own repository
-(`flatpak.dolphin-emu.org`) for Dolphin. Flathub's RPCS3, mGBA, Flycast
-and MAME are made by others, so romforge never uses or installs them: it
-offers RPCS3's, mGBA's and Flycast's own AppImages from their GitHub
-releases instead (checked against the SHA-256 GitHub publishes, or the
-size it gives where a release has none), An emulator whose
+(`flatpak.dolphin-emu.org`) for Dolphin. Flathub's Dolphin, RPCS3, mGBA
+and Flycast are made by others: one you already have is used when
+nothing official is installed, and its tab says so and recommends the
+official build, which romforge then uses first. For RPCS3, mGBA and
+Flycast the Emulators page offers their own AppImages from their GitHub
+releases (checked against the SHA-256 GitHub publishes, or the size it
+gives where a release has none), marked recommended, with Flathub's
+build as the alternative; Flathub's RPCS3 asks on every start whether to
+run an unofficial build. An emulator whose
 developers make no Linux build falls back to the Linux build most used,
 always marked as not official on its tab and when installing: MAME makes
 only Windows builds, so a MAME of your own (your distribution's) comes

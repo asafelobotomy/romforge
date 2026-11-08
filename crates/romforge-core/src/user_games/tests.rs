@@ -13,6 +13,7 @@ fn ended(game: &str, started: u64, seconds: u64) -> Ended {
         },
         seconds,
         code: Some(0),
+        failed: false,
     }
 }
 

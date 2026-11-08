@@ -31,7 +31,7 @@ pub async fn tuck_away(app: AppHandle, db: tauri::State<'_, Db>, game: String) -
     let Some(win) = window(&app) else { return Ok(()) };
     let done = match how.as_str() {
         "stay" => return Ok(()),
-        "tray" if tray_library() && tray(&app, &game).is_ok() => win.hide(),
+        "tray" if tray_library() && tray_host() && tray(&app, &game).is_ok() => win.hide(),
         // "minimise", or no tray to come back from.
         _ => win.minimize(),
     };
@@ -49,7 +49,14 @@ fn tray(app: &AppHandle, game: &str) -> tauri::Result<()> {
     }
     let show = MenuItem::with_id(app, "show", "Show romforge", true, None::<&str>)?;
     let stop = MenuItem::with_id(app, "stop", format!("Stop {game}"), true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &stop])?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        format!("Stop {game} and quit romforge"),
+        true,
+        None::<&str>,
+    )?;
+    let menu = Menu::with_items(app, &[&show, &stop, &quit])?;
     let mut tray = TrayIconBuilder::with_id(TRAY)
         .tooltip(format!("romforge: playing {game}"))
         .menu(&menu)
@@ -57,6 +64,7 @@ fn tray(app: &AppHandle, game: &str) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_window(app),
             "stop" => stop_game(app),
+            "quit" => crate::play::quit_after_game(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -77,12 +85,23 @@ fn tray(app: &AppHandle, game: &str) -> tauri::Result<()> {
 }
 
 /// The window back in front (the tray icon stays while the game runs).
+/// Focus is asked for again once the window is back: asked at once, while
+/// it still counts as minimised, it does nothing (tao). If the desktop
+/// still won't give it (Wayland's focus rules), its taskbar entry asks for
+/// attention.
 fn show_window(app: &AppHandle) {
-    if let Some(win) = window(app) {
-        let _ = win.show();
-        let _ = win.unminimize();
+    let Some(win) = window(app) else { return };
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
         let _ = win.set_focus();
-    }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        if !win.is_focused().unwrap_or(true) {
+            let _ = win.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        }
+    });
 }
 
 /// Whether the library a tray icon needs on Linux is there (Tauri loads
@@ -116,10 +135,32 @@ fn tray_library() -> bool {
     dirs.iter().any(|d| names.iter().any(|n| d.join(n).exists()))
 }
 
+/// Whether a tray is there to show the icon (a StatusNotifier watcher on
+/// the session bus): without one (gamescope, a bare window manager) a
+/// hidden window would have no way back, so it is minimised instead.
+fn tray_host() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let has = |name: &'static str| -> zbus::Result<bool> {
+            let conn = zbus::blocking::Connection::session()?;
+            let bus = zbus::blocking::fdo::DBusProxy::new(&conn)?;
+            Ok(bus.name_has_owner(zbus::names::BusName::try_from(name)?)?)
+        };
+        [
+            "org.kde.StatusNotifierWatcher",
+            "org.freedesktop.StatusNotifierWatcher",
+        ]
+        .into_iter()
+        .any(|n| has(n).unwrap_or(false))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
 fn running(app: &AppHandle) -> bool {
-    let now = app.state::<Now>();
-    let s = now.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    s.is_some_and(|s| s.is_running())
+    crate::play::game_running(app)
 }
 
 /// The game asked to quit, from the tray (as the bar's Stop does).

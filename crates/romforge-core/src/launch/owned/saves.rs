@@ -188,6 +188,22 @@ pub(crate) fn point(
 /// overlay, and its folder is never written. `args` has the program where
 /// `{rom}` was; it becomes the mounts and the program's name. Only for a
 /// program in a folder (an archive is handed over as it is).
+/// The flag that closes DOSBox once the program `rom` ends: DOSBox-X
+/// never does by itself, DOSBox Staging not after `-c` commands (the
+/// overlay's). `None` for a folder, which stays at the DOS prompt.
+pub(crate) fn dos_exit(name: &str, rom: &Path) -> Option<&'static str> {
+    let program = rom.extension().is_some_and(|x| {
+        let x = x.to_ascii_lowercase();
+        x == "exe" || x == "com" || x == "bat"
+    });
+    match name {
+        _ if !program || !rom.is_file() => None,
+        "dosbox-staging" => Some("--exit"),
+        "dosbox-x" => Some("-exit"),
+        _ => None,
+    }
+}
+
 pub(crate) fn dos_overlay(
     name: &str,
     home: &Home,

@@ -22,6 +22,64 @@ pub(crate) const GRACE: Duration = Duration::from_secs(10);
 /// kept): a second Play meanwhile is refused, not started beside it.
 static STARTING: AtomicBool = AtomicBool::new(false);
 
+/// romforge was asked to quit while a game ran: it goes once the game has
+/// ended and its play time is kept.
+static QUIT_AFTER: AtomicBool = AtomicBool::new(false);
+
+/// Whether a game is running now.
+pub fn game_running(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    let now = app.state::<Now>();
+    let s = now.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    s.is_some_and(|s| s.is_running())
+}
+
+/// The window was closed while a game plays: stop it and quit, or keep
+/// playing (the window stays).
+pub fn ask_to_quit(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let game = app
+        .state::<Now>()
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|s| s.playing.game.clone())
+        .unwrap_or_default();
+    let handle = app.clone();
+    app.dialog()
+        .message(format!(
+            "{game} is still running. Stop it (it is asked to quit, so it saves) and quit romforge?"
+        ))
+        .title("Quit romforge")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Stop and quit".into(),
+            "Keep playing".into(),
+        ))
+        .show(move |yes| {
+            if yes {
+                quit_after_game(&handle);
+            }
+        });
+}
+
+/// Quit romforge: at once with no game, else after stopping the game (it
+/// is asked to quit first, so it saves) and keeping its play time.
+pub fn quit_after_game(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let now = app.state::<Now>();
+    let session = now.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match session.filter(|s| s.is_running()) {
+        Some(s) => {
+            QUIT_AFTER.store(true, Ordering::SeqCst);
+            std::thread::spawn(move || s.stop(GRACE));
+        }
+        None => app.exit(0),
+    }
+}
+
 struct Starting;
 impl Drop for Starting {
     fn drop(&mut self) {
@@ -60,14 +118,18 @@ pub async fn launch(
     let (write, read, detached) = (db.write.clone(), db.read.clone(), db.detached.clone());
     std::thread::spawn(move || {
         let ended = session.wait();
+        let quitting = QUIT_AFTER.load(Ordering::SeqCst);
+        // The window back first: nothing the database is busy with keeps
+        // it away.
+        if !quitting {
+            crate::tray::game_ended(&app);
+        }
         // Play time on a connection of its own, so a long job holding
-        // `write` (Enrich, a scan) doesn't keep the window away. If the
-        // database is busy that long (a scan), it is kept once `write` is
-        // free instead, after the window is back.
+        // `write` (Enrich, a scan) doesn't wait on it. If the database is
+        // busy that long (a scan), it is kept once `write` is free instead.
         let quick = crate::db::apart(&read, &detached, |at| {
             romforge_core::Library::edit(at, |lib| lib.record_play(&ended).map(drop))
         });
-        crate::tray::game_ended(&app);
         let _ = app.emit("game-ended", &ended);
         if let Err(first) = quick {
             let mut lib = write.lock().unwrap_or_else(|e| e.into_inner());
@@ -77,6 +139,9 @@ pub async fn launch(
                     ended.playing.game
                 );
             }
+        }
+        if quitting {
+            app.exit(0);
         }
     });
     Ok(playing)
