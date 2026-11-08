@@ -155,54 +155,10 @@ pub(super) fn start(
             None => why_not.push(format!("{} ({}) not found", u.name, u.program)),
         }
     }
-    if let Some(ra) = env.retroarch() {
-        for core in system.cores {
-            let name = format!("retroarch:{core}");
-            if !wanted(&name) && !wanted("retroarch") {
-                continue;
-            }
-            // A folder goes to a core as the `.scummvm` file in it.
-            let content = if rom.is_dir() {
-                match scummvm_file(&rom) {
-                    Some(f) => f,
-                    None => {
-                        why_not.push(format!(
-                            "{name}: no .scummvm file in the folder (import writes one)"
-                        ));
-                        continue;
-                    }
-                }
-            } else {
-                rom.clone()
-            };
-            match env.core(core) {
-                Some(_) if !lacks(&name, &mut why_not) => {}
-                Some(c) => {
-                    let (config, mut prepare) = owned(&RETROARCH).unzip();
-                    if let (Some(dir), Some(p)) = (&config, &mut prepare) {
-                        owned::per_game::retroarch(conn, dir, core, &content, system, &game, p)?;
-                    }
-                    let vars = Vars {
-                        rom: &content,
-                        set: &set,
-                        core: Some(&c),
-                        config: config.as_deref(),
-                        bios: None,
-                        system: system.key,
-                    };
-                    let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
-                    let uses_home = prepare.is_some();
-                    return Ok(passed_over(
-                        &why_not,
-                        spec(name, &ra, args, prepare.unwrap_or_default(), uses_home),
-                    ));
-                }
-                None => why_not.push(format!("{name}: core not installed")),
-            }
-        }
-    } else if !system.cores.is_empty() {
-        why_not.push("RetroArch not found".into());
-    }
+    let mut absent: Vec<String> = Vec::new();
+    // A system's standalone emulator, when one is installed, before
+    // RetroArch's cores: they are the ones made for it; RetroArch then
+    // takes what none of them can (an archive, a missing BIOS).
     for name in system.emulators {
         let Some(e) = KNOWN_EMULATORS.iter().find(|e| e.name == *name) else {
             continue;
@@ -263,8 +219,57 @@ pub(super) fn start(
                     ),
                 ));
             }
-            None => why_not.push(format!("{} not installed", e.name)),
+            // Said only if nothing starts: RetroArch's core may yet.
+            None => absent.push(format!("{} not installed", e.name)),
         }
+    }
+    if let Some(ra) = env.retroarch() {
+        for core in system.cores {
+            let name = format!("retroarch:{core}");
+            if !wanted(&name) && !wanted("retroarch") {
+                continue;
+            }
+            // A folder goes to a core as the `.scummvm` file in it.
+            let content = if rom.is_dir() {
+                match scummvm_file(&rom) {
+                    Some(f) => f,
+                    None => {
+                        why_not.push(format!(
+                            "{name}: no .scummvm file in the folder (import writes one)"
+                        ));
+                        continue;
+                    }
+                }
+            } else {
+                rom.clone()
+            };
+            match env.core(core) {
+                Some(_) if !lacks(&name, &mut why_not) => {}
+                Some(c) => {
+                    let (config, mut prepare) = owned(&RETROARCH).unzip();
+                    if let (Some(dir), Some(p)) = (&config, &mut prepare) {
+                        owned::per_game::retroarch(conn, dir, core, &content, system, &game, p)?;
+                    }
+                    let vars = Vars {
+                        rom: &content,
+                        set: &set,
+                        core: Some(&c),
+                        config: config.as_deref(),
+                        bios: None,
+                        system: system.key,
+                    };
+                    let args = known_args(&RETROARCH, &vars, &env.options(&RETROARCH));
+                    let uses_home = prepare.is_some();
+                    return Ok(passed_over(
+                        &why_not,
+                        spec(name, &ra, args, prepare.unwrap_or_default(), uses_home),
+                    ));
+                }
+                None => why_not.push(format!("{name}: core not installed")),
+            }
+        }
+    } else if !system.cores.is_empty() {
+        why_not.push("RetroArch not found".into());
     }
     if let Some(name) = emulator {
         let known = user_emulators(conn)?
@@ -283,6 +288,7 @@ pub(super) fn start(
             )));
         }
     }
+    why_not.extend(absent);
     Err(Error::Launch(format!(
         "no emulator to start {game} [{}]: {}",
         system.key,
