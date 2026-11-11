@@ -42,7 +42,7 @@ Download from the [latest release](https://github.com/asafelobotomy/romforge/rel
 |---|---|
 | Debian, Ubuntu, Mint | `romforge_<version>_amd64.deb` |
 | Fedora, openSUSE | `romforge-<version>-1.x86_64.rpm` |
-| Arch, Manjaro | the `PKGBUILD` (`romforge-bin`): `makepkg -si` |
+| Arch, Manjaro | the `PKGBUILD` (`romforge-bin`): `makepkg -si`; or build it from source with [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) (`romforge`) |
 | Anything else | `romforge_<version>_amd64.AppImage` (portable, needs FUSE) |
 
 Install **RetroArch** (with a few cores) and any standalone emulators you
@@ -107,6 +107,15 @@ options. **Get themes…** downloads more made by the community, from
 [romforge-themes](https://github.com/asafelobotomy/romforge-themes), each
 with its licence shown first. You can make your own from a colour file and
 a stylesheet; see the [guide](GUIDE.md#fullscreen-themes).
+
+## On the uQ desktop
+
+On [uQ](https://github.com/asafelobotomy/uq), type a game's name in
+Spotlight and press Enter to play it; romforge doesn't need to be open.
+romforge's window takes uQ's colours (the fullscreen mode too, with its
+default theme and the system's colours). uQ Settings → Window rules →
+**Rules from apps** can open the emulators full screen on a `game`
+workspace. See [uq/README.md](uq/README.md).
 
 ## Where the data comes from
 

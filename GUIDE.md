@@ -12,7 +12,7 @@ and what is still open.
 - [DOS, ScummVM and Japanese computers](#dos-scummvm-and-japanese-computers) · [Arcade](#arcade-mame-and-fbneo) · [Patches](#patches-translations-and-hacks)
 - [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo)
 - [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes) · [Steam and the Steam Deck](#steam-and-the-steam-deck)
-- [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
+- [On the uQ desktop](#on-the-uq-desktop) · [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
 
 Scanning and identifying only read your files. Only the apply commands
 write: `organize apply` moves and renames them; `cleanup apply`, `import
@@ -1239,6 +1239,81 @@ romforge-cli steam remove
 
 `ROMFORGE_STEAM_ROOT` points romforge at another Steam folder (tests).
 
+## On the uQ desktop
+
+romforge's side of uQ's Phase 4 integrations. Everything here is inert
+without uQ, and none of it touches a ROM. What each installed file does is
+in [uq/README.md](uq/README.md).
+
+**Games in Spotlight.** `romforge-provider` (`crates/romforge-provider`) is
+a session-bus service that owns `org.romforge.Provider` and serves
+`org.uq.Launcher1.Provider` at `/org/uq/Launcher1`. It is a program of its
+own, not a `romforge-cli` subcommand, so the CLI stays free of D-Bus and an
+async runtime. `uq/launcher/romforge.provider` says `Activatable=true` and
+`uq/dbus/org.romforge.Provider.service` lets the bus start it: uQ starts it
+when its launcher opens, and it exits after 60 s without a call
+(`ROMFORGE_PROVIDER_IDLE_SECS`, 1-3600, for tests), never while a game it
+started runs. It has no prefix, so uQ asks it for every query of two
+characters or more.
+
+- `Search(s) → a(sssssd)`: it opens the library the app does
+  (`romforge_core::db_path()`: `$ROMFORGE_DB`, else the RomForge folder's,
+  else the old default) beside the app's connections (`open_beside`: no
+  catch-up identify), and only if it exists. `Library::launcher_search`
+  (`uq/launcher.rs`) matches the query against the list the app shows:
+  only rows Play may start (identified, not a ScummVM game still packed,
+  not unmatched), by their clean name (`search_title` of the arcade label
+  or the title). Whole name 1.0, its start 0.9, a word's start 0.8,
+  anywhere 0.65, every word starting some word 0.55; a version not its
+  group's main row 0.02 lower; ties to the shorter name. At most 20 rows:
+  the row id, the clean name, the platform and version tags (regions,
+  revision, status, disc, translation, hack) as the subtitle, the box art
+  as the icon when it is a file there (else `romforge`), `["play"]`.
+- `Activate(s id, s action)`: `play` or `""` (Enter). The id must be a
+  playable row of the current list (`Library::launcher_game`); then it is
+  `Library::launch_row` and `launch::Session::start`, as the app's Play:
+  the game's own emulator if one is set, romforge's config written first,
+  one game at a time, the play time recorded when it ends. A failure is
+  `org.freedesktop.DBus.Error.Failed` and also a desktop notification,
+  as is a game that ends within seconds without being asked (uQ shows
+  only that romforge failed). Game pad hotkeys and the radial menu need
+  the app, so they work only for games the app starts.
+- Input: queries over 256 bytes, with control characters or nothing to
+  match get no rows; an id that isn't `g:`/`m:`/`f:`, is over 512 bytes,
+  holds a control character or isn't an offered row is `InvalidArgs`, as
+  is any other action. Nothing from the bus reaches a shell or a path.
+
+**The game-mode rule.** `uq/integrations/romforge/rules.toml` holds one
+`[[window_rule]]`, `romforge.emulators`: the app IDs of RetroArch,
+DuckStation, PPSSPP, Dolphin, PCSX2, RPCS3 and Azahar go to the workspace
+`name:game`, full screen. uqd renders it only once the user turns it on
+(uQ Settings → Window rules → Rules from apps); the `game` workspace's
+layout, gaps and animations are the user's to set there.
+
+**uQ's theme.** The app vendors `uq-tokens` 1.0.0 in
+`app/src/vendor/uq-tokens/` (`uq-tokens.js` as uQ ships it,
+`uq-tokens.css` with romforge's own colours as the fallbacks), pinned by
+`scripts/check-uq-tokens.sh 1.0.0 app/src/vendor/uq-tokens/uq-tokens.js`
+in CI. The `uq_tokens` command returns `$XDG_STATE_HOME/uq/theme/tokens.json`
+(64 KiB at most; `romforge_core::uq::tokens`), and a `notify` watch on
+`$XDG_STATE_HOME/uq` (uQ swaps `theme/` whole) emits `uq-tokens-changed`;
+`uq.svelte.js` hands both to `watchTokens`, which checks every value and
+sets `--uq-*` and `data-uq-variant` on `<html>`, or clears them. Which
+setting it follows:
+
+- the window has no theme setting (it follows the system's light or
+  dark, and on uQ that is uQ), so `app.css` maps `--bg`, `--panel`,
+  `--line`, `--text`, `--muted`, `--accent`, `--accent-bg`,
+  `--accent-text`, `--ok`, `--warn`, `--bad` and the UI font onto uQ's
+  whenever `data-uq-variant` is set;
+- the fullscreen mode's themes keep their own colours, except the default
+  theme (SNES UK) with Colours "With the system" (`themes::Applied`'s
+  `desktop`): there uQ's variant picks light or dark and `uqtheme.js` maps
+  its `--fs-*` colours onto uQ's. The theme's options still apply.
+
+Any value uQ's file leaves out or gets wrong falls back to romforge's own
+colour. Without uQ (or with a broken file) nothing changes.
+
 ## Packages and building
 
 Each [release](https://github.com/asafelobotomy/romforge/releases) has:
@@ -1265,7 +1340,16 @@ main: when that version has no tag yet, `.github/workflows/release.yml`
 runs the tests, builds the packages, tags the commit `vX.Y.Z` and
 releases them. Pushing a tag `vX.Y.Z` by hand does the same.
 To build the packages yourself: `cd app && npm ci && npx tauri build`
-(they land in `target/release/bundle/`).
+(they land in `target/release/bundle/`). `tauri build` builds
+`romforge-cli` and `romforge-provider` first; the .deb and .rpm carry both
+and the `uq/` files (the AppImage only the app).
+
+`packaging/aur/PKGBUILD` is the AUR's `romforge`, built from a release's
+source tarball: `tauri build --no-bundle`, then the app, `romforge-cli`,
+`romforge-provider`, a desktop entry, the icons and the `uq/` files, with
+`uq` among the optional dependencies. Its `pkgver` and `sha256sums` are
+set by hand for each release (`updpkgsums`, then `makepkg --printsrcinfo
+> .SRCINFO`).
 
 ## Source layout
 
@@ -1281,7 +1365,8 @@ To build the packages yourself: `cd app && npm ci && npx tauri build`
   and OCR words), `emusettings` (Emulator Settings), `obtain` (cores and
   Flathub installs), `controller` and `hotkeys` (game pads and the hotkey
   chords), `music`, `themes`, `user_games` (favourites, the emulator
-  picked per game), `steam`; one table of systems (`systems/table.rs`),
+  picked per game), `steam`, `uq` (uQ's launcher search and theme
+  tokens); one table of systems (`systems/table.rs`),
   one of copier headers and byte orders (`headers.rs`), one of game ID
   readers (`ident.rs`), one of hotkeys (`hotkeys.rs`), `saves` (gathering,
   backups and the index of `Saves/`, milestone 27)
@@ -1297,6 +1382,10 @@ To build the packages yourself: `cd app && npm ci && npx tauri build`
   - a system key outside the systems table is written `key!("GameCube")`
     (`systems/checked.rs`): a key not in the table stops the build.
 - `crates/romforge-cli` — thin CLI
+- `crates/romforge-provider` — thin D-Bus shell: romforge's games in uQ's
+  launcher (`romforge_core::uq` holds its matching and checks)
+- `uq/` — the files uQ reads (launcher provider, its D-Bus service, the
+  game-mode rule); `packaging/aur/` — the AUR's source PKGBUILD
 - `app/` — Tauri 2 + Svelte shell
 - `fixtures/` — tiny generated test files and DATs. Regenerate with
   `cargo test -p romforge-core --test fixtures -- --ignored regenerate`.

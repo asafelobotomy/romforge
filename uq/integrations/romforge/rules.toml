@@ -1,0 +1,9 @@
+# Installed to /usr/share/uq/integrations/romforge/rules.toml by romforge's
+# package. Off until turned on in uQ Settings, Window rules, "Rules from
+# apps": the emulators romforge starts open full screen on the "game"
+# workspace.
+[[window_rule]]
+id = "romforge.emulators"
+class = ["^(retroarch|duckstation-qt|PPSSPPSDL|dolphin-emu|pcsx2-qt|rpcs3|azahar)$"]
+workspace = "name:game"
+fullscreen = true

@@ -1,0 +1,10 @@
+# Installed to /usr/share/uq/launcher/romforge.provider by romforge's package.
+# Typing a game's name in Spotlight finds it in your romforge library; Enter
+# starts it the way romforge's Play does. Served by /usr/bin/romforge-provider.
+[Launcher Provider]
+BusName=org.romforge.Provider
+Name=romforge
+# The bus starts romforge-provider when the launcher opens
+# (org.romforge.Provider.service); it exits after 60 s without a call, never
+# while a game it started is running.
+Activatable=true

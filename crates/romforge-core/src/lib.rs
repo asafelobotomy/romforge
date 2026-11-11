@@ -49,6 +49,7 @@ pub mod systems;
 pub mod themes;
 pub mod thumbs;
 pub mod titles;
+pub mod uq;
 pub mod user_games;
 mod vcdiff;
 pub mod view;
@@ -156,6 +157,15 @@ pub fn default_db_path() -> PathBuf {
     layout::xdg("XDG_DATA_HOME", ".local/share")
         .unwrap_or_else(|| PathBuf::from(layout::APP_DIR))
         .join(layout::DB_FILE)
+}
+
+/// The library the app opens: `$ROMFORGE_DB`, else the RomForge folder's
+/// database, else [`default_db_path`].
+pub fn db_path() -> PathBuf {
+    std::env::var_os("ROMFORGE_DB")
+        .map(PathBuf::from)
+        .or_else(|| home::Home::locate().map(|h| h.db()))
+        .unwrap_or_else(default_db_path)
 }
 
 pub struct Library {

@@ -3052,6 +3052,53 @@ builds on the same index.
   writing back (restore into the image) is a separate, later question.
   This unblocks xemu's backups (stage 1) and its view (stage 3).
 
+## uQ desktop integration (uQ Phase 4 slice 9; 2026-11-11, built)
+
+uQ's Phase 4 spec (`docs/superpowers/specs/2026-11-10-uq-phase4-integrations-design.md`
+in uQ) gives romforge an activatable launcher provider, the game-mode
+window rule, uQ's theme in the app, and AUR packaging. The plan: the
+matching and checks in the core (`romforge_core::uq`), a thin bus shell
+beside the CLI, the `uq/` folder installed by romforge's own packages,
+`uq-tokens` vendored as uQ's README says.
+
+Built (the detail is in GUIDE.md, "On the uQ desktop"):
+
+- **`romforge-provider`**, its own crate and binary (not a CLI
+  subcommand, so the CLI stays without D-Bus): `org.romforge.Provider`
+  serving `org.uq.Launcher1.Provider`, bus-activated, idle exit after 60 s
+  (never while its game runs). Search: up to 20 playable games by name
+  from the app's library; Enter: Play, as the app does, one game at a
+  time, play time recorded. Unit tests, and a private-bus test (search,
+  bad input, a stand-in emulator, no library, bus activation and idle
+  exit).
+- **`uq/`**: `launcher/romforge.provider` (`Activatable=true`),
+  `dbus/org.romforge.Provider.service`,
+  `integrations/romforge/rules.toml` (`romforge.emulators`, as the spec's
+  3.3), `README.md`. `uqctl integrations check uq/` is clean.
+- **uq-tokens 1.0.0** in the app, pinned by `scripts/check-uq-tokens.sh`
+  in CI: the window always follows uQ (it has no theme setting); the
+  fullscreen mode only with its default theme and the system's colours.
+- **Packaging**: `packaging/aur/PKGBUILD` (`romforge`, from source) and
+  its `.SRCINFO`; the .deb and .rpm (so `romforge-bin`) carry the
+  provider and the `uq/` files; `uq` is an optional dependency of both
+  AUR packages.
+
+Still open:
+
+- **The AUR package's version.** v0.15.0 has none of this: set `pkgver`
+  and the checksum when the next release is tagged (TODO in the PKGBUILD),
+  then push it to the AUR.
+- **`uqctl integrations check uq/` in CI**, pinned to a uQ release, once
+  uQ tags one with the Phase 4 checks (the spec's 2.7).
+- **The AppImage** has no provider: a launcher provider needs an installed
+  service file, which an AppImage can't add.
+- **Games the provider starts** run without the app's hotkeys and radial
+  menu (they live in the app), and in the bus's own cgroup rather than a
+  scope of their own (romforge runs no `systemd-run`, house rule 7).
+- **The rule's emulators** are the spec's seven; romforge starts more
+  (mGBA, melonDS, Cemu, xemu, MAME, ScummVM …). Adding them is a new rule
+  id or a changed one, to agree with uQ first.
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits

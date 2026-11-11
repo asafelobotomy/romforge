@@ -8,7 +8,7 @@ use super::{GameRow, Relation, RowStatus};
 use crate::{Error, systems};
 
 /// A row with nothing in it yet.
-pub(super) fn bare_row(id: String, system_id: Option<i64>, title: &str, status: RowStatus) -> GameRow {
+pub(crate) fn bare_row(id: String, system_id: Option<i64>, title: &str, status: RowStatus) -> GameRow {
     let sys = system_id.and_then(systems::by_id);
     GameRow {
         id,

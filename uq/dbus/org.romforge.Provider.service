@@ -1,0 +1,6 @@
+# Installed to /usr/share/dbus-1/services/org.romforge.Provider.service by
+# romforge's package. Lets the session bus start romforge's uQ launcher
+# provider on demand.
+[D-BUS Service]
+Name=org.romforge.Provider
+Exec=/usr/bin/romforge-provider

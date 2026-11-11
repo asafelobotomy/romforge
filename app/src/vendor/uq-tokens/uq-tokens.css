@@ -1,0 +1,45 @@
+/* uq-tokens 1.0.0: fallback custom properties.
+ * romforge's own colours (app.css, the UK SNES's), used when uQ's tokens
+ * are missing or broken: another desktop, a bad file, or one value uQ's
+ * file left out. uq-tokens.js sets the same properties inline on <html>,
+ * which wins over these. app.css maps them onto romforge's own colours
+ * only while uQ's tokens apply ([data-uq-variant]). */
+:root {
+    --uq-bg: #dcdce3;
+    --uq-surface: #f1f1f4;
+    --uq-surface-alt: #e6e6eb;
+    --uq-overlay: #d0d0d8;
+    --uq-text: #23232b;
+    --uq-text-muted: #62626f;
+    --uq-accent: #3b5ab0;
+    --uq-accent-text: #ffffff;
+    --uq-border: #5c5c6a33;
+    --uq-success: #1f8a48;
+    --uq-warning: #a87a08;
+    --uq-error: #c62a28;
+    --uq-radius: 6px;
+    --uq-gap: 6px;
+    --uq-gap-in: 6px;
+    --uq-gap-out: 12px;
+    --uq-border-width: 1px;
+    --uq-font-size: 14px;
+    --uq-font-ui: system-ui;
+    --uq-font-mono: ui-monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-uq-variant="light"]) {
+        --uq-bg: #222228;
+        --uq-surface: #2c2c33;
+        --uq-surface-alt: #34343c;
+        --uq-overlay: #3e3e47;
+        --uq-text: #e4e4ea;
+        --uq-text-muted: #9a9aa8;
+        --uq-accent: #7f97e3;
+        --uq-accent-text: #ffffff;
+        --uq-border: #ffffff1f;
+        --uq-success: #4cbf78;
+        --uq-warning: #f0b81d;
+        --uq-error: #ef5a57;
+    }
+}

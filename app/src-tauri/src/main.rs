@@ -33,6 +33,7 @@ mod start;
 mod steam;
 mod themes;
 mod tray;
+mod uq_tokens;
 
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -125,6 +126,8 @@ fn main() {
                     .show(move |_| handle.exit(1));
                 return Ok(());
             }
+            // uQ's theme, when romforge runs on uQ.
+            uq_tokens::watch(app.handle());
             let handle = app.handle().clone();
             let listening = romforge_core::controller::listen(move |e| {
                 // Raw buttons, the stick and time are for the hotkeys; the
@@ -150,6 +153,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            uq_tokens::uq_tokens,
             library::summary,
             library::dat_games,
             dats::download_dats,

@@ -28,7 +28,26 @@
     --bad: #ef5a57;
   }
 }
+/* On uQ: its theme's colours and font (uq-tokens, set on <html> with
+   data-uq-variant while they apply) stand in for these. Any value uQ's
+   file leaves out falls back to the ones above (vendor/uq-tokens). */
+:root[data-uq-variant] {
+  --bg: var(--uq-bg);
+  --panel: var(--uq-surface);
+  --line: var(--uq-border);
+  --text: var(--uq-text);
+  --muted: var(--uq-text-muted);
+  --accent: var(--uq-accent);
+  --accent-bg: color-mix(in srgb, var(--uq-accent) 22%, var(--uq-surface));
+  --ok: var(--uq-success);
+  --warn: var(--uq-warning);
+  --bad: var(--uq-error);
+  --accent-text: var(--uq-accent-text);
+  color-scheme: light;
+}
+:root[data-uq-variant="dark"] { color-scheme: dark; }
 body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }
+:root[data-uq-variant] body { font-family: var(--uq-font-ui), system-ui, sans-serif; }
 .app button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.75rem; cursor: pointer; }
 .app button:disabled { opacity: 0.45; cursor: default; }
 .app input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
@@ -74,7 +93,7 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .app h3.sub { color: var(--text); margin: 0; }
 .app .err { color: var(--bad); }
 .app .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; }
-.app button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.app button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text, white); }
 .app .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
 /* A dialog with tabs: its title, tabs and buttons stay put; only the tab's
    content scrolls, so a long tab never pushes Save out of reach. */

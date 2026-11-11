@@ -24,6 +24,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --all --check
+      # romforge-provider's tests run its D-Bus interface on a private bus.
+      - run: command -v dbus-daemon || (sudo apt-get update && sudo apt-get install -y dbus-daemon)
       # --locked: a Cargo.lock that doesn't fit Cargo.toml fails here.
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
@@ -67,11 +69,14 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev
+      # The vendored uq-tokens is the version pinned here (uQ's theme).
+      - run: scripts/check-uq-tokens.sh 1.0.0 app/src/vendor/uq-tokens/uq-tokens.js
       - run: npm ci
         working-directory: app
       - run: npm run build
         working-directory: app
-      # The fullscreen mode's focus moves (Node's own test runner).
+      # The fullscreen mode's focus moves and uQ's colours (Node's own test
+      # runner).
       - run: node --test "test/*.test.mjs"
         working-directory: app
       - run: cargo clippy --locked -p romforge-app --all-targets -- -D warnings

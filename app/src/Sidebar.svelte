@@ -54,7 +54,7 @@
   .platforms { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.4rem; border-right: 1px solid var(--line); overflow-y: auto; }
   .plat { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.4rem 0.2rem; border-radius: 6px; gap: 0.15rem; }
   .plat:hover { background: var(--accent-bg); }
-  .plat.active { background: var(--accent); color: white; }
+  .plat.active { background: var(--accent); color: var(--accent-text, white); }
   .plat.small { font-size: 0.8rem; padding: 0.3rem; }
   .icon { width: 3rem; height: 2.2rem; border-radius: 6px; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; color: white; background: #6b7078; }
   .picon { width: 3rem; height: 2.4rem; object-fit: contain; }

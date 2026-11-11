@@ -60,6 +60,10 @@ pub struct Applied {
     pub attrs: BTreeMap<String, String>,
     /// 1.0 is the theme's own size.
     pub scale: f32,
+    /// The default theme with the system's light or dark: the desktop's
+    /// theme (uQ's tokens, when the app has them) may stand in for its
+    /// colours. A theme or colours picked by hand keep their own.
+    pub desktop: bool,
 }
 
 pub fn load(conn: &Connection) -> Result<Selection, Error> {
@@ -149,6 +153,7 @@ pub fn applied(dir: Option<&Path>, s: &Selection) -> Applied {
         attrs.insert(o.key.clone(), c.value.clone());
     }
     Applied {
+        desktop: s.theme == DEFAULT && scheme.is_none(),
         stamp: stamp(dir, &s.theme),
         layout: if s.layout.is_empty() {
             m.layout.clone()
