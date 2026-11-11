@@ -14,6 +14,8 @@ serde.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# uQ's theme: a watch on its state folder (`uq_tokens.rs`).
+notify = { version = "8", default-features = false }
 
 # The radial menu's overlay: GTK for its window, and gtk-layer-shell
 # opened at run time (`overlay.rs`), so romforge starts without it.

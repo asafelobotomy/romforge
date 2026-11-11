@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { uq } from "../uq.svelte.js";
+import { fsVars } from "../uqtheme.js";
 
 // The fullscreen mode's theme (stage 2, step 4): what the core says to
 // apply (themes::Applied), loaded once and kept here. The theme's CSS is a
@@ -90,10 +92,10 @@ export function themeLink(applied) {
 }
 
 // The scheme `applied` shows (the system's light or dark when none is
-// picked) and the variables its scheme and options set.
+// picked) and the variables its scheme and options set; uQ's colours for
+// the default theme with the system's (uqtheme.js).
 export function themeVars(applied, dark) {
-  const scheme = applied.scheme ?? (dark ? "dark" : "light");
-  return { scheme, vars: { ...(applied.schemes[scheme] ?? {}), ...applied.vars } };
+  return fsVars(applied, dark, uq.variant);
 }
 
 // The variables and attributes for `applied` on `node` (the root), the

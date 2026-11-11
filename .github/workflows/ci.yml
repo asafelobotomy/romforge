@@ -67,11 +67,14 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev
+      # The vendored uq-tokens is the version pinned here (uQ's theme).
+      - run: scripts/check-uq-tokens.sh 1.0.0 app/src/vendor/uq-tokens/uq-tokens.js
       - run: npm ci
         working-directory: app
       - run: npm run build
         working-directory: app
-      # The fullscreen mode's focus moves (Node's own test runner).
+      # The fullscreen mode's focus moves and uQ's colours (Node's own test
+      # runner).
       - run: node --test "test/*.test.mjs"
         working-directory: app
       - run: cargo clippy --locked -p romforge-app --all-targets -- -D warnings
