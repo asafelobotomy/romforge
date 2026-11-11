@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build && cargo build --release --locked -p romforge-cli",
+    "beforeBuildCommand": "npm run build && cargo build --release --locked -p romforge-cli -p romforge-provider",
     "frontendDist": "../dist"
   },
   "app": {
@@ -44,6 +44,10 @@
       "deb": {
         "files": {
           "/usr/bin/romforge-cli": "../../target/release/romforge-cli",
+          "/usr/bin/romforge-provider": "../../target/release/romforge-provider",
+          "/usr/share/uq/launcher/romforge.provider": "../../uq/launcher/romforge.provider",
+          "/usr/share/dbus-1/services/org.romforge.Provider.service": "../../uq/dbus/org.romforge.Provider.service",
+          "/usr/share/uq/integrations/romforge/rules.toml": "../../uq/integrations/romforge/rules.toml",
           "/usr/share/doc/romforge/copyright": "../../LICENSE"
         },
         "depends": [
@@ -61,6 +65,10 @@
       "rpm": {
         "files": {
           "/usr/bin/romforge-cli": "../../target/release/romforge-cli",
+          "/usr/bin/romforge-provider": "../../target/release/romforge-provider",
+          "/usr/share/uq/launcher/romforge.provider": "../../uq/launcher/romforge.provider",
+          "/usr/share/dbus-1/services/org.romforge.Provider.service": "../../uq/dbus/org.romforge.Provider.service",
+          "/usr/share/uq/integrations/romforge/rules.toml": "../../uq/integrations/romforge/rules.toml",
           "/usr/share/licenses/romforge/LICENSE": "../../LICENSE"
         },
         "depends": [

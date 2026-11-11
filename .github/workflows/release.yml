@@ -2,7 +2,8 @@ name: Release
 # Milestone 15: a new version builds the packages and attaches them, with
 # SHA-256 checksums, to a GitHub release: .deb, .rpm, AppImage, the CLI on
 # its own, and the AUR's PKGBUILD for romforge-bin (pushed to the AUR by
-# hand: `makepkg --printsrcinfo`).
+# hand: `makepkg --printsrcinfo`). The AUR's source package, romforge, is
+# packaging/aur/PKGBUILD (its version and checksum set by hand).
 #
 # A version bump pushed to main is enough: when the workspace version has
 # no tag yet, this tags that commit vX.Y.Z and releases it. Pushing a tag
@@ -120,7 +121,8 @@ jobs:
                       'flatpak: DOSBox Staging or DOSBox-X from Flathub'
                       'gtk-layer-shell: the radial menu over a fullscreen game'
                       'gst-plugins-good: music in the fullscreen mode (MP3, FLAC, WAV)'
-                      'gst-libav: music in M4A/AAC')
+                      'gst-libav: music in M4A/AAC'
+                      'uq: your games in Spotlight on uQ, its game-mode window rule and its theme')
           provides=('romforge')
           conflicts=('romforge')
           source=("\$pkgname-\$pkgver.deb::https://github.com/asafelobotomy/romforge/releases/download/v\$pkgver/romforge_\${pkgver}_amd64.deb"

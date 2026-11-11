@@ -24,6 +24,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --all --check
+      # romforge-provider's tests run its D-Bus interface on a private bus.
+      - run: command -v dbus-daemon || (sudo apt-get update && sudo apt-get install -y dbus-daemon)
       # --locked: a Cargo.lock that doesn't fit Cargo.toml fails here.
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
