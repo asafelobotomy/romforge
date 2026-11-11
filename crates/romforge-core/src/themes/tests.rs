@@ -135,6 +135,7 @@ fn the_pick_fits_the_themes_there_are() {
     let a = applied(None, &s);
     assert_eq!((a.theme.as_str(), a.layout.as_str()), ("game-boy", "list"));
     assert_eq!(a.scheme.as_deref(), Some("night"));
+    assert!(!a.desktop, "a theme picked by hand keeps its colours");
     assert_eq!(a.attrs.get("art").map(String::as_str), Some("plain"));
     assert!((a.scale - 1.15).abs() < 1e-6);
 
@@ -147,6 +148,12 @@ fn the_pick_fits_the_themes_there_are() {
     let a = applied(None, &gone);
     assert_eq!(a.theme, DEFAULT);
     assert_eq!(a.scheme, None);
+    assert!(a.desktop, "the default with the system's colours");
+    let fixed = Selection {
+        scheme: "dark".into(),
+        ..Selection::default()
+    };
+    assert!(!applied(None, &fixed).desktop, "colours picked by hand");
     assert_eq!(a.schemes.keys().collect::<Vec<_>>(), ["dark", "light"]);
     assert_eq!(
         a.attrs.get("corners").map(String::as_str),

@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use romforge_core::Library;
-use romforge_core::home::Home;
 
 /// The library twice: `write` for commands that change it, `read` for
 /// those that only look (a second connection to the same database).
@@ -118,12 +117,10 @@ pub(crate) fn apart<T>(
 }
 
 /// `$ROMFORGE_DB`, else the RomForge folder's database, else the old
-/// default.
+/// default ([`romforge_core::db_path`], which the launcher provider opens
+/// too).
 pub fn db_path() -> PathBuf {
-    std::env::var_os("ROMFORGE_DB")
-        .map(PathBuf::from)
-        .or_else(|| Home::locate().map(|h| h.db()))
-        .unwrap_or_else(romforge_core::default_db_path)
+    romforge_core::db_path()
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ mod emulator_config;
 mod emulators;
 mod files;
 mod folders;
+mod launcher;
 mod lists;
 mod manuals;
 mod open;

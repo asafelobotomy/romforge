@@ -38,6 +38,8 @@ pub(crate) use snapshot::RowInner;
 pub use snapshot::fingerprint;
 pub use sort::{SortBy, search_title, sort_rows};
 
+#[cfg(test)]
+pub(crate) use patches::bare_row;
 use patches::patch_rows;
 use platforms::finish;
 use rows::rows_of;
