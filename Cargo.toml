@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/romforge-core", "crates/romforge-cli", "app/src-tauri"]
+members = ["crates/romforge-core", "crates/romforge-cli", "crates/romforge-provider", "app/src-tauri"]
 # The Tauri app needs the built web UI and webkit2gtk; build it with `npm run tauri build` in app/.
-default-members = ["crates/romforge-core", "crates/romforge-cli"]
+default-members = ["crates/romforge-core", "crates/romforge-cli", "crates/romforge-provider"]
 
 [workspace.package]
 version = "0.15.0"

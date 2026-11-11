@@ -1,0 +1,20 @@
+[package]
+name = "romforge-provider"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "romforge's games in uQ's launcher (org.uq.Launcher1.Provider on the session bus)"
+
+[[bin]]
+name = "romforge-provider"
+path = "src/main.rs"
+
+[dependencies]
+romforge-core.workspace = true
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "service", "proxy"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
