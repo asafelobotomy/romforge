@@ -73,8 +73,7 @@ impl Fgk {
         };
         h.factor_remaining();
         h.factor_remaining();
-        for i in 0..ALPHABET {
-            let n = &mut h.nodes[i];
+        for (i, n) in h.nodes.iter_mut().enumerate().take(ALPHABET) {
             n.right_child = if i < ALPHABET - 1 { i + 1 } else { NONE };
             n.left_child = if i >= 1 { i - 1 } else { NONE };
         }
