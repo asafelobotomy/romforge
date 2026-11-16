@@ -87,7 +87,7 @@ changed since it was hashed keeps its hashes (`--rehash` reads everything
 again). `romforge-cli games` lists games the way the app does;
 `games --json` (`--platform`, `--status all|verified|incomplete|unidentified`,
 `--search`, `--sort`, `--desc`, `--limit`, `--offset`) prints
-`{total, games[]}` and `overview [--json]` the totals, platforms, recent
+`{total, games[]}` and `browse` the same with positional choices (for a fixed command line), `overview [--json]` the totals, platforms, recent
 additions, BIOS and DATs still missing. Both only read; uQ's Settings page
 for romforge runs them.
 

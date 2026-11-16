@@ -296,6 +296,23 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Games as `games --json` lists them, with every choice a positional
+    /// argument, so a fixed command line (uQ Settings' page) can carry them
+    ///
+    /// PLATFORM is a system key or `all`; STATUS all, verified, incomplete
+    /// or unidentified; SORT title, platform, year or status, with `:desc`
+    /// for the other way ("year:desc"). Always prints JSON; reads only.
+    Browse {
+        platform: String,
+        status: String,
+        sort: String,
+        /// At most this many games
+        limit: usize,
+        /// Skip this many games
+        offset: usize,
+        /// Words the title must contain
+        search: Vec<String>,
+    },
     /// What the library holds: games and platforms, recent additions, BIOS
     /// and game lists still missing. Reads only.
     Overview {

@@ -114,6 +114,30 @@ fn games_filter_sort_and_page() {
 }
 
 #[test]
+fn browse_takes_its_choices_as_positional_arguments() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("romforge.db");
+    library(&db);
+    let all = json(&db, &["browse", "all", "all", "title", "50", "0"]);
+    assert_eq!(all, {
+        let mut v = json(&db, &["games", "--json"]);
+        v["total"] = all["total"].clone();
+        v
+    });
+    let nes = json(&db, &["browse", "NES", "verified", "year:desc", "1", "0"]);
+    assert_eq!(nes["total"], 2);
+    assert_eq!(nes["games"].as_array().unwrap().len(), 1);
+    let found = json(&db, &["browse", "all", "all", "title", "50", "0", "NES", "2.0"]);
+    assert_eq!(found["games"][0]["title"], "Test NES 2.0");
+    let out = Command::new(env!("CARGO_BIN_EXE_romforge-cli"))
+        .env("ROMFORGE_DB", &db)
+        .args(["browse", "all", "all", "title:sideways", "5", "0"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
 fn a_bad_filter_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("romforge.db");

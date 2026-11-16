@@ -36,6 +36,42 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 println!("  no DAT for {}", m.name);
             }
         }
+        Command::Browse {
+            platform,
+            status,
+            sort,
+            limit,
+            offset,
+            search,
+        } => {
+            use romforge_core::overview::{GamesQuery, StatusFilter};
+            use romforge_core::view::SortBy;
+            let bad = || {
+                anyhow::anyhow!(
+                    "SORT takes title, platform, year or status, with :desc or :asc, not {sort:?}"
+                )
+            };
+            let (key, descending) = match sort.split_once(':') {
+                Some((k, "desc")) => (k, true),
+                Some((k, "asc")) => (k, false),
+                Some(_) => return Err(bad()),
+                None => (sort.as_str(), false),
+            };
+            let by = SortBy::parse(key).ok_or_else(bad)?;
+            let status = StatusFilter::parse(&status).ok_or_else(|| {
+                anyhow::anyhow!("STATUS takes all, verified, incomplete or unidentified, not {status:?}")
+            })?;
+            let q = GamesQuery {
+                platform: (!platform.eq_ignore_ascii_case("all")).then_some(platform),
+                status,
+                search: (!search.is_empty()).then(|| search.join(" ")),
+                sort: by,
+                descending,
+                limit,
+                offset,
+            };
+            return print_json(&lib.games_matching(&q)?);
+        }
         Command::Games {
             platform,
             sort,

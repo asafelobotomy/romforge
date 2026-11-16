@@ -127,7 +127,9 @@ fn main() -> Result<()> {
         c @ Command::Manual(_) => cmd::manual::run(&mut lib, c)?,
         c @ Command::Settings { .. } => cmd::settings::run(&mut lib, c)?,
         c @ Command::Search(_) => cmd::search::run(&mut lib, c)?,
-        c @ (Command::Games { .. } | Command::Overview { .. }) => cmd::games::run(&mut lib, c)?,
+        c @ (Command::Games { .. } | Command::Browse { .. } | Command::Overview { .. }) => {
+            cmd::games::run(&mut lib, c)?
+        }
         Command::Themes(c) => cmd::themes::run(&lib, c)?,
         Command::Steam(_) => unreachable!("handled before the library opens"),
         Command::Home(_) => unreachable!("handled before the library opens"),
