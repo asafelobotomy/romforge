@@ -151,10 +151,12 @@ pub(super) fn retroarch(home: &Home, cfg: &Path, home_dir: &Path, conn: Option<&
                 continue;
             };
             let state = name.contains(".state");
-            let root = if state { home.states() } else { home.saves() };
-            placed
-                .pairs
-                .push((e.path().to_path_buf(), root.join(system.key).join(&name)));
+            let dir = if state {
+                crate::saves::states::dir(home, system.key)
+            } else {
+                home.saves().join(system.key)
+            };
+            placed.pairs.push((e.path().to_path_buf(), dir.join(&name)));
         }
     }
     placed

@@ -26,6 +26,7 @@ mod music;
 mod overlay;
 mod patch;
 mod play;
+mod saves;
 mod scan;
 mod search;
 mod settings;
@@ -237,6 +238,11 @@ fn main() {
             emulators::undo_gather_saves,
             emulators::backup_saves,
             emulators::save_backups,
+            saves::saves_page,
+            saves::game_saves,
+            saves::merge_states_plan,
+            saves::merge_states,
+            saves::undo_merge_states,
             emulators::restore_save,
             emulators::undo_restore_save,
             emulators::emulator_cores,

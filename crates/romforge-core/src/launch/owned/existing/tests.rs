@@ -132,13 +132,9 @@ fn retroarch_saves_go_to_their_platforms() {
     assert_eq!(done.saves, found.saves);
     let md_saves = home.saves().join(md.key);
     assert_eq!(std::fs::read(md_saves.join("Sonic (USA).srm")).unwrap(), b"sonic");
-    assert!(home.states().join(md.key).join("Sonic (USA).state1").is_file());
-    assert!(
-        home.states()
-            .join(md.key)
-            .join("Sonic (USA).state1.png")
-            .is_file()
-    );
+    let md_states = md_saves.join(crate::saves::states::STATES);
+    assert!(md_states.join("Sonic (USA).state1").is_file());
+    assert!(md_states.join("Sonic (USA).state1.png").is_file());
     assert!(ra.join("saves/Mystery.srm").is_file(), "theirs stay");
     // Nothing of romforge's is replaced on a second import; undo takes them back.
     let again = import(&conn, retroarch, &home, &user, &xdg).unwrap();

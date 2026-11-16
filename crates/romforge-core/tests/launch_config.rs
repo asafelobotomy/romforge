@@ -49,7 +49,12 @@ fn retroarch_runs_from_romforge_s_own_config() {
     let saves = home.saves().join("Game Boy Advance");
     let per_system = std::fs::read_to_string(&system).unwrap();
     assert!(per_system.contains(&format!("savefile_directory = \"{}\"", saves.display())));
-    assert!(saves.is_dir() && home.states().join("Game Boy Advance").is_dir() && bios.is_dir());
+    let states = saves.join(romforge_core::saves::states::STATES);
+    assert!(
+        per_system.contains(&format!("savestate_directory = \"{}\"", states.display())),
+        "{per_system}"
+    );
+    assert!(saves.is_dir() && states.is_dir() && bios.is_dir());
 
     // A key set by hand in romforge's copy stays; romforge's own come back.
     let edited = text.replace(

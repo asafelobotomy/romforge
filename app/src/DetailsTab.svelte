@@ -2,9 +2,10 @@
   import { size } from "./lib.js";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { genres, ratings, reviews, regionFlags, stars } from "./facts.js";
-  import { displayTitle, artLabel, mediaKinds, extdbLabel, edition, caption, released, played } from "./labels.js";
+  import { displayTitle, artLabel, mediaKinds, extdbLabel, edition, caption, released, played, savesLine } from "./labels.js";
   import { ui } from "./ui.svelte.js";
   import VideoSnap from "./VideoSnap.svelte";
+  import { invoke } from "@tauri-apps/api/core";
 
   // Details' first tab: the pictures, an infobox of facts, the overview,
   // the other media and the files. `showEmpty`: empty media boxes too (a
@@ -12,6 +13,16 @@
   let { row, detail, showEmpty, artPicker } = $props();
 
   let f = $derived(detail.fields ?? {});
+
+  // Its saves and save states in Saves/ (the core matches them); the line
+  // opens the Saves page on its card.
+  let saved = $state(null);
+  $effect(() => {
+    const id = row.id;
+    saved = null;
+    if (!row.system) return;
+    invoke("game_saves", { id }).then((s) => row.id === id && (saved = s)).catch(() => {});
+  });
 
   // The fanart (and later other kinds) can be swapped for another the
   // sources have: games with a platform only.
@@ -54,6 +65,7 @@
       {#if f.releases?.includes(";")}<div class="fact"><dt>Releases</dt><dd class="releases">{#each f.releases.split("; ") as r}<span>{r}</span>{/each}</dd></div>{/if}
       {#if f.original_title}<div class="fact"><dt>Original title</dt><dd>{f.original_title}</dd></div>{/if}
       {#if detail.play}<div class="fact"><dt>Played</dt><dd>{played(detail.play)}</dd></div>{/if}
+      {#if saved?.count || saved?.states}<div class="fact"><dt>Saves</dt><dd><button class="linkish" onclick={() => (ui.savesSystem = { system: row.system, game: row.title })} title="Show them on the Saves page">{savesLine(saved)}</button></dd></div>{/if}
       {#if f.genre}
         {@const gs = genres(f.genre)}
         <div class="fact"><dt>Genre</dt><dd class="icons">{#each gs as g}<span class="genre" title={g.name} aria-label={g.name}>{@html g.svg}</span>{/each}{#if gs.length === 1}<span class="gname">{gs[0].name}</span>{/if}</dd></div>
@@ -249,6 +261,8 @@
      a black rim, as the rating marks look. */
   .facts dd.releases { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85em; }
   .credit { margin-top: -0.4rem; }
+  .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; font: inherit; }
+  .linkish:hover { text-decoration: underline; }
   .esrb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 2rem; padding: 0 0.15rem; box-sizing: border-box; height: 2.6rem; background: #fff; color: #000; border: 2px solid #000; outline: 1px solid #fff; border-radius: 2px; line-height: 1; cursor: help; }
   .esrb b { font-size: 1.15rem; font-family: Arial, Helvetica, sans-serif; font-weight: 900; }
   .esrb small { font-size: 0.45rem; font-weight: 700; letter-spacing: 0.03em; margin-top: 0.15rem; }

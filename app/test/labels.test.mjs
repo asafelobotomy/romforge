@@ -1,7 +1,7 @@
 // The shared labels and sizes (node --test app/test).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayTitle, duration, played } from "../src/labels.js";
+import { displayTitle, duration, played, savesLine } from "../src/labels.js";
 import { size } from "../src/lib.js";
 
 test("a game is shown by its clean title, else its label, else its DAT title", () => {
@@ -35,4 +35,13 @@ test("statuses sort and mark from one table", async () => {
   assert.equal(markOf("by_you"), "✎", "identified by you is never ticked");
   assert.equal(markOf("duplicate"), "~");
   assert.ok(!flagged.has("verified") && flagged.has("missing"));
+});
+
+test("a game's saves read as a count and how long ago the newest is", () => {
+  const now = Date.now() / 1000;
+  assert.equal(savesLine({ count: 1, states: 0, latest: 0 }), "1 save");
+  assert.match(savesLine({ count: 0, states: 2, latest: now - 7200 }), /^2 states, last 2 hours ago$/);
+  assert.match(savesLine({ count: 1, states: 1, latest: now - 60 }), /^1 save, 1 state, last /);
+  assert.match(savesLine({ count: 2, latest: now - 3 * 86400 }), /^2 saves, last 3 days ago$/);
+  assert.match(savesLine({ count: 3, latest: now - 30 }), /^3 saves, last /);
 });

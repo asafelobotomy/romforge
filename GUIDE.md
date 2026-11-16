@@ -402,7 +402,7 @@ RomForge/
   Emulators/config/<emu>/    romforge's own copy of each emulator's config
   Bios/                      BIOS files (Bios/RetroArch/ is RetroArch's system folder)
   Saves/<System>/            in-game saves: SRAM, memory cards, save folders
-  States/<System>/           save states
+  Saves/<System>/states/     save states
   Screenshots/<System>/
   Themes/<id>/               your fullscreen themes
   .romforge                  the marker: this folder is a RomForge folder
@@ -456,6 +456,29 @@ serial or file name points at exactly one (read-only):
 romforge-cli saves list
 romforge-cli saves list --system PlayStation
 ```
+
+Save states live beside the saves, in `Saves/<System>/states/`.
+RetroArch (`savestate_directory`), DuckStation (`[Folders] SaveStates`),
+PCSX2 (`[Folders] Savestates`), mGBA (`savestatePath`), melonDS
+(`SavestatePath`), Mednafen (`filesys.path_state`), Flycast
+(`Dreamcast.SavestatePath`) and MAME (`state_directory`) are pointed there
+on every start, and PPSSPP's `PSP/PPSSPP_STATE` is linked to it. Dolphin
+has no key, so its states stay in its own `StateSaves/`. As with saves, an
+emulator whose old place still holds a state keeps writing there. Before
+0.18 states went to `States/<System>/`: while that holds a state,
+emulators keep using it, and the Saves page offers **Move into Saves…**
+(a plan first, never over a file there, journaled, with undo).
+
+In the app, **Saves** in the sidebar has one tab per system and one card
+per game: its box art (in its box's shape; the file type when nothing
+matched it), how many saves and states it has, and how long ago the
+newest changed, newest first. Files matched to no game share a card when
+they're named after the same content. Picking a card opens an inspector
+beside the cards with a **Saves** tab (each file, size, time, how it was
+matched) and a **States** tab (each slot, with the screenshot the
+emulator wrote beside it when there is one). A game's Details shows a
+**Saves** line ("1 save, 2 states, last 3 days ago") that opens its card.
+Copies in `backup/` aren't listed.
 
 ```bash
 romforge-cli home create ~        # creates ~/RomForge; an existing library moves in

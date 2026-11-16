@@ -111,3 +111,19 @@ export function played(p) {
   const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
 }
+
+// How long ago `secs` (seconds since 1970) was: "3 days ago", "in 2 hours".
+export function ago(secs) {
+  const d = secs - Date.now() / 1000;
+  const steps = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  const [unit, len] = steps.find(([, l]) => Math.abs(d) >= l) ?? ["minute", 60];
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round(d / len), unit);
+}
+
+// A game's saves for its Details: "2 saves, 1 state, last 3 days ago".
+export function savesLine(s) {
+  const n = (k, one) => (k === 1 ? `1 ${one}` : `${k} ${one}s`);
+  const parts = [s.count && n(s.count, "save"), s.states && n(s.states, "state")].filter(Boolean);
+  const what = parts.join(", ") || "0 saves";
+  return s.latest ? `${what}, last ${ago(s.latest)}` : what;
+}

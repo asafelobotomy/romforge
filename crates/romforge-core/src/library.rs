@@ -18,6 +18,7 @@ mod overview;
 mod oysterav;
 mod patching;
 mod save_list;
+mod save_page;
 mod saves;
 mod scan_report;
 mod scanning;
