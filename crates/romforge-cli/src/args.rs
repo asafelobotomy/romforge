@@ -224,6 +224,10 @@ pub enum Command {
         /// The app opens in its fullscreen mode (for a pad and a TV)
         #[arg(long)]
         start_fullscreen: Option<bool>,
+        /// Check each emulator and core romforge downloads with oysterAV
+        /// first, and refuse one with a threat in it
+        #[arg(long)]
+        scan_downloads: Option<bool>,
         /// Optional online-source credentials ("" clears). Values given here
         /// end up in your shell history.
         /// SteamGridDB API key
@@ -313,6 +317,9 @@ pub enum Command {
         /// Words the title must contain (`*`: any title)
         search: Vec<String>,
     },
+    /// Have oysterAV look at what romforge keeps (emulators, games). Exit 1
+    /// when it finds a threat; nothing is moved or deleted.
+    Oysterav(crate::cmd::oysterav::OysterAvArgs),
     /// What the library holds: games and platforms, recent additions, BIOS
     /// and game lists still missing. Reads only.
     Overview {

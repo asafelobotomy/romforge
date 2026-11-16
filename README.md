@@ -30,7 +30,7 @@
 | 📺 **Feels like a console** | A fullscreen mode for the TV, driven by a game pad, with themes and hotkeys that work the same in every emulator. |
 | 🌐 **Translations and hacks** | Patches a game you own into a translated or hacked copy, never touching the original. |
 
-**Your files are safe.** Scanning only reads. Nothing is moved, renamed
+**Your files are safe.** Scanning only reads. If you use [oysterAV](https://github.com/asafelobotomy/oysterAV), romforge can check the emulators and cores it downloads before installing them (Settings, off by default), and `romforge-cli oysterav` looks at your games too; it never moves or deletes anything. Nothing is moved, renamed
 or repacked until you've seen the plan and said yes, and every change can
 be undone.
 

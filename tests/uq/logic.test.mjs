@@ -27,12 +27,14 @@ test("page.toml's browse patterns are logic.js's", () => {
   for (const a of cmd.args) assert.equal(a.pattern, L.PATTERNS.browse[a.name], a.name);
 });
 
-test("only reads: no command confirms, previews or changes anything", () => {
+test("it reads and looks: only the oysterAV setting changes anything, and nothing confirms", () => {
   for (const c of manifest.command) {
     assert.equal(c.confirm, undefined, c.id);
     assert.ok(c.argv[0] === "/usr/bin/romforge-cli", c.id);
-    assert.ok(["overview", "browse"].includes(c.argv[1]), `${c.id} runs ${c.argv[1]}`);
+    assert.ok(["overview", "browse", "oysterav", "settings"].includes(c.argv[1]), `${c.id} runs ${c.argv[1]}`);
   }
+  const writes = manifest.command.filter((c) => c.argv[1] === "settings");
+  assert.deepEqual(writes.map((c) => [c.id, c.argv.slice(2)]), [["scan-setting", ["--scan-downloads"]]]);
 });
 
 test("every [[setting]] row has a SettingRow in the page", () => {
@@ -59,7 +61,7 @@ test("the page's strings are plain", () => {
       if (/\btext:|placeholderText:|title:|detail:|help:|label:/.test(line)) found.push(...literals(line));
     }
   }
-  for (const line of read("logic.js").split("\n")) {
+  for (const line of [...read("logic.js").split("\n"), ...read("av.js").split("\n")]) {
     if (/^\s*\/\//.test(line) || /PATTERNS|pattern|RegExp|\.test\(|\.exec\(|"\^/.test(line)) continue;
     found.push(...literals(line).filter((s) => /^[A-Z].* /.test(s) || /…/.test(s)));
   }
@@ -77,8 +79,12 @@ test("no file of the page is over 400 lines, and the QML only shows text through
   }
 });
 
-test("the page never calls D-Bus or streams", () => {
-  assert.ok(!/ctx\.dbus|\.stream\(/.test(files(".qml").map(read).join("\n")));
+test("the page never calls D-Bus, and streams only the oysterAV looks", () => {
+  const qml = files(".qml").map(read).join("\n");
+  assert.ok(!/ctx\.dbus/.test(qml));
+  const streams = [...qml.matchAll(/\.stream\(([^,]+),/g)].map((m) => m[1]);
+  assert.deepEqual(streams, ["command"]);
+  for (const id of ["oysterav", "oysterav-all"]) assert.equal(manifest.command.find((c) => c.id === id).output, "ndjson");
 });
 
 // ---- overview --------------------------------------------------------------------------------
@@ -225,4 +231,81 @@ test("the packages install the whole page folder", () => {
       assert.equal(installed[`/usr/share/uq/settings/pages/romforge/${f}`], `../../uq/pages/romforge/${f}`, `${kind}: ${f}`);
     }
   }
+});
+
+// ---- oysterAV ---------------------------------------------------------------------------------
+
+const A = loadLogic(join(pageDir, "av.js"));
+const cmd = (id) => manifest.command.find((c) => c.id === id);
+
+test("page.toml's oysterAV commands are av.js's", () => {
+  assert.equal(manifest.uq_api, 3);
+  assert.deepEqual(cmd("oysterav").argv, ["/usr/bin/romforge-cli", "oysterav", "--ndjson"]);
+  assert.deepEqual(cmd("oysterav-all").argv, cmd("oysterav").argv);
+  assert.equal(cmd("oysterav").output, "ndjson");
+  assert.equal(cmd("oysterav").args[0].pattern, A.PATTERNS.oysterav.target);
+  assert.equal(cmd("oysterav-all").args, undefined);
+  assert.equal(cmd("scan-setting").args[0].pattern, A.PATTERNS["scan-setting"].value);
+});
+
+test("argsProblem accepts what page.toml accepts and nothing else", () => {
+  assert.equal(A.argsProblem("oysterav", ["games"]), "");
+  assert.equal(A.argsProblem("oysterav", ["emulators"]), "");
+  assert.equal(A.argsProblem("oysterav-all", []), "");
+  assert.equal(A.argsProblem("scan-setting", ["true"]), "");
+  for (const bad of [["/etc"], ["games; rm"], [""], ["games", "x"], []])
+    assert.notEqual(A.argsProblem("oysterav", bad), "", JSON.stringify(bad));
+  assert.notEqual(A.argsProblem("scan-setting", ["yes"]), "");
+  assert.notEqual(A.argsProblem("nothing", []), "");
+});
+
+test("the events of a look build the answer, and a threat names its file", () => {
+  let run = A.startRun();
+  assert.equal(A.summary(run), "oysterAV is looking…");
+  for (const e of [
+    { event: "start", targets: ["emulators", "games"] },
+    { event: "scanned", target: "emulators", state: "clean", detail: "", findings: [] },
+    { event: "scanned", target: "games", state: "threat", detail: "Bad.One", findings: [{ path: "/g/a.zip", threat: "Bad.One" }] },
+    { event: "mystery" },
+    null,
+    { event: "done", clean: false, threats: 1, errors: 0 },
+  ]) run = A.reduce(run, e);
+  assert.equal(run.results.length, 2);
+  assert.equal(A.resultText(run.results[0]), "Clean");
+  assert.equal(run.results[0].name, "Emulators and cores");
+  assert.equal(A.resultText(run.results[1]), "Found Bad.One");
+  assert.deepEqual(run.results[1].findings, [{ path: "/g/a.zip", threat: "Bad.One" }]);
+  assert.match(A.summary(run), /found 1 threat\./);
+});
+
+test("clean, unreadable and empty looks are said plainly", () => {
+  const done = (results, extra) => A.reduce(results.reduce(A.reduce, A.startRun()), { event: "done", threats: 0, errors: 0, ...extra });
+  const clean = { event: "scanned", target: "games", state: "clean" };
+  assert.equal(A.summary(done([clean])), "All clean.");
+  const broke = { event: "scanned", target: "games", state: "weird", detail: "clamd is down" };
+  const r = done([broke], { errors: 1 });
+  assert.equal(A.resultText(r.results[0]), "Couldn't be checked: clamd is down");
+  assert.match(A.summary(r), /1 place couldn't be checked/);
+  assert.match(A.summary(done([])), /Nothing to look at/);
+});
+
+test("what oysterAV prints is capped and cleaned", () => {
+  const many = Array.from({ length: 100 }, (_, i) => ({ path: `/g/${i}\u0007`, threat: "T".repeat(500) }));
+  const run = A.reduce(A.startRun(), { event: "scanned", target: "games", state: "threat", detail: "x", findings: many });
+  assert.equal(run.results[0].findings.length, 20);
+  assert.equal(run.results[0].more, 80);
+  assert.ok(run.results[0].findings[0].threat.length <= 120);
+  assert.ok(!/[\u0000-\u001f]/.test(run.results[0].findings[3].path));
+});
+
+test("a stream that ended without its last line is a failure with the reason", () => {
+  assert.equal(A.streamProblem({ finished: true }, { code: 0 }), "");
+  assert.equal(A.streamProblem({ finished: false }, { error: "no RomForge folder" }), "no RomForge folder");
+  assert.equal(A.streamProblem({ finished: false }, {}), "romforge-cli gave no answer");
+});
+
+test("the overview says whether downloads are checked", () => {
+  assert.equal(L.overviewView(ok("overview")).scanDownloads, false);
+  const on = { code: 0, output: { ...fx("overview"), scan_downloads: true } };
+  assert.equal(L.overviewView(on).scanDownloads, true);
 });

@@ -31,9 +31,12 @@
    Besides the emulators (and asking them for their own lists, versions,
    default settings or installers: ScummVM's `--dump-all-detection-entries`,
    `--detect` and `--version`, MAME's `-listxml`, `-version` and
-   `-createconfig`, RPCS3's `--installfw`), the one program romforge runs is
+   `-createconfig`, RPCS3's `--installfw`), the programs romforge runs are
    `flatpak`, to start Flatpak emulators and to install emulators from
-   Flathub when the user asks (`obtain/flathub.rs`).
+   Flathub when the user asks (`obtain/flathub.rs`), and oysterAV's
+   `oyst-cli`, which only looks at files (`oysterav.rs`: downloads before
+   they are put in place when the user turned that on, and what romforge
+   keeps when asked); it never moves, renames or deletes what it flags.
 8. **Matching is strict.** A match needs size + SHA1 or size + MD5. CRC32
    alone is only a candidate. Never fall back to a default system, never
    `LIMIT 1` over a hash that may belong to many games. A title the user

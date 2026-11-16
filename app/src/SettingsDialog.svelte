@@ -278,6 +278,13 @@
       </section>
       {:else if stab === "sources"}
       <section class="setting">
+        <label class="toggle">
+          <input type="checkbox" bind:checked={draft.scan_downloads} />
+          Check downloads with oysterAV
+        </label>
+        <p class="hint">Each emulator and core romforge downloads is looked at by oysterAV before it is put in place. One with a threat in it, or that oysterAV couldn't check, is not installed. Needs oysterAV; it only looks and never moves your files. To look at what is already there: <code>romforge-cli oysterav</code>, or Game library in uQ Settings.</p>
+      </section>
+      <section class="setting">
         <h3 class="sub">Online sources <span class="hint">(optional)</span></h3>
         <p class="hint">Free sources that need no account are always used first. These fill only what they leave empty.</p>
         <label for="sgdb">SteamGridDB API key</label>

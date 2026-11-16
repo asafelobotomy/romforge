@@ -14,6 +14,7 @@ impl Default for Settings {
             keys: Keys::default(),
             show_empty_media: false,
             region_flags: true,
+            scan_downloads: false,
             show_missing_versions: false,
             regions: Vec::new(),
             language: String::new(),

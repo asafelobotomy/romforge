@@ -1,12 +1,14 @@
 // Game library: a read-only look at what romforge has found. Everything is read through
 // `romforge-cli` (page.toml); logic.js reads its answers. Nothing here changes a game: the
-// buttons open romforge itself, which does the rest. Laid out like Settings' own pages
-// (uq_api = 2): three tabs of cards.
+// buttons open romforge itself, which does the rest. The exceptions are the oysterAV card (it
+// asks oysterAV to look at what romforge keeps, and keeps one setting). Laid out like Settings'
+// own pages: three tabs of cards.
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.uq.settings
 import "logic.js" as Logic
+import "av.js" as Av
 
 SettingsPage {
     id: page
@@ -34,7 +36,59 @@ SettingsPage {
     property var openedWith: null
     property var watching: null
 
+    /// The last look oysterAV took (Av.startRun) and whether one is under way.
+    property var look: Av.emptyRun()
+    property bool looking: false
+    /// What the last oysterAV request or setting change said went wrong, "" when nothing did.
+    property string avProblem: ""
+
     pageId: "romforge"
+
+    /// Asks oysterAV to look at `target` ("emulators" or "games"; "" for both).
+    function checkWithOysterAv(target) {
+        if (page.looking || !page.ctx)
+            return;
+        const command = target === "" ? "oysterav-all" : "oysterav";
+        const args = target === "" ? [] : [target];
+        const why = Av.argsProblem(command, args);
+        page.avProblem = why;
+        if (why !== "")
+            return;
+        page.look = Av.startRun();
+        page.looking = true;
+        page.ctx.command.stream(command, args, event => {
+            page.look = Av.reduce(page.look, event);
+        }, result => {
+            page.looking = false;
+            if (Logic.isCancelled(result)) {
+                page.look = Av.emptyRun();
+                return;
+            }
+            page.avProblem = Av.streamProblem(page.look, result);
+        });
+    }
+
+    /// Turns "check downloads with oysterAV" on or off; the overview is read again after.
+    function setScanDownloads(on) {
+        if (!page.ctx)
+            return;
+        const args = [on ? "true" : "false"];
+        page.avProblem = Av.argsProblem("scan-setting", args);
+        if (page.avProblem !== "")
+            return;
+        page.ctx.command.run("scan-setting", args, result => {
+            if (!page)
+                return;
+            if (result && result.code === 0) {
+                page.ctx.command.run("overview", [], again => {
+                    if (page && !Logic.isCancelled(again))
+                        page.overview = Logic.overviewView(again);
+                });
+            } else {
+                page.avProblem = Logic.clip(result && result.error ? result.error : "The setting could not be saved.", 300);
+            }
+        });
+    }
 
     function openApp() {
         if (!page.ctx)
@@ -155,6 +209,18 @@ SettingsPage {
             visible: page.overview.recent.length > 0
 
             RecentSection {
+                host: page
+                Layout.fillWidth: true
+            }
+        }
+        SettingsCard {
+            title: "oysterAV"
+            iconName: "security-medium"
+            help: "oysterAV only looks. A file it flags stays where it is; you decide in oysterAV what happens to it. Needs oysterAV installed."
+            Layout.fillWidth: true
+            visible: page.overview.loaded
+
+            AntivirusSection {
                 host: page
                 Layout.fillWidth: true
             }

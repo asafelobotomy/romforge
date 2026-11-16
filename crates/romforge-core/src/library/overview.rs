@@ -44,7 +44,8 @@ impl Library {
         let have = systems_with_files(&self.conn)?;
         let dats = self.summary()?.dats.len();
         let settings = self.settings()?;
-        Ok(overview::overview(
+        let scan_downloads = settings.scan_downloads;
+        let mut o = overview::overview(
             &view,
             &newest,
             files,
@@ -56,6 +57,8 @@ impl Library {
             bios,
             dats,
             overview::gaps(&have, &with_dats),
-        ))
+        );
+        o.scan_downloads = scan_downloads;
+        Ok(o)
     }
 }

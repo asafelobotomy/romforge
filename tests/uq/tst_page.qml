@@ -191,10 +191,69 @@ Item {
             verify(root.findLabel("No BIOS files are missing.") !== null);
         }
 
-        function test_it_only_ever_reads() {
+        function test_it_reads_until_asked_to_look() {
             tryVerify(() => loader.item.games.loaded);
             for (const c of fake.calls)
                 verify(c[0] === "watch" || c[1] === "overview" || c[1] === "browse", JSON.stringify(c));
+        }
+
+        function test_check_games_streams_one_look_and_shows_the_threat() {
+            tryVerify(() => loader.item.overview.loaded);
+            fake.events = ({ oysterav: [
+                    { event: "start", targets: ["games"] },
+                    { event: "scanned", target: "games", state: "threat", detail: "Bad.One", findings: [{ path: "/g/a.zip", threat: "Bad.One" }] },
+                    { event: "done", clean: false, threats: 1, errors: 0 }
+                ] });
+            fake.commands = Object.assign({}, fake.commands, { oysterav: { code: 1, output: null } });
+            fake.calls = [];
+            const button = root.findByName("check-games");
+            verify(button !== null);
+            button.clicked();
+            compare(fake.calls[0], ["stream", "oysterav", ["games"]]);
+            tryVerify(() => root.findLabel("Found Bad.One") !== null);
+            verify(root.findLabel("/g/a.zip  —  Bad.One") !== null);
+            verify(root.findByName("av-summary").text.indexOf("found 1 threat") >= 0);
+            tryVerify(() => !loader.item.looking);
+            compare(loader.item.avProblem, "");
+        }
+
+        function test_check_everything_asks_for_both() {
+            tryVerify(() => loader.item.overview.loaded);
+            fake.events = ({ "oysterav-all": [
+                    { event: "start", targets: ["emulators", "games"] },
+                    { event: "scanned", target: "emulators", state: "clean", detail: "", findings: [] },
+                    { event: "scanned", target: "games", state: "clean", detail: "", findings: [] },
+                    { event: "done", clean: true, threats: 0, errors: 0 }
+                ] });
+            fake.commands = Object.assign({}, fake.commands, { "oysterav-all": { code: 0, output: null } });
+            fake.calls = [];
+            root.findByName("check-all").clicked();
+            compare(fake.calls[0], ["stream", "oysterav-all", []]);
+            tryVerify(() => root.findByName("av-summary").text === "All clean.");
+        }
+
+        function test_a_look_that_cannot_start_says_why() {
+            tryVerify(() => loader.item.overview.loaded);
+            fake.commands = Object.assign({}, fake.commands, { oysterav: { code: 1, error: "no RomForge folder or Library folder to look at yet" } });
+            root.findByName("check-emulators").clicked();
+            tryVerify(() => loader.item.avProblem !== "");
+            verify(root.findLabel("no RomForge folder or Library folder to look at yet") !== null);
+        }
+
+        function test_the_switch_saves_the_setting_and_reads_the_overview_again() {
+            tryVerify(() => loader.item.overview.loaded);
+            fake.commands = Object.assign({}, fake.commands, { "scan-setting": { code: 0, output: null } });
+            const flipped = root.fixture("overview");
+            flipped.scan_downloads = true;
+            fake.calls = [];
+            const toggle = root.findByName("scan-downloads");
+            verify(toggle !== null);
+            compare(toggle.value, false);
+            fake.commands.overview = { code: 0, output: flipped };
+            toggle.chosen(true);
+            compare(fake.calls[0], ["run", "scan-setting", ["true"]]);
+            tryVerify(() => loader.item.overview.scanDownloads === true);
+            tryVerify(() => root.findByName("scan-downloads").value === true);
         }
     }
 }

@@ -26,6 +26,7 @@ pub fn load(conn: &Connection) -> Result<Settings, Error> {
         video_snaps: get("video_snaps")?.as_deref() == Some("1"),
         // Absent means on (the default); only "0" turns flags off.
         region_flags: get("region_flags")?.as_deref() != Some("0"),
+        scan_downloads: get("scan_downloads")?.as_deref() == Some("1"),
         show_missing_versions: get("show_missing_versions")?.as_deref() == Some("1"),
         platform_icons: get("platform_icons")?.unwrap_or_default(),
         language: get("language")?.unwrap_or_default(),
@@ -114,6 +115,10 @@ pub fn save_in(conn: &mut Connection, s: &Settings, home: bool) -> Result<Settin
             (
                 "region_flags",
                 Some(if s.region_flags { "1" } else { "0" }.to_owned()),
+            ),
+            (
+                "scan_downloads",
+                Some(if s.scan_downloads { "1" } else { "0" }.to_owned()),
             ),
             (
                 "show_missing_versions",

@@ -15,6 +15,7 @@ mod lists;
 mod manuals;
 mod open;
 mod overview;
+mod oysterav;
 mod patching;
 mod save_list;
 mod saves;
@@ -29,6 +30,7 @@ pub use art::PlatformIcons;
 pub use dat_lists::{DatState, DatStatus};
 pub use dats::ImportedDat;
 pub use lists::{ListOptions, ListsReport};
+pub use oysterav::AvTarget;
 pub use scan_report::{
     FolderScan, PreviewGame, RefreshResult, Refreshed, ScanPreview, ScanProgress, ScanReport, SkippedKind,
 };

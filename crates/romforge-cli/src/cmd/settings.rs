@@ -22,6 +22,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             list_age_days,
             save_copies,
             start_fullscreen,
+            scan_downloads,
             steamgriddb_key,
             igdb_client_id,
             igdb_client_secret,
@@ -41,7 +42,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 || threads.is_some()
                 || list_age_days.is_some()
                 || save_copies.is_some()
-                || start_fullscreen.is_some();
+                || start_fullscreen.is_some()
+                || scan_downloads.is_some();
             for (given, slot) in [
                 (steamgriddb_key, &mut s.keys.steamgriddb_key),
                 (igdb_client_id, &mut s.keys.igdb_client_id),
@@ -90,6 +92,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if let Some(f) = start_fullscreen {
                 s.start_fullscreen = f;
             }
+            if let Some(f) = scan_downloads {
+                s.scan_downloads = f;
+            }
             if changed {
                 s = lib.save_settings(&s)?;
             }
@@ -108,6 +113,10 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             println!(
                 "start fullscr.  {}",
                 if s.start_fullscreen { "yes" } else { "no" }
+            );
+            println!(
+                "check downloads {}",
+                if s.scan_downloads { "yes (oysterAV)" } else { "no" }
             );
             println!(
                 "in place        {}",

@@ -67,6 +67,11 @@ pub struct Settings {
     /// default) or as text ("USA", "En").
     #[serde(default = "default_true")]
     pub region_flags: bool,
+    /// Look at each emulator and core romforge downloads with oysterAV
+    /// before it is put in place, and refuse one with a threat in it (or
+    /// that could not be checked). Off by default.
+    #[serde(default)]
+    pub scan_downloads: bool,
     /// List every DAT version of a game romforge can link, even ones you
     /// don't have (off by default: only what you own, plus a missing
     /// original when you only have a translation, hack or patch).
@@ -286,6 +291,7 @@ impl Settings {
             keys,
             show_empty_media: self.show_empty_media,
             region_flags: self.region_flags,
+            scan_downloads: self.scan_downloads,
             show_missing_versions: self.show_missing_versions,
             threads: match self.threads {
                 0..=64 => self.threads,

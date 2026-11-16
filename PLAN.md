@@ -3099,6 +3099,19 @@ Still open:
   (mGBA, melonDS, Cemu, xemu, MAME, ScummVM …). Adding them is a new rule
   id or a changed one, to agree with uQ first.
 
+## oysterAV (2026-11-16, built)
+
+Looks at what romforge downloads and keeps, with oysterAV's `oyst-cli scan
+--ndjson` (the contract is oysterAV's `docs/cli/gui-contract.md`, "Apps that
+save files"). Built: the setting `scan_downloads` (off by default) that scans each
+core and official AppImage before it is put in place and refuses a threat or an
+unfinished scan; `romforge-cli oysterav [emulators|games|PATH…]`; the app's
+Settings switch; an oysterAV card on the uQ Game library page (`uq_api` 3).
+Detail in GUIDE.md ("Emulator settings, cores and installs"). Not built, on
+purpose: scanning every ROM as it is imported (a library is thousands of
+files; `oysterav games` looks at all of them in one job), and scanning Flathub
+installs (Flatpak checks them).
+
 ## Code review follow-ups (2026-10-18)
 
 A full review found about 90 items; all are fixed except one that waits
