@@ -122,7 +122,7 @@ jobs:
                       'gtk-layer-shell: the radial menu over a fullscreen game'
                       'gst-plugins-good: music in the fullscreen mode (MP3, FLAC, WAV)'
                       'gst-libav: music in M4A/AAC'
-                      'uq: your games in Spotlight on uQ, its game-mode window rule and its theme')
+                      'uq: your games in look=see>do_ on uQ, its game-mode window rule and its theme')
           provides=('romforge')
           conflicts=('romforge')
           source=("\$pkgname-\$pkgver.deb::https://github.com/asafelobotomy/romforge/releases/download/v\$pkgver/romforge_\${pkgver}_amd64.deb"

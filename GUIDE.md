@@ -1245,7 +1245,7 @@ romforge's side of uQ's Phase 4 integrations. Everything here is inert
 without uQ, and none of it touches a ROM. What each installed file does is
 in [uq/README.md](uq/README.md).
 
-**Games in Spotlight.** `romforge-provider` (`crates/romforge-provider`) is
+**Games in look=see>do_.** `romforge-provider` (`crates/romforge-provider`) is
 a session-bus service that owns `org.romforge.Provider` and serves
 `org.uq.Launcher1.Provider` at `/org/uq/Launcher1`. It is a program of its
 own, not a `romforge-cli` subcommand, so the CLI stays free of D-Bus and an

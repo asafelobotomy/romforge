@@ -5,7 +5,7 @@ package installs it unconditionally; without uQ nothing reads it.
 
 | File | Installed to | What it does |
 | --- | --- | --- |
-| `launcher/romforge.provider` | `/usr/share/uq/launcher/` | Typing a game's name in Spotlight finds it in your library; Enter starts it |
+| `launcher/romforge.provider` | `/usr/share/uq/launcher/` | Typing a game's name in look=see>do_ finds it in your library; Enter starts it |
 | `dbus/org.romforge.Provider.service` | `/usr/share/dbus-1/services/` | Lets the session bus start `/usr/bin/romforge-provider` when uQ's launcher opens |
 | `integrations/romforge/rules.toml` | `/usr/share/uq/integrations/romforge/` | "Emulators full screen on the game workspace", off until you turn it on |
 
@@ -15,7 +15,7 @@ The package also installs `/usr/bin/romforge-provider` (from `crates/romforge-pr
 
 `romforge-provider` is a small session-bus service on `org.romforge.Provider` that serves
 `org.uq.Launcher1.Provider` at `/org/uq/Launcher1`. It is activatable: uQ asks the bus to start it
-when Spotlight or the app menu opens (at most once every 30 s), and it exits after 60 s without a
+when look=see>do_ or the app menu opens (at most once every 30 s), and it exits after 60 s without a
 call, but never while a game it started is running. The romforge app does not need to be open.
 
 - **Search.** No prefix: every query of two characters or more. It opens the library the app uses
