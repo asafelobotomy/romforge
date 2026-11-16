@@ -14,6 +14,7 @@ mod launcher;
 mod lists;
 mod manuals;
 mod open;
+mod overview;
 mod patching;
 mod save_list;
 mod saves;

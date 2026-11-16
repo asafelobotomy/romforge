@@ -84,7 +84,12 @@ create` made one), else `$XDG_DATA_HOME/romforge/romforge.db`
 
 Rescans are incremental: a file whose size and modification time haven't
 changed since it was hashed keeps its hashes (`--rehash` reads everything
-again). `romforge-cli games` lists games the way the app does.
+again). `romforge-cli games` lists games the way the app does;
+`games --json` (`--platform`, `--status all|verified|incomplete|unidentified`,
+`--search`, `--sort`, `--desc`, `--limit`, `--offset`) prints
+`{total, games[]}` and `overview [--json]` the totals, platforms, recent
+additions, BIOS and DATs still missing. Both only read; uQ's Settings page
+for romforge runs them.
 
 ## How identification works
 

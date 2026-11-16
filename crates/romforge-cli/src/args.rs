@@ -280,6 +280,28 @@ pub enum Command {
         /// Sort the other way
         #[arg(long)]
         desc: bool,
+        /// Only all, verified, incomplete or unidentified games (with --json)
+        #[arg(long, default_value = "all")]
+        status: String,
+        /// Only games whose title has all these words (with --json)
+        #[arg(long)]
+        search: Option<String>,
+        /// At most this many games [default: 200] (with --json)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Skip this many games (with --json)
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        /// Print JSON (schema_version 1): { total, games: [...] }
+        #[arg(long)]
+        json: bool,
+    },
+    /// What the library holds: games and platforms, recent additions, BIOS
+    /// and game lists still missing. Reads only.
+    Overview {
+        /// Print JSON (schema_version 1)
+        #[arg(long)]
+        json: bool,
     },
     /// Identify what hashes couldn't, and settle Wikidata matches
     #[command(subcommand)]
