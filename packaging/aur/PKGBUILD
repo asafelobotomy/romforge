@@ -7,11 +7,7 @@
 # After editing, regenerate .SRCINFO: makepkg --printsrcinfo > .SRCINFO
 
 pkgname=romforge
-# TODO(release): the first release whose tree has crates/romforge-provider
-# and uq/ (v0.15.0 hasn't). Set pkgver to that tag without its leading v,
-# replace SKIP with the tarball's sha256 (updpkgsums), and regenerate
-# .SRCINFO.
-pkgver=0.16.0
+pkgver=0.17.0
 pkgrel=1
 pkgdesc="Identify, tidy and play your ROM collection"
 arch=('x86_64')
@@ -33,7 +29,7 @@ conflicts=('romforge-bin')
 # Rust does its own LTO; makepkg's C flags for it break the bundled C code.
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('3f6172683765389661e3f61780279431c2dbffb1573fcd0a88c4536dc9116ee5')
 
 prepare() {
   cd "$pkgname-$pkgver"
