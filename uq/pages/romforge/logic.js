@@ -153,7 +153,7 @@ function gameRow(g) {
 function emptyOverview() {
     return {
         problem: "", loaded: false, hasGames: false, summary: "", detail: "", platforms: [],
-        recent: [], bios: [], missingLists: [], folders: [], needsAttention: 0, attentionText: ""
+        recent: [], bios: [], missingLists: [], folders: [], needsAttention: 0, attentionText: "", scanDownloads: false
     };
 }
 
@@ -169,6 +169,7 @@ function overviewView(result) {
     var t = d.totals && typeof d.totals === "object" ? d.totals : {};
     var games = number(t.games) || 0;
     view.loaded = true;
+    view.scanDownloads = d.scan_downloads === true;
     view.hasGames = games > 0;
     var unidentified = number(t.unidentified) || 0;
     if (games > 0) {

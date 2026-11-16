@@ -9,6 +9,7 @@ pub mod games;
 pub mod launch;
 pub mod manual;
 pub mod organize;
+pub mod oysterav;
 pub mod patch;
 pub mod saves;
 pub mod scan;

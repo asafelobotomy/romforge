@@ -201,7 +201,10 @@ pub fn cores(db_dir: &Path, home: &Home, env: &Env) -> CoreList {
 
 /// Download `core` from the buildbot into `Emulators/cores/` (replacing
 /// only romforge's own older copy). Returns its buildbot date.
-pub fn download_core(db_dir: &Path, home: &Home, core: &str) -> Result<String, Error> {
+///
+/// With `scan`, oysterAV looks at it before it is put in place; a threat, or
+/// a scan that couldn't finish, stops the download.
+pub fn download_core(db_dir: &Path, home: &Home, core: &str, scan: bool) -> Result<String, Error> {
     if !used().contains_key(core) {
         return Err(Error::Launch(format!(
             "{core:?} isn't a core romforge's platforms use"
@@ -233,6 +236,13 @@ pub fn download_core(db_dir: &Path, home: &Home, core: &str) -> Result<String, E
         return Err(Error::Launch(format!(
             "{file} didn't download whole (CRC32 {got}, the list says {crc})"
         )));
+    }
+    if scan {
+        let part = dest.with_extension("so.scan");
+        crate::atomic::write(&part, &so)?;
+        let checked = crate::oysterav::check_download(&part, &file);
+        let _ = std::fs::remove_file(&part);
+        checked?;
     }
     crate::atomic::write(&dest, &so)?;
     ours.insert(
@@ -323,7 +333,7 @@ mod tests {
 
         // Only romforge's own copies are removed; a stranger is refused.
         assert!(remove_core(&home, "snes9x").is_err());
-        assert!(download_core(&db, &home, "../evil").is_err());
+        assert!(download_core(&db, &home, "../evil", false).is_err());
         remove_core(&home, "mgba").unwrap();
         assert!(!cores_dir(&home).join("mgba_libretro.so").exists());
     }

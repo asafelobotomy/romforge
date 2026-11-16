@@ -34,6 +34,7 @@ pub mod names;
 pub mod obtain;
 pub mod organize;
 pub mod overview;
+pub mod oysterav;
 pub mod parallel;
 pub mod patch;
 pub mod patcher;
@@ -64,8 +65,8 @@ use rusqlite::Connection;
 
 pub use identify::{Scope, Status};
 pub use library::{
-    DatState, DatStatus, FolderScan, ImportedDat, ListOptions, ListsReport, PlatformIcons, PreviewGame,
-    RefreshResult, Refreshed, ScanPreview, ScanProgress, ScanReport, ScummvmList, SkippedKind,
+    AvTarget, DatState, DatStatus, FolderScan, ImportedDat, ListOptions, ListsReport, PlatformIcons,
+    PreviewGame, RefreshResult, Refreshed, ScanPreview, ScanProgress, ScanReport, ScummvmList, SkippedKind,
 };
 pub use report::{DatGame, DatSummary, LibraryFile, LibraryFilter, Summary, SystemInfo};
 pub use scan::ScanOptions;
@@ -106,6 +107,8 @@ pub enum Error {
     Chd(String),
     #[error("launch: {0}")]
     Launch(String),
+    #[error("oysterAV: {0}")]
+    Antivirus(String),
     #[error("manual: {0}")]
     Manual(String),
     #[error("settings: {0}")]

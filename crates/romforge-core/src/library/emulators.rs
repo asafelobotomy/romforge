@@ -137,7 +137,12 @@ impl Library {
             )));
         }
         let (home, dir) = self.firmware_dirs()?;
-        obtain::download_core(&dir, home, core)
+        obtain::download_core(
+            &dir,
+            home,
+            core,
+            crate::settings::load(&self.conn)?.scan_downloads,
+        )
     }
 
     /// Download every core romforge's platforms use that isn't installed
@@ -182,7 +187,7 @@ impl Library {
         let home = self.home.as_ref().ok_or_else(|| {
             Error::Settings("AppImages are kept in a RomForge folder; create one first".into())
         })?;
-        obtain::install_appimage(home, emulator)
+        obtain::install_appimage(home, emulator, crate::settings::load(&self.conn)?.scan_downloads)
     }
 
     pub fn install_emulator(&self, emulator: &str) -> Result<String, Error> {

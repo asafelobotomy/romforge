@@ -5,7 +5,7 @@ package installs it unconditionally; without uQ nothing reads it.
 
 | File | Installed to | What it does |
 | --- | --- | --- |
-| `pages/romforge/` | `/usr/share/uq/settings/pages/romforge/` | The **Game library** page in uQ Settings: a read-only look at your library, with buttons that open romforge |
+| `pages/romforge/` | `/usr/share/uq/settings/pages/romforge/` | The **Game library** page in uQ Settings: a look at your library, with buttons that open romforge, and an oysterAV card |
 | `launcher/romforge.provider` | `/usr/share/uq/launcher/` | Typing a game's name in look=see>do_ finds it in your library; Enter starts it |
 | `dbus/org.romforge.Provider.service` | `/usr/share/dbus-1/services/` | Lets the session bus start `/usr/bin/romforge-provider` when uQ's launcher opens |
 | `integrations/romforge/rules.toml` | `/usr/share/uq/integrations/romforge/` | "Emulators full screen on the game workspace", off until you turn it on |
@@ -56,6 +56,12 @@ art, emulators and settings stay there. The page reads two commands, both read-o
 `romforge-cli browse PLATFORM STATUS SORT LIMIT OFFSET SEARCH` (every choice a positional argument,
 because uQ runs a fixed command line). Their answers are in `tests/uq/fixtures/`, and
 `crates/romforge-cli/tests/uq_fixtures.rs` checks they have the shape the commands print.
+
+**oysterAV** (`uq_api = 3`). The Library tab has an oysterAV card: a switch for "Check downloads
+with oysterAV" (`romforge-cli settings --scan-downloads true|false`, the one thing the page
+changes) and buttons that stream `romforge-cli oysterav [emulators|games] --ndjson`, one line per
+place looked at, with the files and threat names under any that oysterAV flagged. oysterAV only
+looks: nothing is moved or deleted. The page logic for it is `av.js` (`tests/uq/logic.test.mjs`).
 
 Tests: `node --test 'tests/uq/*.test.mjs'` (logic, manifest, packaging) and
 `QML_XHR_ALLOW_FILE_READ=1 QT_QPA_PLATFORM=offscreen qmltestrunner -import tests/uq/stub -input tests/uq`

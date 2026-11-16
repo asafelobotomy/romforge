@@ -168,6 +168,8 @@ pub struct Overview {
     /// Systems whose emulator lacks a required BIOS file.
     pub bios: Vec<BiosGap>,
     pub lists: Lists,
+    /// Settings' "Check downloads with oysterAV".
+    pub scan_downloads: bool,
 }
 
 fn entry(r: &GameRow) -> GameEntry {
@@ -306,6 +308,7 @@ pub(crate) fn overview(
         recent,
         bios,
         lists: Lists { dats, missing },
+        scan_downloads: false,
     }
 }
 

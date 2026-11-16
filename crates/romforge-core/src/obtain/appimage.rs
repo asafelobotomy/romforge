@@ -16,7 +16,11 @@ use crate::launch;
 const MAX: u64 = 2 << 30;
 
 /// Download `name`'s official AppImage into `Emulators/`. Returns where.
-pub fn install_appimage(home: &Home, name: &str) -> Result<PathBuf, Error> {
+///
+/// With `scan`, oysterAV looks at it first (before it is made executable or
+/// put in place): a threat, or a scan that couldn't finish, removes the
+/// download and stops the install.
+pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, Error> {
     let e = launch::known(name).ok_or_else(|| Error::Launch(format!("no emulator named {name:?}")))?;
     let (repo, suffix) = e
         .official_appimage
@@ -88,6 +92,10 @@ pub fn install_appimage(home: &Home, name: &str) -> Result<PathBuf, Error> {
         return Err(Error::Launch(format!(
             "{file} didn't download whole (it doesn't match what GitHub gives for it)"
         )));
+    }
+    if scan && let Err(e) = crate::oysterav::check_download(&part, file) {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
     }
     {
         use std::os::unix::fs::PermissionsExt;

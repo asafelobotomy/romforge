@@ -1,7 +1,8 @@
-# The Game library page of uQ Settings: a read-only look at what romforge has found, with a
-# button that opens romforge for everything else. Installed by the romforge packages to
-# /usr/share/uq/settings/pages/romforge/. It only reads, through `romforge-cli`; see uq/README.md.
-uq_api = 2
+# The Game library page of uQ Settings: a look at what romforge has found, with a button that opens
+# romforge for everything else. Installed by the romforge packages to
+# /usr/share/uq/settings/pages/romforge/. It reads through `romforge-cli`; the one thing it changes
+# is the "Check downloads with oysterAV" setting. See uq/README.md.
+uq_api = 3
 id = "romforge"
 name = "Game library"
 icon = "applications-games"
@@ -42,6 +43,11 @@ label = "BIOS files"
 keywords = ["firmware", "missing", "emulator", "required"]
 
 [[setting]]
+id = "oysterav"
+label = "Check with oysterAV"
+keywords = ["antivirus", "virus", "malware", "scan", "security", "threat", "downloads", "emulators"]
+
+[[setting]]
 id = "lists"
 label = "Game lists"
 keywords = ["dat", "no-intro", "redump", "identify", "missing"]
@@ -62,3 +68,25 @@ argv = ["/usr/bin/romforge-cli", "browse"]
 output = "json"
 timeout_ms = 60000
 args = [{ name = "platform", pattern = "^(all|[A-Za-z0-9][A-Za-z0-9 '.-]{0,39})$" }, { name = "status", pattern = "^(all|verified|incomplete|unidentified)$" }, { name = "sort", pattern = "^(title|platform|year|status)(:desc)?$" }, { name = "limit", pattern = "^[0-9]{1,4}$" }, { name = "offset", pattern = "^[0-9]{1,7}$" }, { name = "search", pattern = "^[^\\x00-\\x1f\\x7f-][^\\x00-\\x1f\\x7f]{0,79}$" }]
+
+# ---- oysterAV. Streamed: a line as each place is looked at. It only looks: nothing is moved or deleted.
+[[command]]
+id = "oysterav-all"
+argv = ["/usr/bin/romforge-cli", "oysterav", "--ndjson"]
+output = "ndjson"
+timeout_ms = 600000
+
+[[command]]
+id = "oysterav"
+argv = ["/usr/bin/romforge-cli", "oysterav", "--ndjson"]
+output = "ndjson"
+timeout_ms = 600000
+args = [{ name = "target", pattern = "^(emulators|games)$" }]
+
+# Whether a download is looked at before it is put in place (the app's Settings has the same switch).
+[[command]]
+id = "scan-setting"
+argv = ["/usr/bin/romforge-cli", "settings", "--scan-downloads"]
+output = "text"
+timeout_ms = 30000
+args = [{ name = "value", pattern = "^(true|false)$" }]

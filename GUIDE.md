@@ -368,6 +368,24 @@ importing a setup are refused while the emulator is running (romforge's
 or one you started yourself: found by its program, AppImage or Flatpak).
 romforge never ships an emulator or a core.
 
+**oysterAV.** With **Check downloads with oysterAV** on (Settings →
+Online sources; `romforge-cli settings --scan-downloads true`; off by
+default), each core and each official AppImage is scanned by
+`oyst-cli scan --ndjson` after it is downloaded and verified and before it
+is put in place. A threat, or a scan that could not finish (oysterAV not
+installed, its engine down), removes romforge's own half-finished download
+and stops the install with the reason; it never installs unchecked while
+the setting is on. When oysterAV is busy with another job romforge asks
+again every 5 s for about five minutes. Flathub installs are Flatpak's own
+business and are not scanned. `romforge-cli oysterav [emulators|games|PATH…]
+[--ndjson]` looks at what is already there (the RomForge folder's
+`Emulators/` and `Games/`, the Library folder, or a path), whatever the
+setting says; it prints `start`, one `scanned` per place (state `clean`,
+`threat` or `error`, the files and threat names) and `done`, and exits 1
+on a threat. oysterAV only looks: nothing is moved, renamed or deleted
+(what to do with a file is chosen in oysterAV's Quarantine).
+`ROMFORGE_OYST_CLI` points at another `oyst-cli`, for tests.
+
 ## The RomForge folder
 
 Everything romforge keeps can live in one portable folder, always named
@@ -1368,7 +1386,8 @@ set by hand for each release (`updpkgsums`, then `makepkg --printsrcinfo
   `job` and `parallel` (long jobs: progress, stop, threads), `thumbs`
   (picture-view thumbnails), `firmware` (BIOS files), `manual` (manuals
   and OCR words), `emusettings` (Emulator Settings), `obtain` (cores and
-  Flathub installs), `controller` and `hotkeys` (game pads and the hotkey
+  Flathub installs), `oysterav` (looking at downloads and games with
+  oysterAV), `controller` and `hotkeys` (game pads and the hotkey
   chords), `music`, `themes`, `user_games` (favourites, the emulator
   picked per game), `steam`, `uq` (uQ's launcher search and theme
   tokens); one table of systems (`systems/table.rs`),

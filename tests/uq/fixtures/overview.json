@@ -156,5 +156,6 @@
     "size": 8224,
     "unidentified": 7,
     "verified": 6
-  }
+  },
+  "scan_downloads": false
 }
