@@ -1,4 +1,4 @@
-//! Games by name for uQ's launcher (Spotlight): the rows of the library
+//! Games by name for uQ's launcher (look=see>do_): the rows of the library
 //! list ([`crate::view::listing`]) that Play may start, matched against
 //! what was typed, best first, at most [`MAX_HITS`].
 //!

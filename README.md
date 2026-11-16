@@ -111,7 +111,7 @@ a stylesheet; see the [guide](GUIDE.md#fullscreen-themes).
 ## On the uQ desktop
 
 On [uQ](https://github.com/asafelobotomy/uq), type a game's name in
-Spotlight and press Enter to play it; romforge doesn't need to be open.
+look=see>do_ and press Enter to play it; romforge doesn't need to be open.
 romforge's window takes uQ's colours (the fullscreen mode too, with its
 default theme and the system's colours). uQ Settings → Window rules →
 **Rules from apps** can open the emulators full screen on a `game`
