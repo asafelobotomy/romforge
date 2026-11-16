@@ -2829,7 +2829,7 @@ sources (licences and keys checked against house rule 10).
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
 
-## Saves (milestone 27; researched 2026-10-25; stage 1 partly built, stage 2 partly built 2026-11-06)
+## Saves (milestone 27; researched 2026-10-25; stage 1 partly built, stage 2 built 2026-11-06 and 2026-11-16)
 
 A **Saves** page in the sidebar, above DATs, with one tab per system
 that has saves. Each tab shows that system's in-game saves (SRAM, memory
@@ -2953,8 +2953,16 @@ systems only.
 **Built 2026-11-06 (41d5e0e):** `saves::index` and `Library::list_saves`
 walk `Saves/<system>/` read-only and match each save by serial or by
 content file name (rule 8: evidence only, else "not matched");
-`romforge-cli saves list [--system]` shows them. **Not yet:** the Saves
-page in the app, and the cache by path, size and mtime.
+`romforge-cli saves list [--system]` shows them.
+
+**Built 2026-11-16:** the Saves page (`saves::page`,
+`Library::saves_page`, `SavesView.svelte`): one tab per system folder in
+`Saves/`, each save with its game, linked to the game's row when exactly
+one row of that system has the title. A game's Details has the line
+(`Library::game_saves`, reading only its system's folder) that opens its
+tab. **Not yet:** the cache by path, size and mtime (the page and the
+Details line walk `Saves/` each time; to add when a big `Saves/` makes
+that slow).
 
 A core `saves` module walks `Saves/` (and the data trees above),
 read-only, and lists each save: system, emulator, file, size, modified,

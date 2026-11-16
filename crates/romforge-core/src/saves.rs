@@ -8,3 +8,4 @@
 pub mod backup;
 pub mod gather;
 pub mod index;
+pub mod page;

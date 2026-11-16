@@ -13,6 +13,9 @@
   let saves = $state([]);
   let picked = $state({});
   let working = $state(false);
+  // How many copies of each save are kept (a setting, `save_copies`).
+  let keep = $state(null);
+  invoke("get_settings").then((s) => (keep = s.save_copies)).catch(() => {});
   // `2026-10-25T15-00-00Z` → a local date and time.
   const when = (v) => new Date(v.replace(/T(\d\d)-(\d\d)-(\d\d)Z$/, "T$1:$2:$3Z")).toLocaleString();
 
@@ -61,8 +64,8 @@
 <section class="setting">
   <span class="flabel">Save backups</span>
   <p class="hint">
-    {label} keeps its saves in its own data, so romforge copies each changed one into Saves/ after every game (the last
-    five copies of each).
+    {label} keeps its saves in its own data, so romforge copies each changed one into Saves/ after every game{#if keep}
+      (the last {keep === 1 ? "copy" : `${keep} copies`} of each){/if}.
   </p>
   {#if saves.length}
     <ul class="items">

@@ -457,6 +457,12 @@ romforge-cli saves list
 romforge-cli saves list --system PlayStation
 ```
 
+In the app, **Saves** in the sidebar shows the same list, one tab per
+system: each save's game (a link to it in the library when one row has
+that title), file, size and time. A game's Details shows a **Saves** line
+("2 saves, last 3 days ago") that opens its system's tab. Copies in
+`backup/` aren't listed as saves.
+
 ```bash
 romforge-cli home create ~        # creates ~/RomForge; an existing library moves in
 romforge-cli home show

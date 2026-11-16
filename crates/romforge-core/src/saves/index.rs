@@ -61,6 +61,24 @@ pub fn walk(saves: &Path) -> Vec<Save> {
     out
 }
 
+/// The saves of one system: [`walk`] for its folder only (named by its
+/// key, in any case).
+pub fn walk_system(saves: &Path, system: &str) -> Vec<Save> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(saves) else {
+        return out;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if entry.path().is_dir()
+            && let Some(name) = entry.file_name().to_str()
+            && name.eq_ignore_ascii_case(system)
+        {
+            files_in(&entry.path(), Path::new(""), name, &mut out);
+        }
+    }
+    out
+}
+
 fn files_in(dir: &Path, rel: &Path, system: &str, out: &mut Vec<Save>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

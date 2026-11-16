@@ -111,3 +111,14 @@ export function played(p) {
   const last = new Date(p.last_played * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   return `${time} · ${p.sessions === 1 ? "once" : `${p.sessions} times`} · last ${last}`;
 }
+
+// A game's saves for its Details: "2 saves, last 3 days ago".
+export function savesLine(s) {
+  const n = s.count === 1 ? "1 save" : `${s.count} saves`;
+  if (!s.latest) return n;
+  const secs = s.latest - Date.now() / 1000;
+  const steps = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  const [unit, len] = steps.find(([, l]) => Math.abs(secs) >= l) ?? ["minute", 60];
+  const ago = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round(secs / len), unit);
+  return `${n}, last ${ago}`;
+}

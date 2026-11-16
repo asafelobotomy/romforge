@@ -3,7 +3,8 @@
   import { iconSvg } from "./facts.js";
 
   // The platforms down the left (all games, each platform, the
-  // unidentified files), and the DATs and organize screens at the foot.
+  // unidentified files), and the Saves, DATs, BIOS and Organize screens at
+  // the foot.
   // `icons`: system key -> file of its picture; one that fails to load
   // keeps its badge, also after the next load (no retry, no flicker).
   // `needs`: systems whose emulator lacks a required BIOS file.
@@ -45,6 +46,7 @@
     </button>
   {/each}
   <span class="spacer"></span>
+  <button class="plat small" class:active={view === "saves"} onclick={() => show("saves")}>Saves</button>
   <button class="plat small" class:active={view === "dats"} onclick={() => show("dats")}>DATs</button>
   <button class="plat small" class:active={view === "bios"} onclick={() => show("bios")}>BIOS</button>
   <button class="plat small" class:active={view === "organize"} onclick={() => show("organize")}>Organize</button>

@@ -22,6 +22,17 @@ impl Library {
         index::match_all(&mut saves, &known);
         Ok(saves)
     }
+
+    /// [`Library::list_saves`] for one system's folder only.
+    pub(super) fn list_saves_of(&self, system: &str) -> Result<Vec<Save>, Error> {
+        let Some(home) = &self.home else {
+            return Ok(Vec::new());
+        };
+        let mut saves = index::walk_system(&home.saves(), system);
+        let known = known(&self.conn, &saves)?;
+        index::match_all(&mut saves, &known);
+        Ok(saves)
+    }
 }
 
 /// The serials and file names the saves' systems have.
