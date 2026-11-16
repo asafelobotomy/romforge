@@ -74,13 +74,13 @@ args = [{ name = "platform", pattern = "^(all|[A-Za-z0-9][A-Za-z0-9 '.-]{0,39})$
 id = "oysterav-all"
 argv = ["/usr/bin/romforge-cli", "oysterav", "--ndjson"]
 output = "ndjson"
-timeout_ms = 3600000
+timeout_ms = 600000
 
 [[command]]
 id = "oysterav"
 argv = ["/usr/bin/romforge-cli", "oysterav", "--ndjson"]
 output = "ndjson"
-timeout_ms = 3600000
+timeout_ms = 600000
 args = [{ name = "target", pattern = "^(emulators|games)$" }]
 
 # Whether a download is looked at before it is put in place (the app's Settings has the same switch).
