@@ -1,0 +1,160 @@
+{
+  "bios": [
+    {
+      "emulator": "DuckStation",
+      "name": "Sony PlayStation",
+      "system": "PlayStation"
+    },
+    {
+      "emulator": "Flycast",
+      "name": "Sega Dreamcast",
+      "system": "Dreamcast"
+    }
+  ],
+  "home": "/home/user/RomForge",
+  "library": "/home/user/RomForge/Games",
+  "lists": {
+    "dats": 3,
+    "missing": [
+      {
+        "name": "Atari 7800 ProSystem",
+        "system": "Atari 7800"
+      },
+      {
+        "name": "Atari Lynx",
+        "system": "Lynx"
+      },
+      {
+        "name": "Nintendo Famicom Disk System",
+        "system": "FDS"
+      },
+      {
+        "name": "Nintendo Game Boy Advance",
+        "system": "Game Boy Advance"
+      }
+    ]
+  },
+  "platforms": [
+    {
+      "games": 2,
+      "manufacturer": "Nintendo",
+      "name": "Nintendo Entertainment System",
+      "short": "NES",
+      "system": "NES",
+      "verified": 2
+    },
+    {
+      "games": 3,
+      "manufacturer": "Nintendo",
+      "name": "Nintendo Game Boy",
+      "short": "GB",
+      "system": "Game Boy",
+      "verified": 3
+    },
+    {
+      "games": 1,
+      "manufacturer": "Nintendo",
+      "name": "Super Nintendo Entertainment System",
+      "short": "SNES",
+      "system": "SNES",
+      "verified": 1
+    }
+  ],
+  "recent": [
+    {
+      "added": "2026-11-16T10:00:00Z",
+      "files": 1,
+      "id": "g:6:MD5 Only",
+      "metadata": false,
+      "playable": true,
+      "size": 1024,
+      "status": "verified",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "MD5 Only",
+      "versions": 1,
+      "year": 1992
+    },
+    {
+      "added": "2026-11-15T10:01:00Z",
+      "files": 1,
+      "id": "g:6:Shared Hash (Rev A)",
+      "metadata": false,
+      "playable": true,
+      "size": 1024,
+      "status": "verified",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "Shared Hash",
+      "versions": 2,
+      "year": null
+    },
+    {
+      "added": "2026-11-14T10:02:00Z",
+      "files": 2,
+      "id": "g:6:Test GB",
+      "metadata": false,
+      "playable": true,
+      "size": 2048,
+      "status": "verified",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "Test GB",
+      "versions": 1,
+      "year": null
+    },
+    {
+      "added": "2026-11-13T10:03:00Z",
+      "files": 1,
+      "id": "g:1:Test NES (iNES)",
+      "metadata": false,
+      "playable": true,
+      "size": 1040,
+      "status": "verified",
+      "system": "NES",
+      "system_name": "Nintendo Entertainment System",
+      "title": "Test NES",
+      "versions": 2,
+      "year": null
+    },
+    {
+      "added": "2026-11-12T10:04:00Z",
+      "files": 1,
+      "id": "g:1:Test NES 2.0",
+      "metadata": false,
+      "playable": true,
+      "size": 1040,
+      "status": "verified",
+      "system": "NES",
+      "system_name": "Nintendo Entertainment System",
+      "title": "Test NES 2.0",
+      "versions": 1,
+      "year": null
+    },
+    {
+      "added": "2026-11-11T10:05:00Z",
+      "files": 1,
+      "id": "g:2:Test SNES (clean)",
+      "metadata": false,
+      "playable": true,
+      "size": 2048,
+      "status": "verified",
+      "system": "SNES",
+      "system_name": "Super Nintendo Entertainment System",
+      "title": "Test SNES",
+      "versions": 2,
+      "year": null
+    }
+  ],
+  "schema_version": 1,
+  "source": "/home/user/Downloads/roms",
+  "totals": {
+    "bios_files": 0,
+    "files": 17,
+    "games": 6,
+    "incomplete": 0,
+    "size": 8224,
+    "unidentified": 7,
+    "verified": 6
+  }
+}

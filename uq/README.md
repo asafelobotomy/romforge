@@ -5,6 +5,7 @@ package installs it unconditionally; without uQ nothing reads it.
 
 | File | Installed to | What it does |
 | --- | --- | --- |
+| `pages/romforge/` | `/usr/share/uq/settings/pages/romforge/` | The **Game library** page in uQ Settings: a read-only look at your library, with buttons that open romforge |
 | `launcher/romforge.provider` | `/usr/share/uq/launcher/` | Typing a game's name in look=see>do_ finds it in your library; Enter starts it |
 | `dbus/org.romforge.Provider.service` | `/usr/share/dbus-1/services/` | Lets the session bus start `/usr/bin/romforge-provider` when uQ's launcher opens |
 | `integrations/romforge/rules.toml` | `/usr/share/uq/integrations/romforge/` | "Emulators full screen on the game workspace", off until you turn it on |
@@ -35,6 +36,30 @@ call, but never while a game it started is running. The romforge app does not ne
   never touched.
 - The provider gets its environment (`WAYLAND_DISPLAY` for the emulator) from the session bus's
   activation environment, which uQ's session sets.
+
+## The Game library page
+
+uQ Settings → Apps → **Game library** shows what romforge has found, and changes nothing. Three tabs:
+
+- **Library**: games, verified games and size; one row per platform with a bar next to the biggest
+  one and a **View** button that jumps to that platform's games; the games scanned most recently;
+  the RomForge, Source and Library folders.
+- **Games**: the list, fifty at a time. Four choices: platform, which games (all, verified,
+  incomplete, not identified), sort (title, platform, year, status, either way) and words in the
+  title.
+- **Needs attention**: platforms whose emulator lacks a required BIOS file, and platforms you have
+  games for that have no game list yet.
+
+Every **Open romforge** button starts the app (`romforge.desktop`) through uQ; scanning, tidying,
+art, emulators and settings stay there. The page reads two commands, both read-only:
+`romforge-cli overview --json` (read again whenever the library file changes) and
+`romforge-cli browse PLATFORM STATUS SORT LIMIT OFFSET SEARCH` (every choice a positional argument,
+because uQ runs a fixed command line). Their answers are in `tests/uq/fixtures/`, and
+`crates/romforge-cli/tests/uq_fixtures.rs` checks they have the shape the commands print.
+
+Tests: `node --test 'tests/uq/*.test.mjs'` (logic, manifest, packaging) and
+`QML_XHR_ALLOW_FILE_READ=1 QT_QPA_PLATFORM=offscreen qmltestrunner -import tests/uq/stub -input tests/uq`
+(the page itself, offscreen, with a fake `ctx`); CI runs both and `uqctl integrations check uq/`.
 
 ## The game-mode rule
 

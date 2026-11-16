@@ -1,0 +1,45 @@
+{
+  "games": [
+    {
+      "files": 1,
+      "id": "f:11",
+      "metadata": false,
+      "playable": false,
+      "size": 1024,
+      "status": "candidate",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "CRC Only",
+      "versions": 1,
+      "year": null
+    },
+    {
+      "files": 1,
+      "id": "g:6:MD5 Only",
+      "metadata": false,
+      "playable": true,
+      "size": 1024,
+      "status": "verified",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "MD5 Only",
+      "versions": 1,
+      "year": 1993
+    },
+    {
+      "files": 1,
+      "id": "g:6:Shared Hash (Rev A)",
+      "metadata": false,
+      "playable": true,
+      "size": 1024,
+      "status": "verified",
+      "system": "Game Boy",
+      "system_name": "Nintendo Game Boy",
+      "title": "Shared Hash",
+      "versions": 2,
+      "year": null
+    }
+  ],
+  "schema_version": 1,
+  "total": 13
+}
