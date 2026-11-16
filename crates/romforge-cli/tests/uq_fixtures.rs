@@ -76,7 +76,7 @@ fn the_page_fixtures_have_the_shape_of_the_real_answers() {
         emulator: "DuckStation".into(),
     })
     .unwrap();
-    let mut with_gap = |mut v: Value| {
+    let with_gap = |mut v: Value| {
         v["bios"] = Value::Array(vec![gap.clone()]);
         v
     };
