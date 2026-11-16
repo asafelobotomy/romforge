@@ -1,6 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import { size } from "./lib.js";
+  import SaveCard from "./SaveCard.svelte";
   import { ui } from "./ui.svelte.js";
 
   // The Saves page (milestone 27, stage 2): the in-game saves in the
@@ -34,8 +34,6 @@
   }
 
   let tab = $derived(tabs.find((t) => t.system === key));
-  const how = { serial: "by serial", file_name: "by file name" };
-  const when = (secs) => (secs ? new Date(secs * 1000).toLocaleString() : "");
 </script>
 
 {#if active}
@@ -60,29 +58,9 @@
       </div>
       {#if tab}
         <p class="hint">{tab.saves.length} save{tab.saves.length === 1 ? "" : "s"}, {tab.matched} matched to a game. Saves/{tab.system}/</p>
-        <table>
-          <thead>
-            <tr><th>Game</th><th>File</th><th class="num">Size</th><th>Modified</th></tr>
-          </thead>
-          <tbody>
-            {#each tab.saves as s (s.file)}
-              <tr>
-                <td>
-                  {#if s.row}
-                    <button class="linkish" onclick={() => openGame(s.row)} title="Show it in the library ({how[s.matched_by]})">{s.game}</button>
-                  {:else if s.game}
-                    <span title={how[s.matched_by]}>{s.game}</span>
-                  {:else}
-                    <span class="hint" title={s.serial ? `Holds ${s.serial}, which names no single game here` : ""}>not matched</span>
-                  {/if}
-                </td>
-                <td class="file" title={s.path}><bdi>{s.file}</bdi></td>
-                <td class="num">{size(s.size)}</td>
-                <td>{when(s.modified)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+        <div class="cards">
+          {#each tab.saves as s (s.file)}<SaveCard save={s} {openGame} />{/each}
+        </div>
       {/if}
     {/if}
   </section>
@@ -93,10 +71,5 @@
   .tabs button { border-radius: 6px; padding: 0.25rem 0.6rem; }
   .tabs button.active { background: var(--accent); color: var(--accent-text, white); }
   .count { font-size: 0.75em; opacity: 0.75; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th, td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--line); }
-  .num { text-align: right; white-space: nowrap; }
-  .file { overflow-wrap: anywhere; }
-  .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; font: inherit; }
-  .linkish:hover { text-decoration: underline; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0.6rem; }
 </style>

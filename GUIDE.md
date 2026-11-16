@@ -458,8 +458,10 @@ romforge-cli saves list --system PlayStation
 ```
 
 In the app, **Saves** in the sidebar shows the same list, one tab per
-system: each save's game (a link to it in the library when one row has
-that title), file, size and time. A game's Details shows a **Saves** line
+system: each save is a card with its game's box art (in its box's shape;
+the file type when the save isn't matched), the game (a link to it in the
+library when one row has that title), file, size, and how long ago it
+changed. A game's Details shows a **Saves** line
 ("2 saves, last 3 days ago") that opens its system's tab. Copies in
 `backup/` aren't listed as saves.
 

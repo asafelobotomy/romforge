@@ -15,6 +15,19 @@ pub struct SaveRow {
     /// The library row of its game: set only when the save was matched
     /// to a game and exactly one row of the system has that title.
     pub row: Option<String>,
+    /// That row's box art (a file in the art cache), for the save's card.
+    pub cover: Option<String>,
+    /// That row's box front, width / height in hundredths (0 without a
+    /// row): the card draws the cover in the shape of its box.
+    pub box_aspect: u16,
+}
+
+/// The row a save links to: its id, box art and box shape.
+#[derive(Debug, Clone)]
+struct Linked {
+    id: String,
+    cover: Option<String>,
+    box_aspect: u16,
 }
 
 /// One system's tab on the Saves page.
@@ -39,13 +52,19 @@ pub struct GameSaves {
 }
 
 /// (system key, title) -> its row, when exactly one row has them.
-fn rows_by_title(v: &view::LibraryView) -> BTreeMap<(String, String), Option<String>> {
-    let mut out: BTreeMap<(String, String), Option<String>> = BTreeMap::new();
+fn rows_by_title(v: &view::LibraryView) -> BTreeMap<(String, String), Option<Linked>> {
+    let mut out: BTreeMap<(String, String), Option<Linked>> = BTreeMap::new();
     for r in &v.rows {
         let Some(system) = &r.system else { continue };
         out.entry((system.to_ascii_lowercase(), r.title.clone()))
             .and_modify(|seen| *seen = None)
-            .or_insert_with(|| Some(r.id.clone()));
+            .or_insert_with(|| {
+                Some(Linked {
+                    id: r.id.clone(),
+                    cover: r.pictures.get("boxart").cloned(),
+                    box_aspect: r.box_aspect,
+                })
+            });
     }
     out
 }
@@ -55,7 +74,7 @@ pub fn by_system(saves: Vec<Save>, v: &view::LibraryView) -> Vec<SystemSaves> {
     let rows = rows_by_title(v);
     let mut out: Vec<SystemSaves> = Vec::new();
     for save in saves {
-        let row = save.game.as_ref().and_then(|title| {
+        let linked = save.game.as_ref().and_then(|title| {
             rows.get(&(save.system.to_ascii_lowercase(), title.clone()))
                 .cloned()
                 .flatten()
@@ -72,7 +91,12 @@ pub fn by_system(saves: Vec<Save>, v: &view::LibraryView) -> Vec<SystemSaves> {
         }
         if let Some(tab) = out.last_mut() {
             tab.matched += usize::from(save.game.is_some());
-            tab.saves.push(SaveRow { save, row });
+            tab.saves.push(SaveRow {
+                save,
+                row: linked.as_ref().map(|l| l.id.clone()),
+                cover: linked.as_ref().and_then(|l| l.cover.clone()),
+                box_aspect: linked.as_ref().map_or(0, |l| l.box_aspect),
+            });
         }
     }
     out

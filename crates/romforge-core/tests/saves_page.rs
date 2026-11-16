@@ -52,6 +52,9 @@ fn saves_page_groups_by_system_and_links_matched_games() {
     let row = test_gb.row.clone().expect("linked to its row");
     let nobody = page[0].saves.iter().find(|s| s.save.game.is_none()).unwrap();
     assert_eq!(nobody.row, None, "not matched, never guessed");
+    assert_eq!(nobody.box_aspect, 0);
+    assert!(test_gb.box_aspect > 0, "its row's box shape");
+    assert_eq!(test_gb.cover, None, "no box art fetched in this library");
 
     let mine = lib.game_saves(&row).unwrap();
     assert_eq!(mine.count, 1);
