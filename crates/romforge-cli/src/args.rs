@@ -280,6 +280,45 @@ pub enum Command {
         /// Sort the other way
         #[arg(long)]
         desc: bool,
+        /// Only all, verified, incomplete or unidentified games (with --json)
+        #[arg(long, default_value = "all")]
+        status: String,
+        /// Only games whose title has all these words (with --json)
+        #[arg(long)]
+        search: Option<String>,
+        /// At most this many games [default: 200] (with --json)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Skip this many games (with --json)
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        /// Print JSON (schema_version 1): { total, games: [...] }
+        #[arg(long)]
+        json: bool,
+    },
+    /// Games as `games --json` lists them, with every choice a positional
+    /// argument, so a fixed command line (uQ Settings' page) can carry them
+    ///
+    /// PLATFORM is a system key or `all`; STATUS all, verified, incomplete
+    /// or unidentified; SORT title, platform, year or status, with `:desc`
+    /// for the other way ("year:desc"). Always prints JSON; reads only.
+    Browse {
+        platform: String,
+        status: String,
+        sort: String,
+        /// At most this many games
+        limit: usize,
+        /// Skip this many games
+        offset: usize,
+        /// Words the title must contain (`*`: any title)
+        search: Vec<String>,
+    },
+    /// What the library holds: games and platforms, recent additions, BIOS
+    /// and game lists still missing. Reads only.
+    Overview {
+        /// Print JSON (schema_version 1)
+        #[arg(long)]
+        json: bool,
     },
     /// Identify what hashes couldn't, and settle Wikidata matches
     #[command(subcommand)]

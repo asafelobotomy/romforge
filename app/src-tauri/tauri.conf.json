@@ -48,6 +48,15 @@
           "/usr/share/uq/launcher/romforge.provider": "../../uq/launcher/romforge.provider",
           "/usr/share/dbus-1/services/org.romforge.Provider.service": "../../uq/dbus/org.romforge.Provider.service",
           "/usr/share/uq/integrations/romforge/rules.toml": "../../uq/integrations/romforge/rules.toml",
+          "/usr/share/uq/settings/pages/romforge/BiosSection.qml": "../../uq/pages/romforge/BiosSection.qml",
+          "/usr/share/uq/settings/pages/romforge/FoldersSection.qml": "../../uq/pages/romforge/FoldersSection.qml",
+          "/usr/share/uq/settings/pages/romforge/GamesSection.qml": "../../uq/pages/romforge/GamesSection.qml",
+          "/usr/share/uq/settings/pages/romforge/LibrarySection.qml": "../../uq/pages/romforge/LibrarySection.qml",
+          "/usr/share/uq/settings/pages/romforge/ListsSection.qml": "../../uq/pages/romforge/ListsSection.qml",
+          "/usr/share/uq/settings/pages/romforge/Page.qml": "../../uq/pages/romforge/Page.qml",
+          "/usr/share/uq/settings/pages/romforge/RecentSection.qml": "../../uq/pages/romforge/RecentSection.qml",
+          "/usr/share/uq/settings/pages/romforge/logic.js": "../../uq/pages/romforge/logic.js",
+          "/usr/share/uq/settings/pages/romforge/page.toml": "../../uq/pages/romforge/page.toml",
           "/usr/share/doc/romforge/copyright": "../../LICENSE"
         },
         "depends": [
@@ -69,6 +78,15 @@
           "/usr/share/uq/launcher/romforge.provider": "../../uq/launcher/romforge.provider",
           "/usr/share/dbus-1/services/org.romforge.Provider.service": "../../uq/dbus/org.romforge.Provider.service",
           "/usr/share/uq/integrations/romforge/rules.toml": "../../uq/integrations/romforge/rules.toml",
+          "/usr/share/uq/settings/pages/romforge/BiosSection.qml": "../../uq/pages/romforge/BiosSection.qml",
+          "/usr/share/uq/settings/pages/romforge/FoldersSection.qml": "../../uq/pages/romforge/FoldersSection.qml",
+          "/usr/share/uq/settings/pages/romforge/GamesSection.qml": "../../uq/pages/romforge/GamesSection.qml",
+          "/usr/share/uq/settings/pages/romforge/LibrarySection.qml": "../../uq/pages/romforge/LibrarySection.qml",
+          "/usr/share/uq/settings/pages/romforge/ListsSection.qml": "../../uq/pages/romforge/ListsSection.qml",
+          "/usr/share/uq/settings/pages/romforge/Page.qml": "../../uq/pages/romforge/Page.qml",
+          "/usr/share/uq/settings/pages/romforge/RecentSection.qml": "../../uq/pages/romforge/RecentSection.qml",
+          "/usr/share/uq/settings/pages/romforge/logic.js": "../../uq/pages/romforge/logic.js",
+          "/usr/share/uq/settings/pages/romforge/page.toml": "../../uq/pages/romforge/page.toml",
           "/usr/share/licenses/romforge/LICENSE": "../../LICENSE"
         },
         "depends": [

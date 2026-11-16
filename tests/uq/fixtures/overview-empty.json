@@ -1,0 +1,22 @@
+{
+  "bios": [],
+  "home": null,
+  "library": null,
+  "lists": {
+    "dats": 0,
+    "missing": []
+  },
+  "platforms": [],
+  "recent": [],
+  "schema_version": 1,
+  "source": null,
+  "totals": {
+    "bios_files": 0,
+    "files": 0,
+    "games": 0,
+    "incomplete": 0,
+    "size": 0,
+    "unidentified": 0,
+    "verified": 0
+  }
+}

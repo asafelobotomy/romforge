@@ -33,6 +33,7 @@ pub mod music;
 pub mod names;
 pub mod obtain;
 pub mod organize;
+pub mod overview;
 pub mod parallel;
 pub mod patch;
 pub mod patcher;
