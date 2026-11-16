@@ -310,7 +310,7 @@ pub enum Command {
         limit: usize,
         /// Skip this many games
         offset: usize,
-        /// Words the title must contain
+        /// Words the title must contain (`*`: any title)
         search: Vec<String>,
     },
     /// What the library holds: games and platforms, recent additions, BIOS

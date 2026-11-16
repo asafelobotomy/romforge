@@ -64,7 +64,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             let q = GamesQuery {
                 platform: (!platform.eq_ignore_ascii_case("all")).then_some(platform),
                 status,
-                search: (!search.is_empty()).then(|| search.join(" ")),
+                search: Some(search.join(" ")).filter(|w| !w.trim().is_empty() && w != "*"),
                 sort: by,
                 descending,
                 limit,
