@@ -40,8 +40,9 @@ pub struct Save {
     pub matched_by: Option<MatchedBy>,
 }
 
-/// Folders of a system's saves that are copies, not saves.
-const NOT_SAVES: &str = "backup";
+/// Folders of a system's saves that hold no in-game saves: the copies of
+/// saves that live elsewhere, and the save states (`super::states`).
+const NOT_SAVES: [&str; 2] = ["backup", super::states::STATES];
 
 /// The saves under `saves` (`Saves/`), by system then path.
 pub fn walk(saves: &Path) -> Vec<Save> {
@@ -90,7 +91,7 @@ fn files_in(dir: &Path, rel: &Path, system: &str, out: &mut Vec<Save>) {
         let below = rel.join(&name);
         let Ok(meta) = e.metadata() else { continue };
         if meta.is_dir() {
-            if rel.as_os_str().is_empty() && name == NOT_SAVES {
+            if rel.as_os_str().is_empty() && NOT_SAVES.iter().any(|n| name == *n) {
                 continue;
             }
             files_in(&e.path(), &below, system, out);
@@ -114,7 +115,7 @@ fn files_in(dir: &Path, rel: &Path, system: &str, out: &mut Vec<Save>) {
 }
 
 /// A file being written (`.part`, or romforge's `.<name>.romforge-part`).
-fn unfinished(name: &str) -> bool {
+pub(super) fn unfinished(name: &str) -> bool {
     name.ends_with(".part") || name.ends_with(".romforge-part")
 }
 
@@ -168,7 +169,7 @@ pub fn match_all(saves: &mut [Save], known: &Known) {
             s.matched_by = Some(MatchedBy::Serial);
             continue;
         }
-        let stem = s.file.file_stem().map(|n| n.to_string_lossy().into_owned());
+        let stem = content_stem(&s.file);
         let by_name = stem
             .and_then(|st| known.stems.get(&(s.system.clone(), st)))
             .and_then(one);
@@ -177,6 +178,17 @@ pub fn match_all(saves: &mut [Save], known: &Known) {
             s.matched_by = Some(MatchedBy::FileName);
         }
     }
+}
+
+/// The name of the content a save or state file is named after: its file
+/// name up to `.state` (RetroArch's `<content>.state1`, `.state.auto`),
+/// else without its extension (`<content>.srm`, `.ss1`).
+pub fn content_stem(file: &Path) -> Option<String> {
+    let name = file.file_name()?.to_string_lossy();
+    if let Some(i) = name.find(".state") {
+        return Some(name[..i].to_owned());
+    }
+    file.file_stem().map(|n| n.to_string_lossy().into_owned())
 }
 
 /// The only title, or none when there are several.

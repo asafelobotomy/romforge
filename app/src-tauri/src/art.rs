@@ -17,6 +17,9 @@ impl ArtRoots {
     pub fn of(lib: &Library) -> Vec<PathBuf> {
         let mut roots = vec![default_cache_dir()];
         roots.extend(lib.home().map(Home::media));
+        // Save states' screenshots, on the Saves page.
+        roots.extend(lib.home().map(Home::saves));
+        roots.extend(lib.home().map(Home::states));
         // Made first, so each is canonical (`/home` may be a link to
         // `/var/home`, and served paths are compared canonical).
         roots

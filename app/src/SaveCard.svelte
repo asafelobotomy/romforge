@@ -1,67 +1,52 @@
 <script>
-  import { size, thumbSrc } from "./lib.js";
+  import { thumbSrc } from "./lib.js";
   import { ago } from "./labels.js";
 
-  // One save on the Saves page: its game's box art (in the shape of its
-  // box) and what is known about the save. A save matched to a game opens
-  // it in the library; one not matched shows its file type instead.
-  let { save: s, openGame } = $props();
+  // One game on the Saves page: its box art (in the shape of its box) and
+  // how many saves and save states it has. Picking it opens the inspector
+  // beside the cards. A game nothing matched shows its first file's type.
+  let { card: c, picked = false, pick } = $props();
 
-  const COVER_H = 144;
-  const how = { serial: "matched by serial", file_name: "matched by file name" };
+  const COVER_H = 120;
   let broken = $state(false);
-  const src = $derived(s.cover && !broken ? thumbSrc(s.cover, COVER_H) : null);
-  const width = $derived(Math.round((COVER_H * (s.box_aspect || 72)) / 100));
-  const name = $derived(String(s.file).split("/").pop());
-  const folder = $derived(String(s.file).split("/").slice(0, -1).join("/"));
-  const kind = $derived(name.includes(".") ? name.split(".").pop().toUpperCase() : "SAVE");
+  const src = $derived(c.cover && !broken ? thumbSrc(c.cover, COVER_H) : null);
+  const width = $derived(Math.round((COVER_H * (c.box_aspect || 72)) / 100));
+  const first = $derived(String((c.saves[0] ?? c.states[0])?.file ?? ""));
+  const kind = $derived(first.includes(".") ? first.split(".").pop().toUpperCase().slice(0, 5) : "SAVE");
+  const n = (k, one, many) => (k === 1 ? `1 ${one}` : `${k} ${many}`);
 </script>
 
-<article class="card" class:linked={!!s.row}>
-  <svelte:element
-    this={s.row ? "button" : "div"}
-    class="cover"
-    style="width: {width}px; height: {COVER_H}px"
-    onclick={s.row ? () => openGame(s.row) : undefined}
-    title={s.row ? `Show ${s.game} in the library` : undefined}
-    role={s.row ? undefined : "img"}
-    aria-label={s.row ? undefined : `${kind} save`}
-  >
+<button class="card" class:picked onclick={pick} aria-pressed={picked} title={c.game ? c.game : `${c.name} (not matched to a game)`}>
+  <span class="cover" style="width: {width}px; height: {COVER_H}px">
     {#if src}
-      <img {src} alt="Box art of {s.game}" onerror={() => (broken = true)} />
+      <img {src} alt="" onerror={() => (broken = true)} />
     {:else}
       <span class="kind">{kind}</span>
     {/if}
-  </svelte:element>
-  <div class="about">
-    {#if s.row}
-      <button class="game linkish" onclick={() => openGame(s.row)} title="Show it in the library">{s.game}</button>
-    {:else if s.game}
-      <span class="game">{s.game}</span>
-    {:else}
-      <span class="game none" title={s.serial ? `Holds ${s.serial}, which names no single game here` : ""}>Not matched</span>
-    {/if}
-    <span class="file" title={s.path}><bdi>{name}</bdi>{#if folder}<span class="hint">{` in ${folder}/`}</span>{/if}</span>
-    <span class="meta">
-      {size(s.size)}{#if s.modified}{" · "}<span title={new Date(s.modified * 1000).toLocaleString()}>{ago(s.modified)}</span>{/if}
+  </span>
+  <span class="about">
+    <span class="game" class:none={!c.game}>{c.name}</span>
+    {#if !c.game}<span class="hint">Not matched</span>{/if}
+    <span class="counts">
+      {#if c.saves.length}<span class="pill">{n(c.saves.length, "save", "saves")}</span>{/if}
+      {#if c.states.length}<span class="pill state">{n(c.states.length, "state", "states")}</span>{/if}
     </span>
-    {#if s.matched_by}<span class="hint how">{how[s.matched_by]}</span>{/if}
-  </div>
-</article>
+    {#if c.latest}<span class="meta" title={new Date(c.latest * 1000).toLocaleString()}>{ago(c.latest)}</span>{/if}
+  </span>
+</button>
 
 <style>
-  .card { display: flex; gap: 0.7rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel, transparent); min-width: 0; }
-  .cover { flex: none; padding: 0; border: none; border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: var(--accent-bg, #8883); }
-  button.cover { cursor: pointer; }
-  button.cover:hover { outline: 2px solid var(--accent); }
+  .card { display: flex; gap: 0.7rem; padding: 0.55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel, transparent); min-width: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .card:hover { border-color: var(--accent); }
+  .card.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .cover { flex: none; border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: var(--accent-bg, #8883); }
   .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .kind { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); }
-  .about { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; font-size: 0.82rem; }
+  .kind { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); }
+  .about { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; font-size: 0.82rem; }
   .game { font-weight: 700; font-size: 0.92rem; line-height: 1.2; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .game.none { font-weight: 400; color: var(--muted); }
-  .file { overflow-wrap: anywhere; }
+  .game.none { font-weight: 600; }
+  .counts { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .pill { font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 0.7rem; background: var(--accent-bg, #8883); }
+  .pill.state { outline: 1px solid var(--line); background: none; }
   .meta { color: var(--muted); }
-  .how { font-size: 0.75rem; }
-  .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; font: inherit; font-weight: 700; }
-  .linkish:hover { text-decoration: underline; }
 </style>

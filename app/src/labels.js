@@ -120,8 +120,10 @@ export function ago(secs) {
   return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round(d / len), unit);
 }
 
-// A game's saves for its Details: "2 saves, last 3 days ago".
+// A game's saves for its Details: "2 saves, 1 state, last 3 days ago".
 export function savesLine(s) {
-  const n = s.count === 1 ? "1 save" : `${s.count} saves`;
-  return s.latest ? `${n}, last ${ago(s.latest)}` : n;
+  const n = (k, one) => (k === 1 ? `1 ${one}` : `${k} ${one}s`);
+  const parts = [s.count && n(s.count, "save"), s.states && n(s.states, "state")].filter(Boolean);
+  const what = parts.join(", ") || "0 saves";
+  return s.latest ? `${what}, last ${ago(s.latest)}` : what;
 }

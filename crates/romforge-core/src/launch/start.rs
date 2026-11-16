@@ -184,6 +184,7 @@ pub(super) fn start(
                 }
                 if let (Some(dir), Some(p), Some(h)) = (&config, &mut prepare, &env.home) {
                     owned::saves::point(e.settings_name(), h, system, &rom, dir, env.user.as_ref(), p);
+                    owned::saves::states::point(e.settings_name(), h, system, &rom, dir, p);
                 }
                 // Its BIOS folder's flags only when the folder holds a file:
                 // they override the emulator's own paths (a MAME rompath

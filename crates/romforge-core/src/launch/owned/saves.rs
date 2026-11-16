@@ -43,6 +43,7 @@ use crate::systems::System;
 use crate::systems::key;
 
 pub(crate) mod old;
+pub(crate) mod states;
 
 /// One key romforge sets for the saves.
 struct Key {

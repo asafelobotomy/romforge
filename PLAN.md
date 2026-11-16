@@ -988,7 +988,7 @@ RomForge/
   Emulators/config/     romforge-owned configs, one folder per emulator
   Bios/                 RetroArch's system layout
   Saves/<System>/       SRAM / memory cards
-  States/<System>/      save states
+  Saves/<System>/states/ save states (States/<System>/ until 0.18)
   Screenshots/<System>/
 ```
 
@@ -2963,6 +2963,23 @@ one row of that system has the title. A game's Details has the line
 tab. **Not yet:** the cache by path, size and mtime (the page and the
 Details line walk `Saves/` each time; to add when a big `Saves/` makes
 that slow).
+
+**Built 2026-11-16: save states with the saves.** States moved from
+`States/<system>/` to `Saves/<system>/states/` (`saves::states`), so one
+folder holds a system's save data. Emulators keep the old folder while it
+holds a state; "Move into Saves…" moves them (`saves::states::merge`,
+journaled in `save_gathers` as `States`, undo puts them back). Every
+standalone emulator with a state-folder key is pointed there
+(`launch/owned/saves/states.rs`, each key read in its source); Dolphin has
+none and keeps `StateSaves/`. The Saves page became one card per game
+(saves and states together) with an inspector beside the cards, a Saves
+and a States tab, a state's slot and its screenshot (RetroArch's
+`<state>.png`, PPSSPP's `.jpg`).
+**Not yet:** screenshots embedded in a state (DuckStation, PCSX2, mGBA,
+Flycast) aren't read out; Flycast's `<game>_<n>.state` slots past 0 and
+MAME's `<driver>/` folders aren't matched to games; Dolphin's states
+stay outside `Saves/`. Mednafen's key was read in the copy OpenEmu
+embeds, not in 1.32.1 itself.
 
 A core `saves` module walks `Saves/` (and the data trees above),
 read-only, and lists each save: system, emulator, file, size, modified,

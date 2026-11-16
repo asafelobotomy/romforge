@@ -87,7 +87,7 @@ pub(super) fn owned(
             let bios = home.bios().join("RetroArch");
             let (saves, states, shots) = (
                 home.saves().join(system.key),
-                home.states().join(system.key),
+                crate::saves::states::dir(home, system.key),
                 home.screenshots().join(system.key),
             );
             let base = [

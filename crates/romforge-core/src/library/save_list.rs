@@ -8,6 +8,7 @@ use rusqlite::Connection;
 
 use crate::dat::serial_key;
 use crate::saves::index::{self, Known, Save};
+use crate::saves::states::{self, State};
 use crate::{Error, Library, systems};
 
 impl Library {
@@ -21,6 +22,33 @@ impl Library {
         let known = known(&self.conn, &saves)?;
         index::match_all(&mut saves, &known);
         Ok(saves)
+    }
+
+    /// Every save state (`Saves/<system>/states/` and the old `States/`),
+    /// matched to games like the saves. Read-only.
+    pub fn list_states(&self) -> Result<Vec<State>, Error> {
+        let Some(home) = &self.home else {
+            return Ok(Vec::new());
+        };
+        self.matched_states(states::walk(home))
+    }
+
+    /// [`Library::list_states`] for one system only.
+    pub(super) fn list_states_of(&self, system: &str) -> Result<Vec<State>, Error> {
+        let Some(home) = &self.home else {
+            return Ok(Vec::new());
+        };
+        self.matched_states(states::walk_system(home, system))
+    }
+
+    fn matched_states(&self, mut found: Vec<State>) -> Result<Vec<State>, Error> {
+        let mut saves: Vec<Save> = found.iter().map(|s| s.save.clone()).collect();
+        let known = known(&self.conn, &saves)?;
+        index::match_all(&mut saves, &known);
+        for (st, s) in found.iter_mut().zip(saves) {
+            st.save = s;
+        }
+        Ok(found)
     }
 
     /// [`Library::list_saves`] for one system's folder only.

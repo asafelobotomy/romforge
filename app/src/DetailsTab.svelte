@@ -14,8 +14,8 @@
 
   let f = $derived(detail.fields ?? {});
 
-  // Its saves in Saves/ (the core matches them); the line opens the Saves
-  // page on its system's tab.
+  // Its saves and save states in Saves/ (the core matches them); the line
+  // opens the Saves page on its card.
   let saved = $state(null);
   $effect(() => {
     const id = row.id;
@@ -65,7 +65,7 @@
       {#if f.releases?.includes(";")}<div class="fact"><dt>Releases</dt><dd class="releases">{#each f.releases.split("; ") as r}<span>{r}</span>{/each}</dd></div>{/if}
       {#if f.original_title}<div class="fact"><dt>Original title</dt><dd>{f.original_title}</dd></div>{/if}
       {#if detail.play}<div class="fact"><dt>Played</dt><dd>{played(detail.play)}</dd></div>{/if}
-      {#if saved?.count}<div class="fact"><dt>Saves</dt><dd><button class="linkish" onclick={() => (ui.savesSystem = row.system)} title="Show them on the Saves page">{savesLine(saved)}</button></dd></div>{/if}
+      {#if saved?.count || saved?.states}<div class="fact"><dt>Saves</dt><dd><button class="linkish" onclick={() => (ui.savesSystem = { system: row.system, game: row.title })} title="Show them on the Saves page">{savesLine(saved)}</button></dd></div>{/if}
       {#if f.genre}
         {@const gs = genres(f.genre)}
         <div class="fact"><dt>Genre</dt><dd class="icons">{#each gs as g}<span class="genre" title={g.name} aria-label={g.name}>{@html g.svg}</span>{/each}{#if gs.length === 1}<span class="gname">{gs[0].name}</span>{/if}</dd></div>

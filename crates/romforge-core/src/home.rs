@@ -63,7 +63,6 @@ impl Home {
             home.emulators(),
             home.bios(),
             home.saves(),
-            home.states(),
             home.screenshots(),
             home.staging(),
             home.trash(),
@@ -138,6 +137,9 @@ impl Home {
     pub fn saves(&self) -> PathBuf {
         self.root.join(SAVES_DIR)
     }
+    /// Where save states went until romforge 0.18: they now live in
+    /// `Saves/<system>/states/` (`saves::states`), and this folder is only
+    /// read until its states are moved there.
     pub fn states(&self) -> PathBuf {
         self.root.join(STATES_DIR)
     }

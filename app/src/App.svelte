@@ -376,7 +376,7 @@
       <DetailPane {row} {detail} {lib} {busy} {listSort} {showEmpty} {regionFlags} open={pick} {forget} {applyPatchRow} {patcher} {artPicker} bind:note bind:error />
     {/if}
     <DatsView bind:this={dats} active={view === "dats"} {busy} bind:note bind:error {call} {run} {load} />
-    <SavesView bind:this={saves} active={view === "saves"} openGame={(id) => ((view = "library"), (platform = "*"), pick(id))} />
+    <SavesView bind:this={saves} active={view === "saves"} bind:note bind:error openGame={(id) => ((view = "library"), (platform = "*"), pick(id))} />
     <BiosView bind:this={bios} active={view === "bios"} {busy} bind:note bind:error {run} bind:needs={biosNeeds} />
     <OrganizeView active={view === "organize"} {busy} bind:note bind:confirmUndo {homeRoot} openImport={() => cleanup.openCleanup()} {run} {load} />
   </div>

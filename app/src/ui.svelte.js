@@ -16,7 +16,8 @@ export const ui = $state({
   seriesSort: remembered("series", { key: "order", dir: 1 }),
   // BIOS files to plan an import of on the BIOS page ("Import to BIOS").
   biosPaths: null,
-  // A system whose tab to open on the Saves page (a game's Details).
+  // The Saves page's tab and card to open ({ system, game }: a game's
+  // Details).
   savesSystem: null,
   // A game is running (video snaps pause), and when the last one ended
   // (a pad press in the moment after is the game's, not romforge's).
