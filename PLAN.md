@@ -87,8 +87,11 @@ is listed under each milestone as **Open**.
    their sheet. `--dry-run` prints the command. Milestone 14 added DOSBox
    Staging, DOSBox-X, ScummVM and MAME, and the first runs with real
    programs.
-   **Open:** the console emulators above are still tried with stand-in
-   scripts only.
+   Real runs on 2026-11-17 (see "Real emulator runs" below): DuckStation,
+   PCSX2, PPSSPP, mGBA, melonDS, Azahar, Dolphin and RetroArch installed
+   by romforge from Flathub; eight of them started a real game.
+   **Open:** Flycast, xemu, RPCS3, Cemu and Mednafen are still tried with
+   stand-in scripts only; PS1 and PS2 past the BIOS screen.
 
 ## UI and data milestones (decided 2026-10-17)
 
@@ -818,8 +821,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
     Every tag from v0.1.0 to v0.13.0 was built and released by the
-    workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
-    (the owner's account); Debian's and Fedora's package names for the
+    workflow (six files each). Both AUR packages (`romforge`,
+    `romforge-bin`) are pushed with every release since 0.15.
+    **Open:** Debian's and Fedora's package names for the
     recommended packages are unchecked (Fedora's libav plugin may be
     `gstreamer1-plugin-libav` or RPM Fusion's `gstreamer1-libav`).
 
@@ -1557,9 +1561,10 @@ standalone emulator's settings, and milestone 22 (Switch).
 
 ### Open
 
-- Check every flag and config dir above on the real emulators (RetroArch,
-  ScummVM, MAME and the DOSBox Flatpaks are installed on the dev machine
-  now; the console emulators are not).
+- Check every flag and config dir above on the real emulators: done
+  2026-11-17 for RetroArch, mGBA, melonDS, DuckStation, PCSX2, Azahar and
+  Dolphin ("Real emulator runs" below); Flycast, xemu, RPCS3, Cemu and
+  Mednafen still to run.
 - Whether Flatpak emulators can take a portable config dir, or only
   `~/.var/app`.
 - A licence for `retro-rs`, or write the small frontend layer ourselves
@@ -2746,8 +2751,11 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   Remove, Stop mid-Enrich, Refresh starting on its own.
 - **Open:** progress inside one CHD (chd 0.4 can also compress hunks on
   threads); the DAT download's parallel path has no offline test (its
-  URLs are fixed); quick edits (Forget, choosing art, Settings' folder
-  move) still wait for the job holding the library to finish.
+  URLs are fixed). Quick edits (Forget, choosing art, favourites,
+  settings) run on their own connection (`db.rs` `edit()`), so a long job
+  no longer holds them up; beside a scan, refresh or DAT import, which
+  hold SQLite's write lock, they queue behind it (`busy:`). Moving the
+  RomForge folder waits for every job, as it must.
 
 ## Refresh updates its lists (2026-10-21, built)
 
@@ -2829,7 +2837,7 @@ sources (licences and keys checked against house rule 10).
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
 
-## Saves (milestone 27; researched 2026-10-25; stage 1 partly built, stage 2 built 2026-11-06 and 2026-11-16)
+## Saves (milestone 27; researched 2026-10-25; stages 1 and 2 built 2026-10-25 to 2026-11-16 (xemu waits, below), stages 3 and 4 not built)
 
 A **Saves** page in the sidebar, above DATs, with one tab per system
 that has saves. Each tab shows that system's in-game saves (SRAM, memory
@@ -3110,9 +3118,6 @@ Built (the detail is in GUIDE.md, "On the uQ desktop"):
 
 Still open:
 
-- **The AUR package's version.** v0.15.0 has none of this: set `pkgver`
-  and the checksum when the next release is tagged (TODO in the PKGBUILD),
-  then push it to the AUR.
 - **`uqctl integrations check uq/` in CI**, pinned to a uQ release, once
   uQ tags one with the Phase 4 checks (the spec's 2.7).
 - **The AppImage** has no provider: a launcher provider needs an installed
@@ -3148,7 +3153,9 @@ on someone else:
 ## Audit follow-ups (2026-11-07)
 
 An audit of every surface fixed its findings in five commits (adef0c2,
-b5da32c, 3544f6d, 9238434, 02ccb77) and this one. Left open, each a
+b5da32c, 3544f6d, 9238434, 02ccb77) and this one. Releases now wait for
+CI: since 2026-11-17 `main` requires the CI checks (core, msrv, app, uQ
+Settings page) before a change lands. Left open, each a
 choice rather than a fault:
 
 - **CLI and app.** Only the app has favourites, a game's own emulator,
@@ -3159,13 +3166,58 @@ choice rather than a fault:
 - **Scans** re-read every file's row and stored matches on each scan,
   even for one file (`identify/run.rs`); scoping that to the files
   touched is a change of behaviour, so it waits for a measured need.
-- **Short writes in the app** wait behind a long job's lock (`db.rs`
-  `with()`); moving them to `edit()` needs each checked on its own
-  connection first.
-- **Releases** don't wait for CI on the commit they build; branch
-  protection on `main` (requiring the CI checks) would cover it.
 - **Saves gather undo** says how many files went back, not how many
   stayed in `Saves/` because their old place was taken.
+
+## Real emulator runs (2026-11-17)
+
+A scratch RomForge on a copy of the owner's collection (PS1, PS2, PSP, GBA,
+DS, 3DS, N64, GameCube, SNES, Genesis), the emulators installed with
+`emulator install --apply` (all eight from Flathub; Dolphin from its own
+repository) and the cores with `emulator get-core`. Each game started with
+`romforge-cli launch --wait` inside a headless gamescope (`gamescope
+--backend headless`, `WAYLAND_DISPLAY` unset so Qt emulators draw there),
+screenshotted with `gamescopectl screenshot`, then stopped with `flatpak
+kill`. Every run set its keys, ended cleanly and recorded its play time.
+
+| Emulator | Game | Seen at 30 s |
+|---|---|---|
+| mGBA | Wario Land 4 | intro; `.sav` in `Saves/Game Boy Advance/` |
+| melonDS | Super Mario 64 DS | "Touch to start"; top screen black (to check on a display) |
+| RetroArch bsnes, Snes9x | Kirby Super Star, Donkey Kong Country | in game, intro |
+| RetroArch Genesis Plus GX | Sunset Riders | intro |
+| RetroArch Mupen64Plus-Next | Super Mario 64 | title; `.srm` in `Saves/N64/` |
+| Azahar | Super Mario 3D Land | title |
+| Dolphin | Luigi's Mansion | title |
+| PCSX2 | Ratchet & Clank | "requires a BIOS" (none supplied) |
+| DuckStation | Vagrant Story | first start: its setup wizard; second: "no BIOS" |
+
+PCSX2, Azahar and Dolphin kept romforge's keys from their first start
+(wizard off, `Bios/`, `Saves/`). Found, to fix:
+
+- **An interrupted import never finishes.** Run again, it skips each game
+  already in `Games/` ("already exists") and leaves its original in the
+  Source folder (32 here), so launch keeps starting the Source copy; and
+  each run's `.romforge-staging/batch-N` stays (17 GB). It should treat an
+  identical file in `Games/` as imported (checked against the DAT) and
+  clear or reuse stale batches.
+- **DuckStation resets romforge's settings on its first start**: the
+  10-key `settings.ini` written before it is replaced by its defaults
+  (wizard shown, `memcards/`, `bios/`); from the second start the keys
+  hold. Write its full defaults first, or whatever it checks.
+- **PSP games can't start after import**: import keeps PSP discs out of
+  CHD ("PSP emulators don't read CHD"), so they stay as 7z, which PPSSPP
+  can't open. PPSSPP reads CHD since 1.15: check, then let import write it.
+- **No BIOS, no warning**: PS1 and PS2 start into the emulator's "no BIOS"
+  dialog, and the time is recorded as play. Launch should say so first
+  (the BIOS page knows).
+- **Launch by name** offers DAT titles you don't have ("Castlevania -
+  Symphony" also lists Asia and Europe).
+- **`emulator get-core`** prints an empty licence before the list is
+  fetched, and its errors start "launch:".
+- **`emulator install`'s dry run** doesn't name the Flatpak or its remote.
+- **No progress inside one CHD**: a PS2 import prints nothing for an hour
+  in a debug build (see "Jobs, progress and parallel work").
 
 ## Later ideas (parked, do not build yet)
 
