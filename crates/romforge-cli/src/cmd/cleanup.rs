@@ -14,6 +14,13 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             if lib.home().is_none() {
                 bail!("no RomForge folder yet: `romforge-cli home create <parent>` first");
             }
+            let r = lib.recover_imports()?;
+            if r.staging + r.parts + r.scanned > 0 {
+                println!(
+                    "tidied after an import cut short: {} staging folder(s) and {} half-written game(s) removed, {} game(s) it wrote scanned",
+                    r.staging, r.parts, r.scanned
+                );
+            }
             let scanned = if let Some(d) = &dir {
                 lib.scan(d, Scope::All)?;
                 true

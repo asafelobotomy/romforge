@@ -23,6 +23,9 @@ impl Library {
         progress: impl FnMut(ScanProgress),
     ) -> Result<FolderScan, Error> {
         let root = root.as_ref();
+        // Scan folder comes before an import: what one cut short left
+        // is tidied first, so the import's plan is right.
+        self.recover_imports()?;
         let mut became_source = None;
         let mut s = settings::load(&self.conn)?;
         if s.source_dir.is_none() {

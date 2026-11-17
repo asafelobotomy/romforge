@@ -501,6 +501,14 @@ until you undo; another copy outside of a game already in `Games/` goes
 there too. Refresh also scans `Games/`. An import is a cleanup into
 `Games/`, so everything below applies to it too.
 
+An import cut short (the app closed, the process killed) is finished by the
+next one: Scan folder and `import` first remove its `.romforge-staging/batch-N`
+folder and the `.romforge-part` of the game it was writing, then scan the
+games it did put in `Games/`, so the plan finds them already there and
+takes their originals as copies (by size and SHA1) instead of skipping them
+with "already exists" (`Library::recover_imports`, `cleanup/recover.rs`). A
+running batch holds `batch-N/.lock`, so nothing it is using is touched.
+
 Every version of a game is kept: regions, revisions, translations, hacks.
 The library lists one row per game (grouped by the clone lists, the DAT's
 parent game, else the title without tags; translations and hacks with

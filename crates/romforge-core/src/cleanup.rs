@@ -198,6 +198,7 @@ mod items;
 mod nfo;
 mod parts;
 mod plan;
+mod recover;
 #[cfg(test)]
 mod tests;
 mod trash;
@@ -213,6 +214,8 @@ pub use parts::details_md;
 pub(crate) use parts::{named_parts, open_part, verified_parts};
 pub(crate) use plan::TITLE_FOLDER_STAYS;
 use plan::plan_as;
+pub use recover::Recovered;
+pub(crate) use recover::{BatchLock, clear as clear_leftovers, unscanned};
 pub use trash::{TrashBatch, TrashSummary, empty_trash, trash_contents};
 pub use undo::{Batch, CleanupUndone, batches, undo};
 pub(crate) use write::{place, sha1_of, write_extras, zip_options};

@@ -3195,12 +3195,16 @@ kill`. Every run set its keys, ended cleanly and recorded its play time.
 PCSX2, Azahar and Dolphin kept romforge's keys from their first start
 (wizard off, `Bios/`, `Saves/`). Found, to fix:
 
-- **An interrupted import never finishes.** Run again, it skips each game
-  already in `Games/` ("already exists") and leaves its original in the
-  Source folder (32 here), so launch keeps starting the Source copy; and
-  each run's `.romforge-staging/batch-N` stays (17 GB). It should treat an
-  identical file in `Games/` as imported (checked against the DAT) and
-  clear or reuse stale batches.
+- *(Fixed 2026-11-17.)* **An interrupted import never finished.** Run
+  again, it skipped each game already in `Games/` ("already exists": the
+  refresh after the batch never ran, so the library didn't know them) and
+  left its original in the Source folder (32 here), so launch kept
+  starting the Source copy; and each run's `.romforge-staging/batch-N`
+  stayed (17 GB). Now Scan folder and `import` first clear what no running
+  batch holds (`batch-N/.lock`) and scan the games earlier batches wrote;
+  the plan then takes their originals as copies. Tried with a `kill -9`
+  mid-import on a scratch library: the next import removed the staging
+  folder and five half-written games, and finished.
 - **DuckStation resets romforge's settings on its first start**: the
   10-key `settings.ini` written before it is replaced by its defaults
   (wizard shown, `memcards/`, `bios/`); from the second start the keys
