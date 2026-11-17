@@ -87,8 +87,11 @@ is listed under each milestone as **Open**.
    their sheet. `--dry-run` prints the command. Milestone 14 added DOSBox
    Staging, DOSBox-X, ScummVM and MAME, and the first runs with real
    programs.
-   **Open:** the console emulators above are still tried with stand-in
-   scripts only.
+   Real runs on 2026-11-17 (see "Real emulator runs" below): DuckStation,
+   PCSX2, PPSSPP, mGBA, melonDS, Azahar, Dolphin and RetroArch installed
+   by romforge from Flathub; eight of them started a real game.
+   **Open:** Flycast, xemu, RPCS3, Cemu and Mednafen are still tried with
+   stand-in scripts only; PS1 and PS2 past the BIOS screen.
 
 ## UI and data milestones (decided 2026-10-17)
 
@@ -1558,9 +1561,10 @@ standalone emulator's settings, and milestone 22 (Switch).
 
 ### Open
 
-- Check every flag and config dir above on the real emulators (RetroArch,
-  ScummVM, MAME and the DOSBox Flatpaks are installed on the dev machine
-  now; the console emulators are not).
+- Check every flag and config dir above on the real emulators: done
+  2026-11-17 for RetroArch, mGBA, melonDS, DuckStation, PCSX2, Azahar and
+  Dolphin ("Real emulator runs" below); Flycast, xemu, RPCS3, Cemu and
+  Mednafen still to run.
 - Whether Flatpak emulators can take a portable config dir, or only
   `~/.var/app`.
 - A licence for `retro-rs`, or write the small frontend layer ourselves
@@ -3164,6 +3168,56 @@ choice rather than a fault:
   touched is a change of behaviour, so it waits for a measured need.
 - **Saves gather undo** says how many files went back, not how many
   stayed in `Saves/` because their old place was taken.
+
+## Real emulator runs (2026-11-17)
+
+A scratch RomForge on a copy of the owner's collection (PS1, PS2, PSP, GBA,
+DS, 3DS, N64, GameCube, SNES, Genesis), the emulators installed with
+`emulator install --apply` (all eight from Flathub; Dolphin from its own
+repository) and the cores with `emulator get-core`. Each game started with
+`romforge-cli launch --wait` inside a headless gamescope (`gamescope
+--backend headless`, `WAYLAND_DISPLAY` unset so Qt emulators draw there),
+screenshotted with `gamescopectl screenshot`, then stopped with `flatpak
+kill`. Every run set its keys, ended cleanly and recorded its play time.
+
+| Emulator | Game | Seen at 30 s |
+|---|---|---|
+| mGBA | Wario Land 4 | intro; `.sav` in `Saves/Game Boy Advance/` |
+| melonDS | Super Mario 64 DS | "Touch to start"; top screen black (to check on a display) |
+| RetroArch bsnes, Snes9x | Kirby Super Star, Donkey Kong Country | in game, intro |
+| RetroArch Genesis Plus GX | Sunset Riders | intro |
+| RetroArch Mupen64Plus-Next | Super Mario 64 | title; `.srm` in `Saves/N64/` |
+| Azahar | Super Mario 3D Land | title |
+| Dolphin | Luigi's Mansion | title |
+| PCSX2 | Ratchet & Clank | "requires a BIOS" (none supplied) |
+| DuckStation | Vagrant Story | first start: its setup wizard; second: "no BIOS" |
+
+PCSX2, Azahar and Dolphin kept romforge's keys from their first start
+(wizard off, `Bios/`, `Saves/`). Found, to fix:
+
+- **An interrupted import never finishes.** Run again, it skips each game
+  already in `Games/` ("already exists") and leaves its original in the
+  Source folder (32 here), so launch keeps starting the Source copy; and
+  each run's `.romforge-staging/batch-N` stays (17 GB). It should treat an
+  identical file in `Games/` as imported (checked against the DAT) and
+  clear or reuse stale batches.
+- **DuckStation resets romforge's settings on its first start**: the
+  10-key `settings.ini` written before it is replaced by its defaults
+  (wizard shown, `memcards/`, `bios/`); from the second start the keys
+  hold. Write its full defaults first, or whatever it checks.
+- **PSP games can't start after import**: import keeps PSP discs out of
+  CHD ("PSP emulators don't read CHD"), so they stay as 7z, which PPSSPP
+  can't open. PPSSPP reads CHD since 1.15: check, then let import write it.
+- **No BIOS, no warning**: PS1 and PS2 start into the emulator's "no BIOS"
+  dialog, and the time is recorded as play. Launch should say so first
+  (the BIOS page knows).
+- **Launch by name** offers DAT titles you don't have ("Castlevania -
+  Symphony" also lists Asia and Europe).
+- **`emulator get-core`** prints an empty licence before the list is
+  fetched, and its errors start "launch:".
+- **`emulator install`'s dry run** doesn't name the Flatpak or its remote.
+- **No progress inside one CHD**: a PS2 import prints nothing for an hour
+  in a debug build (see "Jobs, progress and parallel work").
 
 ## Later ideas (parked, do not build yet)
 
