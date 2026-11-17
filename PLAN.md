@@ -818,8 +818,9 @@ RetroAchievements, Wikipedia, IGDB, HowLongToBeat).
     emulators as optdepends); `makepkg` builds it and `namcap` is clean.
     The packaged app and the AppImage started on a scratch library.
     Every tag from v0.1.0 to v0.13.0 was built and released by the
-    workflow (six files each). **Open:** pushing `romforge-bin` to the AUR
-    (the owner's account); Debian's and Fedora's package names for the
+    workflow (six files each). Both AUR packages (`romforge`,
+    `romforge-bin`) are pushed with every release since 0.15.
+    **Open:** Debian's and Fedora's package names for the
     recommended packages are unchecked (Fedora's libav plugin may be
     `gstreamer1-plugin-libav` or RPM Fusion's `gstreamer1-libav`).
 
@@ -2746,8 +2747,11 @@ app `manual.rs`, `ManualTab`, `ManualReader`, `PageStrip`:
   Remove, Stop mid-Enrich, Refresh starting on its own.
 - **Open:** progress inside one CHD (chd 0.4 can also compress hunks on
   threads); the DAT download's parallel path has no offline test (its
-  URLs are fixed); quick edits (Forget, choosing art, Settings' folder
-  move) still wait for the job holding the library to finish.
+  URLs are fixed). Quick edits (Forget, choosing art, favourites,
+  settings) run on their own connection (`db.rs` `edit()`), so a long job
+  no longer holds them up; beside a scan, refresh or DAT import, which
+  hold SQLite's write lock, they queue behind it (`busy:`). Moving the
+  RomForge folder waits for every job, as it must.
 
 ## Refresh updates its lists (2026-10-21, built)
 
@@ -2829,7 +2833,7 @@ sources (licences and keys checked against house rule 10).
 - The Cover Project, GameFAQs (no API, bots blocked);
 - GiantBomb (API unclear since its 2025 sale).
 
-## Saves (milestone 27; researched 2026-10-25; stage 1 partly built, stage 2 built 2026-11-06 and 2026-11-16)
+## Saves (milestone 27; researched 2026-10-25; stages 1 and 2 built 2026-10-25 to 2026-11-16 (xemu waits, below), stages 3 and 4 not built)
 
 A **Saves** page in the sidebar, above DATs, with one tab per system
 that has saves. Each tab shows that system's in-game saves (SRAM, memory
@@ -3110,9 +3114,6 @@ Built (the detail is in GUIDE.md, "On the uQ desktop"):
 
 Still open:
 
-- **The AUR package's version.** v0.15.0 has none of this: set `pkgver`
-  and the checksum when the next release is tagged (TODO in the PKGBUILD),
-  then push it to the AUR.
 - **`uqctl integrations check uq/` in CI**, pinned to a uQ release, once
   uQ tags one with the Phase 4 checks (the spec's 2.7).
 - **The AppImage** has no provider: a launcher provider needs an installed
@@ -3148,7 +3149,9 @@ on someone else:
 ## Audit follow-ups (2026-11-07)
 
 An audit of every surface fixed its findings in five commits (adef0c2,
-b5da32c, 3544f6d, 9238434, 02ccb77) and this one. Left open, each a
+b5da32c, 3544f6d, 9238434, 02ccb77) and this one. Releases now wait for
+CI: since 2026-11-17 `main` requires the CI checks (core, msrv, app, uQ
+Settings page) before a change lands. Left open, each a
 choice rather than a fault:
 
 - **CLI and app.** Only the app has favourites, a game's own emulator,
@@ -3159,11 +3162,6 @@ choice rather than a fault:
 - **Scans** re-read every file's row and stored matches on each scan,
   even for one file (`identify/run.rs`); scoping that to the files
   touched is a change of behaviour, so it waits for a measured need.
-- **Short writes in the app** wait behind a long job's lock (`db.rs`
-  `with()`); moving them to `edit()` needs each checked on its own
-  connection first.
-- **Releases** don't wait for CI on the commit they build; branch
-  protection on `main` (requiring the CI checks) would cover it.
 - **Saves gather undo** says how many files went back, not how many
   stayed in `Saves/` because their old place was taken.
 
