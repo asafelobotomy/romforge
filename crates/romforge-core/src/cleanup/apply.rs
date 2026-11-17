@@ -61,6 +61,9 @@ pub fn apply(
     let staging_root = home
         .map_or_else(|| s.staging(), Home::staging)
         .join(format!("batch-{batch_id}"));
+    // Held until the batch ends: what an import cut short leaves behind is
+    // cleared only when no batch holds it (`recover`).
+    let lock = super::BatchLock::take(&staging_root)?;
     let mut ok: Vec<&Item> = Vec::new();
     let mut failed_paths: BTreeSet<PathBuf> = BTreeSet::new();
     let threads = crate::parallel::threads(s.threads);
@@ -163,6 +166,7 @@ pub fn apply(
         }
     }
     let _ = std::fs::remove_dir_all(&staging_root);
+    lock.release();
     let written: Vec<&Item> = ok.iter().copied().filter(|i| !i.existing).collect();
     match write_playlists(conn, batch_id, &written) {
         Ok(n) => report.playlists = n,
