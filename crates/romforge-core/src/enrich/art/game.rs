@@ -71,7 +71,7 @@ pub(super) struct Shared<'a> {
     /// Hosts and keyed sources that said "slow down": not asked again
     /// this run, by any worker.
     pub halted_hosts: &'a Mutex<HashSet<String>>,
-    pub halted: &'a Mutex<Vec<Provider>>,
+    pub halted: &'a Mutex<super::ask::Sources>,
 }
 
 #[allow(clippy::too_many_arguments)]

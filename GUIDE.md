@@ -193,7 +193,8 @@ For the games you have, in house rule 10's order (each source fills only
 what the ones before it left; `enrich::fields` keeps the order):
 
 1. [libretro-database](https://github.com/libretro/libretro-database), by
-   DAT name or CRC: genre, developer, publisher, franchise, release date,
+   DAT name, else by CRC32 with size, else CRC32 alone (never a CRC its
+   files give two games, nor ROMs that point to two: house rule 8): genre, developer, publisher, franchise, release date,
    players, ESRB, serial, origin, rumble and analog support, Edge and
    Famitsu scores; and [thumbnails.libretro.com](https://thumbnails.libretro.com):
    box art, title screen, snap and clear logo (another version's picture,
@@ -212,7 +213,10 @@ what the ones before it left; `enrich::fields` keeps the order):
    by). Both are free, without a key, and come
    before libretro's thumbnails.
 3. With keys, ScreenScraper (by the ROM's hashes), then SteamGridDB and
-   IGDB (by title).
+   IGDB (by title). Each answer has 90 seconds and 32 MB at most. A source
+   that rate-limits or refuses its key isn't asked again in the run; nor
+   is one down three times in a row (no connection, no answer in time, a
+   server error), and the error says so (`enrich::Sources`).
 4. The databases you downloaded: OpenVGDB, then LaunchBox.
 
 With Settings → "Download video snaps" (off by default; 2–30 MB each),
@@ -1008,7 +1012,11 @@ Wikipedia, IGDB and HowLongToBeat page. The overview comes from the
 summary of the game's Wikipedia article, the one Wikidata links (never a
 title search), in Settings' "Descriptions in" language when that Wikipedia
 has it, else English; Details credits it ("from Wikipedia (CC BY-SA
-4.0)", with a link to the article).
+4.0)", with a link to the article). The articles' intros are asked for 20
+at a time (the Action API's `prop=extracts`), following redirects. Stop
+works in every step of Enrich: the Wikidata queries, the descriptions, the
+pictures and the downloaded databases each stop at their next batch or
+game and keep what they saved.
 
 With keys in Settings, Enrich also fills what libretro lacks from
 ScreenScraper, then SteamGridDB, then IGDB, each asked once per game:

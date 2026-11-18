@@ -3267,6 +3267,21 @@ found about 65 items; they are fixed one area per PR, worst first.
   move` too); the app also while its own game is starting or running,
   and starts none until the move is done.
 
+- *(Fixed 2026-11-18.)* **Enrich that wouldn't stop or let go.** Stop
+  was seen only between systems' art: once Enrich reached Wikidata, the
+  descriptions, the pictures or the downloaded databases it ran to the end
+  while holding the library. Each now stops at its next batch or game. A
+  source that timed out or failed was asked again for every game (only a
+  rate limit or a refused key stopped it), with no deadline on
+  ScreenScraper's, IGDB's and SteamGridDB's answers; now each answer has
+  90 s and 32 MB, and three unreachable answers in a row leave the source
+  alone for the run. libretro's metadata took the first record of a CRC32
+  that several share (another game's fields, and its thumbnails by that
+  name); now a shared CRC names no game, and `crc:size` is tried first.
+  Wikipedia's descriptions came one request a second per game; now 20 per
+  request. A Wikidata "unknown value" for a series or the work an edition
+  is of broke its whole 40-game query on every run; it is skipped.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

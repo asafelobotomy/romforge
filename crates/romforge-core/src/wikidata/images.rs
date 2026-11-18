@@ -88,10 +88,11 @@ fn mark_failed(dir: &std::path::Path, qid: &str, wait: std::time::Duration) {
 /// small thumbnail each (Commons scales SVG logos to PNG). Returns how many
 /// it fetched; errors are listed, the rest goes on. One that failed is
 /// marked and left alone for a while (a month, or a day),
-/// unless the server asked to slow down.
+/// unless the server asked to slow down. Stops once `cancel` is set.
 pub fn fetch_pictures(
     conn: &Connection,
     dir: &std::path::Path,
+    cancel: &crate::job::Cancel,
     errors: &mut Vec<String>,
 ) -> Result<usize, Error> {
     let todo: Vec<(String, String)> = conn
@@ -100,6 +101,9 @@ pub fn fetch_pictures(
         .collect::<Result<_, _>>()?;
     let mut n = 0;
     for (qid, url) in todo {
+        if cancel.is_set() {
+            break;
+        }
         if backing_off(dir, &qid) {
             continue;
         }

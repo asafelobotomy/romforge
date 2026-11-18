@@ -16,6 +16,11 @@ pub(super) fn libretro_meta(
     let mut found: HashMap<&String, Vec<(String, String)>> = HashMap::new();
     let mut fetch_failed = false;
     for field in FIELDS {
+        // Stopped: what was read is kept, and looked for again next time.
+        if opts.cancel.is_set() {
+            fetch_failed = true;
+            break;
+        }
         progress(EnrichEvent::Metadata {
             system: system.key,
             field,
@@ -46,16 +51,12 @@ pub(super) fn libretro_meta(
             .iter()
             .filter_map(|r| Some((r.title.as_deref()?, r)))
             .collect();
-        let mut by_crc: HashMap<&str, &dat::Record> = HashMap::new();
-        for r in &records {
-            for c in r.crcs.iter().chain(&r.sized) {
-                by_crc.entry(c.as_str()).or_insert(r);
-            }
-        }
+        let by_crc = by_crc(&records);
         for (game, crcs) in games {
             let rec = by_title
                 .get(game.as_str())
-                .or_else(|| crcs.iter().find_map(|c| by_crc.get(c.as_str())));
+                .copied()
+                .or_else(|| crc_match(&by_crc, crcs));
             if let Some(rec) = rec {
                 let f = found.entry(game).or_default();
                 f.extend(
@@ -131,6 +132,9 @@ pub(super) fn dat_metadata<'g>(
         .map(|n| (*n, false))
         .chain(system.titles.iter().map(|n| (*n, true)));
     for (name, overview) in sources {
+        if opts.cancel.is_set() {
+            break;
+        }
         progress(EnrichEvent::Metadata {
             system: system.key,
             field: name,
@@ -152,14 +156,11 @@ pub(super) fn dat_metadata<'g>(
             }
         };
         let mut by_title: HashMap<&str, &dat::Record> = HashMap::new();
-        let mut by_crc: HashMap<&str, &dat::Record> = HashMap::new();
+        let by_crc = by_crc(&records);
         let mut by_code: HashMap<&str, &dat::Record> = HashMap::new();
         for r in &records {
             if let Some(t) = r.title.as_deref() {
                 by_title.entry(t).or_insert(r);
-            }
-            for c in r.crcs.iter().chain(&r.sized) {
-                by_crc.entry(c.as_str()).or_insert(r);
             }
             if let Some((_, c)) = r.fields.iter().find(|(k, _)| k == "code") {
                 by_code.entry(c.as_str()).or_insert(r);
@@ -171,8 +172,9 @@ pub(super) fn dat_metadata<'g>(
                 .optional()?;
             let rec = by_title
                 .get(game.as_str())
-                .or_else(|| crcs.iter().find_map(|c| by_crc.get(c.as_str())))
-                .or_else(|| code.as_deref().and_then(|c| by_code.get(c)));
+                .copied()
+                .or_else(|| crc_match(&by_crc, crcs))
+                .or_else(|| code.as_deref().and_then(|c| by_code.get(c).copied()));
             let Some(rec) = rec else { continue };
             let f = found.entry(*game).or_default();
             for (k, v) in &rec.fields {
@@ -189,6 +191,45 @@ pub(super) fn dat_metadata<'g>(
         }
     }
     Ok(found)
+}
+
+/// A metadata file's records by CRC32 and by `crc:size`; `None` where
+/// several records share one (house rule 8: a CRC32 is only a candidate,
+/// so one that names two games names neither).
+fn by_crc(records: &[dat::Record]) -> HashMap<&str, Option<&dat::Record>> {
+    let mut out: HashMap<&str, Option<&dat::Record>> = HashMap::new();
+    for r in records {
+        for c in r.crcs.iter().chain(&r.sized) {
+            out.entry(c.as_str())
+                .and_modify(|had| {
+                    if had.is_some_and(|h| !std::ptr::eq(h, r)) {
+                        *had = None;
+                    }
+                })
+                .or_insert(Some(r));
+        }
+    }
+    out
+}
+
+/// The one record a game's ROMs point to: by `crc:size` when the file
+/// has any of them, else by CRC32 alone; none when its ROMs point to
+/// different records or to a CRC that several share.
+fn crc_match<'r>(
+    by_crc: &HashMap<&str, Option<&'r dat::Record>>,
+    crcs: &[String],
+) -> Option<&'r dat::Record> {
+    // `None`: no key of the kind is in the file; `Some(None)`: ambiguous.
+    let one = |sized: bool| -> Option<Option<&'r dat::Record>> {
+        let hits: Vec<Option<&dat::Record>> = crcs
+            .iter()
+            .filter(|c| c.contains(':') == sized)
+            .filter_map(|c| by_crc.get(c.as_str()).copied())
+            .collect();
+        let first = *hits.first()?;
+        Some(first.filter(|f| hits.iter().all(|h| h.is_some_and(|h| std::ptr::eq(h, *f)))))
+    };
+    one(true).or_else(|| one(false)).flatten()
 }
 
 /// Whether some game's metadata was never looked up (it may be newly
@@ -239,4 +280,43 @@ pub(crate) fn libretro_game(
         None => None,
     };
     Ok(described.unwrap_or_else(|| game.to_owned()))
+}
+
+#[cfg(test)]
+mod crc_tests {
+    use super::*;
+
+    fn rec(title: &str, crcs: &[&str], sized: &[&str]) -> dat::Record {
+        dat::Record {
+            title: Some(title.into()),
+            crcs: crcs.iter().map(|c| c.to_string()).collect(),
+            sized: sized.iter().map(|c| c.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    /// A CRC32 two records share names neither; its size can still tell
+    /// them apart; and a game whose ROMs point to two records gets none.
+    #[test]
+    fn a_shared_crc_names_no_game() {
+        let records = [
+            rec("A", &["aaaa", "1111"], &["aaaa:10", "1111:20"]),
+            rec("B", &["aaaa", "2222"], &["aaaa:99", "2222:30"]),
+        ];
+        let by = by_crc(&records);
+        let title = |crcs: &[&str]| {
+            let crcs: Vec<String> = crcs.iter().map(|c| c.to_string()).collect();
+            crc_match(&by, &crcs).and_then(|r| r.title.clone())
+        };
+        assert_eq!(title(&["aaaa"]), None, "shared by A and B");
+        assert_eq!(title(&["aaaa:99", "aaaa"]), Some("B".into()), "its size tells");
+        assert_eq!(
+            title(&["aaaa:55", "aaaa"]),
+            None,
+            "no size of it, and the CRC is shared"
+        );
+        assert_eq!(title(&["1111"]), Some("A".into()));
+        assert_eq!(title(&["1111", "2222"]), None, "ROMs of two games");
+        assert_eq!(title(&["1111:20", "aaaa:10"]), Some("A".into()), "all its own");
+    }
 }

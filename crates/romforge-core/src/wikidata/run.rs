@@ -2,13 +2,15 @@ use super::*;
 
 /// Match the games you have to Wikidata and store what it knows. Games
 /// matched before are refreshed; ambiguous or unmatched ones are tried
-/// again only with `refresh`.
+/// again only with `refresh`. Once `cancel` is set it asks nothing more
+/// and returns what it saved (each batch is saved as it comes).
 pub fn enrich(
     conn: &mut Connection,
     endpoint: &str,
     games: &BTreeMap<(i64, String), Vec<String>>,
     refresh: bool,
     lang: &str,
+    cancel: &crate::job::Cancel,
     mut progress: impl FnMut(&'static str),
 ) -> Result<WikidataReport, Error> {
     let mut report = WikidataReport {
@@ -24,6 +26,9 @@ pub fn enrich(
     let mut halted = false;
 
     for (system_id, titles) in by_system {
+        if cancel.is_set() {
+            break;
+        }
         let Some(system) = systems::by_id(system_id) else {
             continue;
         };
@@ -70,7 +75,7 @@ pub fn enrich(
                 progress(system.key);
             }
             for batch in missing.chunks(SEARCH_BATCH) {
-                if halted {
+                if halted || cancel.is_set() {
                     break;
                 }
                 match candidates(endpoint, platform, batch) {
@@ -127,7 +132,7 @@ pub fn enrich(
     // Details, 40 games per query.
     let mut series: BTreeSet<String> = BTreeSet::new();
     for chunk in matched.chunks(40) {
-        if halted {
+        if halted || cancel.is_set() {
             break;
         }
         progress("details");
@@ -218,7 +223,7 @@ pub fn enrich(
     // Series members, 20 series per query.
     let series: Vec<String> = series.into_iter().collect();
     for chunk in series.chunks(20) {
-        if halted {
+        if halted || cancel.is_set() {
             break;
         }
         progress("series");
@@ -253,7 +258,7 @@ pub fn enrich(
         .query_map([], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     for chunk in wanted.chunks(50) {
-        if halted {
+        if halted || cancel.is_set() {
             break;
         }
         progress("pictures");
