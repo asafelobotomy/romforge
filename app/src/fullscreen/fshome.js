@@ -24,7 +24,15 @@ export function virtualPlatforms(all, marks) {
 // How many Recently played and Most played list.
 export const RECENT = 50;
 
-const titleOf = (r) => displayTitle(r).toLowerCase();
+// Each game's title worked out once (kept while its row is), not twice
+// per comparison of a sort; compared as localeCompare does.
+const titles = new WeakMap();
+const titleOf = (r) => {
+  let t = titles.get(r);
+  if (t === undefined) titles.set(r, (t = displayTitle(r).toLowerCase()));
+  return t;
+};
+const byTitle = new Intl.Collator().compare;
 
 // The games of platform `key`, in `sort` order ("title" or "year"); the
 // history lists keep their own order (latest, or longest played, first).
@@ -34,12 +42,12 @@ export function gamesFor(key, all, marks, sort) {
     const by = key === "*recent" ? (p) => p.last_played : (p) => p.seconds;
     return all
       .filter(played)
-      .sort((a, b) => by(played(b)) - by(played(a)) || titleOf(a).localeCompare(titleOf(b)))
+      .sort((a, b) => by(played(b)) - by(played(a)) || byTitle(titleOf(a), titleOf(b)))
       .slice(0, RECENT);
   }
   return all
     .filter((r) => key === "*" || (key === "*fav" ? marks.favourites.has(gameKey(r)) : r.system === key))
-    .sort((a, b) => (sort === "year" ? (a.year ?? 9999) - (b.year ?? 9999) : 0) || titleOf(a).localeCompare(titleOf(b)));
+    .sort((a, b) => (sort === "year" ? (a.year ?? 9999) - (b.year ?? 9999) : 0) || byTitle(titleOf(a), titleOf(b)));
 }
 
 // How many games a shelf of history or favourites holds.

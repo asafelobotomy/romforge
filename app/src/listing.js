@@ -44,18 +44,29 @@ export const isGame = (r) => r.main && !r.unmatched;
 // under headings (regions, editions, translations, hacks, and patch
 // files apart), each heading folding on its own. A group is listed when
 // any of its versions matches the filter.
-export function libraryRows(libRows, platform, filter, listSort, isOpen) {
+// The library sorted, and each group's rows in that order: what the list
+// is cut from. Made again only when the library or the sort changes, not
+// on each letter typed in the filter or each fold.
+export function grouped(libRows, listSort) {
+  const all = sorted(libRows, listSort, listGetters);
+  const members = new Map();
+  for (const r of all) {
+    if (!r.group) continue;
+    const m = members.get(r.group);
+    if (m) m.push(r);
+    else members.set(r.group, [r]);
+  }
+  return { all, members };
+}
+
+export function libraryRows({ all, members }, platform, filter, isOpen) {
+  const f = filter.toLowerCase();
   const match = (r) =>
     // All games and each platform: games only; Unidentified: whatever
     // isn't matched yet (unknown files, CRC-only candidates, other
     // platforms' matches, patches for no game), whatever its platform.
     (platform === "*" ? !r.unmatched : platform === "" ? r.unmatched : r.system === platform && !r.unmatched) &&
-    (!filter ||
-      r.title.toLowerCase().includes(filter.toLowerCase()) ||
-      (r.name?.title || "").toLowerCase().includes(filter.toLowerCase()));
-  const all = sorted(libRows, listSort, listGetters);
-  const members = new Map();
-  for (const r of all) if (r.group) members.set(r.group, [...(members.get(r.group) ?? []), r]);
+    (!f || r.title.toLowerCase().includes(f) || (r.name?.title || "").toLowerCase().includes(f));
   const out = [];
   for (const r of all) {
     if (!r.main) continue;

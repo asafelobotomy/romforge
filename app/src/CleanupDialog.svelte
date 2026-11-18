@@ -47,22 +47,38 @@
     mode = how;
     only = ids ? [...ids] : null;
     confirmCleanUndo = false;
+    // Never an earlier opening's plan (other games, or the other mode):
+    // nothing can be applied until this one's dry run is shown.
+    cleanPlan = null;
     open = true;
     await planCleanup();
   }
 
+  // Each plan's number: an answer for an earlier opening is dropped.
+  let planSeq = 0;
+
   async function planCleanup() {
+    const seq = ++planSeq;
+    const [conv, ids, dir] = [converting, only, from];
     cleanError = "";
+    busy = "Planning…";
     try {
-      cleanPlan = converting ? await invoke("convert_plan", { only }) : await invoke("cleanup_plan", { only, from });
+      const plan = conv ? await invoke("convert_plan", { only: ids }) : await invoke("cleanup_plan", { only: ids, from: dir });
+      if (seq === planSeq) cleanPlan = plan;
     } catch (e) {
-      cleanPlan = null;
-      cleanError = String(e).replace(/^settings: /, "");
+      if (seq === planSeq) {
+        cleanPlan = null;
+        cleanError = String(e).replace(/^settings: /, "");
+      }
+    } finally {
+      if (seq === planSeq) busy = "";
     }
-    cleanBatches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at && !b.emptied_at);
+    const batches = ((await call("cleanup_batches")) ?? []).filter((b) => !b.undone_at && !b.emptied_at);
+    if (seq === planSeq) cleanBatches = batches;
   }
 
   async function applyCleanup() {
+    if (busy || !cleanPlan) return;
     // What the plan was made from: the job plans again with exactly these.
     const [conv, ids, dir, n, kept] = [converting, only, from, cleanPlan.items.length, cleanPlan.keep_originals];
     open = false;

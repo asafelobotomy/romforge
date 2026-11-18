@@ -1,4 +1,5 @@
 <script>
+  import { onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import * as pdfjs from "pdfjs-dist";
   import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -67,20 +68,28 @@
   }
 
   // Read every scanned page not read yet (for search), one at a time.
+  // The manual closed: a Read all still going stops after its page, and
+  // says nothing.
+  let closed = false;
+  onDestroy(() => {
+    closed = true;
+    if (ocrAll) ocrAll.stop = true;
+  });
+
   async function readAll(list) {
     ocrAll = { done: 0, total: list.length, stop: false };
     for (const n of list) {
-      if (ocrAll.stop) break;
+      if (ocrAll.stop || closed) break;
       try {
         await pageWords(doc, n, rowId, ocrPick, true);
       } catch (e) {
-        fail(`OCR failed: ${e?.message ?? e}`);
+        if (!closed) fail(`OCR failed: ${e?.message ?? e}`);
         break;
       }
       ocrAll.done += 1;
     }
     ocrAll = null;
-    if (query.trim()) runSearch();
+    if (!closed && query.trim()) runSearch();
   }
 
   $effect(() => {

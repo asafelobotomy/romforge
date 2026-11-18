@@ -45,13 +45,29 @@ export function typed(query, key) {
 export function search(all, query, limit = 40) {
   const words = norm(query).split(" ").filter(Boolean);
   if (!words.length) return [];
-  const hits = all.filter((r) => {
-    const t = norm(`${r.name?.title ?? ""} ${r.title}`);
-    return words.every((w) => t.includes(w));
-  });
   const first = norm(query);
-  const starts = (r) => (norm(displayTitle(r)).startsWith(first) ? 0 : 1);
-  return hits.sort((a, b) => starts(a) - starts(b) || norm(displayTitle(a)).localeCompare(norm(displayTitle(b)))).slice(0, limit);
+  // Each title worked out once per game (kept while the game's row is),
+  // never in the comparison: one letter matches most of a library.
+  const hits = [];
+  for (const r of all) {
+    const k = keysOf(r);
+    if (words.every((w) => k.text.includes(w))) hits.push({ r, start: k.shown.startsWith(first) ? 0 : 1, shown: k.shown });
+  }
+  hits.sort((a, b) => a.start - b.start || collator.compare(a.shown, b.shown));
+  return hits.slice(0, limit).map((h) => h.r);
+}
+
+const collator = new Intl.Collator();
+const keys = new WeakMap();
+
+// A game's searchable text and its shown title, normalized.
+function keysOf(r) {
+  let k = keys.get(r);
+  if (!k) {
+    k = { text: norm(`${r.name?.title ?? ""} ${r.title}`), shown: norm(displayTitle(r)) };
+    keys.set(r, k);
+  }
+  return k;
 }
 
 const norm = (s) =>

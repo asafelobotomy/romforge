@@ -70,10 +70,23 @@ async function recognize(p, lang) {
 export async function pageWords(doc, n, rowId, lang, run) {
   const kept = await invoke("manual_ocr", { rowId, page: n, lang });
   if (kept || !run) return kept;
-  const words = await recognize(await doc.getPage(n), lang);
-  await edit("Saving recognised text…", "save_manual_ocr", { rowId, page: n, lang, words });
-  return words;
+  // A page being recognised already (a zoom redraws it, Read all reaches
+  // it): the same work is waited for, not started again.
+  const key = `${rowId}\u0000${n}\u0000${lang}`;
+  let work = reading.get(key);
+  if (!work) {
+    work = (async () => {
+      const words = await recognize(await doc.getPage(n), lang);
+      await edit("Saving recognised text…", "save_manual_ocr", { rowId, page: n, lang, words });
+      return words;
+    })().finally(() => reading.delete(key));
+    reading.set(key, work);
+  }
+  return work;
 }
+
+/// The recognitions running now, by row, page and language.
+const reading = new Map();
 
 /// The words as pdf.js text content, for its TextLayer: each word a text
 /// item placed on the unrotated page (pdf.js applies the page's rotation).

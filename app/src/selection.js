@@ -66,12 +66,14 @@ export function key(sel, rows, e) {
 // What the jobs get: the picked rows still listed (a filter or another
 // platform hides the rest); a game whose versions are folded brings them
 // along, since they can't be picked one by one.
-export function targets(picked, rows, libRows, isOpen) {
+// `members`: each group's rows ([`grouped`] in listing.js), so a folded
+// game costs its own versions, not a pass over the library.
+export function targets(picked, rows, members, isOpen) {
   const out = new Set();
   for (const r of rows) {
     if (r.head || !picked.has(r.id)) continue;
     out.add(r.id);
-    if (r.main && r.group && !isOpen(r.group)) for (const m of libRows) if (m.group === r.group) out.add(m.id);
+    if (r.main && r.group && !isOpen(r.group)) for (const m of members.get(r.group) ?? []) out.add(m.id);
   }
   return [...out];
 }

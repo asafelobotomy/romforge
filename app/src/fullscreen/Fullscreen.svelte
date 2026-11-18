@@ -70,7 +70,10 @@
   let all = $derived(lib.rows.filter((r) => isGame(r) && r.system));
   let platforms = $derived([...virtualPlatforms(all, marks), ...lib.platforms.filter((p) => p.system && p.games)]);
   let pIndex = $derived(Math.max(0, platforms.findIndex((p) => p.system === platformKey)));
-  let games = $derived(gamesFor(platforms[pIndex]?.system ?? "*", all, marks, sort));
+  // By the platform's key, not the list's object: a favourite toggled
+  // makes `platforms` anew without changing which one is shown.
+  let pKey = $derived(platforms[pIndex]?.system ?? "*");
+  let games = $derived(gamesFor(pKey, all, marks, sort));
   // The settings read once on opening (Settings → Display, Start →
   // Details, Start → Bookshelf: the details shown of the focused game and
   // how the bookshelf stands them), and the core's lists (settings_info).

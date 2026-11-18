@@ -7,15 +7,17 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 export function sorted(items, sort, getters) {
   const get = getters[sort?.key];
   if (!get) return items;
-  return [...items].sort((a, b) => {
-    const x = get(a);
-    const y = get(b);
+  // Each value read once (a title's may take some working out), not twice
+  // per comparison.
+  const keyed = items.map((item) => ({ item, v: get(item) }));
+  keyed.sort(({ v: x }, { v: y }) => {
     const xn = x === null || x === undefined || x === "";
     const yn = y === null || y === undefined || y === "";
     if (xn || yn) return xn === yn ? 0 : xn ? 1 : -1;
     const c = typeof x === "number" && typeof y === "number" ? x - y : collator.compare(String(x), String(y));
     return c * sort.dir;
   });
+  return keyed.map((k) => k.item);
 }
 
 // The sort a list had last time (kept per list in this browser only).

@@ -126,18 +126,26 @@ export function applyTheme(node, applied, dark) {
 
 // Poll the theme's files while the mode is open; a change reloads its CSS.
 // Returns the stop function.
+// One look at a time (a slow answer never has a second start beside it),
+// and none while the window is hidden (a game is playing).
 export function watchTheme() {
+  let looking = false;
   const t = setInterval(async () => {
     const a = theme.applied;
-    if (!a) return;
-    const stamp = await invoke("theme_stamp", { id: a.theme }).catch(() => a.stamp);
-    if (stamp !== a.stamp && theme.applied?.theme === a.theme) {
-      // The manifest may have changed too (schemes, options).
-      const v = await invoke("themes_view").catch(() => null);
-      if (v) {
-        theme.view = v;
-        theme.applied = { ...v.applied, stamp };
-      } else theme.applied = { ...a, stamp };
+    if (!a || looking || document.hidden) return;
+    looking = true;
+    try {
+      const stamp = await invoke("theme_stamp", { id: a.theme }).catch(() => a.stamp);
+      if (stamp !== a.stamp && theme.applied?.theme === a.theme) {
+        // The manifest may have changed too (schemes, options).
+        const v = await invoke("themes_view").catch(() => null);
+        if (v) {
+          theme.view = v;
+          theme.applied = { ...v.applied, stamp };
+        } else theme.applied = { ...a, stamp };
+      }
+    } finally {
+      looking = false;
     }
   }, 1000);
   return () => clearInterval(t);

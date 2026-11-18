@@ -4,6 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { size } from "./lib.js";
   import SortButton from "./SortButton.svelte";
+  import DatGames from "./DatGames.svelte";
   import { sorted, remembered, remember } from "./sort.js";
 
   // Always mounted, so the DAT picked and the filter last until the app
@@ -66,8 +67,11 @@
   }
 
   async function openDat(id) {
+    if (datId !== id) datGames = [];
     datId = id;
-    datGames = (await call("dat_games", { datId: id }, true)) ?? [];
+    const games = (await call("dat_games", { datId: id }, true)) ?? [];
+    // Another DAT was picked while this one loaded: its games win.
+    if (datId === id) datGames = games;
   }
 
   async function downloadDats() {
@@ -175,22 +179,7 @@
               <label><input type="radio" bind:group={gameFilter} value={v} /> {v}</label>
             {/each}
           </div>
-          <table>
-            <thead><tr>
-              <th><SortButton label="Have" key="have" bind:sort={gameSort} title="Sort by have / missing" /></th>
-              <th><SortButton label="Game" key="name" bind:sort={gameSort} /></th>
-              <th class="num"><SortButton label="ROMs" key="roms" bind:sort={gameSort} /></th>
-            </tr></thead>
-            <tbody>
-              {#each visibleGames as g (g.game_id)}
-                <tr>
-                  <td><span class="badge {g.have ? 'verified' : 'unknown'}">{g.have ? "have" : "missing"}</span></td>
-                  <td>{g.name}</td>
-                  <td class="num">{g.roms_have}/{g.roms_total}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <DatGames games={visibleGames} bind:sort={gameSort} />
         </div>
       {/if}
     </div>
