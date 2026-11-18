@@ -23,7 +23,7 @@ mod dirs;
 pub use dirs::{UserDirs, Xdg};
 mod saves;
 mod undo;
-pub use undo::undo;
+pub use undo::{SetupUndone, undo};
 
 /// One folder to copy: from the emulator's usual place to romforge's.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -313,13 +313,18 @@ pub fn import(
         [e.settings_name()],
     )?;
     let batch = conn.last_insert_rowid();
+    // Each copy as it is now, so undo can tell what was written since.
     let journal = |path: &Path, backup: Option<&Path>| -> Result<(), Error> {
+        let stamp = crate::scan::Stamp::of(path);
         conn.execute(
-            "INSERT OR IGNORE INTO setup_import_files (import_id, path, backup) VALUES (?1, ?2, ?3)",
+            "INSERT OR IGNORE INTO setup_import_files (import_id, path, backup, size, mtime)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 batch,
                 path.to_string_lossy(),
-                backup.map(|b| b.to_string_lossy().into_owned())
+                backup.map(|b| b.to_string_lossy().into_owned()),
+                stamp.map(|s| s.size),
+                stamp.map(|s| s.mtime)
             ],
         )?;
         Ok(())

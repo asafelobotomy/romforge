@@ -61,15 +61,26 @@ fn an_existing_setup_comes_across_and_goes_back() {
         "{text}"
     );
 
-    // Undo: the copies go, romforge's own settings file comes back.
-    assert_eq!(undo(&conn, "pcsx2").unwrap(), 2);
-    assert!(!dir.join("PCSX2/memcards/Mcd001.ps2").exists());
+    // The game saves to the card after the import.
+    let card = dir.join("PCSX2/memcards/Mcd001.ps2");
+    std::fs::write(&card, b"card, played on").unwrap();
+
+    // Undo: the copies go to the trash, never deleted (the card played on
+    // is named), romforge's own settings file comes back.
+    let u = undo(&conn, &home, "pcsx2").unwrap();
+    assert_eq!(u.files, 2);
+    assert!(!card.exists());
+    let trash = u.trash.unwrap();
+    assert!(trash.starts_with(home.trash()), "{}", trash.display());
+    let kept = trash.join(card.strip_prefix("/").unwrap());
+    assert_eq!(std::fs::read(&kept).unwrap(), b"card, played on");
+    assert!(u.changed.contains(&card), "{:?}", u.changed);
     assert!(
         std::fs::read_to_string(&ini)
             .unwrap()
             .contains("[UI]\nSettingsVersion = 1")
     );
-    assert!(undo(&conn, "pcsx2").is_err());
+    assert!(undo(&conn, &home, "pcsx2").is_err());
     assert!(
         theirs.join("memcards/Mcd001.ps2").exists(),
         "the user's own files are untouched"
@@ -139,7 +150,7 @@ fn retroarch_saves_go_to_their_platforms() {
     // Nothing of romforge's is replaced on a second import; undo takes them back.
     let again = import(&conn, retroarch, &home, &user, &xdg).unwrap();
     assert_eq!(again.saves, 0);
-    undo(&conn, "retroarch").unwrap();
-    undo(&conn, "retroarch").unwrap();
+    undo(&conn, &home, "retroarch").unwrap();
+    undo(&conn, &home, "retroarch").unwrap();
     assert!(!md_saves.join("Sonic (USA).srm").exists());
 }

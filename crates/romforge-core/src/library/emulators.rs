@@ -248,10 +248,12 @@ impl Library {
         launch::move_in::undo(&self.conn, e.settings_name(), home)
     }
 
-    /// Take back the last setup import of `emulator`.
-    pub fn undo_emulator_setup(&mut self, emulator: &str) -> Result<usize, Error> {
-        let (_, e, _) = self.setup_target(emulator)?;
-        launch::existing::undo(&self.conn, e.settings_name())
+    /// Take back the last setup import of `emulator` (its copies to the
+    /// trash; never while it runs, writing to them).
+    pub fn undo_emulator_setup(&mut self, emulator: &str) -> Result<launch::existing::SetupUndone, Error> {
+        let (home, e, _) = self.setup_target(emulator)?;
+        not_running(e)?;
+        launch::existing::undo(&self.conn, home, e.settings_name())
     }
 
     pub(super) fn setup_target(

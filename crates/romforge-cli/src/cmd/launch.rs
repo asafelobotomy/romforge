@@ -117,8 +117,20 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             undo,
         }) => {
             if undo {
-                let n = lib.undo_emulator_setup(&emulator)?;
-                println!("{emulator}: {n} file(s) taken back");
+                let u = lib.undo_emulator_setup(&emulator)?;
+                println!("{emulator}: {} file(s) taken back", u.files);
+                if let Some(trash) = &u.trash {
+                    println!("  moved to the trash: {}", trash.display());
+                }
+                if !u.changed.is_empty() {
+                    println!(
+                        "  {} had changed since the import (saves made since?):",
+                        u.changed.len()
+                    );
+                    for p in &u.changed {
+                        println!("    {}", p.display());
+                    }
+                }
             } else if !apply {
                 println!(
                     "{emulator}: would copy its existing setup into romforge (run again with --apply; --undo takes the last import back)"

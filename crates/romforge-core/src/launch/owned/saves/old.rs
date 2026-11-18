@@ -32,6 +32,7 @@ pub(crate) const SCUMMVM_SAVES: &str = "scummvm/saves";
 pub(crate) fn files_under(dir: &Path) -> Vec<(PathBuf, PathBuf)> {
     walkdir::WalkDir::new(dir)
         .follow_links(false)
+        .sort_by_file_name()
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())

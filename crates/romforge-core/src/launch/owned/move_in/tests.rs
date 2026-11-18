@@ -59,9 +59,16 @@ fn rpcs3_s_devices_move_in_and_back_out() {
             .contains("already")
     );
 
+    // RPCS3 saves into RomForge's copy; undo keeps that in the trash.
+    std::fs::write(ours.join("save.dat"), b"save, played on").unwrap();
     undo(&conn, "rpcs3", &home).unwrap();
     assert_eq!(std::fs::read(theirs.join("dev_hdd0/save.dat")).unwrap(), b"save");
     assert!(!ours.exists() && !theirs::moved_in(&dir));
+    let kept = home
+        .trash()
+        .join("move-1-undone")
+        .join(ours.strip_prefix("/").unwrap());
+    assert_eq!(std::fs::read(kept.join("save.dat")).unwrap(), b"save, played on");
     assert!(
         crate::cleanup::trash_contents(&conn, None)
             .unwrap()
@@ -99,4 +106,50 @@ fn nothing_moves_over_files_or_without_data() {
     apply(&conn, "citra", &home, Some(&u)).unwrap();
     assert_eq!(std::fs::read(saves.join("data.bin")).unwrap(), b"nand");
     assert!(!nand.exists());
+}
+
+/// An original that can't go to the trash: the emulator already uses the
+/// whole copies (never a config pointing at a half-emptied folder), the
+/// original stays, and undo puts everything back.
+#[test]
+fn a_move_cut_short_never_strands_the_data() {
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(&t.path().join("parent")).unwrap();
+    let u = user(t.path());
+    let conn = crate::db::open_in_memory().unwrap();
+    let theirs = u.xdg.config.join("rpcs3");
+    for dev in ["dev_hdd0", "dev_hdd1"] {
+        std::fs::create_dir_all(theirs.join(dev)).unwrap();
+        std::fs::write(theirs.join(dev).join("save.dat"), dev).unwrap();
+    }
+    assert_eq!(plan("rpcs3", &home, Some(&u)).items.len(), 2);
+    // Something already where dev_hdd1 would go in the trash.
+    let blocked = home
+        .trash()
+        .join("move-1")
+        .join(theirs.join("dev_hdd1").strip_prefix("/").unwrap());
+    std::fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+    std::fs::write(&blocked, b"in the way").unwrap();
+
+    let err = apply(&conn, "rpcs3", &home, Some(&u)).unwrap_err().to_string();
+    assert!(err.contains("couldn't go to the trash"), "{err}");
+    let dir = home.emulator_config("rpcs3");
+    assert!(theirs::moved_in(&dir), "the copies are in use");
+    assert_eq!(
+        std::fs::read(theirs.join("dev_hdd1/save.dat")).unwrap(),
+        b"dev_hdd1"
+    );
+    for dev in ["dev_hdd0", "dev_hdd1"] {
+        assert!(dir.join("rpcs3").join(dev).join("save.dat").is_file(), "{dev}");
+    }
+
+    undo(&conn, "rpcs3", &home).unwrap();
+    assert!(!theirs::moved_in(&dir));
+    for dev in ["dev_hdd0", "dev_hdd1"] {
+        assert_eq!(
+            std::fs::read(theirs.join(dev).join("save.dat")).unwrap(),
+            dev.as_bytes()
+        );
+        assert!(!dir.join("rpcs3").join(dev).exists(), "{dev}");
+    }
 }

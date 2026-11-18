@@ -127,6 +127,7 @@ pub fn mame_listxml(env: &Env) -> Result<(Vec<u8>, String), Error> {
 /// Start the emulator and return its process id. romforge doesn't wait for
 /// it, but a thread reaps it when it exits so no zombie is left behind.
 pub fn spawn(spec: &LaunchSpec) -> Result<u32, Error> {
+    running::not_twice(spec)?;
     prepare(&spec.prepare)?;
     let mut child = std::process::Command::new(&spec.program)
         .args(&spec.args)

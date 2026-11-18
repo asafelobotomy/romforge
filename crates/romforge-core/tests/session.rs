@@ -81,3 +81,25 @@ fn play_time_is_kept() {
         (900, 2, 2_000)
     );
 }
+
+/// A Flatpak's wrapper can end before the emulator inside it (a signal it
+/// doesn't pass on): the game has ended only when the emulator has, so the
+/// backup after it and the next start's config wait for its saves.
+#[test]
+fn a_game_ends_when_the_emulator_inside_its_wrapper_does() {
+    let t = tempfile::tempdir().unwrap();
+    let mut s = spec(t.path(), "");
+    // Named as Flatpak's sandbox is, so it is taken for a wrapper.
+    let program = t.path().join("bwrap");
+    std::fs::write(&program, "#!/bin/sh\nsleep 2 &\nsleep 0.8\nexit 0\n").unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    s.program = program;
+    let began = std::time::Instant::now();
+    let ended = Session::start(&s).unwrap().wait();
+    assert!(
+        began.elapsed() >= Duration::from_millis(1900),
+        "ended with its wrapper, after {:?}",
+        began.elapsed()
+    );
+    assert_eq!(ended.code, Some(0));
+}

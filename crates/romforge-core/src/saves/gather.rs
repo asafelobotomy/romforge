@@ -32,6 +32,17 @@ use crate::launch::existing::UserDirs;
 use crate::launch::old_saves::{self as old, files_under};
 use crate::systems::{self, System};
 
+/// In an emulator's romforge config folder once its saves were gathered:
+/// from then on it uses `Saves/` even with files left in its old place
+/// (one whose place in `Saves/` was taken), never splitting its saves
+/// between the two.
+const GATHERED: &str = ".romforge-saves-gathered";
+
+/// Whether `name`'s saves were gathered into `Saves/` (and not put back).
+pub(crate) fn gathered(home: &Home, name: &str) -> bool {
+    home.emulator_config(name).join(GATHERED).is_file()
+}
+
 /// One save file and where it goes.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SaveMove {
@@ -210,9 +221,9 @@ pub fn apply(
         [name],
     )?;
     let id = conn.last_insert_rowid();
-    let mut n = 0;
+    let mut moved: Vec<&SaveMove> = Vec::new();
     for m in plan.moves.iter().filter(|m| !m.taken) {
-        // Journaled before it moves, so a stop part way leaves nothing
+        // Journaled before it moves, so a crash part way leaves nothing
         // that undo can't find.
         conn.execute(
             "INSERT INTO save_gather_files (gather_id, original, moved_to) VALUES (?1, ?2, ?3)",
@@ -220,30 +231,93 @@ pub fn apply(
         )?;
         let row = conn.last_insert_rowid();
         if let Err(e) = crate::organize::move_file(&m.from, &m.to) {
-            // The copy is in Saves/ but the original stayed: journaled as
-            // it is, and the gathering stops.
-            if crate::organize::source_left(&e) {
-                return Err(e.into());
+            if !crate::organize::source_left(&e) {
+                conn.execute("DELETE FROM save_gather_files WHERE rowid = ?1", [row])?;
+                // One whose place filled meanwhile stays.
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    continue;
+                }
             }
-            conn.execute("DELETE FROM save_gather_files WHERE rowid = ?1", [row])?;
-            // One whose place filled meanwhile stays; anything else stops,
-            // with what moved so far journaled for undo.
-            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                continue;
-            }
-            return Err(e.into());
+            // Anything else: all of them or none, never the saves split
+            // between two folders.
+            return Err(take_back(
+                conn,
+                id,
+                &moved,
+                (crate::organize::source_left(&e)).then_some(m),
+                e,
+            ));
         }
         // Folders it leaves empty go, inside the emulator's config only.
         let config = home.emulator_config(name);
         crate::organize::remove_empty_parents(&m.from, |d| !d.starts_with(&config) || d == config);
-        n += 1;
+        moved.push(m);
     }
-    Ok((id, n))
+    crate::atomic::write(&home.emulator_config(name).join(GATHERED), b"")?;
+    Ok((id, moved.len()))
+}
+
+/// A gathering that failed at `e`: what it moved goes back (and `copied`,
+/// a copy whose original stayed, goes), and the gathering is forgotten.
+/// Whatever can't go back stays journaled, for undo.
+fn take_back(
+    conn: &Connection,
+    id: i64,
+    moved: &[&SaveMove],
+    copied: Option<&SaveMove>,
+    e: std::io::Error,
+) -> Error {
+    let mut stuck = 0;
+    for m in moved {
+        match crate::organize::move_file(&m.to, &m.from) {
+            Ok(_) => {
+                let _ = conn.execute(
+                    "DELETE FROM save_gather_files WHERE gather_id = ?1 AND original = ?2",
+                    params![id, m.from.to_string_lossy()],
+                );
+            }
+            Err(_) => stuck += 1,
+        }
+    }
+    if let Some(m) = copied
+        && m.from.is_file()
+        && std::fs::remove_file(&m.to).is_ok()
+    {
+        let _ = conn.execute(
+            "DELETE FROM save_gather_files WHERE gather_id = ?1 AND original = ?2",
+            params![id, m.from.to_string_lossy()],
+        );
+    }
+    if stuck == 0 {
+        let _ = conn.execute("DELETE FROM save_gather_files WHERE gather_id = ?1", [id]);
+        let _ = conn.execute("DELETE FROM save_gathers WHERE gather_id = ?1", [id]);
+        return Error::Launch(format!("saves not gathered, all left where they were: {e}"));
+    }
+    Error::Launch(format!(
+        "saves not gathered ({e}), and {stuck} couldn't go back: Undo puts them back"
+    ))
 }
 
 /// Put the last gathering of `name`'s saves back where they were. Returns
 /// how many files went back; one whose old place is taken stays in Saves/.
-pub fn undo(conn: &Connection, name: &str) -> Result<usize, Error> {
+pub fn undo(conn: &Connection, home: &Home, name: &str) -> Result<usize, Error> {
+    let n = undo_moves(conn, name)?;
+    // Back to its old place for its saves, unless an earlier gathering
+    // still stands.
+    let standing: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM save_gathers WHERE emulator = ?1 AND undone_at IS NULL)",
+        [name],
+        |r| r.get(0),
+    )?;
+    if !standing {
+        let _ = std::fs::remove_file(home.emulator_config(name).join(GATHERED));
+    }
+    Ok(n)
+}
+
+/// Put the last gathering journaled as `name` back (an emulator's, or the
+/// States/ merge's): how many files went back.
+pub(crate) fn undo_moves(conn: &Connection, name: &str) -> Result<usize, Error> {
     let id: i64 = conn
         .query_row(
             "SELECT gather_id FROM save_gathers WHERE emulator = ?1 AND undone_at IS NULL

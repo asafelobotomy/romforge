@@ -1,4 +1,4 @@
-//! Migrations from 36 on (36 to 42 so far; the file is named for the range
+//! Migrations from 36 on (36 to 48 so far; the file is named for the range
 //! it will hold, up to 51; see `MIGRATIONS`).
 
 pub(super) const MIGRATIONS_36_51: &[&str] = &[
@@ -171,4 +171,9 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
         created_at TEXT NOT NULL,
         undone_at  TEXT
     );",
+    // 48: each file a setup import copied, as it was then (size and
+    // modification time, `scan::Stamp`), so undo can tell which ones the
+    // emulator has written since (NULL: imported before this column).
+    "ALTER TABLE setup_import_files ADD COLUMN size INTEGER;
+     ALTER TABLE setup_import_files ADD COLUMN mtime INTEGER;",
 ];

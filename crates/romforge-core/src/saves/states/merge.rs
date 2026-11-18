@@ -93,5 +93,5 @@ pub fn apply(conn: &Connection, home: &Home) -> Result<(i64, usize), Error> {
 
 /// Put the last move back into `States/`: how many files went back.
 pub fn undo(conn: &Connection) -> Result<usize, Error> {
-    crate::saves::gather::undo(conn, NAME)
+    crate::saves::gather::undo_moves(conn, NAME)
 }

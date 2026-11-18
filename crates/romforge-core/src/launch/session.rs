@@ -52,11 +52,16 @@ pub struct Session {
     began: Instant,
     /// Stop was asked for (an ending then is no failure).
     stopping: std::sync::atomic::AtomicBool,
+    /// A Flatpak's emulator, as seen below its wrapper while that ran: the
+    /// wrapper can end first (a signal it doesn't pass on), and the game
+    /// has ended only once these have too.
+    app: Mutex<Vec<sandbox::Seen>>,
 }
 
 impl Session {
     /// Write romforge's config for it, then start it.
     pub fn start(spec: &LaunchSpec) -> Result<Session, Error> {
+        super::running::not_twice(spec)?;
         prepare(&spec.prepare)?;
         let child = std::process::Command::new(&spec.program)
             .args(&spec.args)
@@ -80,16 +85,29 @@ impl Session {
             child: Arc::new(Mutex::new(Some(child))),
             began: Instant::now(),
             stopping: std::sync::atomic::AtomicBool::new(false),
+            app: Mutex::new(Vec::new()),
         })
     }
 
-    /// Whether it exited, without reaping it while it hasn't.
+    /// Whether it exited, without reaping it while it hasn't: the process
+    /// romforge started and, for a Flatpak, the emulator inside, so saves
+    /// are flushed before a backup or the next start's config runs.
     fn exited(&self) -> Option<Option<i32>> {
         let mut guard = self.child.lock().unwrap_or_else(|e| e.into_inner());
         let child = guard.as_mut()?;
+        let mut app = self.app.lock().unwrap_or_else(|e| e.into_inner());
         match child.try_wait() {
+            Ok(None) => {
+                // Read while the wrapper runs (its pid still its own).
+                for p in sandbox::app_procs(child.id()) {
+                    if !app.contains(&p) {
+                        app.push(p);
+                    }
+                }
+                None
+            }
+            Ok(Some(_)) | Err(_) if app.iter().any(sandbox::alive) => None,
             Ok(Some(status)) => Some(status.code()),
-            Ok(None) => None,
             Err(_) => Some(None),
         }
     }

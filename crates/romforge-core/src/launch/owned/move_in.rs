@@ -243,16 +243,10 @@ pub fn apply(conn: &Connection, name: &str, home: &Home, user: Option<&UserDirs>
             made.push(&i.to);
         }
     }
-    // Then the originals, to the trash.
-    for i in &plan.items {
-        let rel = i.from.strip_prefix("/").unwrap_or(&i.from);
-        let trashed = home.trash().join(format!("move-{id}")).join(rel);
-        move_any(&i.from, &trashed)?;
-        conn.execute(
-            "UPDATE data_move_items SET trashed = ?1 WHERE move_id = ?2 AND original = ?3",
-            params![trashed.to_string_lossy(), id, i.from.to_string_lossy()],
-        )?;
-    }
+    // Every copy is whole: the emulator uses them from now on, before any
+    // original moves, so an original that can't go to the trash leaves it
+    // in place beside its copy, never a config pointing at a folder
+    // already emptied.
     let list: String = plan
         .items
         .iter()
@@ -262,11 +256,28 @@ pub fn apply(conn: &Connection, name: &str, home: &Home, user: Option<&UserDirs>
         &home.emulator_config(name).join(theirs::MOVED_IN),
         list.as_bytes(),
     )?;
+    // Then the originals, to the trash.
+    for i in &plan.items {
+        let rel = i.from.strip_prefix("/").unwrap_or(&i.from);
+        let trashed = home.trash().join(format!("move-{id}")).join(rel);
+        move_any(&i.from, &trashed).map_err(|e| {
+            Error::Launch(format!(
+                "{name}'s data is in RomForge and in use, but {} couldn't go to the trash ({e}); \
+                 it is still there (undo takes the move back)",
+                i.from.display()
+            ))
+        })?;
+        conn.execute(
+            "UPDATE data_move_items SET trashed = ?1 WHERE move_id = ?2 AND original = ?3",
+            params![trashed.to_string_lossy(), id, i.from.to_string_lossy()],
+        )?;
+    }
     Ok(id)
 }
 
 /// Take back the last move of `name`'s data: the originals come back from
-/// the trash, RomForge's copies go. Returns how many items.
+/// the trash, RomForge's copies go to the trash (the emulator has played on
+/// them since: nothing it wrote is deleted). Returns how many items.
 pub fn undo(conn: &Connection, name: &str, home: &Home) -> Result<usize, Error> {
     let (id, emptied): (i64, Option<String>) = conn
         .query_row(
@@ -285,11 +296,15 @@ pub fn undo(conn: &Connection, name: &str, home: &Home) -> Result<usize, Error> 
         .prepare("SELECT original, copy, trashed FROM data_move_items WHERE move_id = ?1")?
         .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<_, _>>()?;
+    let undone = home.trash().join(format!("move-{id}-undone"));
     for (original, copy, trashed) in &items {
+        let copy = Path::new(copy);
+        if copy.symlink_metadata().is_ok() {
+            move_any(copy, &undone.join(copy.strip_prefix("/").unwrap_or(copy)))?;
+        }
         if let Some(t) = trashed {
             move_any(Path::new(t), Path::new(original))?;
         }
-        remove_any(Path::new(copy))?;
     }
     let _ = std::fs::remove_file(home.emulator_config(name).join(theirs::MOVED_IN));
     conn.execute(

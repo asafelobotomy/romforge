@@ -3238,6 +3238,23 @@ found about 65 items; they are fixed one area per PR, worst first.
   checked sums), and a panic while reading one file during a scan is that
   file's error instead of the scan's end.
 
+- *(Fixed 2026-11-18.)* **Undo and sessions that could lose saves.**
+  Undoing a setup import deleted the memory cards and saves it had copied
+  (played on since), and undoing a game-data move deleted RomForge's copy
+  (RPCS3, Cemu, xemu, 3DS data used since); both now go to the trash, the
+  setup undo naming the files changed since (a size and time noted per
+  file at import, schema 48) and refused while the emulator runs. A move
+  whose original couldn't go to the trash left the emulator pointing at a
+  half-emptied folder: its config now switches to the whole copies before
+  any original moves. A gather cut short split saves between `Saves/` and
+  the old folder (which the emulator then kept using): it now puts back
+  what it moved, and a finished gather keeps the emulator on `Saves/`
+  even with a taken file left behind (`.romforge-saves-gathered`). A
+  Flatpak game "ended" when its sandbox did, before the emulator inside
+  had saved; it now waits for the emulator's own processes. And the core
+  refuses a second game of an emulator already running, whichever of the
+  app, the launcher and the CLI started the first.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

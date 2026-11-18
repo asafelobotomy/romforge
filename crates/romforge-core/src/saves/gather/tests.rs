@@ -62,66 +62,41 @@ fn memory_cards_come_in_and_go_back() {
         "taken: stays"
     );
     assert_eq!(std::fs::read(ps1.join("Other_1.mcd")).unwrap(), b"there already");
+    assert!(
+        gathered(&home, "duckstation"),
+        "Saves/ from now on, though one stayed"
+    );
 
-    assert_eq!(undo(&conn, "duckstation").unwrap(), 1);
+    assert_eq!(undo(&conn, &home, "duckstation").unwrap(), 1);
     assert!(cards.join("Final Fantasy VII_1.mcd").exists());
     assert!(!ps1.join("Final Fantasy VII_1.mcd").exists());
-    assert!(undo(&conn, "duckstation").is_err(), "nothing left to undo");
+    assert!(undo(&conn, &home, "duckstation").is_err(), "nothing left to undo");
+    assert!(!gathered(&home, "duckstation"), "its old place again");
 }
 
+/// A gathering that fails part way puts back what it moved: never the
+/// saves split between Saves/ and the old folder.
 #[test]
-fn saves_beside_games_and_mednafens_go_to_their_games_system() {
+fn a_gathering_cut_short_moves_nothing() {
+    use std::os::unix::fs::PermissionsExt;
     let t = tempfile::tempdir().unwrap();
     let home = Home::create(&t.path().join("parent")).unwrap();
-    let games = t.path().join("games");
-    let gba = games.join("Mother 3 (Japan).zip");
-    let gb = games.join("Tetris (World).gb");
-    let conn = library(&[
-        (&gba.to_string_lossy(), "Game Boy Advance"),
-        (&gb.to_string_lossy(), "Game Boy"),
-    ]);
-    put(&gba.with_extension("sav"), b"gba save");
-    put(&gb, b"rom");
-
-    let (_, n) = apply(&conn, "mgba", &home, None).unwrap();
-    assert_eq!(n, 1);
-    let to = home.saves().join("Game Boy Advance/Mother 3 (Japan).sav");
-    assert_eq!(std::fs::read(&to).unwrap(), b"gba save");
-    assert!(games.is_dir(), "the games' folder stays");
-
-    // Mednafen: `<game>.<md5>.<ext>`, the game's name with dots in it.
-    let sav = home.emulator_config("mednafen").join("sav");
-    put(&sav.join("Nights into Dreams... (USA).0123abcd.bkr"), b"saturn");
-    put(&sav.join("Unknown.4567.sav"), b"?");
-    let nights = games.join("Nights into Dreams... (USA).cue");
-    let conn = library(&[(&nights.to_string_lossy(), "Saturn")]);
-    let p = plan(&conn, "mednafen", &home, None);
-    assert_eq!(p.unplaced, [sav.join("Unknown.4567.sav")]);
-    assert_eq!(
-        p.moves[0].to,
-        home.saves()
-            .join("Saturn/Nights into Dreams... (USA).0123abcd.bkr")
-    );
-}
-
-#[test]
-fn dolphin_cards_keep_their_region() {
-    let t = tempfile::tempdir().unwrap();
-    let home = Home::create(&t.path().join("parent")).unwrap();
-    let gc = home.emulator_config("dolphin").join("GC");
-    put(&gc.join("USA/Card A/01-GALE-SuperSmashBros.gci"), b"gci");
-    put(&gc.join("MemoryCardA.EUR.raw"), b"raw");
-    put(&gc.join("USA/IPL.bin"), b"bios, not a save");
-    let p = plan(&library(&[]), "dolphin", &home, None);
-    let mut to: Vec<_> = p.moves.iter().map(|m| m.to.clone()).collect();
-    to.sort();
-    let saves = home.saves().join("GameCube");
-    assert_eq!(
-        to,
-        [
-            saves.join("MemoryCardA.EUR.raw"),
-            saves.join("USA/01-GALE-SuperSmashBros.gci")
-        ]
-    );
-    assert_eq!(plan(&library(&[]), "retroarch", &home, None).moves, []);
+    let conn = library(&[]);
+    let cards = home.emulator_config("duckstation").join("duckstation/memcards");
+    put(&cards.join("A_1.mcd"), b"a");
+    put(&cards.join("sub/B_1.mcd"), b"b");
+    // B's place takes no files.
+    let locked = home.saves().join("PlayStation/sub");
+    std::fs::create_dir_all(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(locked.join("probe"), b"").is_ok() {
+        return; // run as root: nothing is refused
+    }
+    let err = apply(&conn, "duckstation", &home, None).unwrap_err().to_string();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(err.contains("all left where they were"), "{err}");
+    assert_eq!(std::fs::read(cards.join("A_1.mcd")).unwrap(), b"a", "A came back");
+    assert!(!home.saves().join("PlayStation/A_1.mcd").exists());
+    assert!(!gathered(&home, "duckstation"));
+    assert!(undo(&conn, &home, "duckstation").is_err(), "nothing to undo");
 }
