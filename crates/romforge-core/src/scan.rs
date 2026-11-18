@@ -11,7 +11,8 @@
 //!
 //! [`Visit::Planned`] says how many files and archives will be read (and
 //! their size on disk) before any is; [`Visit::UnitDone`] follows each.
-//! [`ScanOptions::cancel`] stops it between them.
+//! [`ScanOptions::cancel`] stops it between them, and inside a file's
+//! read (see [`crate::job::watching`]).
 
 use crate::hash::Hashes;
 use crate::{Error, systems};
@@ -129,10 +130,14 @@ pub enum Visit {
         bytes: u64,
     },
     /// One of those is done (its size on disk): every [`Visit::Hashed`]
-    /// of `path` came before it.
+    /// of `path` came before it. `stopped`: asked to stop while it was
+    /// read, so what came for it may be cut short. `stamp`: its size and
+    /// time, to record even when nothing in it was hashed.
     UnitDone {
         path: PathBuf,
         bytes: u64,
+        stopped: bool,
+        stamp: Option<Stamp>,
     },
     /// A folder or archive that is a game by ScummVM's list (`games`): its
     /// `files` aren't read or hashed.
@@ -287,10 +292,17 @@ pub fn walk(
                 return;
             }
             let path = unit.path().to_owned();
-            guarded(path.clone(), &mut *send, |send| {
-                hash_unit(unit, stamp, opts, send)
+            crate::job::watching(&opts.cancel, || {
+                guarded(path.clone(), &mut *send, |send| {
+                    hash_unit(unit, stamp, opts, send)
+                })
             });
-            send(Visit::UnitDone { path, bytes: size });
+            send(Visit::UnitDone {
+                path,
+                bytes: size,
+                stopped: opts.cancel.is_set(),
+                stamp,
+            });
         },
         &mut each,
     );

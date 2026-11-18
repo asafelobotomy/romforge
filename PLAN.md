@@ -3312,11 +3312,19 @@ found about 65 items; they are fixed one area per PR, worst first.
   looked even with no copy in Games/); now `files(sha1, size)` is indexed
   and the plan only looks when there is one. "Name as suggested" worked
   out the whole library again per row (2,000 rows, 2,000 passes); it now
-  names them all in one transaction and works it out once. Still open from
-  the review: Stop is only seen between files (a 50 GB image runs to its
-  end), a database error doesn't stop the hashing, an archive with nothing
-  to hash is read again each scan, and cue-sheet fitting grows with the
-  folder.
+  names them all in one transaction and works it out once.
+
+- *(Fixed 2026-11-18.)* **Scans that wouldn't stop, and work done
+  twice.** Stop was seen only between files, so a 50 GB image (read
+  first: largest first) ran to its end; now the readers check it between
+  chunks, CHD hunks and archive members, and a file cut short is dropped
+  and read again next time. A database error left every worker hashing
+  the rest of the library; it now stops them. An archive with nothing to
+  hash had no row to keep its stamp, so each scan read it again; it now
+  has one in `scan_stamps` (schema 50), dropped when the DATs change or
+  the romforge version does. Cue-sheet fitting asked one query per track
+  per file beside each unknown sheet; it now works out each folder or
+  archive once.
 
 ## Later ideas (parked, do not build yet)
 

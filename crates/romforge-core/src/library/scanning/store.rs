@@ -14,6 +14,23 @@ use rusqlite::{Connection, Statement, params};
 use crate::scan::Entry;
 use crate::{ScanReport, disc};
 
+/// What reads files the way this version does: an archive stamped with
+/// nothing to hash by another version is read again (it may know more
+/// extensions).
+pub(super) const RULES: &str = env!("CARGO_PKG_VERSION");
+
+/// How a file's read ended.
+pub(super) struct Done {
+    /// The scanned folder it belongs to.
+    pub owner: i64,
+    /// Its size and time, recorded when nothing in it was hashed (an
+    /// archive with no ROM in it); `None`: don't.
+    pub stamp: Option<crate::scan::Stamp>,
+    /// Asked to stop while it was read: what came may be cut short, so
+    /// nothing is written and it is read again next time.
+    pub stopped: bool,
+}
+
 /// How long written rows wait for a commit at most (in this crate's tests,
 /// no time: every file is committed).
 #[cfg(not(test))]
@@ -27,6 +44,8 @@ pub(super) struct Store<'t> {
     drop_path: Statement<'t>,
     set_chd: Statement<'t>,
     unstamp: Statement<'t>,
+    stamp_empty: Statement<'t>,
+    unstamp_empty: Statement<'t>,
     chd_sha1s: HashMap<String, Option<String>>,
     /// Paths whose old rows were dropped before the new ones went in (an
     /// archive may have lost members).
@@ -69,6 +88,13 @@ impl<'t> Store<'t> {
             drop_path: tx.prepare("DELETE FROM files WHERE path = ?1")?,
             set_chd: tx.prepare("UPDATE files SET chd_sha1 = ?2 WHERE file_id = ?1")?,
             unstamp: tx.prepare("UPDATE files SET mtime = NULL WHERE path = ?1")?,
+            stamp_empty: tx.prepare(
+                "INSERT INTO scan_stamps (path, root_id, disk_size, mtime, rules)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(path) DO UPDATE SET root_id = excluded.root_id,
+                   disk_size = excluded.disk_size, mtime = excluded.mtime, rules = excluded.rules",
+            )?,
+            unstamp_empty: tx.prepare("DELETE FROM scan_stamps WHERE path = ?1")?,
             chd_sha1s: HashMap::new(),
             cleared: HashSet::new(),
             hashed_ids: HashSet::new(),
@@ -93,13 +119,33 @@ impl<'t> Store<'t> {
     pub fn done(
         &mut self,
         path: &Path,
-        owner: i64,
+        done: Done,
         report: &mut ScanReport,
         seen: &mut HashSet<String>,
         unreadable_dirs: &mut Vec<String>,
     ) -> rusqlite::Result<()> {
-        for entry in self.open.remove(path).unwrap_or_default() {
-            self.put(entry, owner, report, seen, unreadable_dirs)?;
+        let entries = self.open.remove(path).unwrap_or_default();
+        if done.stopped {
+            return Ok(());
+        }
+        if let Some(p) = path.to_str() {
+            match done.stamp {
+                Some(s) if entries.is_empty() => {
+                    // What was known in it is gone (it has no ROM now).
+                    if self.cleared.insert(p.to_owned()) {
+                        self.drop_path.execute([p])?;
+                    }
+                    self.stamp_empty
+                        .execute(params![p, done.owner, s.size, s.mtime, RULES])?;
+                    seen.insert(p.to_owned());
+                }
+                _ => {
+                    self.unstamp_empty.execute([p])?;
+                }
+            }
+        }
+        for entry in entries {
+            self.put(entry, done.owner, report, seen, unreadable_dirs)?;
         }
         if self.since.elapsed() >= COMMIT_EVERY {
             self.commit(report)?;

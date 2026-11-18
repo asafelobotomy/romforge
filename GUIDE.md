@@ -91,8 +91,14 @@ changed since it was hashed keeps its hashes (`--rehash` reads everything
 again). A scan writes each file (an archive with all its members) once it
 is read, committed every two seconds, so a scan that is stopped or fails
 keeps the files it finished; they are looked up in the DATs by the next
-scan (or any identify), and the file it was reading is read again. Files
-are found by content through an index on their SHA1 and size. `romforge-cli games` lists games the way the app does;
+scan (or any identify), and the file it was reading is read again. Stop
+is seen inside a file too (between chunks of a big image, a CHD's hunks
+and an archive's members), and a database error stops the hashing at
+once. An archive with nothing to hash in it is remembered by its size and
+time (`scan_stamps`), so the next scan doesn't read it again, unless the
+DATs changed since (it may be an arcade set now), it holds a patch, or
+another romforge version read it. Files are found by content through an
+index on their SHA1 and size. `romforge-cli games` lists games the way the app does;
 `games --json` (`--platform`, `--status all|verified|incomplete|unidentified`,
 `--search`, `--sort`, `--desc`, `--limit`, `--offset`) prints
 `{total, games[]}` and `browse` the same with positional choices (for a fixed command line), `overview [--json]` the totals, platforms, recent

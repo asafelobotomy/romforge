@@ -230,6 +230,9 @@ impl RawHasher {
 /// Hash `reader`, whose total length must be `size` (needed up front for the
 /// size-based SNES header rule). Errors if the stream length differs.
 pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
+    if crate::job::stop_asked() {
+        return Err(crate::job::stopped());
+    }
     let big = size >= SPLIT_AT;
     let mut buf = vec![0u8; if big { 1 << 20 } else { 64 * 1024 }];
 
@@ -281,6 +284,10 @@ pub fn hash_stream(mut reader: impl Read, size: u64) -> io::Result<Hashes> {
 
     feed(&buf[..filled], &mut raw);
     loop {
+        // A scan asked to stop doesn't read a big image to its end.
+        if crate::job::stop_asked() {
+            return Err(crate::job::stopped());
+        }
         let n = reader.read(&mut buf)?;
         if n == 0 {
             break;
