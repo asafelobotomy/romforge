@@ -103,6 +103,10 @@ fn hash_file(path: &Path) -> std::io::Result<Hashes> {
 fn walk_zip(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
     let mut archive = zip::ZipArchive::new(BufReader::new(File::open(path)?))?;
     for i in 0..archive.len() {
+        // Asked to stop: the rest of the members aren't opened.
+        if crate::job::stop_asked() {
+            break;
+        }
         // One member that can't be opened (encrypted, an unsupported
         // method) is that member's error; the rest are still read.
         let name = match archive.name_for_index(i) {
@@ -151,6 +155,11 @@ fn walk_zip(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Res
 fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Result<(), Error> {
     let mut archive = sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty())?;
     archive.for_each_entries(|entry, reader| {
+        // Asked to stop: no more of the stream is decompressed (returning
+        // false ends the walk; the archive is read again next time).
+        if crate::job::stop_asked() {
+            return Ok(false);
+        }
         if entry.is_directory() {
             // nothing to hash
         } else if !wanted_member(entry.name(), opts) {
@@ -163,6 +172,9 @@ fn walk_7z(path: &Path, opts: &ScanOptions, each: &mut dyn FnMut(Visit)) -> Resu
             });
         } else {
             let hashes = hash_stream(&mut *reader, entry.size()).map_err(|e| e.to_string());
+            if crate::job::stop_asked() {
+                return Ok(false);
+            }
             if hashes.is_err() {
                 let _ = std::io::copy(reader, &mut std::io::sink());
             }

@@ -224,6 +224,10 @@ impl Library {
                             stopped,
                         };
                         result = store.done(&path, done, &mut report, &mut seen, &mut unreadable_dirs);
+                        if result.is_err() {
+                            // Stop the readers now, not at the next visit.
+                            opts.cancel.cancel();
+                        }
                     }
                     Visit::Skipped { path, member } => {
                         visits::skipped(&mut report, &mut skipped_kinds, &mut patch_files, path, member);
@@ -246,6 +250,7 @@ impl Library {
                         for st in [&mut adopt, &mut adopt_stamp] {
                             if let Err(e) = st.execute(params![owner(&path), p]) {
                                 result = Err(e);
+                                opts.cancel.cancel();
                             }
                         }
                         seen.insert(p);
