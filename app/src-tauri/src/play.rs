@@ -34,6 +34,11 @@ pub fn game_running(app: &tauri::AppHandle) -> bool {
     s.is_some_and(|s| s.is_running())
 }
 
+/// Whether a game is running or being started now.
+pub fn busy(app: &tauri::AppHandle) -> bool {
+    STARTING.load(Ordering::SeqCst) || game_running(app)
+}
+
 /// The window was closed while a game plays: stop it and quit, or keep
 /// playing (the window stays).
 pub fn ask_to_quit(app: &tauri::AppHandle) {

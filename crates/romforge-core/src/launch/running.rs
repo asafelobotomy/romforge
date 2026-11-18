@@ -51,6 +51,26 @@ fn running_in(proc_dir: &Path, e: &KnownEmulator) -> bool {
     })
 }
 
+/// Refuse while an emulator romforge knows runs (RetroArch included):
+/// the RomForge folder holds its saves, BIOS and games, and its settings
+/// point there, so the folder must not move under it.
+pub fn none_running() -> Result<(), Error> {
+    none_running_in(Path::new("/proc"))
+}
+
+fn none_running_in(proc_dir: &Path) -> Result<(), Error> {
+    match std::iter::once(&super::RETROARCH)
+        .chain(super::KNOWN_EMULATORS)
+        .find(|e| running_in(proc_dir, e))
+    {
+        Some(e) => Err(Error::Settings(format!(
+            "{} is running: close it before moving the RomForge folder (its saves and settings are in it)",
+            e.label
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Refuse `spec` while its emulator already runs and romforge writes its
 /// config first: a second game (started from the app, the launcher or the
 /// CLI, each knowing only its own) would rewrite that config under the
@@ -105,6 +125,17 @@ mod tests {
         assert!(err.contains("already running"), "{err}");
         std::fs::remove_dir_all(&d).unwrap();
         assert!(not_twice_in(t.path(), &spec).is_ok());
+    }
+
+    #[test]
+    fn a_folder_move_waits_for_every_emulator() {
+        let t = tempfile::tempdir().unwrap();
+        assert!(none_running_in(t.path()).is_ok(), "nothing runs");
+        let d = t.path().join("70");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("cmdline"), b"/usr/bin/retroarch\0-L\0core.so").unwrap();
+        let err = none_running_in(t.path()).unwrap_err().to_string();
+        assert!(err.contains("RetroArch is running"), "{err}");
     }
 
     #[test]

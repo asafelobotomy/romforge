@@ -6,7 +6,7 @@ use romforge_core::Library;
 use romforge_core::home::Home;
 
 use crate::art::ArtRoots;
-use crate::db::{Db, Res, blocking, db_path, read};
+use crate::db::{Db, MOVE_WAIT, Res, alone, blocking, db_path, read};
 
 #[derive(serde::Serialize)]
 pub struct HomeInfo {
@@ -56,12 +56,19 @@ pub async fn home_create(
 
 /// Move the RomForge folder into `parent`: both connections close, the
 /// folder moves, and the library reopens there (fixing its stored paths).
+/// Refused while a game, a job or a download runs.
 #[tauri::command]
 pub async fn home_move(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     roots: tauri::State<'_, ArtRoots>,
     parent: String,
 ) -> Res<PathBuf> {
+    // The core refuses while any emulator it knows runs; this is the
+    // app's own game, whatever started it.
+    if crate::play::busy(&app) {
+        return Err("a game is running: move the RomForge folder once it ends".into());
+    }
     detached(&db, &roots, move |current, was| {
         let Some(old) = current else {
             let no = || Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
@@ -94,18 +101,18 @@ async fn detached(
     let (write, read, roots) = (db.write.clone(), db.read.clone(), roots.inner().clone());
     let detached = db.detached.clone();
     blocking(move || {
-        // Background fetches on their own connection finish first.
-        let _alone = detached.write().unwrap_or_else(|e| e.into_inner());
-        let mut w = write.lock().unwrap_or_else(|e| e.into_inner());
-        let mut r = read.lock().unwrap_or_else(|e| e.into_inner());
+        // Never during a job, a download or a fetch on its own connection
+        // (refused after a moment, not queued behind them).
+        let mut alone = alone(&write, &read, &detached, MOVE_WAIT)?;
+        let (w, r) = (&mut *alone.write, &mut *alone.read);
         // Both connections close before the database moves.
         let current = w.home().cloned();
         let was = w.path().map_or_else(db_path, Path::to_owned);
         *w = Library::open_in_memory()?;
         *r = Library::open_in_memory()?;
         let (at, fallback, finish) = change(current, was)?;
-        reopen(&mut w, &mut r, &at, &fallback)?;
-        roots.set(&w);
+        reopen(w, r, &at, &fallback)?;
+        roots.set(w);
         finish()
     })
     .await

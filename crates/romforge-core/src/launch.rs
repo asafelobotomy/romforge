@@ -39,7 +39,7 @@ mod start;
 use start::*;
 mod running;
 mod table;
-pub use running::running;
+pub use running::{none_running, running};
 pub use table::*;
 mod helper_run;
 mod tools;
