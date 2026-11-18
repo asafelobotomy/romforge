@@ -176,6 +176,8 @@ pub(crate) fn point(
         }
         _ => return,
     };
+    // Gathered once: `Saves/` from then on, whatever stayed behind.
+    let kept = kept && !crate::saves::gather::gathered(home, name);
     p.dirs.push(to);
     for k in keys {
         set(p, k, kept);

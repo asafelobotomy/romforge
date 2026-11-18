@@ -360,14 +360,20 @@ source with one click (a Flatpak into your own installation with
 `RomForge/Emulators/`, which romforge looks in). **Import my existing
 setup** copies what an emulator keeps in its usual folders (memory cards,
 saves, controller mappings, settings) into romforge's copy for it; undo
-takes it back. **Your game data** (on the tabs of RPCS3, Cemu, xemu,
+takes it back: the copies go to `.romforge-trash/setup-import-<id>/`,
+never deleted, since the emulator may have saved to them since (undo
+names the ones changed since the import), and settings files it replaced
+come back. **Your game data** (on the tabs of RPCS3, Cemu, xemu,
 Azahar, Lime3DS and Citra): romforge points these at your own data where
 it is (RPCS3's `dev_hdd0`…, Cemu's MLC, xemu's disk and EEPROM, the 3DS
 NAND and SD card); **Move into RomForge** moves it in instead, after a
 plan (what, how much, whether it fits; never over files already there).
-Every file is copied and checked first; only then do the originals go to
-the RomForge trash, and the emulator's setup uses RomForge's copy from then
-on. Undo puts them back until the trash is emptied. Moving, undoing and
+Every file is copied and checked first; the emulator's setup uses
+RomForge's copy from then on, and only then do the originals go to the
+RomForge trash (one that can't stays where it was, and the move says so).
+Undo puts them back until the trash is emptied, and RomForge's copy,
+which the emulator has played on since, goes to
+`.romforge-trash/move-<id>-undone/` rather than being deleted. Moving, undoing and
 importing a setup are refused while the emulator is running (romforge's
 or one you started yourself: found by its program, AppImage or Flatpak).
 romforge never ships an emulator or a core.
@@ -426,7 +432,11 @@ and Dolphin's Wii NAND keep saves inside their own data.
 Saves made before that, in an emulator's old places, move in when you
 ask (Emulator Settings → the emulator → Your saves, or the command
 below): a plan first, never over a file already in `Saves/`, journaled,
-refused while the emulator runs, and undone with `--undo`.
+refused while the emulator runs, and undone with `--undo`. All of them
+move or none: one that fails puts back those already moved. Once
+gathered, the emulator uses `Saves/` even if a save stayed behind
+(its place in `Saves/` was taken), so its saves are never split between
+two folders; undo points it back.
 
 ```bash
 romforge-cli saves gather duckstation           # the plan
@@ -878,7 +888,12 @@ The toolbar:
   until the emulator is up; then romforge goes to the system tray
   (Settings → **While a game plays**: tray, minimise, or keep open). Its
   tray menu has **Show romforge** and **Stop**; when the game ends,
-  romforge comes back by itself.
+  romforge comes back by itself. For a Flatpak the game has ended when
+  the emulator inside its sandbox has, not just the sandbox, so its saves
+  are written before the backup after it runs. A game of an emulator
+  that is already running (from the app, uQ's launcher or the CLI, or
+  started by you) is refused: romforge writes its settings before each
+  game and would change them under the running one.
 - **Fullscreen** (or F11) switches to the fullscreen mode, for a game pad
   and a TV: the platforms along the top (left/right), that platform's
   games as large box art below with the focused game's facts beside

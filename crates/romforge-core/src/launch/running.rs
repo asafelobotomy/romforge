@@ -6,7 +6,8 @@
 
 use std::path::Path;
 
-use super::KnownEmulator;
+use super::{KnownEmulator, LaunchSpec};
+use crate::Error;
 
 /// Whether `e` has a process running, as far as `/proc` shows.
 pub fn running(e: &KnownEmulator) -> bool {
@@ -50,9 +51,61 @@ fn running_in(proc_dir: &Path, e: &KnownEmulator) -> bool {
     })
 }
 
+/// Refuse `spec` while its emulator already runs and romforge writes its
+/// config first: a second game (started from the app, the launcher or the
+/// CLI, each knowing only its own) would rewrite that config under the
+/// first, and the first's backup would run while the second writes.
+pub(super) fn not_twice(spec: &LaunchSpec) -> Result<(), Error> {
+    not_twice_in(Path::new("/proc"), spec)
+}
+
+fn not_twice_in(proc_dir: &Path, spec: &LaunchSpec) -> Result<(), Error> {
+    let family = spec.emulator.split(':').next().unwrap_or(&spec.emulator);
+    match super::known(family) {
+        Some(e) if !spec.prepare.writes.is_empty() && running_in(proc_dir, e) => Err(Error::Launch(format!(
+            "{} is already running: close it first (romforge writes its settings before each game)",
+            e.label
+        ))),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_game_of_a_running_emulator_is_refused() {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path().join("50");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("cmdline"), b"/usr/bin/retroarch\0-L\0core.so").unwrap();
+        let mut spec = LaunchSpec {
+            game: "Game".into(),
+            system: "SNES".into(),
+            emulator: "retroarch:snes9x".into(),
+            rom: "game.sfc".into(),
+            program: "/usr/bin/retroarch".into(),
+            args: Vec::new(),
+            env: Vec::new(),
+            prepare: Default::default(),
+            skipped: Vec::new(),
+        };
+        assert!(
+            not_twice_in(t.path(), &spec).is_ok(),
+            "no config of romforge's to clash"
+        );
+        spec.prepare.writes.push(super::super::ConfigWrite {
+            path: t.path().join("retroarch.cfg"),
+            format: super::super::Format::RetroArch,
+            keys: Vec::new(),
+            remove: Vec::new(),
+        });
+        let err = not_twice_in(t.path(), &spec).unwrap_err().to_string();
+        assert!(err.contains("already running"), "{err}");
+        std::fs::remove_dir_all(&d).unwrap();
+        assert!(not_twice_in(t.path(), &spec).is_ok());
+    }
 
     #[test]
     fn a_process_by_program_appimage_or_flatpak() {

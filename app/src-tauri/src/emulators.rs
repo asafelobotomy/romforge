@@ -108,7 +108,10 @@ pub async fn undo_restore_save(db: tauri::State<'_, Db>, emulator: String) -> Re
 }
 
 #[tauri::command]
-pub async fn undo_emulator_setup(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
+pub async fn undo_emulator_setup(
+    db: tauri::State<'_, Db>,
+    emulator: String,
+) -> Res<romforge_core::launch::existing::SetupUndone> {
     with(&db, move |lib| lib.undo_emulator_setup(&emulator)).await
 }
 

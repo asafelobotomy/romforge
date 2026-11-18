@@ -69,8 +69,8 @@
     setupBusy = true;
     // Jobs in the queue (footer); their errors go to the status line.
     if (undo) {
-      const n = await run(`Taking back ${name}'s setup…`, "undo_emulator_setup", { emulator: name });
-      if (n != null) note = `Setup import taken back: ${n} file${n === 1 ? "" : "s"} removed.`;
+      const u = await run(`Taking back ${name}'s setup…`, "undo_emulator_setup", { emulator: name });
+      if (u) note = `Setup import taken back: ${u.files} file${u.files === 1 ? "" : "s"} moved to the trash` + (u.changed.length ? ` (${u.changed.length} changed since the import, saves made since among them; they are in ${u.trash})` : "") + ".";
     } else {
       const r = await run(`Copying ${name}'s setup…`, "import_emulator_setup", { emulator: name });
       if (r) note = `Setup imported: ${r.copied} file${r.copied === 1 ? "" : "s"} copied` + (r.saves ? ` (${r.saves} saves and states)` : "") + (r.kept ? `, ${r.kept} already there kept.` : ".");
