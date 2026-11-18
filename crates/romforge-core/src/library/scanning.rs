@@ -1,5 +1,6 @@
 //! Scanning a folder.
 
+mod store;
 mod visits;
 
 use std::path::{Path, PathBuf};
@@ -8,8 +9,8 @@ use rusqlite::{Connection, params};
 
 use crate::scan::Visit;
 use crate::{
-    Error, Library, ScanOptions, ScanProgress, ScanReport, Scope, SkippedKind, disc, identify, layout,
-    patcher, scan, scummvm, systems,
+    Error, Library, ScanOptions, ScanProgress, ScanReport, Scope, SkippedKind, identify, layout, patcher,
+    scan, scummvm, systems,
 };
 
 /// Every arcade set name (lower case) of the imported DATs: an archive
@@ -148,12 +149,8 @@ impl Library {
                 .map_or(root_id, |(_, id)| *id)
         };
         // Paths seen in this scan; rows of this folder for anything else are
-        // files that went away. `cleared`: paths whose old rows were dropped
-        // before the new ones went in (an archive may have lost members).
+        // files that went away.
         let mut seen: std::collections::HashSet<String> = Default::default();
-        // Files hashed in this scan: only they are looked up in the DATs again.
-        let mut hashed_ids: std::collections::HashSet<i64> = Default::default();
-        let mut cleared: std::collections::HashSet<String> = Default::default();
         // Folders the walk couldn't read: what is known under them is kept
         // (seen), as an unreadable file keeps its row.
         let mut unreadable_dirs: Vec<String> = Vec::new();
@@ -168,48 +165,37 @@ impl Library {
         // ScummVM games are named by their files' sizes and first bytes:
         // found first, so those files aren't hashed one by one.
         let games = scummvm::games_under(&tx, scummvm_list.as_deref(), &root)?;
-        {
-            let mut upsert = tx.prepare(
-                concat!("INSERT INTO files (root_id, path, member, size, crc32, md5, sha1, header_kind,
-                                    stripped_size, stripped_crc32, stripped_md5, stripped_sha1, scanned_at,
-                                    disk_size, mtime, id_kind, id_serial, id_title, id_region, sheet_files, id_size, id_crc)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ", crate::db::now!(), ",
-                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
-                 ON CONFLICT(path, member) DO UPDATE SET root_id = excluded.root_id, size = excluded.size,
-                   crc32 = excluded.crc32, md5 = excluded.md5, sha1 = excluded.sha1,
-                   header_kind = excluded.header_kind, stripped_size = excluded.stripped_size,
-                   stripped_crc32 = excluded.stripped_crc32, stripped_md5 = excluded.stripped_md5,
-                   stripped_sha1 = excluded.stripped_sha1, scanned_at = excluded.scanned_at,
-                   disk_size = excluded.disk_size, mtime = excluded.mtime,
-                   id_kind = excluded.id_kind, id_serial = excluded.id_serial,
-                   id_title = excluded.id_title, id_region = excluded.id_region,
-                   sheet_files = excluded.sheet_files, id_size = excluded.id_size, id_crc = excluded.id_crc
-                 RETURNING file_id"),
-            )?;
-            let mut drop_path = tx.prepare("DELETE FROM files WHERE path = ?1")?;
-            let mut set_chd = tx.prepare("UPDATE files SET chd_sha1 = ?2 WHERE file_id = ?1")?;
-            let mut chd_sha1s: std::collections::HashMap<String, Option<String>> = Default::default();
+        let hashed_ids = {
+            let mut store = store::Store::new(&tx)?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
             let mut units = ScanProgress::default();
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
-            scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
+            let walked = scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
                     return;
                 }
-                let entry = match visit {
-                    Visit::Hashed(entry) => entry,
+                match visit {
+                    Visit::Hashed(entry) => {
+                        // One that can't be stored (a path that isn't
+                        // UTF-8) is an error, not a hashed file.
+                        if let (Ok(h), Some(_)) = (&entry.hashes, entry.path.to_str()) {
+                            report.hashed += 1;
+                            report.bytes_hashed += h.raw.size;
+                        }
+                        store.hold(entry);
+                        (units.hashed, units.bytes_hashed, units.skipped) =
+                            (report.hashed, report.bytes_hashed, report.skipped);
+                    }
                     Visit::Planned { units: n, bytes } => {
                         (units.units_total, units.disk_total) = (n, bytes);
-                        progress(units);
-                        return;
                     }
-                    Visit::UnitDone { bytes } => {
+                    Visit::UnitDone { path, bytes } => {
                         units.units_done += 1;
                         units.disk_done += bytes;
-                        progress(units);
-                        return;
+                        result =
+                            store.done(&path, owner(&path), &mut report, &mut seen, &mut unreadable_dirs);
                     }
                     Visit::Skipped { path, member } => {
                         visits::skipped(&mut report, &mut skipped_kinds, &mut patch_files, path, member);
@@ -236,110 +222,22 @@ impl Library {
                         report.unchanged += 1;
                         return;
                     }
-                };
-                let Some(path_str) = entry.path.to_str().map(str::to_owned) else {
-                    // Not stored under a mangled name: reported instead.
-                    report.errors.push((
-                        entry.path,
-                        entry.member,
-                        "path is not valid UTF-8; not stored".into(),
-                    ));
-                    return;
-                };
-                seen.insert(path_str.clone());
-                // A plain file that couldn't be read keeps its old row (a
-                // flaky disk shouldn't forget it); it is read again next time.
-                let unreadable = entry.member.is_empty() && entry.hashes.is_err();
-                if unreadable && !path_str.is_empty() {
-                    unreadable_dirs.push(format!("{}/", path_str.trim_end_matches('/')));
                 }
-                if !unreadable
-                    && cleared.insert(path_str.clone())
-                    && let Err(e) = drop_path.execute([&path_str])
-                {
-                    result = Err(e);
-                    return;
-                }
-                if entry.member.is_empty()
-                    && let Some(listed) = disc::sheet_files(&entry.path)
-                {
-                    match listed {
-                        Ok(files) => {
-                            for f in files.iter().filter(|f| !f.exists()) {
-                                report
-                                    .sheet_problems
-                                    .push((entry.path.clone(), format!("missing {}", f.display())));
-                            }
-                        }
-                        Err(e) => report.sheet_problems.push((entry.path.clone(), e.to_string())),
-                    }
-                }
-                match entry.hashes {
-                    Ok(h) => {
-                        let s = h.stripped.as_ref();
-                        result = upsert
-                            .query_row(
-                                params![
-                                    owner(&entry.path),
-                                    path_str,
-                                    entry.member,
-                                    h.raw.size,
-                                    h.raw.crc32,
-                                    h.raw.md5,
-                                    h.raw.sha1,
-                                    s.map(|s| s.0),
-                                    s.map(|s| s.1.size),
-                                    s.map(|s| &s.1.crc32),
-                                    s.map(|s| &s.1.md5),
-                                    s.map(|s| &s.1.sha1),
-                                    entry.stamp.map(|s| s.size),
-                                    entry.stamp.map(|s| s.mtime),
-                                    h.id.as_ref().map(|i| i.kind),
-                                    h.id.as_ref().and_then(|i| i.serial.as_deref()),
-                                    h.id.as_ref().and_then(|i| i.title.as_deref()),
-                                    h.id.as_ref().and_then(|i| i.region.as_deref()),
-                                    h.sheet.as_ref().and_then(|s| serde_json::to_string(s).ok()),
-                                    h.id.as_ref().and_then(|i| i.image_size),
-                                    h.id.as_ref().and_then(|i| i.source_crc),
-                                ],
-                                |r| r.get::<_, i64>(0),
-                            )
-                            .inspect(|&id| {
-                                hashed_ids.insert(id);
-                            })
-                            .and_then(|id| {
-                                // A CHD's own SHA1, which arcade DATs give
-                                // for a disk.
-                                let is_chd = entry
-                                    .path
-                                    .extension()
-                                    .is_some_and(|e| e.eq_ignore_ascii_case("chd"));
-                                if !is_chd {
-                                    return Ok(());
-                                }
-                                let sha1 = chd_sha1s
-                                    .entry(path_str.clone())
-                                    .or_insert_with(|| disc::chd_sha1(&entry.path))
-                                    .clone();
-                                set_chd.execute(params![id, sha1]).map(|_| ())
-                            });
-                        report.hashed += 1;
-                        report.bytes_hashed += h.raw.size;
-                    }
-                    Err(e) => report.errors.push((entry.path, entry.member, e)),
-                }
-                (units.hashed, units.bytes_hashed, units.skipped) =
-                    (report.hashed, report.bytes_hashed, report.skipped);
                 progress(units);
-            })?;
+            });
             result?;
-        }
-        // A path with an error (an unreadable file, an archive member that
-        // failed) isn't stamped, so the next scan reads it again instead of
-        // calling it unchanged.
-        for path in report.errors.iter().filter_map(|(p, _, _)| p.to_str()) {
-            tx.execute("UPDATE files SET mtime = NULL WHERE path = ?1", [path])?;
-        }
+            // Stopped (or the walk failed): keep the files finished since
+            // the last commit before saying so.
+            if walked.is_err() {
+                store.commit(&report)?;
+            }
+            walked?;
+            for path in store.left() {
+                store.done(&path, owner(&path), &mut report, &mut seen, &mut unreadable_dirs)?;
+            }
+            store.unstamp(&report)?;
+            std::mem::take(&mut store.hashed_ids)
+        };
         // Rows of this folder (and the folders inside it, walked too) for
         // files that are gone (or now skipped).
         let ids: std::collections::BTreeSet<i64> = std::iter::once(root_id)
@@ -369,3 +267,6 @@ impl Library {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests;

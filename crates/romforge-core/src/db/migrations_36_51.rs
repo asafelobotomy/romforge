@@ -1,4 +1,4 @@
-//! Migrations from 36 on (36 to 48 so far; the file is named for the range
+//! Migrations from 36 on (36 to 49 so far; the file is named for the range
 //! it will hold, up to 51; see `MIGRATIONS`).
 
 pub(super) const MIGRATIONS_36_51: &[&str] = &[
@@ -176,4 +176,10 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
     // emulator has written since (NULL: imported before this column).
     "ALTER TABLE setup_import_files ADD COLUMN size INTEGER;
      ALTER TABLE setup_import_files ADD COLUMN mtime INTEGER;",
+    // 49: scans commit as they go (`library::scanning`): `pending` marks a
+    // file hashed but not yet looked up in the DATs, so a scan stopped
+    // halfway has its files looked up by the next identify. And the
+    // lookups by content (import plans, Search) use an index.
+    "ALTER TABLE files ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;
+     CREATE INDEX files_sha1 ON files(sha1, size);",
 ];

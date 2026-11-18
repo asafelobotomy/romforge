@@ -35,13 +35,15 @@ fn scan_reports_its_total_first() {
     assert_eq!(step.done, step.total, "{step:?}");
 }
 
-/// A scan asked to stop leaves the library as it was: its transaction
-/// rolls back.
+/// A scan asked to stop keeps what it finished (committed as it goes);
+/// the next scan reads the rest, and the library ends as a full scan's.
 #[test]
-fn a_stopped_scan_changes_nothing() {
+fn a_stopped_scan_is_finished_by_the_next() {
+    let mut full = Library::open_in_memory().unwrap();
+    import_all(&mut full);
+    full.scan(fixtures().join("roms"), Scope::All).unwrap();
     let mut lib = Library::open_in_memory().unwrap();
     import_all(&mut lib);
-    let before = by_path(&lib);
     let cancel = Cancel::new();
     let opts = ScanOptions {
         jobs: 1,
@@ -58,7 +60,16 @@ fn a_stopped_scan_changes_nothing() {
     });
     assert!(matches!(r, Err(Error::Cancelled)), "{r:?}");
     assert!(calls > 0);
-    assert_eq!(by_path(&lib), before);
+    // The file finished before Stop is kept, though no commit was due.
+    assert!(!lib.files(&Default::default()).unwrap().is_empty());
+    lib.scan(fixtures().join("roms"), Scope::All).unwrap();
+    let statuses = |l: &Library| -> Vec<(String, String)> {
+        by_path(l)
+            .into_iter()
+            .map(|(p, f)| (p, format!("{:?}", f.status)))
+            .collect()
+    };
+    assert_eq!(statuses(&lib), statuses(&full));
     assert!(lib.can_refresh().is_ok());
 
     // Refresh stops too, instead of listing the stop as one folder's error.

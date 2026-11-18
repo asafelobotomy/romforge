@@ -188,12 +188,13 @@ pub(super) fn plan_as(
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(paths.iter().any(|q| Path::new(q).starts_with(games)))
             };
-            let mut all_held = true;
+            // Looked up only when there is a copy in Games/ to compare.
+            let mut all_held = there.is_some();
             for p in parts.iter().filter(|p| !p.name.to_lowercase().ends_with(".cue")) {
-                if !held(p)? {
-                    all_held = false;
+                if !all_held {
                     break;
                 }
+                all_held = held(p)?;
             }
             if let (Some(target), true) = (there, all_held) {
                 let outside: Vec<Part> = parts
