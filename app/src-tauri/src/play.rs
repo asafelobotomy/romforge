@@ -34,9 +34,18 @@ pub fn game_running(app: &tauri::AppHandle) -> bool {
     s.is_some_and(|s| s.is_running())
 }
 
-/// Whether a game is running or being started now.
-pub fn busy(app: &tauri::AppHandle) -> bool {
-    STARTING.load(Ordering::SeqCst) || game_running(app)
+/// Keep Play away while the RomForge folder moves: refused if a game is
+/// running or starting, else no game starts until the guard is dropped (a
+/// launch past its check would otherwise start from where the folder was).
+pub fn hold_off(app: &tauri::AppHandle) -> Result<impl Drop, String> {
+    if STARTING.swap(true, Ordering::SeqCst) {
+        return Err("a game is starting: move the RomForge folder once it runs".into());
+    }
+    let held = Starting;
+    if game_running(app) {
+        return Err("a game is running: move the RomForge folder once it ends".into());
+    }
+    Ok(held)
 }
 
 /// The window was closed while a game plays: stop it and quit, or keep
@@ -106,7 +115,7 @@ pub async fn launch(
         return Err(format!("{} is still running: stop it first", s.playing.game));
     }
     if STARTING.swap(true, Ordering::SeqCst) {
-        return Err("a game is starting: wait for it".into());
+        return Err("a game is starting, or the RomForge folder is moving: wait for it".into());
     }
     let _starting = Starting;
     let (spec, hotkeys) = read(&db, move |lib| {

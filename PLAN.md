@@ -3263,8 +3263,9 @@ found about 65 items; they are fixed one area per PR, worst first.
   move under a running game. The app's move now only tries its locks for
   two seconds and names the job or download in the way; folder downloads
   look up their place under the move's lock; and the core refuses a move
-  while any emulator it knows runs (the CLI's `home move` too), the app
-  also while its own game is starting or running.
+  while any emulator it knows or the user added runs (the CLI's `home
+  move` too); the app also while its own game is starting or running,
+  and starts none until the move is done.
 
 ## Later ideas (parked, do not build yet)
 

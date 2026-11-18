@@ -64,11 +64,9 @@ pub async fn home_move(
     roots: tauri::State<'_, ArtRoots>,
     parent: String,
 ) -> Res<PathBuf> {
-    // The core refuses while any emulator it knows runs; this is the
-    // app's own game, whatever started it.
-    if crate::play::busy(&app) {
-        return Err("a game is running: move the RomForge folder once it ends".into());
-    }
+    // The core refuses while an emulator runs; this is the app's own game,
+    // and no Play starts until the move is done.
+    let _no_play = crate::play::hold_off(&app)?;
     detached(&db, &roots, move |current, was| {
         let Some(old) = current else {
             let no = || Err(romforge_core::Error::Settings("no RomForge folder yet".into()));
