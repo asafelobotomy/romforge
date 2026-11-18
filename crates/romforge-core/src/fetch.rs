@@ -39,6 +39,7 @@ use crate::systems::System;
 
 mod dats;
 mod download;
+mod kinds;
 mod request;
 mod small;
 mod sources;
@@ -48,6 +49,7 @@ mod watch;
 
 pub use dats::*;
 pub use download::*;
+pub use kinds::*;
 pub use request::*;
 pub use small::*;
 pub use sources::*;

@@ -129,9 +129,18 @@ pub fn request(req: &Request) -> Result<Option<Vec<u8>>, Error> {
     let mut out = Vec::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
-        let n = body
-            .read(&mut buf)
-            .map_err(|e| Error::Http(format!("{}: {e}", short(req.url))))?;
+        let n = body.read(&mut buf).map_err(|e| {
+            let m = format!("{}: {e}", short(req.url));
+            // A body that stalled or was cut off: the server is the
+            // trouble, as with no answer at all (not a body too large).
+            match e.kind() {
+                std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::UnexpectedEof => Error::Unreachable(m),
+                _ => Error::Http(m),
+            }
+        })?;
         if n == 0 {
             return Ok(Some(out));
         }
@@ -291,23 +300,6 @@ pub(super) fn http_date(v: &str) -> Option<u64> {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = (era * 146_097 + doe).checked_sub(719_468)?;
     Some(days * 86_400 + h * 3600 + m * 60 + sec)
-}
-
-/// Whether an error from [`request`] is a server asking to be left alone.
-pub fn is_rate_limited(e: &Error) -> bool {
-    matches!(e, Error::RateLimited(_))
-}
-
-/// Whether a source should be asked nothing more this run: it is rate
-/// limiting, or it refused the key it was given.
-pub fn stops_source(e: &Error) -> bool {
-    matches!(e, Error::RateLimited(_) | Error::Refused(_))
-}
-
-/// Whether an error from [`request`] is a server down, hanging or failing
-/// (no connection, no answer in time, HTTP 5xx).
-pub fn is_unreachable(e: &Error) -> bool {
-    matches!(e, Error::Unreachable(_))
 }
 
 /// Percent-encode one URL path segment.

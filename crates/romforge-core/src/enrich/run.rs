@@ -175,7 +175,7 @@ pub fn enrich(
         }
         // libretro's own DATs of the system (DOS, PC-98) and its title
         // lists (ScummVM): what the per-field files leave empty.
-        if need_meta && !(system.dats.is_empty() && system.titles.is_empty()) {
+        if need_meta && !opts.cancel.is_set() && !(system.dats.is_empty() && system.titles.is_empty()) {
             let found = dat_metadata(
                 conn,
                 opts,

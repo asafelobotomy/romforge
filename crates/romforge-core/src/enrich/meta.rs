@@ -132,6 +132,9 @@ pub(super) fn dat_metadata<'g>(
         .map(|n| (*n, false))
         .chain(system.titles.iter().map(|n| (*n, true)));
     for (name, overview) in sources {
+        if opts.cancel.is_set() {
+            break;
+        }
         progress(EnrichEvent::Metadata {
             system: system.key,
             field: name,
