@@ -12,12 +12,12 @@ use crate::launch::{self, Env, FlatpakFrom};
 
 const FLATHUB_REPO: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
 
-/// Install emulator `name`'s official Flatpak (as `emulator list` names
-/// it, `retroarch` included). Returns its Flatpak id.
-pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
-    let e = launch::known(name).ok_or_else(|| Error::Launch(format!("no emulator named {name:?}")))?;
+/// Where emulator `name`'s Flatpak comes from: (its id, the remote's name
+/// and its `.flatpakrepo`).
+pub fn flatpak_source(name: &str) -> Result<(&'static str, &'static str, &'static str), Error> {
+    let e = launch::known(name).ok_or_else(|| Error::Install(format!("no emulator named {name:?}")))?;
     if let Some(last) = e.discontinued {
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{} is discontinued (last release: {last}): romforge doesn't install it, it uses yours",
             e.label
         )));
@@ -25,7 +25,7 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
     let id = e
         .flatpak
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| Error::Launch(format!("{} has no Flatpak", e.label)))?;
+        .ok_or_else(|| Error::Install(format!("{} has no Flatpak", e.label)))?;
     let (remote, repo) = match e.flatpak_from {
         FlatpakFrom::Flathub | FlatpakFrom::Fallback => ("flathub", FLATHUB_REPO),
         FlatpakFrom::Own { remote, repo, .. } => (remote, repo),
@@ -33,18 +33,26 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
         // (the Emulators page offers its official AppImage first).
         FlatpakFrom::Others => ("flathub", FLATHUB_REPO),
     };
+    Ok((id, remote, repo))
+}
+
+/// Install emulator `name`'s official Flatpak (as `emulator list` names
+/// it, `retroarch` included). Returns its Flatpak id.
+pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
+    let (id, remote, repo) = flatpak_source(name)?;
+    let e = launch::known(name).ok_or_else(|| Error::Install(format!("no emulator named {name:?}")))?;
     let flatpak = env
         .path
         .iter()
         .map(|d| d.join("flatpak"))
         .find(|p| p.is_file())
-        .ok_or_else(|| Error::Launch("Flatpak isn't installed on this computer".into()))?;
+        .ok_or_else(|| Error::Install("Flatpak isn't installed on this computer".into()))?;
     let run = |args: &[&str]| -> Result<(), Error> {
         let out = std::process::Command::new(&flatpak)
             .args(args)
             .stdin(std::process::Stdio::null())
             .output()
-            .map_err(|e| Error::Launch(format!("flatpak: {e}")))?;
+            .map_err(|e| Error::Install(format!("flatpak: {e}")))?;
         if out.status.success() {
             return Ok(());
         }
@@ -55,7 +63,7 @@ pub fn install_flatpak(env: &Env, name: &str) -> Result<String, Error> {
             .find(|l| !l.trim().is_empty())
             .unwrap_or("")
             .trim();
-        Err(Error::Launch(format!(
+        Err(Error::Install(format!(
             "flatpak {} failed ({}): {last}",
             args[0], out.status
         )))

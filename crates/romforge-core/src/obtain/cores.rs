@@ -73,7 +73,7 @@ struct Ours {
 
 /// Fetch the buildbot's list and the core info into `db_dir`.
 pub fn refresh_cores(db_dir: &Path) -> Result<usize, Error> {
-    let arch = arch().ok_or_else(|| Error::Launch("the buildbot has no cores for this processor".into()))?;
+    let arch = arch().ok_or_else(|| Error::Install("the buildbot has no cores for this processor".into()))?;
     let index = crate::fetch::get_small(&format!("{BUILDBOT}/nightly/linux/{arch}/latest/.index-extended"))?;
     let info = crate::fetch::get_small(&format!("{BUILDBOT}/assets/frontend/info.zip"))?;
     zip::ZipArchive::new(std::io::Cursor::new(&info))?;
@@ -142,7 +142,7 @@ fn manifest(home: &Home) -> BTreeMap<String, Ours> {
 }
 
 fn save_manifest(home: &Home, m: &BTreeMap<String, Ours>) -> Result<(), Error> {
-    let json = serde_json::to_vec_pretty(m).map_err(|e| Error::Launch(e.to_string()))?;
+    let json = serde_json::to_vec_pretty(m).map_err(|e| Error::Install(e.to_string()))?;
     crate::atomic::write(&cores_dir(home).join(MANIFEST), &json)?;
     Ok(())
 }
@@ -206,21 +206,21 @@ pub fn cores(db_dir: &Path, home: &Home, env: &Env) -> CoreList {
 /// a scan that couldn't finish, stops the download.
 pub fn download_core(db_dir: &Path, home: &Home, core: &str, scan: bool) -> Result<String, Error> {
     if !used().contains_key(core) {
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{core:?} isn't a core romforge's platforms use"
         )));
     }
-    let arch = arch().ok_or_else(|| Error::Launch("the buildbot has no cores for this processor".into()))?;
+    let arch = arch().ok_or_else(|| Error::Install("the buildbot has no cores for this processor".into()))?;
     let index = std::fs::read_to_string(db_dir.join(index_file(arch)))
-        .map_err(|_| Error::Launch("fetch the buildbot's list first (`emulator cores --refresh`)".into()))?;
+        .map_err(|_| Error::Install("fetch the buildbot's list first (`emulator cores --refresh`)".into()))?;
     let (date, crc) = parse_index(&index)
         .remove(core)
-        .ok_or_else(|| Error::Launch(format!("the buildbot has no {core} for {arch}")))?;
+        .ok_or_else(|| Error::Install(format!("the buildbot has no {core} for {arch}")))?;
     let file = format!("{core}_libretro.so");
     let dest = cores_dir(home).join(&file);
     let mut ours = manifest(home);
     if dest.exists() && !ours.contains_key(core) {
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{} is there and not romforge's: left as it is",
             dest.display()
         )));
@@ -233,7 +233,7 @@ pub fn download_core(db_dir: &Path, home: &Home, core: &str, scan: bool) -> Resu
     // against the buildbot 2026-10-19.
     let got = format!("{:08x}", crc32fast::hash(&so));
     if got != crc {
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{file} didn't download whole (CRC32 {got}, the list says {crc})"
         )));
     }
@@ -260,7 +260,7 @@ pub fn download_core(db_dir: &Path, home: &Home, core: &str, scan: bool) -> Resu
 pub fn remove_core(home: &Home, core: &str) -> Result<(), Error> {
     let mut ours = manifest(home);
     if ours.remove(core).is_none() {
-        return Err(Error::Launch(format!("{core} wasn't downloaded by romforge")));
+        return Err(Error::Install(format!("{core} wasn't downloaded by romforge")));
     }
     match std::fs::remove_file(cores_dir(home).join(format!("{core}_libretro.so"))) {
         Ok(()) => {}

@@ -21,13 +21,13 @@ const MAX: u64 = 2 << 30;
 /// put in place): a threat, or a scan that couldn't finish, removes the
 /// download and stops the install.
 pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, Error> {
-    let e = launch::known(name).ok_or_else(|| Error::Launch(format!("no emulator named {name:?}")))?;
+    let e = launch::known(name).ok_or_else(|| Error::Install(format!("no emulator named {name:?}")))?;
     let (repo, suffix) = e
         .official_appimage
-        .ok_or_else(|| Error::Launch(format!("{} has no official AppImage romforge knows", e.label)))?;
+        .ok_or_else(|| Error::Install(format!("{} has no official AppImage romforge knows", e.label)))?;
     let body = crate::fetch::get(&format!("https://api.github.com/repos/{repo}/releases/latest"))?;
     let release: serde_json::Value = serde_json::from_slice(&body)
-        .map_err(|err| Error::Launch(format!("{}'s release list: {err}", e.label)))?;
+        .map_err(|err| Error::Install(format!("{}'s release list: {err}", e.label)))?;
     let asset = release["assets"]
         .as_array()
         .into_iter()
@@ -41,7 +41,7 @@ pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, 
                         .any(|arch| lower.contains(arch))
             })
         })
-        .ok_or_else(|| Error::Launch(format!("{}'s latest release has no {suffix}", e.label)))?;
+        .ok_or_else(|| Error::Install(format!("{}'s latest release has no {suffix}", e.label)))?;
     let file = asset["name"].as_str().unwrap_or_default();
     let url = asset["browser_download_url"].as_str().unwrap_or_default();
     // Only a plain name, into Emulators/ and nowhere else.
@@ -50,7 +50,7 @@ pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, 
         || file.starts_with('.')
         || !url.starts_with("https://github.com/")
     {
-        return Err(Error::Launch(format!("{}'s release asset looks wrong", e.label)));
+        return Err(Error::Install(format!("{}'s release asset looks wrong", e.label)));
     }
     let digest = asset["digest"]
         .as_str()
@@ -58,7 +58,7 @@ pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, 
         .map(str::to_ascii_lowercase);
     let size = asset["size"].as_u64().filter(|&n| n > 0);
     if digest.is_none() && size.is_none() {
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{}'s release gives nothing to check it by",
             e.label
         )));
@@ -89,7 +89,7 @@ pub fn install_appimage(home: &Home, name: &str, scan: bool) -> Result<PathBuf, 
     };
     if !whole {
         let _ = std::fs::remove_file(&part);
-        return Err(Error::Launch(format!(
+        return Err(Error::Install(format!(
             "{file} didn't download whole (it doesn't match what GitHub gives for it)"
         )));
     }

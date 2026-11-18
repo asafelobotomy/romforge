@@ -49,6 +49,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::GatherSaves])
+    .needs_bios()
     .always(&["-batch"])
     .fullscreen(&["-fullscreen", "-nogui"])
     .windowed(&["-nofullscreen"]),
@@ -66,6 +67,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
     .always(&["-batch"])
     .fullscreen(&["-fullscreen", "-nogui"])
     .windowed(&["-nofullscreen"])
+    .needs_bios()
     .config(&["-datapath", "{config}"]),
     // 2609a (CommandLineParse.cpp): no fullscreen flag, a config override
     // instead. `-u` is ignored under Flatpak, which always uses XDG.
@@ -161,6 +163,7 @@ pub const KNOWN_EMULATORS: &[KnownEmulator] = &[
         false,
     )
     .can(&[Ability::ImportSetup, Ability::MoveData])
+    .needs_bios()
     .fullscreen(&["-full-screen"])
     .config(&["-config_path", "{config}/xemu.toml"]),
     // v0.0.43 (rpcs3.cpp): `--fullscreen` works only with `--no-gui`.

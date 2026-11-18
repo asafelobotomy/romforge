@@ -226,7 +226,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         }) => {
             let list = lib.emulator_cores()?;
             let shown = list.cores.iter().find(|c| c.name == core);
-            if let Some(c) = shown {
+            // The licence is known once the buildbot's list is fetched.
+            if let Some(c) = shown.filter(|c| !c.license.is_empty()) {
                 println!("{}: licence {}", c.display_name, c.license);
             }
             let date = lib.download_core(&core, yes).map_err(|e| match shown {
@@ -264,8 +265,9 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         }
         Command::Emulator(EmulatorCommand::Install { emulator, apply, .. }) => {
             if !apply {
+                let (id, remote, repo) = romforge_core::obtain::flatpak_source(&emulator)?;
                 println!(
-                    "would install {emulator}'s official Flatpak into your Flatpak (run again with --apply)"
+                    "would install {id} from the {remote} remote ({repo}) into your user Flatpak (run again with --apply)"
                 );
                 return Ok(());
             }

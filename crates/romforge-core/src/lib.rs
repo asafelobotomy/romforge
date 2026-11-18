@@ -111,6 +111,9 @@ pub enum Error {
     Chd(String),
     #[error("launch: {0}")]
     Launch(String),
+    /// Getting an emulator, a core or an AppImage (said as it is).
+    #[error("{0}")]
+    Install(String),
     #[error("oysterAV: {0}")]
     Antivirus(String),
     #[error("manual: {0}")]

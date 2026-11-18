@@ -73,3 +73,30 @@ fn a_core_without_its_bios_is_passed_over() {
     let spec = start(&conn, &env, "Game", "PlayStation", &files, None).unwrap();
     assert_eq!(spec.emulator, "retroarch:mednafen_psx_hw");
 }
+
+/// Without RetroBIOS's list, an emulator that can't run without a BIOS
+/// (DuckStation) and has none in its `Bios/` folder isn't started into its
+/// own "no BIOS" message: Play says so.
+#[test]
+fn no_list_and_no_bios_holds_back_an_emulator_that_needs_one() {
+    let t = tempfile::tempdir().unwrap();
+    let bin = t.path().join("bin");
+    program(&bin.join("duckstation-qt"));
+    let home = crate::home::Home::create(&t.path().join("parent")).unwrap();
+    let env = Env {
+        path: vec![bin],
+        home: Some(home.clone()),
+        ..Env::default()
+    };
+    let conn = crate::db::open_in_memory().unwrap();
+    let files = [(t.path().join("g/Game.cue"), String::new())];
+    let play = || start(&conn, &env, "Game", "PlayStation", &files, Some("duckstation"));
+
+    let err = play().unwrap_err().to_string();
+    assert!(err.contains("duckstation: no BIOS file in"), "{err}");
+
+    let dir = home.bios().join("duckstation");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("scph5501.bin"), b"bios").unwrap();
+    assert_eq!(play().unwrap().emulator, "duckstation");
+}

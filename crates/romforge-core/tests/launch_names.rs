@@ -44,3 +44,44 @@ fn the_same_title_on_two_systems_is_two_games() {
     assert!(err.contains("several games"), "{err}");
     assert!(err.contains("Same Game (") && err.contains(" | "), "{err}");
 }
+
+/// A file identical in two regions' games (an audio track) doesn't make
+/// the other region's game, which you don't have, one Play offers.
+#[test]
+fn a_shared_track_does_not_offer_a_game_you_do_not_have() {
+    let tmp = tempfile::tempdir().unwrap();
+    let roms = tmp.path().join("roms");
+    std::fs::create_dir(&roms).unwrap();
+    let (data, other, shared) = (vec![1u8; 2048], vec![2u8; 2048], vec![3u8; 4096]);
+    std::fs::write(roms.join("Disc (USA) (Track 1).bin"), &data).unwrap();
+    std::fs::write(roms.join("Disc (USA) (Track 2).bin"), &shared).unwrap();
+    let rom = |name: &str, d: &[u8]| {
+        let h = hash_stream(d, d.len() as u64).unwrap().raw;
+        format!(r#"<rom name="{name}" size="{}" sha1="{}"/>"#, h.size, h.sha1)
+    };
+    let game = |region: &str, first: &[u8]| {
+        format!(
+            r#"<game name="Disc ({region})">{}{}</game>"#,
+            rom(&format!("Disc ({region}) (Track 1).bin"), first),
+            rom(&format!("Disc ({region}) (Track 2).bin"), &shared)
+        )
+    };
+    let p = tmp.path().join("ps1.dat");
+    std::fs::write(
+        &p,
+        format!(
+            "<datafile><header><name>Sony - PlayStation</name></header>{}{}</datafile>",
+            game("USA", &data),
+            game("Europe", &other)
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&p, None).unwrap();
+    lib.scan(&roms, Scope::All).unwrap();
+    let err = lib
+        .launch_plan(&Env::default(), "Disc", None)
+        .unwrap_err()
+        .to_string();
+    assert!(!err.contains("several games"), "{err}");
+}

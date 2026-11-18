@@ -634,8 +634,9 @@ for the platform's next one (a core that runs without the file, with its
 own high-level BIOS, still starts); if none is, Play starts nothing and
 says which file is missing and that the BIOS page takes it. The status
 line says what was passed over, and `launch --dry-run` lists it. Without
-RetroBIOS's list, or for an emulator it has no profile of, nothing is held
-back.
+RetroBIOS's list, or for an emulator it has no profile of, only an
+emulator that can't start a game without a BIOS (DuckStation, PCSX2,
+xemu) is held back, when its folder in `Bios/` has no file.
 
 **BIOS files among your games.** A scanned file that matches a BIOS file
 in RetroBIOS's list (size and SHA1 or MD5, for a platform other than
@@ -826,7 +827,8 @@ you, as a game or as a translation / hack of one) becomes one file named by its 
 Source when no Library is set): a zip for cartridges, holding the ROMs and
 a `romforge/` folder with the art and `<name>.romforge.md`; a CHD for discs
 (`.bin` tracks or one `.iso`), with the art and details in a folder of the
-same name next to it. Disc platforms whose emulators don't read CHD get
+same name next to it (a PSP `.iso` too, one sector per hunk, as PPSSPP
+1.17 and later read it). Disc platforms whose emulators don't read CHD get
 the compressed format they do read, written by romforge itself (no
 DolphinTool or Azahar needed): an **RVZ** for a GameCube image (zstd 5,
 128 KiB chunks, padding packed as its PRNG seeds, as Dolphin makes it),
