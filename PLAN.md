@@ -3223,6 +3223,21 @@ PCSX2, Azahar and Dolphin kept romforge's keys from their first start
 - **No progress inside one CHD**: a PS2 import prints nothing for an hour
   in a debug build (see "Jobs, progress and parallel work").
 
+## Whole-app review (2026-11-18)
+
+A review of every area (core, Tauri shell, front end, provider, CLI)
+found about 65 items; they are fixed one area per PR, worst first.
+
+- *(Fixed 2026-11-18.)* **Files that crashed a scan.** A few bytes could
+  abort the app or end a scan: an xdelta beside a ROM decoded in memory
+  without a size cap (400 windows of 16 MiB in about 7 KB), an RVZ's
+  raw-data range whose untrusted group count built a plan of billions of
+  entries (324 bytes), and a WUA folder name sliced mid-character. Each is
+  now checked (the xdelta capped at 64 MiB like the other formats, RVZ
+  ranges bounded by the group table and the image, WUA offsets with
+  checked sums), and a panic while reading one file during a scan is that
+  file's error instead of the scan's end.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

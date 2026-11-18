@@ -268,3 +268,43 @@ fn apply_file_refuses_a_ppf_record_far_past_the_image() {
         "a little growth is fine"
     );
 }
+
+/// A plain VCDIFF of `windows` windows, each one RUN of `run` bytes: a few
+/// bytes per window however big the run (at most 16 MiB a window).
+fn vcdiff_runs(windows: usize, run: u32) -> Vec<u8> {
+    let var = |mut n: u32| {
+        let mut out = vec![(n & 0x7f) as u8];
+        n >>= 7;
+        while n > 0 {
+            out.insert(0, 0x80 | (n & 0x7f) as u8);
+            n >>= 7;
+        }
+        out
+    };
+    let mut p = vec![0xd6, 0xc3, 0xc4, 0x00, 0x00];
+    for _ in 0..windows {
+        // Target length, no compression, data 1, instructions, addresses 0;
+        // the data byte; RUN (code 0) with its size.
+        let mut inst = vec![0x00];
+        inst.extend(var(run));
+        let mut body = var(run);
+        body.extend([0x00, 1, inst.len() as u8, 0, b'x']);
+        body.extend(&inst);
+        p.push(0x00);
+        p.extend(var(body.len() as u32));
+        p.extend(body);
+    }
+    p
+}
+
+/// A tiny xdelta asking for more than `MAX_SIZE` is refused, never
+/// allocated (it used to abort the whole app, found beside a ROM).
+#[test]
+fn xdelta_past_the_cap_is_refused() {
+    let small = vcdiff_runs(2, 1000);
+    assert_eq!(info(&small).map(|i| i.kind), Some(Kind::Xdelta));
+    assert_eq!(apply(&small, b"").unwrap(), vec![b'x'; 2000]);
+    let huge = vcdiff_runs(400, 16 << 20);
+    assert!(huge.len() < 8 << 10, "{}", huge.len());
+    assert!(apply(&huge, b"").is_none());
+}

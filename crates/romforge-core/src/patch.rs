@@ -181,7 +181,18 @@ pub fn apply(patch: &[u8], source: &[u8]) -> Option<Vec<u8>> {
             }
             out
         }
-        Kind::Xdelta => oxidelta::vcdiff::decode_memory(&crate::vcdiff::plain(patch).ok()?, source).ok()?,
+        Kind::Xdelta => {
+            // Each window is capped by oxidelta, their number is not: a
+            // few KB of patch could ask for gigabytes. Past `MAX_SIZE` the
+            // writer refuses, as the other formats do.
+            let plain = crate::vcdiff::plain(patch).ok()?;
+            let mut w = file::Capped(Vec::new(), MAX_SIZE);
+            let mut src: &[u8] = source;
+            oxidelta::compress::DeltaDecoder::new(&plain[..])
+                .decode_to(&mut src, &mut w)
+                .ok()?;
+            w.0
+        }
     };
     if let Some((size, crc)) = i.target
         && (size != out.len() as u64 || crc != crc32fast::hash(&out))

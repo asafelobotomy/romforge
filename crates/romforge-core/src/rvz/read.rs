@@ -170,7 +170,12 @@ impl<R: Read + Seek> Rvz<R> {
         }
         // Each raw-data range starts at a multiple of 0x8000 (the first one
         // says 0x80, holding the disc's start too); its groups follow on.
+        // Untrusted counts: a range's groups must be in the table (as
+        // Dolphin checks), its end is cut at the image's, and the plan
+        // never grows past the groups there are or the image needs.
         let mut plan = Vec::new();
+        let most =
+            (self.groups.len() as u64).min(self.iso_size.div_ceil(self.disc.chunk) + self.raws.len() as u64);
         let mut raws = self.raws.clone();
         raws.sort_by_key(|r| r.off);
         for r in &raws {
@@ -178,11 +183,21 @@ impl<R: Read + Seek> Rvz<R> {
             let end = r
                 .off
                 .checked_add(r.size)
-                .ok_or_else(|| bad("a range out of range"))?;
+                .ok_or_else(|| bad("a range out of range"))?
+                .min(self.iso_size);
+            if r.first_group
+                .checked_add(r.groups)
+                .is_none_or(|n| n as usize > self.groups.len())
+            {
+                return Err(bad("a range's groups out of range"));
+            }
             for i in 0..r.groups {
                 let from = start + u64::from(i) * self.disc.chunk;
                 if from >= end {
                     break;
+                }
+                if plan.len() as u64 >= most {
+                    return Err(bad("more groups than the image holds"));
                 }
                 plan.push((r.first_group + i, from, (end - from).min(self.disc.chunk)));
             }

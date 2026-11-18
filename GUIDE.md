@@ -52,7 +52,11 @@ symlink, but symlinked folders inside it are never followed. Files and
 archives are hashed on one thread per CPU (at most 8), largest first; a
 single solid `.7z` is still read as one stream. `-j 1` hashes one file at a
 time, kinder to a spinning disk. Long scans show progress on stderr; `-q`
-keeps it quiet.
+keeps it quiet. A file that can't be read is listed with its error and the
+scan goes on; so does one that trips a fault in one of romforge's readers
+("romforge couldn't read it: …"), which is read again next scan. Sizes
+and counts inside a file (an RVZ's ranges, a WUA's offsets, an xdelta's
+windows) are checked before anything is allocated for them.
 
 On your own collection, get DATs first, then scan a folder.
 
@@ -760,7 +764,9 @@ compression too), or a zip holding one (its readme is kept with the copy).
   they are named after, else (said in a note) the biggest; the rest come
   through under the DAT's names. A ROM over 64 MiB is refused by its size
   before it is read (in-memory patching stops there; discs use the file
-  path below).
+  path below), and so is a patch whose result would pass 64 MiB (an
+  xdelta says its size only window by window, so it stops when it gets
+  there).
 - **Discs** (xdelta, PPF) are patched on the track they were made from,
   streamed, the other tracks kept, and written as a CHD: the track an
   xdelta names, else the first that takes it (a PPF's check block and an

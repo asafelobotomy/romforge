@@ -109,3 +109,44 @@ fn sizes_in_a_forged_header_are_errors_not_allocations() {
     assert_eq!(back.len(), img.len() + (3 << 20));
     assert!(back[img.len()..].iter().all(|&b| b == 0));
 }
+
+/// A hand-made uncompressed GameCube RVZ of 1 MiB: one raw-data range
+/// (`size`, `first_group`, `groups`) and one empty group.
+fn one_range(size: u64, first_group: u32, groups: u32) -> Vec<u8> {
+    let (raw_at, group_at) = (HEAD_LEN + DISC_LEN, HEAD_LEN + DISC_LEN + RAW_LEN);
+    let mut f = vec![0u8; group_at + GROUP_LEN];
+    let put32 = |f: &mut Vec<u8>, at: usize, v: u32| f[at..at + 4].copy_from_slice(&v.to_be_bytes());
+    let put64 = |f: &mut Vec<u8>, at: usize, v: u64| f[at..at + 8].copy_from_slice(&v.to_be_bytes());
+    f[..4].copy_from_slice(&MAGIC);
+    put64(&mut f, 0x24, 1 << 20);
+    let d = HEAD_LEN;
+    put32(&mut f, d, GAMECUBE);
+    put32(&mut f, d + 12, 0x8000);
+    put32(&mut f, d + 0xB4, 1);
+    put64(&mut f, d + 0xB8, raw_at as u64);
+    put32(&mut f, d + 0xC0, RAW_LEN as u32);
+    put32(&mut f, d + 0xC4, 1);
+    put64(&mut f, d + 0xC8, group_at as u64);
+    put32(&mut f, d + 0xD0, GROUP_LEN as u32);
+    put64(&mut f, raw_at, 0x80);
+    put64(&mut f, raw_at + 8, size);
+    put32(&mut f, raw_at + 16, first_group);
+    put32(&mut f, raw_at + 20, groups);
+    f
+}
+
+/// Counts in a forged range are errors: a few hundred bytes used to ask
+/// for gigabytes (a plan entry per claimed group) and abort the scan.
+#[test]
+fn a_forged_range_is_an_error_not_an_allocation() {
+    let iso = |f: Vec<u8>| Rvz::open(std::io::Cursor::new(f)).unwrap().unwrap().iso();
+    let mut back = Vec::new();
+    iso(one_range(0x7F80, 0, 1))
+        .unwrap()
+        .read_to_end(&mut back)
+        .unwrap();
+    assert_eq!(back, vec![0u8; 1 << 20], "the hand-made file is otherwise sound");
+    assert!(one_range(1 << 62, 0, u32::MAX).len() < 400);
+    assert!(iso(one_range(1 << 62, 0, u32::MAX)).is_err());
+    assert!(iso(one_range(0x7F80, u32::MAX, 1)).is_err());
+}
