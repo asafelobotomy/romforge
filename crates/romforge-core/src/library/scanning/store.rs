@@ -102,10 +102,17 @@ impl<'t> Store<'t> {
             self.put(entry, owner, report, seen, unreadable_dirs)?;
         }
         if self.since.elapsed() >= COMMIT_EVERY {
-            self.unstamp(report)?;
-            self.tx.execute_batch("COMMIT; BEGIN IMMEDIATE")?;
-            self.since = Instant::now();
+            self.commit(report)?;
         }
+        Ok(())
+    }
+
+    /// Commit what is written (the scan's transaction goes on). Also when
+    /// a scan stops: the files it finished since the last commit stay.
+    pub fn commit(&mut self, report: &ScanReport) -> rusqlite::Result<()> {
+        self.unstamp(report)?;
+        self.tx.execute_batch("COMMIT; BEGIN IMMEDIATE")?;
+        self.since = Instant::now();
         Ok(())
     }
 

@@ -60,6 +60,8 @@ fn a_stopped_scan_is_finished_by_the_next() {
     });
     assert!(matches!(r, Err(Error::Cancelled)), "{r:?}");
     assert!(calls > 0);
+    // The file finished before Stop is kept, though no commit was due.
+    assert!(!lib.files(&Default::default()).unwrap().is_empty());
     lib.scan(fixtures().join("roms"), Scope::All).unwrap();
     let statuses = |l: &Library| -> Vec<(String, String)> {
         by_path(l)

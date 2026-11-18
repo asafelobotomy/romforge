@@ -172,7 +172,7 @@ impl Library {
             let mut units = ScanProgress::default();
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
-            scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
+            let walked = scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
                     return;
                 }
@@ -224,8 +224,14 @@ impl Library {
                     }
                 }
                 progress(units);
-            })?;
+            });
             result?;
+            // Stopped (or the walk failed): keep the files finished since
+            // the last commit before saying so.
+            if walked.is_err() {
+                store.commit(&report)?;
+            }
+            walked?;
             for path in store.left() {
                 store.done(&path, owner(&path), &mut report, &mut seen, &mut unreadable_dirs)?;
             }
