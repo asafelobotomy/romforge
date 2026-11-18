@@ -72,7 +72,12 @@ pub(crate) fn write_chd(item: &Item, staging: &Path, out: &Path) -> Result<bool,
     let mut took_sheet = false;
     if item.format == Format::ChdDvd {
         let p = tracks[0];
-        let opts = ChdWriteOptions::dvd().logical_bytes(p.size);
+        let mut opts = ChdWriteOptions::dvd().logical_bytes(p.size);
+        // PPSSPP (1.17 on) reads a DVD CHD well only with one sector per
+        // hunk; with two it is slow or refuses it.
+        if item.system == crate::systems::key!("PSP") {
+            opts = opts.hunk_bytes(2048);
+        }
         let mut w = ChdWriter::new(file, opts).map_err(cerr)?;
         std::io::copy(&mut open_part(p, staging)?, &mut w)?;
         w.finish().map_err(cerr)?.sync_all()?;

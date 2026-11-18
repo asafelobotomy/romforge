@@ -81,6 +81,20 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
     if games.iter().any(|g| g.0 == query) {
         games.retain(|g| g.0 == query);
     }
+    // A track identical in several regions' discs (or a file two
+    // revisions share) matches games you don't have: only those the
+    // library lists as yours are offered, when there are any.
+    if games.len() > 1 {
+        let view = crate::view::library(conn)?;
+        let listed = |g: &(&str, &str)| {
+            view.rows
+                .iter()
+                .any(|r| r.playable && r.title == g.0 && r.system.as_deref() == Some(g.1))
+        };
+        if games.iter().any(listed) {
+            games.retain(listed);
+        }
+    }
     let (game, system_key) = match games.iter().collect::<Vec<_>>().as_slice() {
         [one] => **one,
         many => {

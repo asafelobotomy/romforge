@@ -7,7 +7,9 @@
 //! - DuckStation (rolling, 2026-10): `XDG_CONFIG_HOME` → `duckstation/`;
 //!   `settings.ini` `[BIOS] SearchDirectory` (it scans the folder and
 //!   tells BIOS files by hash); `[Main] SetupWizardIncomplete = false`, or
-//!   its setup wizard opens.
+//!   its setup wizard opens. Flathub's build (0.1-9482, `qthost.cpp`) also
+//!   resets every setting to its defaults unless `[Main] SettingsVersion`
+//!   is 3; later ones only read it as "set up before".
 //! - PCSX2 2.8.2: `-datapath` (table) → `PCSX2/inis/PCSX2.ini`,
 //!   `[Folders] Bios`; `[UI] SettingsVersion = 1` or every setting is
 //!   reset, and the setup wizard off.
@@ -58,6 +60,7 @@ pub(super) fn standalone(name: &str, dir: &Path, bios: &Path) -> Option<Prepare>
             p.writes.push(ini(
                 dir.join(files::DS),
                 &[
+                    ("[Main]SettingsVersion", "3".into()),
                     ("[Main]SetupWizardIncomplete", "false".into()),
                     // Its "Are you sure?" on quit would hold romforge's
                     // Quit and Stop until the game is killed.
@@ -176,7 +179,10 @@ mod tests {
         );
         prepare(&duck).unwrap();
         let ini = read("duckstation/settings.ini");
-        assert!(ini.contains("[Main]\nSetupWizardIncomplete = false\n"), "{ini}");
+        assert!(
+            ini.contains("[Main]\nSettingsVersion = 3\nSetupWizardIncomplete = false\n"),
+            "{ini}"
+        );
         assert!(
             ini.contains(&format!("[BIOS]\nSearchDirectory = {}\n", bios.display())),
             "{ini}"

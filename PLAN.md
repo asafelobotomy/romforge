@@ -3205,21 +3205,28 @@ PCSX2, Azahar and Dolphin kept romforge's keys from their first start
   the plan then takes their originals as copies. Tried with a `kill -9`
   mid-import on a scratch library: the next import removed the staging
   folder and five half-written games, and finished.
-- **DuckStation resets romforge's settings on its first start**: the
-  10-key `settings.ini` written before it is replaced by its defaults
-  (wizard shown, `memcards/`, `bios/`); from the second start the keys
-  hold. Write its full defaults first, or whatever it checks.
-- **PSP games can't start after import**: import keeps PSP discs out of
-  CHD ("PSP emulators don't read CHD"), so they stay as 7z, which PPSSPP
-  can't open. PPSSPP reads CHD since 1.15: check, then let import write it.
-- **No BIOS, no warning**: PS1 and PS2 start into the emulator's "no BIOS"
-  dialog, and the time is recorded as play. Launch should say so first
-  (the BIOS page knows).
-- **Launch by name** offers DAT titles you don't have ("Castlevania -
-  Symphony" also lists Asia and Europe).
-- **`emulator get-core`** prints an empty licence before the list is
-  fetched, and its errors start "launch:".
-- **`emulator install`'s dry run** doesn't name the Flatpak or its remote.
+- *(Fixed 2026-11-18.)* **DuckStation reset romforge's settings on its
+  first start**: Flathub's build (0.1-9482) resets every setting unless
+  `[Main] SettingsVersion` is 3 (later ones only read it as "set up
+  before"); romforge now writes it.
+- *(Fixed 2026-11-18.)* **PSP games couldn't start after import**: PSP
+  discs stayed out of CHD and so stayed as 7z, which PPSSPP can't open.
+  PPSSPP reads CHD from 1.17, so an `.iso` now becomes a DVD CHD of one
+  sector per hunk (`createdvd -hs 2048`, which PPSSPP asks for); Convert
+  turns PSP games already imported into one.
+- *(Fixed 2026-11-18.)* **No BIOS, no warning**: Play's BIOS check needed
+  RetroBIOS's list, not downloaded here, so PS1 and PS2 started into the
+  emulator's "no BIOS" dialog (counted as play). Without the list, an
+  emulator the launch table marks as needing one (DuckStation, PCSX2,
+  xemu) with nothing in its `Bios/` folder is now passed over, saying so.
+- *(Fixed 2026-11-18.)* **Launch by name** offered DAT titles you don't
+  have (a track identical in the Asian and European discs); it now offers
+  only the games the library lists, when any of them match.
+- *(Fixed 2026-11-18.)* **`emulator get-core`** printed an empty licence
+  before the list was fetched (now left out), and its errors, the
+  AppImage's and the Flatpak install's started "launch:" (now said as
+  they are). **`emulator install`'s dry run** now names the Flatpak, its
+  remote and the remote's address.
 - **No progress inside one CHD**: a PS2 import prints nothing for an hour
   in a debug build (see "Jobs, progress and parallel work").
 

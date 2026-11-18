@@ -88,6 +88,10 @@ pub struct KnownEmulator {
     /// The RetroBIOS profile for its files when it isn't the one of its
     /// own name (`firmware.rs`).
     pub firmware: Option<&'static str>,
+    /// It can't start a game without a BIOS file: with no RetroBIOS list
+    /// to say which, an empty `Bios/<settings name>/` holds it back
+    /// (`firmware::gate`).
+    pub needs_bios: bool,
     /// Its official AppImage: (GitHub repository of its releases, the end of
     /// the asset's name). romforge can download it (`obtain/appimage.rs`)
     /// and prefers it to the Flatpak when it is there.
@@ -127,6 +131,7 @@ pub(super) const fn emu(
         cannot_open: &[],
         discontinued: None,
         firmware: None,
+        needs_bios: false,
         official_appimage: None,
         abilities: &[],
         always: &[],
@@ -135,6 +140,11 @@ pub(super) const fn emu(
 }
 
 impl KnownEmulator {
+    pub(super) const fn needs_bios(mut self) -> Self {
+        self.needs_bios = true;
+        self
+    }
+
     pub(super) const fn can(mut self, abilities: &'static [Ability]) -> Self {
         self.abilities = abilities;
         self
