@@ -537,7 +537,16 @@ its original, marked *not in your library*; a patch file for no game you
 have is listed under the DAT game its readme names (or on its own). Its
 Details offer **Apply…** when you have the game it is for. `romforge-cli
 games` prints the same tree. Move the folder from Settings (**Move…**) or by hand: when
-romforge opens it in a new place it rewrites the paths it stores. With a
+romforge opens it in a new place it rewrites the paths it stores. A move
+is refused while an emulator romforge knows is running (RetroArch and
+the ones added with `emulator add` included: their saves, settings and
+games are in the folder, `launch::none_running`), and in the app while a
+game runs or starts (no Play starts during a move), a long job or a
+download into the folder (databases, themes) runs: it tries for two
+seconds, then names what is busy, rather than waiting behind a scan while
+every quick edit waits behind it (`db::alone`). Downloads into the folder
+look up where it is only once they hold the lock a move takes
+(`db::in_folder`), so a move never lands in the middle of one. With a
 RomForge folder, Organize hands over to Import (its earlier batches can
 still be undone).
 

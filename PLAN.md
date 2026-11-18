@@ -3255,6 +3255,18 @@ found about 65 items; they are fixed one area per PR, worst first.
   refuses a second game of an emulator already running, whichever of the
   app, the launcher and the CLI started the first.
 
+- *(Fixed 2026-11-18.)* **Moving the RomForge folder unguarded.** A
+  move during a long job queued behind it while holding the lock every
+  quick edit, network read and play-time save takes, so they all hung
+  until the job ended; a database or theme download kept the folder it
+  looked up before the move and recreated it there; and nothing stopped a
+  move under a running game. The app's move now only tries its locks for
+  two seconds and names the job or download in the way; folder downloads
+  look up their place under the move's lock; and the core refuses a move
+  while any emulator it knows or the user added runs (the CLI's `home
+  move` too); the app also while its own game is starting or running,
+  and starts none until the move is done.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

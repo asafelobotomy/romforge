@@ -10,7 +10,7 @@ use romforge_core::themes::remote::{self, Remote, Source, Status};
 use romforge_core::themes::{self, Applied, Entry, Selection, TEXT_SIZES};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::db::{Db, Res, blocking, edit, read};
+use crate::db::{Db, Res, blocking, edit, in_folder, read};
 use crate::jobs::Job;
 
 /// Where the user's themes are, for the scheme (it never waits on the
@@ -23,6 +23,12 @@ pub fn set_dir(lib: &Library) {
 
 fn dir() -> Option<PathBuf> {
     DIR.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The themes folder, for work under [`in_folder`] (a move sets it anew
+/// before letting that work go on).
+fn here() -> Result<PathBuf, romforge_core::Error> {
+    dir().ok_or_else(|| romforge_core::Error::Settings("no folder for themes".into()))
 }
 
 /// `theme://localhost/<id>/<file>`, and the community themes' previews at
@@ -95,15 +101,17 @@ pub async fn theme_stamp(id: String) -> Res<u64> {
 
 /// Open the folder for the user's themes (made first).
 #[tauri::command]
-pub async fn themes_folder(app: tauri::AppHandle) -> Res<()> {
-    let d = dir().ok_or("no library folder")?;
-    blocking(move || Ok(std::fs::create_dir_all(&d).map(|()| d)?))
-        .await
-        .and_then(|d| {
-            app.opener()
-                .open_path(d.to_string_lossy(), None::<&str>)
-                .map_err(|e| e.to_string())
-        })
+pub async fn themes_folder(app: tauri::AppHandle, db: tauri::State<'_, Db>) -> Res<()> {
+    in_folder(&db, |_| {
+        let d = here()?;
+        Ok(std::fs::create_dir_all(&d).map(|()| d)?)
+    })
+    .await
+    .and_then(|d| {
+        app.opener()
+            .open_path(d.to_string_lossy(), None::<&str>)
+            .map_err(|e| e.to_string())
+    })
 }
 
 /// A community theme and what it is here.
@@ -157,12 +165,18 @@ fn offered(id: &str) -> Result<(Source, Remote), romforge_core::Error> {
 
 /// Download (or update) community theme `id`, as a job. The window has
 /// shown its licence and the user accepted it first. `true` once in (the
-/// queue reads a job's null as failed).
+/// queue reads a job's null as failed). A move of the RomForge folder
+/// waits for it.
 #[tauri::command]
-pub async fn theme_install(app: tauri::AppHandle, id: String, job: Option<u64>) -> Res<bool> {
-    let d = dir().ok_or("no folder for themes")?;
+pub async fn theme_install(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    id: String,
+    job: Option<u64>,
+) -> Res<bool> {
     let mut job = Job::start(&app, job);
-    blocking(move || {
+    in_folder(&db, move |_| {
+        let d = here()?;
         let (source, r) = offered(&id)?;
         remote::install(&d, &source, &r, |done, total| {
             job.step(romforge_core::job::Step::new(done, total, r.name.clone()));
@@ -174,9 +188,8 @@ pub async fn theme_install(app: tauri::AppHandle, id: String, job: Option<u64>) 
 
 /// Remove a theme romforge downloaded.
 #[tauri::command]
-pub async fn theme_remove(id: String) -> Res<()> {
-    let d = dir().ok_or("no folder for themes")?;
-    blocking(move || remote::remove(&d, &id)).await
+pub async fn theme_remove(db: tauri::State<'_, Db>, id: String) -> Res<()> {
+    in_folder(&db, move |_| remote::remove(&here()?, &id)).await
 }
 
 /// A community theme's preview, for an <img> (fetched once).

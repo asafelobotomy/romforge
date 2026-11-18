@@ -1,7 +1,8 @@
 //! The library's two connections, and running calls on them.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, TryLockError, TryLockResult};
+use std::time::{Duration, Instant};
 
 use romforge_core::Library;
 
@@ -99,6 +100,78 @@ pub async fn edit<T: Send + 'static>(
     blocking(move || apart(&read, &detached, |at| Library::edit(at, f))).await
 }
 
+/// For file work in the RomForge folder that needs no connection
+/// (downloaded databases, themes): `f` runs holding `detached`, so a move
+/// of the folder waits for it, and it looks up its place inside (from
+/// `read`, locked only for that), so it never writes where the folder was.
+pub async fn in_folder<T: Send + 'static>(
+    db: &tauri::State<'_, Db>,
+    f: impl FnOnce(&Mutex<Library>) -> Result<T, romforge_core::Error> + Send + 'static,
+) -> Res<T> {
+    let (read, detached) = (db.read.clone(), db.detached.clone());
+    blocking(move || {
+        let _open = detached.read().unwrap_or_else(|e| e.into_inner());
+        f(&read)
+    })
+    .await
+}
+
+/// How long a move of the RomForge folder waits for the job or download
+/// holding the library before it says so.
+pub const MOVE_WAIT: Duration = Duration::from_secs(2);
+
+/// What a move of the database holds: `detached` (no download, edit or
+/// network read on its own connection), `write` and `read`.
+pub(crate) struct Alone<'a> {
+    _detached: RwLockWriteGuard<'a, ()>,
+    pub write: MutexGuard<'a, Library>,
+    pub read: MutexGuard<'a, Library>,
+}
+
+/// Take all three for a move, waiting at most `wait`. A move queued
+/// behind a long job (a scan, Enrich) would hold `detached` meanwhile, and
+/// every quick edit, network read and play-time save would wait with it;
+/// so each is only tried, all are given back between tries, and whatever
+/// still holds one after `wait` is named instead.
+pub(crate) fn alone<'a>(
+    write: &'a Mutex<Library>,
+    read: &'a Mutex<Library>,
+    detached: &'a RwLock<()>,
+    wait: Duration,
+) -> Result<Alone<'a>, romforge_core::Error> {
+    let until = Instant::now() + wait;
+    loop {
+        let held = (|| {
+            let d = taken(detached.try_write())
+                .ok_or("a download or search is still running: move the RomForge folder once it ends")?;
+            let w = taken(write.try_lock()).ok_or(
+                "a job is running (a scan, Enrich, cleanup…): move the RomForge folder once it ends, or stop it",
+            )?;
+            let r = taken(read.try_lock()).ok_or("the library is busy: try again in a moment")?;
+            Ok::<_, &str>(Alone {
+                _detached: d,
+                write: w,
+                read: r,
+            })
+        })();
+        match held {
+            Ok(alone) => return Ok(alone),
+            Err(why) if Instant::now() >= until => return Err(romforge_core::Error::Settings(why.into())),
+            Err(_) => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
+}
+
+/// A lock if it was free (a poisoned one too: an earlier panic doesn't
+/// lock everyone out).
+fn taken<G>(r: TryLockResult<G>) -> Option<G> {
+    match r {
+        Ok(g) => Some(g),
+        Err(TryLockError::Poisoned(e)) => Some(e.into_inner()),
+        Err(TryLockError::WouldBlock) => None,
+    }
+}
+
 /// Run `f` with where the database is, holding `detached` so a move of
 /// it waits for `f`. The place is `read`'s (never asked of `write`, which
 /// a long job holds): both connections always open at the same place.
@@ -192,5 +265,44 @@ mod tests {
         ends.0.send(()).unwrap();
         scan.join().unwrap();
         apart(&read, &detached, |at| Library::edit(at, show_empty_media)).unwrap();
+    }
+
+    /// A move during a long job says so after a moment instead of waiting
+    /// for it, and edits meanwhile never wait on the move.
+    #[test]
+    fn a_move_never_queues_behind_a_job() {
+        let (_dir, write, read, detached) = db();
+        let job = write.lock().unwrap();
+        let wait = Duration::from_millis(300);
+        let mover = std::thread::scope(|s| {
+            let mover = s.spawn(|| alone(&write, &read, &detached, wait).map(drop));
+            // An edit during the move's wait goes through at once.
+            let t = Instant::now();
+            apart(&read, &detached, |at| Library::edit(at, show_empty_media)).unwrap();
+            assert!(t.elapsed() < wait, "the edit waited on the move");
+            mover.join().unwrap()
+        });
+        let err = mover.unwrap_err().to_string();
+        assert!(err.contains("a job is running"), "{err}");
+        drop(job);
+        assert!(
+            alone(&write, &read, &detached, wait).is_ok(),
+            "free once the job ends"
+        );
+    }
+
+    /// A download in the folder (holding `detached`) is waited for, then
+    /// named; it is never moved out from under.
+    #[test]
+    fn a_move_waits_for_a_download() {
+        let (_dir, write, read, detached) = db();
+        let download = detached.read().unwrap();
+        let err = alone(&write, &read, &detached, Duration::from_millis(100))
+            .map(drop)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("download"), "{err}");
+        drop(download);
+        assert!(alone(&write, &read, &detached, Duration::ZERO).is_ok());
     }
 }

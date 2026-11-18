@@ -47,9 +47,13 @@ pub fn create(parent: &Path, current: Option<&Home>, old_db: &Path) -> Made<Crea
 }
 
 /// Move the RomForge folder `old` into `new_parent` and use it from now on;
-/// as [`create`], for a shell with its connections closed.
+/// as [`create`], for a shell with its connections closed. Refused while
+/// an emulator runs, the user's own included
+/// ([`crate::launch::none_running`]).
 pub fn move_to(old: &Home, new_parent: &Path) -> Made<Home> {
-    let moved = super::relocate(old, new_parent);
+    let moved = crate::launch::user_emulators_at(&old.db())
+        .and_then(|users| crate::launch::none_running(&users))
+        .and_then(|()| super::relocate(old, new_parent));
     let db = Some(db_after_move(old, &moved));
     Made {
         result: moved.and_then(|h| h.remember().map(|()| h)),
