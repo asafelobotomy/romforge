@@ -31,7 +31,7 @@
   import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
-  import { storedView, storeView, libraryRows, isGame } from "./listing.js";
+  import { storedView, storeView, grouped, libraryRows, isGame } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
   import { ui, justBack } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
@@ -158,6 +158,7 @@
   // A patch row's Apply: the patch dialog for the game it is for, with
   // this patch picked.
   async function applyPatchRow() {
+    if (detail?.row?.id !== row?.id) return; // another game's details, still loading
     const p = detail.patches[0];
     const base = lib.rows.find((r) => r.id === row.base_id);
     const d = base && (await call("game_detail", { id: base.id }));
@@ -273,10 +274,13 @@
     expanded[key] = !isOpen(key);
   }
   let games = $derived(lib.rows.filter(isGame).length);
-  let rows = $derived(libraryRows(lib.rows, platform, filter, listSort, isOpen));
+  // Sorted once per library or sort; the filter and the folds only cut
+  // from it.
+  let sortedLib = $derived(grouped(lib.rows, listSort));
+  let rows = $derived(libraryRows(sortedLib, platform, filter, isOpen));
   let row = $derived(lib.rows.find((r) => r.id === selected) ?? null);
   // What the toolbar's jobs act on.
-  let chosen = $derived(targets(picked, rows, lib.rows, isOpen));
+  let chosen = $derived(targets(picked, rows, sortedLib.members, isOpen));
 
   // A new selection (from a click or a key): Details follows its focus.
   function select(s) {

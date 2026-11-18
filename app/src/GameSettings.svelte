@@ -10,10 +10,20 @@
 
   let view = $state(null);
   let draft = $state({});
+  // The game the form holds: what Save writes to, whatever `row` is now.
+  let shownFor = $state(null);
+  let asked = 0;
 
   async function load() {
-    view = await invoke("game_settings", { system: row.system, title: row.title }).catch(() => null);
-    draft = { ...(view?.values ?? {}) };
+    const seq = ++asked;
+    const game = { system: row.system, title: row.title };
+    // Not another game's values while this one's are on their way.
+    if (shownFor?.system !== game.system || shownFor?.title !== game.title) view = null;
+    const got = await invoke("game_settings", game).catch(() => null);
+    if (seq !== asked) return;
+    view = got;
+    draft = { ...(got?.values ?? {}) };
+    shownFor = game;
   }
   $effect(() => {
     row.system;
@@ -25,9 +35,10 @@
   const names = { retroarch: "RetroArch", duckstation: "DuckStation" };
 
   async function save() {
+    if (!shownFor) return;
     error = "";
     try {
-      await edit("Saving this game's settings…", "set_game_settings", { system: row.system, title: row.title, values: draft });
+      await edit("Saving this game's settings…", "set_game_settings", { ...shownFor, values: draft });
       note = "This game's settings are saved; they apply when it next starts.";
       await load();
     } catch (e) {

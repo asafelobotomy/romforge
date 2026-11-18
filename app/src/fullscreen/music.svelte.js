@@ -26,6 +26,9 @@ const shuffle = (n) => {
 
 let url = null;
 let fails = 0;
+// Each track asked for: only the last one asked plays (two quick Nexts
+// never play the first while the title names the second).
+let asked = 0;
 
 // Track `i` of the order: fetched whole and played as a Blob (WebKitGTK's
 // player can't stream from a custom scheme). A track that won't load or
@@ -36,18 +39,19 @@ async function play(i) {
   const t = music.tracks[order[music.at]];
   music.title = t.split("/").pop().replace(/\.[^.]+$/, "");
   const mine = audio;
+  const seq = ++asked;
   try {
     const r = await fetch(src(t));
     if (!r.ok) throw new Error(String(r.status));
     const blob = await r.blob();
-    if (mine !== audio) return;
+    if (mine !== audio || seq !== asked) return;
     if (url) URL.revokeObjectURL(url);
     url = URL.createObjectURL(blob);
     audio.src = url;
     if (!paused && music.playing) await audio.play();
     fails = 0;
   } catch {
-    if (mine !== audio || ++fails >= music.tracks.length) return;
+    if (mine !== audio || seq !== asked || ++fails >= music.tracks.length) return;
     setTimeout(() => play(music.at + 1), 300);
   }
 }

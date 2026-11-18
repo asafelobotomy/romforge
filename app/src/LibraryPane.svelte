@@ -29,11 +29,21 @@
     icons = {},
     iconStyle = "",
   } = $props();
+
+  // What is typed reaches the list a moment after the last letter (each
+  // letter would cut the whole library again); clearing it, at once.
+  let typed = $state(filter ?? "");
+  $effect(() => {
+    const t = typed;
+    if (!t) return void (filter = "");
+    const wait = setTimeout(() => (filter = t), 150);
+    return () => clearTimeout(wait);
+  });
 </script>
 
 <section class="list">
   <div class="viewbar">
-    <input class="search" placeholder="Filter by title" bind:value={filter} />
+    <input class="search" placeholder="Filter by title" bind:value={typed} />
     <ViewSwitch bind:mode={listMode} label="View" />
   </div>
   {#if listMode !== "list" && lib.rows.length}

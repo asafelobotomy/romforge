@@ -24,6 +24,10 @@
 <section class="detail">
   {#if !row || !detail}
     <div class="empty"><p>Pick a game to see its details.</p></div>
+  {:else if detail.row?.id !== row.id}
+    <!-- The last game's details until this one's come: never shown, nor
+         Patch… or Apply… acting on them, under this game's name. -->
+    <div class="empty"><p>Loading…</p></div>
   {:else}
     <div class="dhead">
       <h1>{displayTitle(row)}</h1>

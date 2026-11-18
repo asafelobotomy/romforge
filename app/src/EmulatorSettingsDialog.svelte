@@ -239,9 +239,13 @@
             <p class="hint">{e.fallback}</p>
           </section>
         {/if}
-        {#if e.movable}<GameDataPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
-        {#if e.gathers}<SavesPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
-        {#if e.backs_up}<BackupPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
+        <!-- Each emulator its own panels: one tab's plan, answer or unsaved
+             change never shows (or is acted on) under another's. -->
+        {#key e.name}
+          {#if e.movable}<GameDataPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
+          {#if e.gathers}<SavesPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
+          {#if e.backs_up}<BackupPanel emulator={e.name} label={e.label} bind:note bind:error />{/if}
+        {/key}
         {#each e.settings.map(def) as s}
           <section class="setting">
             {#if s.kind === "bool" || s.kind === "choice"}
@@ -266,7 +270,7 @@
             {/if}
           </section>
         {/each}
-        <RawSettings emulator={e.name} label={e.label} bind:note bind:error />
+        {#key e.name}<RawSettings emulator={e.name} label={e.label} bind:note bind:error />{/key}
       {/if}
       </div>
 

@@ -3282,6 +3282,26 @@ found about 65 items; they are fixed one area per PR, worst first.
   request. A Wikidata "unknown value" for a series or the work an edition
   is of broke its whole 40-game query on every run; it is skipped.
 
+- *(Fixed 2026-11-18.)* **The window acting on the wrong thing, and slow
+  big lists.** Rename & Cleanup and Convert reopened on the last plan
+  (other games, or the other mode) with Apply live while the new one
+  loaded, so Convert could run with no dry run shown; the plan is now
+  cleared, Apply waits, and a late answer is dropped. An emulator's tab
+  kept the last tab's game-data, saves, backup and all-settings panels,
+  so Move could move another emulator's data; each tab now has its own.
+  The art picker could save one game's candidates as another's, a game's
+  settings could be saved into the next game, and Details showed the new
+  game with the last one's details (Patch… and Apply… acting on them);
+  each now waits for its own answer. Faster: the library is sorted once
+  per change (not per letter typed, the filter a moment after the last
+  letter), a folded game's versions are looked up by group (not the
+  whole library per picked game after Ctrl+A), a sort reads each value
+  once, fullscreen search and the fullscreen lists work out each title
+  once, and a DAT's games are drawn as they scroll into view (MAME's
+  40,000). Also: two quick Nexts play the track named, the theme check
+  never overlaps itself or runs during a game, a manual page being read
+  isn't read twice, and Read all stops when the manual closes.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

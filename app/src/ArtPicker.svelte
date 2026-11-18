@@ -20,7 +20,12 @@
   let loading = $state(false);
   let failure = $state("");
 
+  // Each opening's number: candidates asked for an earlier opening (another
+  // game, or another kind) are dropped, never shown or saved as this one's.
+  let asked = 0;
+
   export async function openPicker(r, k, name, shown) {
+    const seq = ++asked;
     row = r;
     kind = k;
     label = name;
@@ -30,11 +35,12 @@
     open = true;
     loading = true;
     try {
-      found = await invoke("art_choices", { rowId: r.id, kind: k });
+      const got = await invoke("art_choices", { rowId: r.id, kind: k });
+      if (seq === asked) found = got;
     } catch (e) {
-      failure = String(e);
+      if (seq === asked) failure = String(e);
     }
-    loading = false;
+    if (seq === asked) loading = false;
   }
 
   async function pick(c) {
