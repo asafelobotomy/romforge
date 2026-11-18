@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use super::{KnownEmulator, LaunchSpec};
+use super::{KnownEmulator, LaunchSpec, UserEmulator};
 use crate::Error;
 
 /// Whether `e` has a process running, as far as `/proc` shows.
@@ -15,18 +15,49 @@ pub fn running(e: &KnownEmulator) -> bool {
 }
 
 fn running_in(proc_dir: &Path, e: &KnownEmulator) -> bool {
-    let Ok(entries) = std::fs::read_dir(proc_dir) else {
-        return false;
-    };
     let appimage = e.appimage.unwrap_or(e.name).to_ascii_lowercase();
     let flatpak = e.flatpak.map(|id| format!("app-flatpak-{id}-"));
-    let named = |p: &str| {
-        let base = Path::new(p)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
-        e.programs.iter().any(|prog| prog.eq_ignore_ascii_case(&base))
+    let named = |base: &str| {
+        e.programs.iter().any(|prog| prog.eq_ignore_ascii_case(base))
             || (base.starts_with(&appimage) && base.ends_with(".appimage"))
+    };
+    any_process(proc_dir, named, flatpak.as_deref())
+}
+
+/// Whether one of the user's own emulators (`emulator add`) runs: its
+/// program by file name, or for `flatpak run <id>` that Flatpak's cgroup
+/// (never every `flatpak` process).
+fn user_running_in(proc_dir: &Path, u: &UserEmulator) -> bool {
+    let base = file_name(&u.program);
+    if base == "flatpak" {
+        let id = u
+            .args
+            .iter()
+            .skip_while(|a| *a != "run")
+            .skip(1)
+            .find(|a| !a.starts_with('-'));
+        return id.is_some_and(|id| {
+            let cgroup = format!("app-flatpak-{id}-");
+            any_process(proc_dir, |_| false, Some(&cgroup))
+        });
+    }
+    !base.is_empty() && any_process(proc_dir, |b| b == base, None)
+}
+
+/// A path's file name, lowercased.
+fn file_name(p: &str) -> String {
+    Path::new(p)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// Whether a process in `proc_dir` has an executable or first argument
+/// whose file name (lowercased) `named` accepts, or sits in the cgroup
+/// whose name contains `cgroup`.
+fn any_process(proc_dir: &Path, named: impl Fn(&str) -> bool, cgroup: Option<&str>) -> bool {
+    let Ok(entries) = std::fs::read_dir(proc_dir) else {
+        return false;
     };
     entries.filter_map(Result::ok).any(|p| {
         let dir = p.path();
@@ -44,11 +75,40 @@ fn running_in(proc_dir: &Path, e: &KnownEmulator) -> bool {
                 .next()
                 .map(|a| String::from_utf8_lossy(a).into_owned())
         });
-        let boxed = flatpak.as_ref().is_some_and(|f| {
-            std::fs::read_to_string(dir.join("cgroup")).is_ok_and(|c| c.contains(f.as_str()))
-        });
-        boxed || exe.is_some_and(|x| named(&x.to_string_lossy())) || argv0.is_some_and(|a| named(&a))
+        let boxed =
+            cgroup.is_some_and(|f| std::fs::read_to_string(dir.join("cgroup")).is_ok_and(|c| c.contains(f)));
+        boxed
+            || exe.is_some_and(|x| named(&file_name(&x.to_string_lossy())))
+            || argv0.is_some_and(|a| named(&file_name(&a)))
     })
+}
+
+/// Refuse while an emulator romforge knows runs (RetroArch included):
+/// the RomForge folder holds its saves, BIOS and games, and its settings
+/// point there, so the folder must not move under it. `users`: the
+/// emulators added with `emulator add` (their games and `{bios}` are in
+/// it too).
+pub fn none_running(users: &[UserEmulator]) -> Result<(), Error> {
+    none_running_in(Path::new("/proc"), users)
+}
+
+fn none_running_in(proc_dir: &Path, users: &[UserEmulator]) -> Result<(), Error> {
+    let known = std::iter::once(&super::RETROARCH)
+        .chain(super::KNOWN_EMULATORS)
+        .find(|e| running_in(proc_dir, e))
+        .map(|e| e.label.to_owned());
+    let user = || {
+        users
+            .iter()
+            .find(|u| user_running_in(proc_dir, u))
+            .map(|u| u.name.clone())
+    };
+    match known.or_else(user) {
+        Some(name) => Err(Error::Settings(format!(
+            "{name} is running: close it before moving the RomForge folder (its saves and settings are in it)"
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Refuse `spec` while its emulator already runs and romforge writes its
@@ -105,6 +165,59 @@ mod tests {
         assert!(err.contains("already running"), "{err}");
         std::fs::remove_dir_all(&d).unwrap();
         assert!(not_twice_in(t.path(), &spec).is_ok());
+    }
+
+    #[test]
+    fn a_folder_move_waits_for_every_emulator() {
+        let t = tempfile::tempdir().unwrap();
+        let user = |name: &str, program: &str, args: &[&str]| UserEmulator {
+            name: name.into(),
+            system: "SNES".into(),
+            program: program.into(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            archives: false,
+        };
+        let users = [
+            user("My Snes", "/opt/mysnes/MySnes", &["{rom}"]),
+            user(
+                "Boxed",
+                "flatpak",
+                &["run", "--branch=stable", "org.example.Boxed", "{rom}"],
+            ),
+        ];
+        assert!(none_running_in(t.path(), &users).is_ok(), "nothing runs");
+        let proc_with = |pid: &str, cmdline: &[u8], cgroup: &str| {
+            let d = t.path().join(pid);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("cmdline"), cmdline).unwrap();
+            std::fs::write(d.join("cgroup"), cgroup).unwrap();
+            d
+        };
+        let other = proc_with(
+            "60",
+            b"/usr/bin/flatpak\0run\0org.other.App",
+            "0::/app-flatpak-org.other.App-1.scope",
+        );
+        assert!(
+            none_running_in(t.path(), &users).is_ok(),
+            "another Flatpak isn't one of them"
+        );
+        let mine = proc_with("61", b"/opt/mysnes/mysnes\0game.sfc", "0::/user.slice");
+        let err = none_running_in(t.path(), &users).unwrap_err().to_string();
+        assert!(err.contains("My Snes is running"), "{err}");
+        std::fs::remove_dir_all(mine).unwrap();
+        let boxed = proc_with(
+            "62",
+            b"/app/bin/boxed\0game.sfc",
+            "0::/app-flatpak-org.example.Boxed-9.scope",
+        );
+        let err = none_running_in(t.path(), &users).unwrap_err().to_string();
+        assert!(err.contains("Boxed is running"), "{err}");
+        std::fs::remove_dir_all(boxed).unwrap();
+        std::fs::remove_dir_all(other).unwrap();
+        proc_with("70", b"/usr/bin/retroarch\0-L\0core.so", "0::/user.slice");
+        let err = none_running_in(t.path(), &[]).unwrap_err().to_string();
+        assert!(err.contains("RetroArch is running"), "{err}");
     }
 
     #[test]

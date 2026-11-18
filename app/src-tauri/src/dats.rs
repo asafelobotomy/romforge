@@ -1,10 +1,12 @@
 //! DATs, the third-party databases and ScummVM's list.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 
+use romforge_core::Library;
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
 
-use crate::db::{Db, Res, blocking, read, with, write_net};
+use crate::db::{Db, Res, in_folder, with, write_net};
 use crate::jobs::Job;
 
 #[derive(serde::Serialize)]
@@ -14,23 +16,26 @@ pub struct Downloaded {
     errors: Vec<String>,
 }
 
-pub async fn extdb_dir(db: &tauri::State<'_, Db>) -> Res<PathBuf> {
-    read(db, |lib| Ok(lib.extdb_dir()))
-        .await?
-        .ok_or_else(|| "no folder for databases".into())
-}
-
 fn extdb_named(name: &str) -> Res<ExtDb> {
     ExtDb::parse(name).ok_or_else(|| format!("unknown database {name:?}"))
 }
 
-#[tauri::command]
-pub async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
-    let dir = extdb_dir(&db).await?;
-    blocking(move || Ok(romforge_core::extdb::list(&dir))).await
+/// Where the downloaded databases are, looked up under [`in_folder`]
+/// (so a move of the RomForge folder can't change it meanwhile).
+fn extdb_dir(read: &Mutex<Library>) -> Result<PathBuf, romforge_core::Error> {
+    read.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .extdb_dir()
+        .ok_or_else(|| romforge_core::Error::Settings("no folder for databases".into()))
 }
 
-/// Downloads without holding the library, so the window stays usable.
+#[tauri::command]
+pub async fn extdb_list(db: tauri::State<'_, Db>) -> Res<Vec<ExtDbInfo>> {
+    in_folder(&db, |read| Ok(romforge_core::extdb::list(&extdb_dir(read)?))).await
+}
+
+/// Downloads without holding the library, so the window stays usable; a
+/// move of the RomForge folder waits for it.
 #[tauri::command]
 pub async fn extdb_download(
     app: tauri::AppHandle,
@@ -38,9 +43,10 @@ pub async fn extdb_download(
     name: String,
     job: Option<u64>,
 ) -> Res<ExtDbInfo> {
-    let (dir, which) = (extdb_dir(&db).await?, extdb_named(&name)?);
+    let which = extdb_named(&name)?;
     let job = Job::start(&app, job);
-    blocking(move || {
+    in_folder(&db, move |read| {
+        let dir = extdb_dir(read)?;
         job.watch(&name, || {
             romforge_core::extdb::download(which, &dir, &Default::default(), |_| {})
         })
@@ -50,8 +56,11 @@ pub async fn extdb_download(
 
 #[tauri::command]
 pub async fn extdb_remove(db: tauri::State<'_, Db>, name: String) -> Res<()> {
-    let (dir, which) = (extdb_dir(&db).await?, extdb_named(&name)?);
-    blocking(move || romforge_core::extdb::remove(which, &dir)).await
+    let which = extdb_named(&name)?;
+    in_folder(&db, move |read| {
+        romforge_core::extdb::remove(which, &extdb_dir(read)?)
+    })
+    .await
 }
 
 /// The installed MAME's own list as the Arcade DAT (`mame -listxml`).

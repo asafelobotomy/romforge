@@ -1,5 +1,16 @@
 use super::*;
 
+/// The user's emulators in the database at `db`, read without changing
+/// it (none when there is no database yet), for a shell whose own
+/// connections are closed.
+pub fn user_emulators_at(db: &Path) -> Result<Vec<UserEmulator>, Error> {
+    if !db.is_file() {
+        return Ok(Vec::new());
+    }
+    let conn = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    user_emulators(&conn)
+}
+
 pub fn user_emulators(conn: &Connection) -> Result<Vec<UserEmulator>, Error> {
     let mut stmt = conn.prepare(
         "SELECT e.name, s.key, e.program, e.args, e.archives FROM emulators e
