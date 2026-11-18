@@ -42,6 +42,38 @@ enum Unit {
     Chd(PathBuf),
 }
 
+impl Unit {
+    fn path(&self) -> &Path {
+        match self {
+            Unit::File(p) | Unit::Zip(p, _) | Unit::SevenZ(p, _) | Unit::Chd(p) => p,
+        }
+    }
+}
+
+/// `read` one file. A panic in it (a bug some file found in a reader) is
+/// that file's error, not the end of the scan; with no stamp, the file is
+/// read again next time.
+fn guarded(path: PathBuf, send: &mut dyn FnMut(Visit), read: impl FnOnce(&mut dyn FnMut(Visit))) {
+    let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| read(&mut *send)));
+    if let Err(panic) = done {
+        send(Visit::Hashed(Entry {
+            path,
+            member: String::new(),
+            hashes: Err(format!("romforge couldn't read it: {}", panic_text(&*panic))),
+            stamp: None,
+        }));
+    }
+}
+
+/// What a panic said, when it said it as text.
+fn panic_text(panic: &(dyn std::any::Any + Send)) -> &str {
+    panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("an internal error")
+}
+
 #[derive(Debug)]
 pub struct Entry {
     /// The file on disk (the archive, for members).
@@ -252,7 +284,8 @@ pub fn walk(
             if opts.cancel.is_set() {
                 return;
             }
-            hash_unit(unit, stamp, opts, &mut *send);
+            let path = unit.path().to_owned();
+            guarded(path, &mut *send, |send| hash_unit(unit, stamp, opts, send));
             send(Visit::UnitDone { bytes: size });
         },
         &mut each,
@@ -262,3 +295,31 @@ pub fn walk(
 
 mod members;
 use members::hash_unit;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reader that panics part-way: what it sent stays, the file gets an
+    /// error, and the caller goes on.
+    #[test]
+    fn a_panic_reading_one_file_is_its_error() {
+        let mut got = Vec::new();
+        guarded(PathBuf::from("bad.wua"), &mut |v| got.push(v), |send| {
+            send(Visit::Unchanged(PathBuf::from("before")));
+            panic!("end byte index 8 is not a char boundary");
+        });
+        guarded(PathBuf::from("good.bin"), &mut |v| got.push(v), |send| {
+            send(Visit::Unchanged(PathBuf::from("good.bin")));
+        });
+        assert!(matches!(&got[0], Visit::Unchanged(p) if p == Path::new("before")));
+        let Visit::Hashed(e) = &got[1] else {
+            panic!("{:?}", got[1])
+        };
+        assert_eq!(e.path, Path::new("bad.wua"));
+        assert!(e.stamp.is_none(), "read again next time");
+        assert!(e.hashes.as_ref().unwrap_err().contains("char boundary"));
+        assert!(matches!(&got[2], Visit::Unchanged(p) if p == Path::new("good.bin")));
+        assert_eq!(got.len(), 3);
+    }
+}

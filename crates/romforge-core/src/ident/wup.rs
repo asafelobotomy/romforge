@@ -103,7 +103,9 @@ pub(super) fn wua<R: Read + Seek>(f: &mut R) -> Option<GameId> {
     let base = archive.top_folders().into_iter().find(|n| {
         n.len() > 18
             && n.as_bytes()[16] == b'_'
-            && matches!(&n[..8].to_ascii_lowercase()[..], "00050000" | "00050002")
+            // Bytes, not `&n[..8]`: a name is the archive's to say, and a
+            // character across byte 8 would panic.
+            && matches!(&n.as_bytes()[..8].to_ascii_lowercase()[..], b"00050000" | b"00050002")
     })?;
     let xml = archive.read(&format!("{base}/meta/meta.xml"))?;
     meta(&String::from_utf8_lossy(&xml))
@@ -213,5 +215,13 @@ mod tests {
             "<title_id type=\"hexBinary\">0005000010101E00</title_id><title_version>32</title_version>";
         assert_eq!(wua_folder(meta).as_deref(), Some("0005000010101e00_v32"));
         assert!(wua_folder("<title_id>xyz</title_id>").is_none());
+    }
+
+    /// A top folder with a character across byte 8 is just not a title
+    /// (it used to panic, which ended the whole scan).
+    #[test]
+    fn a_wua_folder_name_split_mid_character_is_no_title() {
+        let file = crate::wua::tests::wua_of(&[("0005000é0101e00_v0/meta/meta.xml", META.as_bytes())]);
+        assert!(super::super::read_container(&mut std::io::Cursor::new(&file)).is_none());
     }
 }

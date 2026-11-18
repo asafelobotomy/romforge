@@ -118,7 +118,7 @@ impl oxidelta::vcdiff::decoder::SourceProvider for FileSource {
 }
 
 /// A writer that refuses to go past its byte budget.
-struct Capped<W>(W, u64);
+pub(super) struct Capped<W>(pub(super) W, pub(super) u64);
 
 impl<W: std::io::Write> std::io::Write for Capped<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {

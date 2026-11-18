@@ -229,14 +229,16 @@ impl<R: Read + Seek> Archive<R> {
     fn block(&mut self, index: u64) -> Option<Vec<u8>> {
         let rec = usize::try_from(index / PER_RECORD).ok()?;
         let sub = (index % PER_RECORD) as usize;
-        let r = self.records.get(rec * RECORD_LEN..(rec + 1) * RECORD_LEN)?;
+        let at = rec.checked_mul(RECORD_LEN)?;
+        let r = self.records.get(at..at.checked_add(RECORD_LEN)?)?;
         let size_of = |i: usize| u64::from(u16::from_be_bytes([r[8 + 2 * i], r[9 + 2 * i]])) + 1;
-        let offset = be64(&r[..8]) + (0..sub).map(size_of).sum::<u64>();
+        // Untrusted: an offset near 2^64 is an error, not an overflow.
+        let offset = be64(&r[..8]).checked_add((0..sub).map(size_of).sum::<u64>())?;
         let stored = size_of(sub);
         if offset.checked_add(stored)? > self.data.1 {
             return None;
         }
-        let raw = read_at(&mut self.file, self.data.0 + offset, stored)?;
+        let raw = read_at(&mut self.file, self.data.0.checked_add(offset)?, stored)?;
         if stored == BLOCK {
             return Some(raw);
         }
