@@ -4,11 +4,12 @@
 //! would in Search: identified by you, or a translation or hack of the DAT
 //! game when the file's name says so. Never verified (house rule 8).
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use rusqlite::Connection;
 
-use super::{Need, identify, queue};
+use super::{Need, name, queue};
 use crate::{Error, view};
 
 /// What became of one row.
@@ -36,22 +37,25 @@ pub fn accept(
     mut progress: impl FnMut(usize, usize),
 ) -> Result<Vec<Accepted>, Error> {
     let items = queue(conn, v, Some(ids), databases)?;
+    let to_name: HashMap<&str, _> = items
+        .iter()
+        .filter(|q| q.need == Need::Identify)
+        .map(|q| (q.row_id.as_str(), q))
+        .collect();
+    let titles: HashMap<&str, &str> = v.rows.iter().map(|r| (r.id.as_str(), r.title.as_str())).collect();
+    // All the names in one transaction, and the library's statuses worked
+    // out once at the end (not once per row).
+    let tx = conn.transaction()?;
     let mut out = Vec::new();
     for (n, id) in ids.iter().enumerate() {
         progress(n, ids.len());
         if cancel.is_set() {
             break;
         }
-        let file = v
-            .rows
-            .iter()
-            .find(|r| r.id == *id)
-            .map(|r| r.title.clone())
-            .unwrap_or_default();
-        let item = items.iter().find(|q| q.row_id == *id && q.need == Need::Identify);
+        let item = to_name.get(id.as_str());
         let mut done = Accepted {
             row_id: id.clone(),
-            file,
+            file: titles.get(id.as_str()).map(|t| t.to_string()).unwrap_or_default(),
             named: None,
             why_not: None,
         };
@@ -61,8 +65,14 @@ pub fn accept(
                     .derived
                     .as_ref()
                     .map_or_else(|| s.title.clone(), view::Derived::title);
-                identify(conn, v, id, &s.system, &title, s.derived.as_ref())?;
-                done.named = Some(title);
+                let d = view::detail_in(&tx, v, id)?;
+                // A row that can't be named this way says why; the others
+                // are still named.
+                match name(&tx, &d, &s.system, &title, s.derived.as_ref()) {
+                    Ok(()) => done.named = Some(title),
+                    Err(Error::Search(why)) => done.why_not = Some(why),
+                    Err(e) => return Err(e),
+                }
             }
             Some(s) => done.why_not = Some(format!("only possibly {}: pick it in Search", s.title)),
             None if item.is_some() => done.why_not = Some("no suggestion: name it in Search".into()),
@@ -70,5 +80,7 @@ pub fn accept(
         }
         out.push(done);
     }
+    crate::identify::identify(&tx, crate::identify::Relook::Nothing)?;
+    tx.commit()?;
     Ok(out)
 }

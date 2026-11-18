@@ -3302,6 +3302,22 @@ found about 65 items; they are fixed one area per PR, worst first.
   never overlaps itself or runs during a game, a manual page being read
   isn't read twice, and Read all stops when the manual closes.
 
+- *(Fixed 2026-11-18.)* **Slow scans and naming in bulk.** A scan was
+  one transaction: Stop or an error threw away all the hashing done, and
+  every other write waited (then failed as "database is locked") for the
+  whole scan. Each file's rows now go in once it is read, committed every
+  two seconds; a file hashed but not looked up yet is `pending` (schema
+  49) and looked up by the next identify. Files had no index by content,
+  so import plans and Search read the whole table per lookup (and plans
+  looked even with no copy in Games/); now `files(sha1, size)` is indexed
+  and the plan only looks when there is one. "Name as suggested" worked
+  out the whole library again per row (2,000 rows, 2,000 passes); it now
+  names them all in one transaction and works it out once. Still open from
+  the review: Stop is only seen between files (a 50 GB image runs to its
+  end), a database error doesn't stop the hashing, an archive with nothing
+  to hash is read again each scan, and cue-sheet fitting grows with the
+  folder.
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

@@ -9,7 +9,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
         let mut stmt = tx.prepare(
             "SELECT f.file_id, s.system_id, s.dat_id, f.size, f.crc32, f.md5, f.sha1,
                     f.stripped_size, f.stripped_crc32, f.stripped_md5, f.stripped_sha1, f.status,
-                    f.path, f.member, f.chd_sha1
+                    f.path, f.member, f.chd_sha1, f.pending
              FROM files f JOIN scan_roots s ON s.root_id = f.root_id
              ORDER BY f.path, f.member",
         )?;
@@ -30,6 +30,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
             Ok(FileRow {
                 file_id: r.get(0)?,
                 chd_sha1: r.get(14)?,
+                pending: r.get(15)?,
                 place,
                 scope: Scope::from_columns(r.get(1)?, r.get(2)?),
                 raw: Digest {
@@ -103,11 +104,14 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
     // First every file's hits, then who owns which ROM.
     let mut all_hits: Vec<Vec<Hit>> = Vec::with_capacity(files.len());
     for file in &files {
-        let again = match relook {
-            Relook::All => true,
-            Relook::Files(ids) => ids.contains(&file.file_id),
-            Relook::Nothing => false,
-        };
+        // A file hashed by a scan that stopped before its lookup is looked
+        // up by whichever identify comes next.
+        let again = file.pending
+            || match relook {
+                Relook::All => true,
+                Relook::Files(ids) => ids.contains(&file.file_id),
+                Relook::Nothing => false,
+            };
         let mut hits: Vec<Hit> = Vec::new();
         if again {
             if !relook_all {
@@ -220,6 +224,7 @@ pub fn identify(tx: &Transaction, relook: Relook) -> Result<(), Error> {
     for (f, r) in want.difference(&had) {
         set_owns.execute(params![f, r, true])?;
     }
+    tx.execute("UPDATE files SET pending = 0 WHERE pending = 1", [])?;
     fit_sheets(tx)?;
     Ok(())
 }

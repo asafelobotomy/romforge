@@ -103,6 +103,8 @@ struct FileRow {
     file_id: i64,
     /// A CHD's own SHA1 (from its header): an arcade DAT's disk.
     chd_sha1: Option<String>,
+    /// Hashed by a scan but not yet looked up in the DATs.
+    pending: bool,
     /// The archive it is in, or its folder: where its game's other files are.
     place: String,
     scope: Scope,

@@ -88,7 +88,11 @@ create` made one), else `$XDG_DATA_HOME/romforge/romforge.db`
 
 Rescans are incremental: a file whose size and modification time haven't
 changed since it was hashed keeps its hashes (`--rehash` reads everything
-again). `romforge-cli games` lists games the way the app does;
+again). A scan writes each file (an archive with all its members) once it
+is read, committed every two seconds, so a scan that is stopped or fails
+keeps the files it finished; they are looked up in the DATs by the next
+scan (or any identify), and the file it was reading is read again. Files
+are found by content through an index on their SHA1 and size. `romforge-cli games` lists games the way the app does;
 `games --json` (`--platform`, `--status all|verified|incomplete|unidentified`,
 `--search`, `--sort`, `--desc`, `--limit`, `--offset`) prints
 `{total, games[]}` and `browse` the same with positional choices (for a fixed command line), `overview [--json]` the totals, platforms, recent
@@ -996,8 +1000,10 @@ pick show as "identified by you" and are never counted as verified.
 once: you see each file with its suggestion and tick which to take (only a
 name match or better can be ticked). A file whose name says it is a
 translation or hack ("(English v1.01)", "English v2.00", "(English)") is
-named as one of its game. `romforge-cli search accept ROW...` does the
-same. Suggestions also follow the other names a game goes by: with the
+named as one of its game. All the names go in together and the library
+is worked out once at the end; a file that can't be named that way says
+why and the others are still named. `romforge-cli search accept ROW...`
+does the same. Suggestions also follow the other names a game goes by: with the
 LaunchBox database downloaded, "Takeshi's Challenge" leads to the DAT's
 "Takeshi no Chousenjou (Japan)", asked only when no DAT title is alike.
 An unknown cue sheet and the tracks it names are one row, and an unknown

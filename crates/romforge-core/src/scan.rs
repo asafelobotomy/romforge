@@ -128,8 +128,10 @@ pub enum Visit {
         units: usize,
         bytes: u64,
     },
-    /// One of those is done (its size on disk).
+    /// One of those is done (its size on disk): every [`Visit::Hashed`]
+    /// of `path` came before it.
     UnitDone {
+        path: PathBuf,
         bytes: u64,
     },
     /// A folder or archive that is a game by ScummVM's list (`games`): its
@@ -285,8 +287,10 @@ pub fn walk(
                 return;
             }
             let path = unit.path().to_owned();
-            guarded(path, &mut *send, |send| hash_unit(unit, stamp, opts, send));
-            send(Visit::UnitDone { bytes: size });
+            guarded(path.clone(), &mut *send, |send| {
+                hash_unit(unit, stamp, opts, send)
+            });
+            send(Visit::UnitDone { path, bytes: size });
         },
         &mut each,
     );

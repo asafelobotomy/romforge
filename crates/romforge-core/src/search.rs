@@ -180,6 +180,22 @@ fn identify_detail(
     title: &str,
     derived: Option<&view::Derived>,
 ) -> Result<(), Error> {
+    let tx = conn.transaction()?;
+    name(&tx, d, system, title, derived)?;
+    crate::identify::identify(&tx, crate::identify::Relook::Nothing)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Write the name of [`identify`] for a row's files, without working out
+/// the library's statuses again (the caller does, once for all it names).
+fn name(
+    tx: &Connection,
+    d: &view::GameDetail,
+    system: &str,
+    title: &str,
+    derived: Option<&view::Derived>,
+) -> Result<(), Error> {
     let title = title.trim();
     if title.is_empty() {
         return Err(Error::Search("a title is needed".into()));
@@ -199,7 +215,6 @@ fn identify_detail(
             d.row.title
         )));
     }
-    let tx = conn.transaction()?;
     for f in &d.files {
         tx.execute(
             concat!(
@@ -221,8 +236,6 @@ fn identify_detail(
             ],
         )?;
     }
-    crate::identify::identify(&tx, crate::identify::Relook::Nothing)?;
-    tx.commit()?;
     Ok(())
 }
 
