@@ -124,8 +124,11 @@ pub enum Relook<'a> {
     Nothing,
 }
 
-/// [`identify`] looking every file up again.
+/// [`identify`] looking every file up again (the DATs changed). An archive
+/// a scan found nothing to hash in is read again by the next scan: it may
+/// be an arcade set now, whose members are all hashed.
 pub fn identify_all(tx: &Transaction) -> Result<(), Error> {
+    tx.execute("DELETE FROM scan_stamps", [])?;
     identify(tx, Relook::All)
 }
 

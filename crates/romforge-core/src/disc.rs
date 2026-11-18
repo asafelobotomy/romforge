@@ -230,6 +230,7 @@ pub fn read_chd(path: &Path, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>) 
         // Not a CD: the logical data is the image.
         let mut left = logical;
         for n in 0..hunks {
+            crate::job::check_stop()?;
             chd.hunk(n)
                 .and_then(|mut x| x.read_hunk_in(&mut scratch, &mut hunk))
                 .map_err(chd_err)?;
@@ -276,6 +277,7 @@ pub fn read_chd(path: &Path, sink: &mut dyn FnMut(ChdOut) -> Result<(), Error>) 
     let mut swapped = vec![0u8; SECTOR];
 
     'hunks: for n in 0..hunks {
+        crate::job::check_stop()?;
         chd.hunk(n)
             .and_then(|mut x| x.read_hunk_in(&mut scratch, &mut hunk))
             .map_err(chd_err)?;

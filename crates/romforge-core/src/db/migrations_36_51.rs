@@ -1,4 +1,4 @@
-//! Migrations from 36 on (36 to 49 so far; the file is named for the range
+//! Migrations from 36 on (36 to 50 so far; the file is named for the range
 //! it will hold, up to 51; see `MIGRATIONS`).
 
 pub(super) const MIGRATIONS_36_51: &[&str] = &[
@@ -182,4 +182,17 @@ pub(super) const MIGRATIONS_36_51: &[&str] = &[
     // lookups by content (import plans, Search) use an index.
     "ALTER TABLE files ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;
      CREATE INDEX files_sha1 ON files(sha1, size);",
+    // 50: an archive a scan read with nothing in it to hash (no ROM
+    // member) has no `files` row to keep its stamp: its size and time are
+    // here, so the next scan doesn't read it again. `rules`: the romforge
+    // version that read it (a later one may know more extensions); a DAT
+    // import empties the table (an archive may be an arcade set now).
+    "CREATE TABLE scan_stamps (
+        path      TEXT PRIMARY KEY,
+        root_id   INTEGER NOT NULL REFERENCES scan_roots(root_id) ON DELETE CASCADE,
+        disk_size INTEGER NOT NULL,
+        mtime     INTEGER NOT NULL,
+        rules     TEXT NOT NULL
+    );
+    CREATE INDEX scan_stamps_root ON scan_stamps(root_id);",
 ];

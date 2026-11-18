@@ -15,6 +15,7 @@ pub(super) const PATH_COLUMNS: &[(&str, &str)] = &[
     ("folder_games", "path"),
     ("scummvm_ids", "path"),
     ("scan_roots", "path"),
+    ("scan_stamps", "path"),
     ("art", "path"),
     ("dats", "source_path"),
     ("cleanup_outputs", "path"),

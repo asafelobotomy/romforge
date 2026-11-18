@@ -33,6 +33,17 @@ fn arcade_sets(conn: &Connection) -> Result<std::collections::HashSet<String>, E
     Ok(out)
 }
 
+/// A row of (path, size on disk, modification time).
+fn stamp_row(r: &rusqlite::Row) -> rusqlite::Result<(String, scan::Stamp)> {
+    Ok((
+        r.get(0)?,
+        scan::Stamp {
+            size: r.get(1)?,
+            mtime: r.get(2)?,
+        },
+    ))
+}
+
 impl Library {
     /// [`Library::scan_with`] with default options and no progress.
     pub fn scan(&mut self, root: impl AsRef<Path>, scope: Scope) -> Result<ScanReport, Error> {
@@ -73,6 +84,9 @@ impl Library {
                 0 => crate::settings::load(&self.conn)?.threads,
                 n => n,
             },
+            // Its own flag (a database error stops the hashing too), also
+            // set by the caller's Stop.
+            cancel: opts.cancel.child(),
             ..opts.clone()
         };
         let scummvm_list = self.extdb_dir().map(|d| d.join(layout::SCUMMVM_LIST));
@@ -107,15 +121,16 @@ impl Library {
                    AND f.disk_size IS NOT NULL AND f.mtime IS NOT NULL
                    AND s.all_files = ?3",
             )?
-            .query_map(params![root_str, prefix, opts.all_files], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    scan::Stamp {
-                        size: r.get(1)?,
-                        mtime: r.get(2)?,
-                    },
-                ))
-            })?
+            .query_map(params![root_str, prefix, opts.all_files], stamp_row)?
+            .chain(
+                tx.prepare(
+                    "SELECT t.path, t.disk_size, t.mtime FROM scan_stamps t
+                     JOIN scan_roots s ON s.root_id = t.root_id
+                     WHERE (t.path = ?1 OR substr(t.path, 1, length(?2)) = ?2)
+                       AND s.all_files = ?3 AND t.rules = ?4",
+                )?
+                .query_map(params![root_str, prefix, opts.all_files, store::RULES], stamp_row)?,
+            )
             .collect::<Result<_, _>>()?
         };
         let root_id: i64 = tx.query_row(
@@ -168,12 +183,14 @@ impl Library {
         let hashed_ids = {
             let mut store = store::Store::new(&tx)?;
             let mut adopt = tx.prepare("UPDATE files SET root_id = ?1 WHERE path = ?2")?;
+            let mut adopt_stamp = tx.prepare("UPDATE scan_stamps SET root_id = ?1 WHERE path = ?2")?;
             let mut result = Ok(());
             let mut units = ScanProgress::default();
             let unchanged =
                 |path: &Path, stamp: scan::Stamp| path.to_str().is_some_and(|p| known.get(p) == Some(&stamp));
             let walked = scan::walk(&root, &skip, &games, opts, &arcade_sets, unchanged, |visit| {
                 if result.is_err() {
+                    opts.cancel.cancel();
                     return;
                 }
                 match visit {
@@ -191,11 +208,26 @@ impl Library {
                     Visit::Planned { units: n, bytes } => {
                         (units.units_total, units.disk_total) = (n, bytes);
                     }
-                    Visit::UnitDone { path, bytes } => {
+                    Visit::UnitDone {
+                        path,
+                        bytes,
+                        stopped,
+                        stamp,
+                    } => {
                         units.units_done += 1;
                         units.disk_done += bytes;
-                        result =
-                            store.done(&path, owner(&path), &mut report, &mut seen, &mut unreadable_dirs);
+                        let done = store::Done {
+                            owner: owner(&path),
+                            // A zip holding a patch is read each time, to
+                            // pair the patch with its game.
+                            stamp: stamp.filter(|_| !patch_files.contains(&path)),
+                            stopped,
+                        };
+                        result = store.done(&path, done, &mut report, &mut seen, &mut unreadable_dirs);
+                        if result.is_err() {
+                            // Stop the readers now, not at the next visit.
+                            opts.cancel.cancel();
+                        }
                     }
                     Visit::Skipped { path, member } => {
                         visits::skipped(&mut report, &mut skipped_kinds, &mut patch_files, path, member);
@@ -215,8 +247,11 @@ impl Library {
                         let Some(p) = path.to_str().map(str::to_owned) else {
                             return;
                         };
-                        if let Err(e) = adopt.execute(params![owner(&path), p]) {
-                            result = Err(e);
+                        for st in [&mut adopt, &mut adopt_stamp] {
+                            if let Err(e) = st.execute(params![owner(&path), p]) {
+                                result = Err(e);
+                                opts.cancel.cancel();
+                            }
                         }
                         seen.insert(p);
                         report.unchanged += 1;
@@ -233,7 +268,12 @@ impl Library {
             }
             walked?;
             for path in store.left() {
-                store.done(&path, owner(&path), &mut report, &mut seen, &mut unreadable_dirs)?;
+                let done = store::Done {
+                    owner: owner(&path),
+                    stamp: None,
+                    stopped: false,
+                };
+                store.done(&path, done, &mut report, &mut seen, &mut unreadable_dirs)?;
             }
             store.unstamp(&report)?;
             std::mem::take(&mut store.hashed_ids)
@@ -255,6 +295,13 @@ impl Library {
                     "DELETE FROM files WHERE path = ?1 AND root_id = ?2",
                     params![path, id],
                 )?;
+            }
+            let stamped: Vec<String> = tx
+                .prepare("SELECT path FROM scan_stamps WHERE root_id = ?1")?
+                .query_map([id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            for path in stamped.iter().filter(|p| !kept(p)) {
+                tx.execute("DELETE FROM scan_stamps WHERE path = ?1", [path])?;
             }
         }
         identify::identify(&tx, identify::Relook::Files(&hashed_ids))?;
