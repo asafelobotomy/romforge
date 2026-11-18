@@ -286,3 +286,48 @@ fn multi_track_discs_need_a_cue() {
         plan.skipped
     );
 }
+
+/// A PSP `.iso` becomes a DVD CHD of one sector per hunk, the form PPSSPP
+/// (1.17 on) reads, rather than staying as it is.
+#[test]
+fn a_psp_iso_becomes_a_chd_ppsspp_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let library = dir.path().join("library");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir_all(&library).unwrap();
+    let iso = pattern(3, 64 * 2048);
+    std::fs::write(source.join("Game (USA).iso"), &iso).unwrap();
+    let x = hash_stream(&iso[..], iso.len() as u64).unwrap().raw;
+    let dat = dir.path().join("psp.dat");
+    std::fs::write(
+        &dat,
+        format!(
+            r#"<datafile><header><name>Sony - PlayStation Portable</name></header><game name="Game (USA)"><rom name="Game (USA).iso" size="{}" crc="{}" md5="{}" sha1="{}"/></game></datafile>"#,
+            x.size, x.crc32, x.md5, x.sha1
+        ),
+    )
+    .unwrap();
+    let mut lib = Library::open_in_memory().unwrap();
+    lib.import_dat(&dat, None).unwrap();
+    lib.save_settings(&Settings {
+        source_dir: Some(source.clone()),
+        library_dir: Some(library.clone()),
+        staging_dir: Some(dir.path().join("staging")),
+        ..Settings::default()
+    })
+    .unwrap();
+    lib.scan(&source, Scope::All).unwrap();
+    let plan = lib.cleanup_plan(None).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    assert_eq!(plan.items[0].format, Format::ChdDvd);
+    let report = lib.cleanup_apply(&plan, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+
+    let chd = library.canonicalize().unwrap().join("PSP/Game (USA).chd");
+    let file = std::io::BufReader::new(std::fs::File::open(&chd).unwrap());
+    let header = chd::Chd::open(file, None).unwrap().header().hunk_size();
+    assert_eq!(header, 2048);
+    let members = romforge_core::disc::chd_members(&chd).unwrap();
+    assert_eq!(members[0].1.raw, x);
+}
