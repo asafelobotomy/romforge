@@ -9,11 +9,19 @@
   const ROW = 30;
   let scrollTop = $state(0);
   let viewH = $state(600);
-  const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - 10));
+  let scroller = $state(null);
+  // Another DAT or filter: back to the top (a shorter list scrolled far
+  // down would otherwise draw nothing under the spacer).
+  $effect(() => {
+    games;
+    if (scroller) scroller.scrollTop = 0;
+    scrollTop = 0;
+  });
+  const first = $derived(Math.min(games.length, Math.max(0, Math.floor(scrollTop / ROW) - 10)));
   const last = $derived(Math.min(games.length, Math.ceil((scrollTop + viewH) / ROW) + 10));
 </script>
 
-<div class="scroller" bind:clientHeight={viewH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
+<div class="scroller" bind:this={scroller} bind:clientHeight={viewH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
   <table>
     <thead><tr>
       <th><SortButton label="Have" key="have" bind:sort title="Sort by have / missing" /></th>
