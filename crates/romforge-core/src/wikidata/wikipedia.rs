@@ -47,81 +47,138 @@ fn article(
         .map(|(v, _)| ("en".to_owned(), v)))
 }
 
+/// Articles asked for in one request (the most the API gives intros of).
+pub const BATCH: usize = 20;
+
 /// Fill the descriptions of `games` from Wikipedia (`base`,
-/// [`WIKIPEDIA`]), in `lang` where it has the article: those with one, whose description is missing or
-/// from a later source, and not read from that article before (unless
-/// `refresh`). Returns how many were filled; stops when told to slow down.
+/// [`WIKIPEDIA`]), in `lang` where it has the article: those with one,
+/// whose description is missing or from a later source, and not read from
+/// that article before (unless `refresh`). [`BATCH`] articles per request
+/// to each wiki. Returns how many were filled; stops when told to slow
+/// down, or once `cancel` is set (what was read is kept).
 pub fn descriptions(
     conn: &Connection,
     base: &str,
     lang: &str,
     games: &BTreeMap<(i64, String), Vec<String>>,
     refresh: bool,
+    cancel: &crate::job::Cancel,
     errors: &mut Vec<String>,
 ) -> Result<usize, Error> {
-    let mut filled = 0;
+    // What to read, by wiki: (system, game, article).
+    let mut todo: BTreeMap<String, Vec<(i64, &str, String)>> = BTreeMap::new();
     for (system_id, title) in games.keys() {
         let Some((lang, name)) = article(conn, *system_id, title, lang)? else {
             continue;
         };
-        let read_as = format!("{lang}:{name}");
         let had = field(conn, *system_id, title, "description")?;
         if !crate::enrich::replaces(crate::enrich::WIKIPEDIA, had.as_ref()) {
             continue;
         }
+        let read_as = format!("{lang}:{name}");
         let same = field(conn, *system_id, title, "description_article")?.is_some_and(|(v, _)| v == read_as);
         if same && !refresh {
             continue;
         }
-        let url = format!(
-            "{}/api/rest_v1/page/summary/{}",
-            base.replace("{lang}", &lang),
-            fetch::encode_segment(&name.replace(' ', "_"))
-        );
-        let put = |f: &str, v: &str| {
-            crate::enrich::put_field(conn, *system_id, title, f, v, crate::enrich::WIKIPEDIA, false)
-        };
-        let body = match fetch::get_small_optional(&url) {
-            Ok(Some(b)) => b,
-            // No such article: read, not asked again unless refreshing.
-            Ok(None) => {
-                put("description_article", &read_as)?;
-                continue;
+        todo.entry(lang).or_default().push((*system_id, title, name));
+    }
+    let mut filled = 0;
+    'wikis: for (lang, wanted) in &todo {
+        for chunk in wanted.chunks(BATCH) {
+            if cancel.is_set() {
+                break 'wikis;
             }
-            Err(e) => {
-                let stop = fetch::is_rate_limited(&e);
-                errors.push(format!("Wikipedia: {e}"));
-                if stop {
-                    break;
+            let titles: Vec<String> = chunk.iter().map(|(_, _, n)| fetch::encode_segment(n)).collect();
+            let url = format!(
+                "{}/w/api.php?action=query&format=json&formatversion=2&redirects=1\
+                 &prop=extracts%7Cpageprops%7Cinfo&exintro=1&explaintext=1&exlimit=max\
+                 &ppprop=disambiguation&inprop=url&titles={}",
+                base.replace("{lang}", lang),
+                titles.join("%7C")
+            );
+            let pages = match fetch::get_small(&url).map(|b| extracts(&b)) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    errors.push(format!("Wikipedia ({lang}): an answer romforge can't read"));
+                    continue;
                 }
-                continue;
+                Err(e) => {
+                    errors.push(format!("Wikipedia: {e}"));
+                    if fetch::is_rate_limited(&e) {
+                        break 'wikis;
+                    }
+                    continue;
+                }
+            };
+            for (system_id, title, name) in chunk {
+                // Not in the answer at all: asked again next time.
+                let Some(page) = pages.get(name.as_str()) else {
+                    continue;
+                };
+                let put = |f: &str, v: &str| {
+                    crate::enrich::put_field(conn, *system_id, title, f, v, crate::enrich::WIKIPEDIA, false)
+                };
+                // No such article, a disambiguation page, or no text: read,
+                // not asked again unless refreshing.
+                if let Some((text, url)) = page {
+                    if put("description", text)? {
+                        filled += 1;
+                    }
+                    put("description_url", url)?;
+                    put("description_licence", LICENCE)?;
+                }
+                put("description_article", &format!("{lang}:{name}"))?;
             }
-        };
-        let Some((text, page)) = summary(&body) else {
-            // A disambiguation page, or no text: the same.
-            put("description_article", &read_as)?;
-            continue;
-        };
-        if put("description", &text)? {
-            filled += 1;
         }
-        put("description_url", &page)?;
-        put("description_licence", LICENCE)?;
-        put("description_article", &read_as)?;
     }
     Ok(filled)
 }
 
-/// A summary's plain text and its page's address; `None` for a
-/// disambiguation page or one with no text.
-pub(super) fn summary(body: &[u8]) -> Option<(String, String)> {
+/// What an answer says of each title asked (through its normalizing and
+/// redirects): the intro's plain text and the page's address, `None` for
+/// no such page, a disambiguation page or one with no text. `None` for an
+/// answer that isn't one.
+pub(super) fn extracts(body: &[u8]) -> Option<HashMap<String, Option<(String, String)>>> {
     let v: serde_json::Value = serde_json::from_slice(body).ok()?;
-    if v["type"].as_str() == Some("disambiguation") {
+    let q = v.get("query")?;
+    let hops = |key: &str| -> HashMap<String, String> {
+        q[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|h| Some((h["from"].as_str()?.to_owned(), h["to"].as_str()?.to_owned())))
+            .collect()
+    };
+    let (normalized, redirects) = (hops("normalized"), hops("redirects"));
+    let pages: HashMap<&str, &serde_json::Value> = q["pages"]
+        .as_array()?
+        .iter()
+        .filter_map(|p| Some((p["title"].as_str()?, p)))
+        .collect();
+    let mut out: HashMap<String, Option<(String, String)>> = pages
+        .iter()
+        .map(|(t, p)| ((*t).to_owned(), read_page(p)))
+        .collect();
+    // A title asked under another spelling, or a redirect, reads as the
+    // page it leads to (one hop each, as the API makes them).
+    for (from, to) in normalized.iter().chain(redirects.iter()) {
+        let end = redirects.get(to).unwrap_or(to);
+        if let Some(p) = pages.get(end.as_str()) {
+            out.insert(from.clone(), read_page(p));
+        }
+    }
+    Some(out)
+}
+
+/// One page of an answer: `None` when missing, a disambiguation page or
+/// without text.
+fn read_page(p: &serde_json::Value) -> Option<(String, String)> {
+    if p.get("missing").is_some() || p["pageprops"].get("disambiguation").is_some() {
         return None;
     }
-    let text = v["extract"].as_str()?.trim();
-    let page = v["content_urls"]["desktop"]["page"].as_str()?;
-    (!text.is_empty()).then(|| (text.to_owned(), page.to_owned()))
+    let text = p["extract"].as_str()?.trim();
+    let url = p["fullurl"].as_str()?;
+    (!text.is_empty()).then(|| (text.to_owned(), url.to_owned()))
 }
 
 #[cfg(test)]
@@ -156,8 +213,33 @@ mod tests {
         assert_eq!(get("releasemonth"), None, "the earliest is only a year");
     }
 
+    /// The answer the test server gives for `path`: each title asked,
+    /// one missing, one a disambiguation page, one a redirect.
+    fn answer(path: &str) -> String {
+        let lang = path.trim_start_matches('/').split('/').next().unwrap_or("");
+        let titles = path.split("titles=").nth(1).unwrap_or("");
+        let (mut pages, mut redirects) = (Vec::new(), Vec::new());
+        for t in titles.split("%7C").map(fetch::decode_segment) {
+            let page = match t.as_str() {
+                "Missing" => serde_json::json!({"title": t, "missing": true}),
+                "Ambiguous" => {
+                    serde_json::json!({"title": t, "pageprops": {"disambiguation": ""}, "extract": "May mean:"})
+                }
+                "Old G" => {
+                    redirects.push(serde_json::json!({"from": t, "to": "Game G"}));
+                    serde_json::json!({"title": "Game G", "extract": "From the redirect.", "fullurl": "https://en.wikipedia.org/wiki/Game_G"})
+                }
+                _ => {
+                    serde_json::json!({"title": t, "extract": format!("From {lang}/{t}."), "fullurl": format!("https://{lang}.wikipedia.org/wiki/X")})
+                }
+            };
+            pages.push(page);
+        }
+        serde_json::json!({"query": {"redirects": redirects, "pages": pages}}).to_string()
+    }
+
     /// The matched game's article is read once, in the language set, and
-    /// a description from an earlier source stands.
+    /// a description from an earlier source stands; one request per wiki.
     #[test]
     fn descriptions_come_from_the_linked_article() {
         use std::io::{BufRead, BufReader, Write};
@@ -177,24 +259,10 @@ mod tests {
                     h.clear();
                 }
                 log.lock().unwrap().push(path.clone());
-                let (status, body) = if path.contains("Missing") {
-                    ("404 Not Found", String::new())
-                } else if path.contains("Ambiguous") {
-                    (
-                        "200 OK",
-                        r#"{"type":"disambiguation","extract":"May mean:"}"#.to_owned(),
-                    )
-                } else {
-                    (
-                        "200 OK",
-                        format!(
-                            r#"{{"type":"standard","extract":"From {path}.","content_urls":{{"desktop":{{"page":"https://fr.wikipedia.org/wiki/X"}}}}}}"#
-                        ),
-                    )
-                };
+                let body = answer(&path);
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
             }
@@ -211,43 +279,50 @@ mod tests {
              INSERT INTO game_meta VALUES (1, 'D', 'wikipedia', 'List of games', 'launchbox');
              INSERT INTO game_meta VALUES (1, 'C', 'description', 'Theirs.', 'launchbox');
              INSERT INTO game_meta VALUES (1, 'E', 'wikipedia', 'Missing', 'wikidata');
-             INSERT INTO game_meta VALUES (1, 'F', 'wikipedia', 'Ambiguous', 'wikidata');",
+             INSERT INTO game_meta VALUES (1, 'F', 'wikipedia', 'Ambiguous', 'wikidata');
+             INSERT INTO game_meta VALUES (1, 'G', 'wikipedia', 'Old G', 'wikidata');",
         )
         .unwrap();
-        let games: BTreeMap<(i64, String), Vec<String>> = ["A", "B", "C", "D", "E", "F"]
+        let games: BTreeMap<(i64, String), Vec<String>> = ["A", "B", "C", "D", "E", "F", "G"]
             .into_iter()
             .map(|t| ((1, t.to_owned()), Vec::new()))
             .collect();
         let mut errors = Vec::new();
+        let cancel = crate::job::Cancel::new();
         assert_eq!(
-            descriptions(&conn, &base, "fr", &games, false, &mut errors).unwrap(),
-            2
+            descriptions(&conn, &base, "fr", &games, false, &cancel, &mut errors).unwrap(),
+            3
         );
-        let desc = |t: &str| -> String {
+        assert_eq!(asked.lock().unwrap().len(), 2, "one request each to fr and en");
+        let desc = |t: &str| -> Option<String> {
             conn.query_row(
                 "SELECT value FROM game_meta WHERE title = ?1 AND field = 'description'",
                 [t],
                 |r| r.get(0),
             )
+            .optional()
             .unwrap()
         };
+        assert_eq!(desc("A").as_deref(), Some("From fr/Jeu A."), "French article");
+        assert_eq!(desc("B").as_deref(), Some("Mine."), "libretro's stands");
         assert_eq!(
-            desc("A"),
-            "From /fr/api/rest_v1/page/summary/Jeu_A.",
-            "French article"
-        );
-        assert_eq!(desc("B"), "Mine.", "libretro's stands");
-        assert!(
-            desc("C").starts_with("From /en/"),
+            desc("C").as_deref(),
+            Some("From en/Game C."),
             "LaunchBox's gives way; English when there's no French"
         );
-        let n = asked.lock().unwrap().len();
-        descriptions(&conn, &base, "fr", &games, false, &mut errors).unwrap();
+        assert_eq!(desc("E"), None, "no such article");
+        assert_eq!(desc("F"), None, "a disambiguation page");
+        assert_eq!(desc("G").as_deref(), Some("From the redirect."));
+        descriptions(&conn, &base, "fr", &games, false, &cancel, &mut errors).unwrap();
         assert_eq!(
             asked.lock().unwrap().len(),
-            n,
+            2,
             "not asked again, a missing or disambiguation page neither"
         );
         assert!(errors.is_empty(), "{errors:?}");
+        // Stopped: nothing is asked.
+        cancel.cancel();
+        descriptions(&conn, &base, "fr", &games, true, &cancel, &mut errors).unwrap();
+        assert_eq!(asked.lock().unwrap().len(), 2, "stopped before asking");
     }
 }

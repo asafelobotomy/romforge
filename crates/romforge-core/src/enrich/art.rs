@@ -3,6 +3,8 @@ use super::*;
 mod ask;
 mod game;
 
+pub(crate) use ask::Sources;
+
 /// libretro's thumbnail file name: `&*/:`<>?\|"` become `_`.
 pub fn thumbnail_file(game: &str) -> String {
     let name: String = game
@@ -70,7 +72,7 @@ pub(super) fn system_art(
     games: &[(&String, &Vec<String>)],
     settings: &crate::settings::Settings,
     lbdb: &Option<Connection>,
-    halted: &std::sync::Mutex<Vec<crate::artsources::Provider>>,
+    halted: &std::sync::Mutex<Sources>,
     halted_hosts: &std::sync::Mutex<std::collections::HashSet<String>>,
     report: &mut EnrichReport,
     tally: &mut Tally,

@@ -95,14 +95,20 @@ fn item_details(
             "series" => {
                 let label = row.get("vLabel").cloned().unwrap_or_default();
                 let fields = out.entry(g.clone()).or_default();
-                fields.entry("series_qid".into()).or_default().insert(v.clone());
+                // "unknown value" is no item: in a later `VALUES` it would
+                // break the whole query.
+                if is_qid(v) {
+                    fields.entry("series_qid".into()).or_default().insert(v.clone());
+                }
                 ("series", label)
             }
             "series_ordinal" | "wikipedia" | "original_title" | "release" => (p.as_str(), v.clone()),
             "wikipedia_local" => ("wikipedia_local", format!("{lang}:{v}")),
             "work" => {
-                let fields = out.entry(g.clone()).or_default();
-                fields.entry("work".into()).or_default().insert(v.clone());
+                if is_qid(v) {
+                    let fields = out.entry(g.clone()).or_default();
+                    fields.entry("work".into()).or_default().insert(v.clone());
+                }
                 continue;
             }
             other => match field_of.get(other) {

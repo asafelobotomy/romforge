@@ -225,7 +225,10 @@ fn a_failed_picture_is_not_asked_for_every_run() {
     let dir = tempfile::tempdir().unwrap();
     for _ in 0..2 {
         let mut errors = Vec::new();
-        assert_eq!(fetch_pictures(&conn, dir.path(), &mut errors).unwrap(), 0);
+        assert_eq!(
+            fetch_pictures(&conn, dir.path(), &Default::default(), &mut errors).unwrap(),
+            0
+        );
     }
     assert_eq!(hits.load(Ordering::SeqCst), 1, "asked once, then left alone");
     assert!(dir.path().join("Q1.failed").exists());

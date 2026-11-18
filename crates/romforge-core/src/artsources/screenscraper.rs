@@ -52,7 +52,7 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, job: &Job) -> Result<Found, Err
         e(&rom.name),
         rom.size
     );
-    let Some(body) = fetch::get_optional(&url)? else {
+    let Some(body) = fetch::get_small_optional(&url)? else {
         return Ok(Found::default());
     };
     Ok(read(&json(&body)?["response"]["jeu"], job))

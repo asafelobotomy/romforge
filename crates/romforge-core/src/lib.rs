@@ -99,6 +99,10 @@ pub enum Error {
     /// ScreenScraper's API closed, 423): asking again won't help.
     #[error("download: {0}")]
     Refused(String),
+    /// A server that couldn't be reached, didn't answer in time, or
+    /// failed itself (HTTP 5xx): likely the same for the next request.
+    #[error("download: {0}")]
+    Unreachable(String),
     #[error("no DAT source is known for {0}")]
     NoDownload(&'static str),
     #[error("organize: {0}")]

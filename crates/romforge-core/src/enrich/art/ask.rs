@@ -127,6 +127,43 @@ fn video(sh: &Shared, game: &str, get: &str, source: &str, url: &str, got: &mut 
 /// Ask `provider` about the job's game and keep what it has of the kinds
 /// still `wanted` (the best of each first), and its text. A source that
 /// says "slow down" isn't asked again this run.
+/// Unreachable answers in a row (no connection, no answer in time, a
+/// server error) after which a source isn't asked again this run.
+pub(crate) const STRIKES: u32 = 3;
+
+/// The keyed sources not asked again this run, by any worker: one that
+/// said "slow down" or refused its key at once, one that is down after
+/// [`STRIKES`] unreachable answers in a row (an answer resets its count).
+#[derive(Debug, Default)]
+pub(crate) struct Sources {
+    halted: Vec<crate::artsources::Provider>,
+    failing: std::collections::HashMap<crate::artsources::Provider, u32>,
+}
+
+impl Sources {
+    pub(crate) fn halted(&self, p: crate::artsources::Provider) -> bool {
+        self.halted.contains(&p)
+    }
+
+    /// `p` answered: its failures so far don't count.
+    pub(crate) fn answered(&mut self, p: crate::artsources::Provider) {
+        self.failing.remove(&p);
+    }
+
+    /// `p` failed with `e`; whether it is now left alone.
+    pub(crate) fn failed(&mut self, p: crate::artsources::Provider, e: &crate::Error) -> bool {
+        let down = fetch::is_unreachable(e) && {
+            let n = self.failing.entry(p).or_default();
+            *n += 1;
+            *n >= STRIKES
+        };
+        if (fetch::stops_source(e) || down) && !self.halted(p) {
+            self.halted.push(p);
+        }
+        self.halted(p)
+    }
+}
+
 pub(super) fn ask(
     sh: &Shared,
     provider: crate::artsources::Provider,
@@ -142,7 +179,7 @@ pub(super) fn ask(
         .halted
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .contains(&provider)
+        .halted(provider)
     {
         return;
     }
@@ -153,6 +190,10 @@ pub(super) fn ask(
     }
     match crate::artsources::lookup(provider, sh.keys, &sh.opts.sources, session, job) {
         Ok(found) => {
+            sh.halted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .answered(provider);
             // Kinds a download of failed for.
             let mut failed: Vec<ArtKind> = Vec::new();
             if !found.fields.is_empty() {
@@ -191,10 +232,45 @@ pub(super) fn ask(
             }
         }
         Err(e) => {
-            if fetch::stops_source(&e) {
-                sh.halted.lock().unwrap_or_else(|e| e.into_inner()).push(provider);
-            }
-            got.push(Got::Error(format!("{}: {e}", provider.name())));
+            let halted = sh
+                .halted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .failed(provider, &e);
+            let note = if halted && fetch::is_unreachable(&e) {
+                " (not asked again this run)"
+            } else {
+                ""
+            };
+            got.push(Got::Error(format!("{}: {e}{note}", provider.name())));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::artsources::Provider;
+
+    /// A source down three times in a row is left alone; an answer in
+    /// between starts the count again; a refused key stops it at once.
+    #[test]
+    fn a_source_that_keeps_failing_is_left_alone() {
+        let down = || crate::Error::Unreachable("api: timed out".into());
+        let mut s = Sources::default();
+        let p = Provider::ScreenScraper;
+        assert!(!s.failed(p, &down()));
+        assert!(!s.failed(p, &down()));
+        s.answered(p);
+        assert!(!s.failed(p, &down()));
+        assert!(
+            !s.failed(p, &crate::Error::Http("api: HTTP 400".into())),
+            "not a sign it's down"
+        );
+        assert!(!s.failed(p, &down()));
+        assert!(s.failed(p, &down()), "third in a row");
+        assert!(s.halted(p));
+        let q = Provider::Igdb;
+        assert!(s.failed(q, &crate::Error::Refused("api: HTTP 401".into())));
     }
 }

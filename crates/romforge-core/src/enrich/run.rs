@@ -12,7 +12,7 @@ fn games_you_have(
         "WITH {HAD},
               games_in AS (SELECT DISTINCT r.game_id FROM had JOIN roms r ON r.rom_id = had.rom_id),
               {GAME_HAVE}
-         SELECT d.system_id, g.name, r.crc32
+         SELECT d.system_id, g.name, r.crc32, r.size
          FROM game_have gh JOIN games g ON g.game_id = gh.game_id
          JOIN dats d ON d.dat_id = g.dat_id
          JOIN roms r ON r.game_id = g.game_id
@@ -24,11 +24,15 @@ fn games_you_have(
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<i64>>(3)?,
         ))
     })? {
-        let (system, game, crc) = row?;
+        let (system, game, crc, size) = row?;
         let crcs = out.entry((system, game)).or_default();
-        if let Some(crc) = crc {
+        // Each ROM's CRC32 with its size where the DAT gives one (what a
+        // metadata file is matched by first, [`super::meta`]), and alone.
+        if let Some(crc) = crc.map(|c| c.to_ascii_lowercase()) {
+            crcs.extend(size.map(|n| format!("{crc}:{n}")));
             crcs.push(crc);
         }
     }
@@ -132,8 +136,9 @@ pub fn enrich(
         .extdb
         .as_deref()
         .and_then(|d| crate::extdb::open(crate::extdb::ExtDb::LaunchBox, d));
-    // Sources that said "slow down" aren't asked again this run.
-    let halted = std::sync::Mutex::new(Vec::new());
+    // Sources that said "slow down", refused their key or are down
+    // aren't asked again this run.
+    let halted = std::sync::Mutex::new(Sources::default());
     // Hosts that said "slow down" (libretro's, LaunchBox's image server)
     // aren't asked again this run either, by any thread.
     let halted_hosts = std::sync::Mutex::new(std::collections::HashSet::new());
@@ -232,6 +237,9 @@ pub fn enrich(
         &mut progress,
     )?;
     extdb_fill(conn, opts, &have, &ovgdb, &lbdb, &mut report)?;
+    // Each step after the art stops at its next batch or game, keeping
+    // what it saved.
+    report.stopped = opts.cancel.is_set();
     // The same failure for many games is listed once.
     let mut seen = std::collections::HashSet::new();
     report.errors.retain(|e| seen.insert(e.clone()));
@@ -262,7 +270,8 @@ fn wikidata_step(
             .filter(|(k, _)| !derived.contains(*k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, lang, |step| {
+        let cancel = &opts.cancel;
+        match crate::wikidata::enrich(conn, endpoint, &titled, opts.refresh, lang, cancel, |step| {
             tally.wikidata(step, progress);
             progress(EnrichEvent::Wikidata { step })
         }) {
@@ -280,11 +289,12 @@ fn wikidata_step(
                     lang,
                     &titled,
                     opts.refresh,
+                    cancel,
                     &mut w.errors,
                 )?;
                 tally.wikidata("pictures", progress);
                 progress(EnrichEvent::Wikidata { step: "pictures" });
-                crate::wikidata::fetch_pictures(conn, &dir.join("wikidata"), &mut w.errors)?;
+                crate::wikidata::fetch_pictures(conn, &dir.join("wikidata"), cancel, &mut w.errors)?;
                 report.wikidata = Some(w);
             }
             Err(e) => report.errors.push(format!("Wikidata: {e}")),
@@ -306,6 +316,9 @@ fn extdb_fill(
     // OpenVGDB by hash first, then LaunchBox by title.
     if ovgdb.is_some() || lbdb.is_some() {
         for (system_id, game) in have.keys() {
+            if opts.cancel.is_set() {
+                break;
+            }
             let Some(system) = systems::by_id(*system_id) else {
                 continue;
             };

@@ -171,6 +171,7 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
     let url = req.url;
     let err = |m: String| Error::Http(format!("{}: {m}", short(url)));
     let limited = |m: String| Error::RateLimited(format!("{}: {m}", short(url)));
+    let unreachable = |m: String| Error::Unreachable(format!("{}: {m}", short(url)));
     let agent = agent();
     for attempt in 0.. {
         wait_for_host(url);
@@ -196,7 +197,7 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
                 r.call()
             }
         };
-        let response = result.map_err(|e| err(e.to_string()))?;
+        let response = result.map_err(|e| unreachable(e.to_string()))?;
         let status = response.status().as_u16();
         if status == 429 || status == 503 {
             let wait = response
@@ -237,6 +238,9 @@ pub(super) fn respond(req: &Request) -> Result<Option<ureq::http::Response<ureq:
                 "{}: HTTP {status}: the server refused the request (check the key or account in Settings)",
                 short(url)
             )));
+        }
+        if status >= 500 {
+            return Err(unreachable(format!("HTTP {status}")));
         }
         if status >= 400 {
             return Err(err(format!("HTTP {status}")));
@@ -298,6 +302,12 @@ pub fn is_rate_limited(e: &Error) -> bool {
 /// limiting, or it refused the key it was given.
 pub fn stops_source(e: &Error) -> bool {
     matches!(e, Error::RateLimited(_) | Error::Refused(_))
+}
+
+/// Whether an error from [`request`] is a server down, hanging or failing
+/// (no connection, no answer in time, HTTP 5xx).
+pub fn is_unreachable(e: &Error) -> bool {
+    matches!(e, Error::Unreachable(_))
 }
 
 /// Percent-encode one URL path segment.

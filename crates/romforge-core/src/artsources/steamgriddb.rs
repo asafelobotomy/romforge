@@ -17,7 +17,7 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, job: &Job) -> Result<Found, Err
         match fetch::request(&Request {
             url: &url,
             headers: auth.clone(),
-            ..Request::default()
+            ..Request::small("")
         })? {
             Some(b) => Ok(Some(json(&b)?)),
             None => Ok(None),

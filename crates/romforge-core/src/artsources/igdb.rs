@@ -31,7 +31,7 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, session: &mut Session, job: &Jo
             let body = fetch::request(&Request {
                 url: &url,
                 body: Some(String::new()),
-                ..Request::default()
+                ..Request::small("")
             })?
             .ok_or_else(|| Error::Http("IGDB: no token".into()))?;
             let answer = json(&body)?;
@@ -68,7 +68,7 @@ pub(super) fn lookup(keys: &Keys, bases: &Bases, session: &mut Session, job: &Jo
                 ("Authorization", format!("Bearer {token}")),
             ],
             body: Some(query.clone()),
-            ..Request::default()
+            ..Request::small("")
         })
     };
     let answer = match ask(&token(session)?) {
