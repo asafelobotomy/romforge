@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::job::Cancel;
-use crate::{Error, Library, ScanOptions, cleanup, organize};
+use crate::{Error, Library, ScanOptions, Scope, cleanup, organize, settings};
 
 impl Library {
     /// Work out where identified files would go (a dry run; nothing moves).
@@ -55,6 +55,27 @@ impl Library {
     /// `only`: limit to these library row ids.
     pub fn cleanup_plan(&self, only: Option<&[String]>) -> Result<cleanup::CleanupPlan, Error> {
         cleanup::plan(&self.conn, only, self.home.as_ref(), None)
+    }
+
+    /// Tidy up after a cleanup or import that was cut short (the app
+    /// closed, the process killed): its staging folder and half-written
+    /// game go, and the games it did put in place are scanned, so the next
+    /// import finds them already there and takes their originals (checked
+    /// by size and SHA1) instead of skipping them. Nothing happens while a
+    /// batch is running. Call it before planning an import.
+    pub fn recover_imports(&mut self) -> Result<cleanup::Recovered, Error> {
+        let staging = match &self.home {
+            Some(h) => h.staging(),
+            None => settings::load(&self.conn)?.staging(),
+        };
+        let mut r = cleanup::clear_leftovers(&self.conn, &staging)?;
+        if !r.busy {
+            for p in cleanup::unscanned(&self.conn)? {
+                self.scan(&p, Scope::All)?;
+                r.scanned += 1;
+            }
+        }
+        Ok(r)
     }
 
     /// The import plan for the games in `from` (every folder outside the
