@@ -3166,8 +3166,9 @@ choice rather than a fault:
 - **Scans** re-read every file's row and stored matches on each scan,
   even for one file (`identify/run.rs`); scoping that to the files
   touched is a change of behaviour, so it waits for a measured need.
-- **Saves gather undo** says how many files went back, not how many
-  stayed in `Saves/` because their old place was taken.
+- *(Fixed 2026-11-19.)* **Saves gather undo** now also says how many
+  files stayed in `Saves/` because their old place was taken, and how many
+  were no longer there (CLI and app).
 
 ## Real emulator runs (2026-11-17)
 
