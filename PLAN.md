@@ -3118,8 +3118,9 @@ Built (the detail is in GUIDE.md, "On the uQ desktop"):
 
 Still open:
 
-- **`uqctl integrations check uq/` in CI**, pinned to a uQ release, once
-  uQ tags one with the Phase 4 checks (the spec's 2.7).
+- *(Done 2026-11-19.)* **`uqctl integrations check uq/` in CI** now
+  builds uqctl from the uQ tag v0.3.14 (it ran from a bare commit until
+  the tag existed) and the check is clean.
 - **The AppImage** has no provider: a launcher provider needs an installed
   service file, which an AppImage can't add.
 - **Games the provider starts** run without the app's hotkeys and radial
