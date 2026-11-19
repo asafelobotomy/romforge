@@ -1392,8 +1392,8 @@ characters or more.
   holds a control character or isn't an offered row is `InvalidArgs`, as
   is any other action. Nothing from the bus reaches a shell or a path.
 
-**The game-mode rule.** `uq/integrations/romforge/rules.toml` holds one
-`[[window_rule]]`: `romforge.emulators` (the app IDs of RetroArch,
+**The game-mode rule.** `uq/integrations/romforge/rules.toml` holds two
+`[[window_rule]]`s: `romforge.emulators` (the app IDs of RetroArch,
 DuckStation, PPSSPP, Dolphin, PCSX2, RPCS3 and Azahar) and
 `romforge.more-emulators` (mGBA, melonDS, xemu, Cemu, MAME and ScummVM,
 each by its native and its Flatpak app ID) go to the workspace
