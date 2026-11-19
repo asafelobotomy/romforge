@@ -67,13 +67,18 @@ fn holding_l3_opens_the_radial_and_the_right_stick_picks() {
     assert!(c.radial_open());
     assert!(c.tick(t + RADIAL_HOLD * 2).is_empty(), "opens once");
     // Up is the first slot (Quit); right a quarter of the way round.
+    let quarter = RADIAL.len() / 4;
+    assert_eq!(RADIAL[0], Action::Quit);
     assert_eq!(c.stick(0, 0.0, 1.0), [HotkeyEvent::RadialSlot { slot: Some(0) }]);
     assert!(c.stick(0, 0.05, 0.95).is_empty(), "still the same slot");
-    assert_eq!(c.stick(0, 1.0, 0.0), [HotkeyEvent::RadialSlot { slot: Some(1) }]);
+    assert_eq!(
+        c.stick(0, 1.0, 0.0),
+        [HotkeyEvent::RadialSlot { slot: Some(quarter) }]
+    );
     // Letting go of L3 does what it points at.
     assert_eq!(
         c.release(0, LeftStick),
-        [HotkeyEvent::RadialClose, start(RADIAL[1])]
+        [HotkeyEvent::RadialClose, start(RADIAL[quarter])]
     );
     assert!(!c.radial_open());
 }
@@ -101,7 +106,10 @@ fn the_radial_cancels_in_the_middle_or_with_b() {
     c.press(0, LeftStick, t);
     c.tick(t + RADIAL_HOLD);
     c.stick(0, 0.0, -1.0);
-    assert_eq!(c.press(0, South, t), [HotkeyEvent::RadialClose, start(RADIAL[2])]);
+    assert_eq!(
+        c.press(0, South, t),
+        [HotkeyEvent::RadialClose, start(RADIAL[RADIAL.len() / 2])]
+    );
 }
 
 #[test]
@@ -111,8 +119,18 @@ fn every_hotkey_is_in_the_table_once_and_gilrs_names_map() {
         assert!(!HOTKEYS[i + 1..].iter().any(|o| o.action == h.action), "{h:?}");
     }
     for a in RADIAL {
-        let h = HOTKEYS.iter().find(|h| h.action == *a).expect("in the table");
-        assert!(!h.hold, "{a:?}: the ring can't stop a held one");
+        // Named by the table, or the ring's own list; never held.
+        assert!(!label(*a).is_empty(), "{a:?}");
+        let h = HOTKEYS.iter().find(|h| h.action == *a);
+        assert!(h.is_none_or(|h| !h.hold), "{a:?}: the ring can't stop a held one");
+        assert!(RADIAL.iter().filter(|r| *r == a).count() == 1, "{a:?} once");
+    }
+    // What has no chord is in the ring's list, and what has one isn't.
+    for (a, _) in RING_ONLY {
+        assert!(
+            RADIAL.contains(a) && !HOTKEYS.iter().any(|h| h.action == *a),
+            "{a:?}"
+        );
     }
     assert_eq!(PadButton::from_gilrs("Select"), Some(Back));
     assert_eq!(PadButton::from_gilrs("LeftTrigger2"), Some(LeftTrigger));
@@ -161,6 +179,13 @@ fn the_ring_offers_only_what_romforge_does_itself() {
     let v = view(["pcsx2"]);
     assert_eq!(v.support[0].ring, [Action::Quit]);
     assert_eq!(v.quit_chord, "Select+Start");
+    // The ring's extras are RetroArch's alone, so the Hotkeys tab doesn't list them.
+    assert!(
+        !v.hotkeys
+            .iter()
+            .any(|h| RING_ONLY.iter().any(|(a, _)| *a == h.action))
+    );
+    assert_eq!(view(["retroarch:mgba"]).radial.len(), RADIAL.len());
     assert_eq!(v.hint, "Select+Start quits · hold L3 for the menu");
     assert_eq!(v.radial_button, "L3");
 }

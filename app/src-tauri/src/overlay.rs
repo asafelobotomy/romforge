@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 const LABEL: &str = "overlay";
 
 /// The side of the window the ring has where there is no layer-shell.
-const PLAIN_SIZE: f64 = 480.0;
+const PLAIN_SIZE: f64 = 600.0;
 
 /// Make the overlay, hidden, for a game starting (its page loads now, so
 /// it is ready when the ring opens).

@@ -276,6 +276,10 @@ impl Remote {
             Action::SaveState => return send(port, "SAVE_STATE"),
             Action::LoadState => return send(port, "LOAD_STATE"),
             Action::Menu => return send(port, "MENU_TOGGLE"),
+            Action::Pause => return send(port, "PAUSE_TOGGLE"),
+            Action::Reset => return send(port, "RESET"),
+            Action::Screenshot => return send(port, "SCREENSHOT"),
+            Action::Mute => return send(port, "MUTE"),
             Action::FastForward => (|h| &h.fast, "FAST_FORWARD_HOLD"),
             Action::Rewind => (|h| &h.rewind, "REWIND"),
         };
