@@ -3126,9 +3126,13 @@ Still open:
 - **Games the provider starts** run without the app's hotkeys and radial
   menu (they live in the app), and in the bus's own cgroup rather than a
   scope of their own (romforge runs no `systemd-run`, house rule 7).
-- **The rule's emulators** are the spec's seven; romforge starts more
-  (mGBA, melonDS, Cemu, xemu, MAME, ScummVM …). Adding them is a new rule
-  id or a changed one, to agree with uQ first.
+- *(Built 2026-11-19, to try.)* **More emulators in the rules**: mGBA,
+  melonDS, xemu, Cemu, MAME and ScummVM are in a second rule,
+  `romforge.more-emulators`, so `romforge.emulators` keeps its meaning
+  for those who turned it on. Their app IDs (native and Flatpak) come
+  from the launch table and the Flathub ids, not from a compositor:
+  check them with `hyprctl clients` while each runs. uQ's spec (3.3)
+  still lists the seven; a proposal to uQ is open.
 
 ## oysterAV (2026-11-16, built)
 
