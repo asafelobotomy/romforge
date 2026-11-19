@@ -41,3 +41,33 @@ pub(super) fn source_and_dest(
         }
     })
 }
+
+/// A file stem without the ` (Track n)` a Redump track file ends in, so a
+/// disc converted from it is named after the game. Unchanged when nothing
+/// else would be left.
+pub(super) fn without_track_suffix(stem: &str) -> &str {
+    let Some(head) = stem.strip_suffix(')') else {
+        return stem;
+    };
+    let Some((name, n)) = head.rsplit_once(" (Track ") else {
+        return stem;
+    };
+    if name.trim().is_empty() || n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return stem;
+    }
+    name
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_track_suffix as w;
+
+    #[test]
+    fn track_suffix_is_stripped_only_when_it_is_one() {
+        assert_eq!(w("Game (USA) (Track 1)"), "Game (USA)");
+        assert_eq!(w("Game (Track 12)"), "Game");
+        assert_eq!(w("Game (USA)"), "Game (USA)");
+        assert_eq!(w("(Track 1)"), "(Track 1)");
+        assert_eq!(w("Game (Track x)"), "Game (Track x)");
+    }
+}

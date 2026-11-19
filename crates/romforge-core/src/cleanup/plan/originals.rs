@@ -19,6 +19,7 @@ pub(super) fn mark(
     items: &mut [Item],
     covered: &[(String, Vec<PathBuf>)],
     rows_of: &HashMap<i64, Vec<(String, String, RowStatus)>>,
+    files_of: &HashMap<String, Vec<i64>>,
     in_source: &dyn Fn(&Path) -> bool,
     mut files_at: impl FnMut(&Path) -> Result<Vec<i64>, Error>,
 ) -> Result<(), Error> {
@@ -34,6 +35,10 @@ pub(super) fn mark(
             batch.insert(id.clone());
         }
     }
+    // A row with exactly the files of a row in the batch (the DAT lists
+    // the disc under two names) is served by that row's output: it doesn't
+    // keep the original.
+    let batch_sets: BTreeSet<&Vec<i64>> = batch.iter().filter_map(|id| files_of.get(id)).collect();
     for it in items.iter_mut().filter(|it| it.folder.is_none()) {
         let paths: BTreeSet<PathBuf> = it
             .parts
@@ -57,7 +62,11 @@ pub(super) fn mark(
             let needed_elsewhere = files_at(&p)?
                 .iter()
                 .flat_map(|f| rows_of.get(f).into_iter().flatten())
-                .any(|(id, _, status)| !batch.contains(id) && *status != RowStatus::Duplicate);
+                .any(|(id, _, status)| {
+                    !batch.contains(id)
+                        && *status != RowStatus::Duplicate
+                        && !files_of.get(id).is_some_and(|f| batch_sets.contains(f))
+                });
             if all && !needed_elsewhere {
                 it.trash.push(p);
             } else {

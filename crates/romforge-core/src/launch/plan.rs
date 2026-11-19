@@ -95,6 +95,22 @@ pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -
             games.retain(listed);
         }
     }
+    // A disc the DAT lists under two names (the same files in both) is one
+    // game to start: either name opens the same files.
+    if games.len() > 1 {
+        let files_of = |g: &(&str, &str)| -> std::collections::BTreeSet<(&Path, &str)> {
+            found
+                .iter()
+                .filter(|f| (f.0.as_str(), f.1.as_str()) == *g)
+                .map(|f| (f.2.as_path(), f.3.as_str()))
+                .collect()
+        };
+        let first = games.iter().next().map(files_of);
+        if games.iter().all(|g| Some(files_of(g)) == first) {
+            let keep = *games.iter().next().expect("more than one");
+            games.retain(|g| *g == keep);
+        }
+    }
     let (game, system_key) = match games.iter().collect::<Vec<_>>().as_slice() {
         [one] => **one,
         many => {

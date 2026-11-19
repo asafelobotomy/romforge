@@ -904,7 +904,10 @@ The toolbar:
   their own names: CHD, or RVZ (GameCube), Z3DS (decrypted 3DS) or WUA
   (Wii U title folders), never Wii or Xbox. It shows what it would do
   first, every new file is read back and checked against the original, and
-  the originals go as Settings says (to the trash, or kept).
+  the originals go as Settings says (to the trash, or kept). A disc made of
+  Redump track files is named after the game, without its `(Track 1)`; a
+  disc the DAT lists under two names gets one CHD and loses its original
+  as usual.
   `romforge-cli convert [--apply]`. A GameCube RVZ is also scanned as the
   image it holds, so it verifies against Redump.
 - **Search**, **Enrich**, **Settings** (in tabs: Folders, Rename &

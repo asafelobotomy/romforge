@@ -47,7 +47,13 @@ pub(super) fn plan_as(
     // still needs is never trashed (a disc track identical in two
     // regions belongs to both).
     let mut rows_of: HashMap<i64, Vec<(String, String, RowStatus)>> = HashMap::new();
+    // Each row's files: a disc the DAT lists under two names is two rows
+    // with the same files, and one CHD serves both.
+    let mut files_of: HashMap<String, Vec<i64>> = HashMap::new();
     for row in &v.rows {
+        let mut ids = row.file_ids().to_vec();
+        ids.sort_unstable();
+        files_of.insert(row.id.clone(), ids);
         for f in row.file_ids() {
             rows_of
                 .entry(*f)
@@ -284,8 +290,10 @@ pub(super) fn plan_as(
                 .unwrap_or_default()
         });
         let name = if convert {
-            here.file_stem()
-                .map_or_else(|| sanitize(&row.title), |s| s.to_string_lossy().into_owned())
+            here.file_stem().map_or_else(
+                || sanitize(&row.title),
+                |s| places::without_track_suffix(&s.to_string_lossy()).to_owned(),
+            )
         } else {
             sanitize(&row.title)
         };
@@ -365,7 +373,7 @@ pub(super) fn plan_as(
     }
 
     let mut files_at = conn.prepare("SELECT file_id FROM files WHERE path = ?1")?;
-    originals::mark(&mut items, &covered, &rows_of, &in_source, |p| {
+    originals::mark(&mut items, &covered, &rows_of, &files_of, &in_source, |p| {
         Ok(files_at
             .query_map([p.to_string_lossy()], |r| r.get::<_, i64>(0))?
             .collect::<Result<Vec<i64>, _>>()?)
