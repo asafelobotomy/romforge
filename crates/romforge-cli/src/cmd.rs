@@ -8,6 +8,7 @@ pub mod firmware;
 pub mod games;
 pub mod launch;
 pub mod manual;
+pub mod marks;
 pub mod organize;
 pub mod oysterav;
 pub mod patch;

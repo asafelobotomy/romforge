@@ -4,6 +4,21 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum SavesCommand {
+    /// A game's saves and save states in Saves/ (what its Details shows)
+    Of { game: String },
+    /// Move the save states left in the old States/ folder into
+    /// Saves/<system>/states/
+    ///
+    /// Shows what it would do unless --apply (or --undo, to put the last
+    /// move back).
+    MergeStates {
+        /// Move them now
+        #[arg(long)]
+        apply: bool,
+        /// Take back the last move instead
+        #[arg(long)]
+        undo: bool,
+    },
     /// List the saves in Saves/, each with its game when its serial or file
     /// name points at exactly one (read-only)
     List {

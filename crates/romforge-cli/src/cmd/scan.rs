@@ -4,7 +4,7 @@ use std::io::IsTerminal;
 
 use anyhow::{Result, bail};
 
-use romforge_core::{Library, ScanOptions, Scope, Status, systems};
+use romforge_core::{Library, ScanOptions, Scope, Status};
 
 use crate::args::Command;
 use crate::print::{Progress, bytes, print_dats};
@@ -18,14 +18,14 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             quiet,
             jobs,
             rehash,
+            dry_run,
         } => {
-            let scope = match (scope.system, scope.dat) {
-                (Some(key), _) => match systems::by_key(&key) {
-                    Some(s) => Scope::System(s.id),
-                    None => bail!("unknown system {key:?}; see `romforge-cli dat systems`"),
-                },
-                (None, Some(id)) => Scope::Dat(id),
-                (None, None) => Scope::All,
+            let scope = match Scope::choose(scope.system.as_deref(), scope.dat) {
+                Ok(scope) => scope,
+                Err(romforge_core::Error::UnknownSystem(key)) => {
+                    bail!("unknown system {key:?}; see `romforge-cli dat systems`")
+                }
+                Err(e) => return Err(e.into()),
             };
             let opts = ScanOptions {
                 all_files,
@@ -34,19 +34,40 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 ..ScanOptions::default()
             };
             let mut meter = Progress::new(!quiet && std::io::stderr().is_terminal());
+            if dry_run {
+                let preview = lib.scan_preview_scoped(&dir, Some(scope), &opts, |p| meter.update(p))?;
+                meter.finish();
+                if !quiet {
+                    for g in &preview.games {
+                        println!(
+                            "{:<13} {}  [{}]{}",
+                            g.status.as_str(),
+                            g.title,
+                            g.system.as_deref().unwrap_or("?"),
+                            if g.new { "  (new)" } else { "" }
+                        );
+                    }
+                }
+                print_problems(&preview.report);
+                let mut counts: Vec<(&str, usize)> = Vec::new();
+                for g in &preview.games {
+                    match counts.iter_mut().find(|(s, _)| *s == g.status.as_str()) {
+                        Some((_, n)) => *n += 1,
+                        None => counts.push((g.status.as_str(), 1)),
+                    }
+                }
+                let counts: Vec<_> = counts.iter().map(|(s, n)| format!("{n} {s}")).collect();
+                let new = preview.games.iter().filter(|g| g.new).count();
+                println!(
+                    "{}. {} games ({new} new); nothing was kept (run without --dry-run to scan)",
+                    scan_line(&preview.report, !quiet, "would scan", &counts.join(", ")),
+                    preview.games.len()
+                );
+                return Ok(());
+            }
             let report = lib.scan_with(&dir, scope, &opts, |p| meter.update(p))?;
             meter.finish();
-            for (sheet, problem) in &report.sheet_problems {
-                eprintln!("sheet: {}: {problem}", sheet.display());
-            }
-            for (path, member, err) in &report.errors {
-                let at = if member.is_empty() {
-                    String::new()
-                } else {
-                    format!("#{member}")
-                };
-                eprintln!("error: {}{at}: {err}", path.display());
-            }
+            print_problems(&report);
             let files = lib.files_under(&report.root)?;
             let root = report.root.to_string_lossy();
             if !quiet {
@@ -80,34 +101,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 .iter()
                 .map(|(s, n)| format!("{n} {}", s.as_str()))
                 .collect();
-            let mut line = format!(
-                "scanned {} entries ({}) in {root}: {}",
-                report.hashed,
-                bytes(report.bytes_hashed),
-                counts.join(", ")
-            );
-            if report.unchanged > 0 {
-                line += &format!("; {} files unchanged since the last scan", report.unchanged);
-            }
-            if report.skipped > 0 {
-                line += &format!("; skipped {} non-ROM files", report.skipped);
-                if !report.skipped_kinds.is_empty() {
-                    line += &format!(
-                        " ({})",
-                        romforge_core::SkippedKind::summary(&report.skipped_kinds, 6)
-                    );
-                }
-            }
-            if !report.skipped_links.is_empty() {
-                let n = report.skipped_links.len();
-                line += &format!("; skipped {n} symlinked folder{}", if n == 1 { "" } else { "s" });
-            }
+            let line = scan_line(&report, !quiet, "scanned", &counts.join(", "));
             println!("{line}");
-            if !quiet {
-                for link in &report.skipped_links {
-                    eprintln!("not followed: symlinked folder {}", link.display());
-                }
-            }
         }
         Command::Refresh {
             quiet,
@@ -196,4 +191,52 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         _ => unreachable!(),
     }
     Ok(())
+}
+
+fn print_problems(report: &romforge_core::ScanReport) {
+    for (sheet, problem) in &report.sheet_problems {
+        eprintln!("sheet: {}: {problem}", sheet.display());
+    }
+    for (path, member, err) in &report.errors {
+        let at = if member.is_empty() {
+            String::new()
+        } else {
+            format!("#{member}")
+        };
+        eprintln!("error: {}{at}: {err}", path.display());
+    }
+}
+
+/// "scanned 12 entries (3 MB) in /roms: 5 matched; 4 files unchanged since the last
+/// scan; skipped 2 non-ROM files (.txt 2)"; `verb` is "would scan" for a
+/// dry run. Symlinked folders are named on stderr unless `quiet`.
+fn scan_line(report: &romforge_core::ScanReport, notes: bool, verb: &str, counts: &str) -> String {
+    let root = report.root.to_string_lossy();
+    let mut line = format!(
+        "{verb} {} entries ({}) in {root}: {counts}",
+        report.hashed,
+        bytes(report.bytes_hashed)
+    );
+    if report.unchanged > 0 {
+        line += &format!("; {} files unchanged since the last scan", report.unchanged);
+    }
+    if report.skipped > 0 {
+        line += &format!("; skipped {} non-ROM files", report.skipped);
+        if !report.skipped_kinds.is_empty() {
+            line += &format!(
+                " ({})",
+                romforge_core::SkippedKind::summary(&report.skipped_kinds, 6)
+            );
+        }
+    }
+    if !report.skipped_links.is_empty() {
+        let n = report.skipped_links.len();
+        line += &format!("; skipped {n} symlinked folder{}", if n == 1 { "" } else { "s" });
+        if notes {
+            for link in &report.skipped_links {
+                eprintln!("not followed: symlinked folder {}", link.display());
+            }
+        }
+    }
+    line
 }

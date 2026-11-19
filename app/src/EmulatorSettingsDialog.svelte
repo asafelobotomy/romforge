@@ -8,6 +8,7 @@
   import CoresPanel from "./CoresPanel.svelte";
   import HotkeysPanel from "./HotkeysPanel.svelte";
   import RawSettings from "./RawSettings.svelte";
+  import CustomEmulators from "./CustomEmulators.svelte";
 
   // Emulator Settings: a Global tab for every emulator at once, then one
   // tab per installed emulator. An emulator takes the global value unless
@@ -186,6 +187,7 @@
         {#if view.installed.length === 0}
           <p class="hint">No emulator is installed yet. romforge finds RetroArch and standalone emulators on your PATH, as Flatpaks, and as AppImages in ~/Applications or RomForge/Emulators.</p>
         {/if}
+        <CustomEmulators bind:note bind:error {call} />
         {#if view.not_installed.length}
           <section class="setting">
             <span class="flabel">Not installed</span>

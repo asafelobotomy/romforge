@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
+  import Batches from "./Batches.svelte";
   import { sorted, remembered, remember } from "./sort.js";
   import { basename, size } from "./lib.js";
   import { run } from "./jobs.svelte.js";
@@ -191,6 +192,7 @@
           </details>
         {/if}
       {/if}
+      <Batches kind="cleanup" {busy} {run} done={(m) => { note = m; open = false; return load(); }} />
       {#if cleanError}<p class="err" role="alert">{cleanError}</p>{/if}
       <div class="actions">
         {#if cleanBatches.length}

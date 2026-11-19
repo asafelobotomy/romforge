@@ -22,6 +22,18 @@ impl Library {
         opts: &ScanOptions,
         progress: impl FnMut(ScanProgress),
     ) -> Result<FolderScan, Error> {
+        self.scan_folder_scoped(root, None, opts, progress)
+    }
+
+    /// [`Library::scan_folder_with`] with the scope asked for (`None`: the
+    /// one the folder was scanned with before, else every DAT).
+    pub fn scan_folder_scoped(
+        &mut self,
+        root: impl AsRef<Path>,
+        scope: Option<Scope>,
+        opts: &ScanOptions,
+        progress: impl FnMut(ScanProgress),
+    ) -> Result<FolderScan, Error> {
         let root = root.as_ref();
         // Scan folder comes before an import: what one cut short left
         // is tidied first, so the import's plan is right.
@@ -36,7 +48,10 @@ impl Library {
                 Err(e) => Err(e.to_string()),
             });
         }
-        let scope = self.kept_scope(root)?;
+        let scope = match scope {
+            Some(s) => s,
+            None => self.kept_scope(root)?,
+        };
         let report = self.scan_with(root, scope, opts, progress)?;
         Ok(FolderScan {
             report,
@@ -59,6 +74,18 @@ impl Library {
         opts: &ScanOptions,
         progress: impl FnMut(ScanProgress),
     ) -> Result<ScanPreview, Error> {
+        self.scan_preview_scoped(root, None, opts, progress)
+    }
+
+    /// [`Library::scan_preview_with`] with the scope asked for, as
+    /// [`Library::scan_folder_scoped`] takes it.
+    pub fn scan_preview_scoped(
+        &mut self,
+        root: impl AsRef<Path>,
+        scope: Option<Scope>,
+        opts: &ScanOptions,
+        progress: impl FnMut(ScanProgress),
+    ) -> Result<ScanPreview, Error> {
         let root = std::fs::canonicalize(root.as_ref())?;
         let before: std::collections::HashSet<String> = view::library(&self.conn)?
             .rows
@@ -77,7 +104,10 @@ impl Library {
             let mut copy = Library::open(&tmp)?;
             // The library's own lists (ScummVM's), read where they are.
             copy.databases = self.extdb_dir();
-            let scope = self.kept_scope(&root)?;
+            let scope = match scope {
+                Some(s) => s,
+                None => self.kept_scope(&root)?,
+            };
             let report = copy.scan_with(&root, scope, opts, progress)?;
             let under: std::collections::HashSet<i64> = copy
                 .conn

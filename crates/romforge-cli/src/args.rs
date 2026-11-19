@@ -2,14 +2,12 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
-
-use romforge_core::organize;
+use clap::{Parser, Subcommand};
 
 use crate::subcommands::{
-    CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
-    ManualCommand, OrganizeCommand, SavesCommand, ScummvmCommand, SearchCommand, SteamCommand, ThemesCommand,
-    UqSearchCommand,
+    CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FavouriteCommand, FirmwareCommand,
+    HomeCommand, ManualCommand, OrganizeCommand, SavesCommand, ScopeArgs, ScummvmCommand, SearchCommand,
+    SteamCommand, ThemesCommand, UqSearchCommand,
 };
 
 #[derive(Parser)]
@@ -49,6 +47,10 @@ pub enum Command {
         /// Hash every file again, even ones unchanged since the last scan
         #[arg(long)]
         rehash: bool,
+        /// Only look: what a scan would find, worked out on a copy of the
+        /// library (nothing is kept; scanning never touches the files)
+        #[arg(long)]
+        dry_run: bool,
     },
     /// The RomForge folder that holds everything: games, art, databases
     /// and the library itself
@@ -176,6 +178,29 @@ pub enum Command {
     /// A game's manual (a PDF): yours, archive.org's or Vimm's Lair's scan
     #[command(subcommand)]
     Manual(ManualCommand),
+    /// Favourite games: the fullscreen mode's Favourites shelf
+    #[command(subcommand)]
+    Favourite(FavouriteCommand),
+    /// Pick a game's picture from the ones the sources have
+    ///
+    /// Without --pick, lists them. Asks the network; a pick is kept even
+    /// when Enrich refreshes.
+    Art {
+        game: String,
+        /// boxart, title, snap, hero, logo, icon, box3d, spine, boxback,
+        /// boxfull, media, marquee, flyer, cabinet or video
+        #[arg(default_value = "boxart")]
+        kind: String,
+        /// Use this number of the list
+        #[arg(long)]
+        pick: Option<usize>,
+    },
+    /// What the pad does while a game runs: the hotkeys, the radial menu,
+    /// and what each emulator gets
+    Hotkeys {
+        /// Emulators to show the support of [default: the installed ones]
+        emulator: Vec<String>,
+    },
     /// romforge in Steam: one shortcut (fullscreen mode), its art and a
     /// Steam Deck controller template. Steam must be closed
     #[command(subcommand)]
@@ -190,6 +215,8 @@ pub enum Command {
     Themes(ThemesCommand),
     /// Show or change your Source / Library folders and cleanup options
     Settings {
+        #[command(flatten)]
+        more: Box<crate::cmd::settings::MoreSettings>,
         /// Folder of unprocessed ROMs ("" to clear)
         #[arg(long)]
         source: Option<String>,
@@ -344,48 +371,4 @@ pub enum Command {
         #[arg(long, requires = "dat")]
         missing: bool,
     },
-}
-
-#[derive(Args)]
-pub struct OrganizeArgs {
-    /// Destination folder; files go to DEST/<system>/...
-    #[arg(long)]
-    pub dest: PathBuf,
-    /// Folder (or file) whose identified files move; nothing outside it does
-    #[arg(long)]
-    pub from: PathBuf,
-    /// Only files of this system
-    #[arg(long)]
-    pub system: Option<String>,
-    /// Keep one version per title (best region, then highest revision)
-    #[arg(long = "1g1r")]
-    pub one_g1r: bool,
-    /// Region preference for --1g1r, best first
-    #[arg(long, value_delimiter = ',', default_value = "USA,World,Europe,Japan")]
-    pub regions: Vec<String>,
-    /// Also list files that won't move, with the reason
-    #[arg(long, short)]
-    pub verbose: bool,
-}
-
-impl OrganizeArgs {
-    pub fn options(&self) -> organize::OrganizeOptions {
-        organize::OrganizeOptions {
-            system: self.system.clone(),
-            one_g1r: self.one_g1r,
-            regions: self.regions.clone(),
-            ..organize::OrganizeOptions::new(&self.from, &self.dest)
-        }
-    }
-}
-
-#[derive(Args)]
-#[group(multiple = false)]
-pub struct ScopeArgs {
-    /// Only identify against DATs of this system
-    #[arg(long)]
-    pub system: Option<String>,
-    /// Only identify against this DAT id
-    #[arg(long)]
-    pub dat: Option<i64>,
 }

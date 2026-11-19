@@ -10,7 +10,7 @@ and what is still open.
 - [Organize](#organize-dry-run-apply-undo) · [Metadata and art](#metadata-and-art) · [Launch](#launch) · [Emulators](#emulator-settings-cores-and-installs)
 - [The RomForge folder](#the-romforge-folder) · [BIOS files](#bios-files) · [Manuals](#manuals)
 - [DOS, ScummVM and Japanese computers](#dos-scummvm-and-japanese-computers) · [Arcade](#arcade-mame-and-fbneo) · [Patches](#patches-translations-and-hacks)
-- [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo)
+- [Cleanup and rename](#cleanup-and-rename-dry-run-apply-undo) · [CLI and app: the same features](#cli-and-app-the-same-features)
 - [Desktop app](#desktop-app) · [Fullscreen themes](#fullscreen-themes) · [Community themes](#community-themes) · [Steam and the Steam Deck](#steam-and-the-steam-deck)
 - [On the uQ desktop](#on-the-uq-desktop) · [Packages and building](#packages-and-building) · [Source layout](#source-layout) · [Licences and credits](#licences-and-credits)
 
@@ -85,6 +85,10 @@ what a folder should contain; without it, every DAT is tried. Without
 `--db` or `ROMFORGE_DB` the database is the RomForge folder's (once `home
 create` made one), else `$XDG_DATA_HOME/romforge/romforge.db`
 (`~/.local/share/romforge/romforge.db`).
+
+`scan --dry-run` shows what a scan would find (each game's status, and which
+are new) on a throwaway copy of the library and keeps nothing, as the app's
+Scan folder [dry run] does.
 
 Rescans are incremental: a file whose size and modification time haven't
 changed since it was hashed keeps its hashes (`--rehash` reads everything
@@ -864,6 +868,36 @@ so a re-check or a sync compares exactly.
 A scan lists the files it skipped for their extension, by kind (`.txt 5,
 .nfo 3, …`), so a format romforge doesn't know is visible.
 
+## CLI and app: the same features
+
+Both are shells over `romforge-core`, and what one can do the other can,
+with the more technical parts of the app behind an **Advanced** fold. (Not
+carried over, because they only make sense on a screen: the fullscreen
+mode itself, the manual reader's marks and OCR, the Jobs queue and the
+tray; and not carried over to the app because they are for scripts: `games`,
+`browse`, `overview`, `report`, `info`, `launch --dry-run` and `oysterav`.)
+
+| What | CLI | App |
+|---|---|---|
+| Scan's dry run | `scan --dry-run` | Scan folder [dry run] |
+| Scan for one platform or DAT, every file, threads, rehash | `scan --system/--dat/--all-files/--jobs/--rehash` | Scan folder [advanced…] |
+| Refresh without the online lists, of every folder ever scanned, threads, rehash | `refresh --no-lists/--jobs/--rehash` (the CLI always rescans every folder) | Refresh [advanced…] |
+| Undo any earlier batch | `organize undo --batch N`, `cleanup undo --batch N` | Advanced: earlier batches, on Organize and in the Rename & Cleanup dialog |
+| Favourites and play time | `favourite add/remove/list` | the fullscreen mode |
+| The emulator a game always uses | `emulator pick GAME [NAME \| --clear]` | the fullscreen mode's Emulator menu |
+| Picking a game's art | `art GAME KIND [--pick N]` | Details → the art picker |
+| The fullscreen theme | `themes show`, `themes use ID …` | Settings → Display → Themes |
+| Hotkeys and the radial menu | `hotkeys [EMULATOR…]` | Emulator Settings → Hotkeys |
+| Display, Playing and Fullscreen settings, music, bookshelf | `settings --language/--while-playing/--music-dir/--shelf-…` | Settings |
+| Moving old save states into `Saves/` | `saves merge-states [--apply \| --undo]`, `saves of GAME` | Saves |
+| DAT files from disk, one platform's DATs, No-Intro's list | `dat import`, `dat download KEY`, `dat check` | DATs → Advanced |
+| An emulator of your own | `emulator add` / `emulator remove` | Emulator Settings → Global → Advanced |
+
+The app's Refresh rescans the folders Settings names; the CLI's `refresh`
+every folder ever scanned, which the app has as Advanced → "Every folder
+ever scanned". Patches found beside a game were already in both (`patch GAME`
+lists them).
+
 ## Desktop app
 
 Needs Rust 1.93 or newer (as for the CLI), Node 22 and the
@@ -1304,6 +1338,8 @@ same name is never touched, and **Remove** removes downloaded themes only.
 
 ```bash
 romforge-cli themes list                              # yours, downloaded, built in
+romforge-cli themes show                              # the pick the fullscreen mode applies
+romforge-cli themes use famicom --scheme dark --text-size 115 --option KEY=VALUE
 romforge-cli themes available                         # the index, and what you have
 romforge-cli themes install neon-arcade --accept-licence
 romforge-cli themes remove neon-arcade

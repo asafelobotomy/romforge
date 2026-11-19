@@ -11,6 +11,7 @@
   import PatchDialog from "./PatchDialog.svelte";
   import ArtPicker from "./ArtPicker.svelte";
   import ScanPreview from "./ScanPreview.svelte";
+  import RunOptions from "./RunOptions.svelte";
   import { open as pickFolder } from "@tauri-apps/plugin-dialog";
   import DatsView from "./DatsView.svelte";
   import BiosView from "./BiosView.svelte";
@@ -46,7 +47,7 @@
   let note = $state("");
   // Which dialogs are open (Escape closes the top one; the list keys stay
   // out of their way).
-  let shown = $state({ jobs: false, preview: false, home: false, settings: false, emu: false, clean: false, search: false, naming: false, patch: false, picker: false });
+  let shown = $state({ jobs: false, preview: false, runopts: false, home: false, settings: false, emu: false, clean: false, search: false, naming: false, patch: false, picker: false });
   reportTo((e) => (error = e), (n) => (note = n));
 
   let lib = $state({ platforms: [], rows: [] });
@@ -60,6 +61,7 @@
   // Refresh needs a folder from Settings (or the RomForge folder).
   let canRefresh = $state(false);
   let previewer = $state(null);
+  let runOpts = $state(null);
   // Settings may set or clear the Source, or change the icon theme: look
   // again when it closes (at start, load() and readSettings() below do).
   let settingsWasOpen = false;
@@ -192,34 +194,32 @@
     if (v === "saves") saves.loadSaves();
   }
 
-  async function refresh() {
-    const r = await run("Rescanning your folders…", "refresh", {}, { key: "refresh" });
+  // Refresh; `advanced` asks what the CLI's flags set first.
+  async function refresh(advanced) {
+    const go = advanced ? await runOpts.ask("refresh") : {};
+    if (!go) return;
+    const r = await run("Rescanning your folders…", "refresh", { options: go.options }, { key: "refresh" });
     if (r) note = refreshNote(r);
     await load();
   }
 
-  // Scan folder: any folder, without making it a setting, except the
-  // first one scanned while no Source is set, which becomes the Source.
+  // Scan folder: any folder; the first while no Source is set becomes it.
   async function chooseFolder(title) {
     const f = await pickFolder({ directory: true, multiple: false, title });
     return typeof f === "string" ? f : null;
   }
 
-  function scanned(r) {
-    note = scanNote(r);
-    return load();
-  }
+  const scanned = (r) => ((note = scanNote(r)), load());
 
-  async function scanFolder() {
-    const dir = await chooseFolder("A folder to scan");
+  // Scan folder: "scan", "dry" (see what it holds first) or "advanced".
+  async function scanWith(mode) {
+    const dir = await chooseFolder(mode === "dry" ? "A folder to scan (dry run: nothing is kept until you say so)" : "A folder to scan");
     if (!dir) return;
-    const r = await run(`Scanning ${dir}…`, "scan_folder", { dir });
+    const go = mode === "advanced" ? await runOpts.ask("scan", dir) : { action: mode === "dry" ? "preview" : "scan" };
+    if (!go) return;
+    if (go.action === "preview") return previewer.show(dir, go.options);
+    const r = await run(`Scanning ${dir}…`, "scan_folder", { dir, options: go.options });
     if (r) await scanned(r);
-  }
-
-  async function scanDryRun() {
-    const dir = await chooseFolder("A folder to scan (dry run: nothing is kept until you say so)");
-    if (dir) await previewer.show(dir);
   }
 
   // Rename & Cleanup [apply now]: the whole job without showing the plan.
@@ -311,7 +311,7 @@
   }
 
   // The open dialog Escape closes first (the art picker not while busy).
-  const escapable = () => ["jobs", "settings", "emu", "clean", "search", "naming", "patch", "picker", "preview", "home"].find((d) => shown[d] && !(d === "picker" && busy));
+  const escapable = () => ["jobs", "settings", "emu", "clean", "search", "naming", "patch", "picker", "preview", "runopts", "home"].find((d) => shown[d] && !(d === "picker" && busy));
 
   // Game pads: the fullscreen mode's when it is on, else the library's.
   const padLibrary = (a) => desktopPad(a, { view, rows, row, busy, platforms: lib.platforms, platform, setPlatform: (p) => (platform = p), pick, play, listKeys, settings, emulators });
@@ -350,7 +350,7 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {scanFolder} {scanDryRun} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} refresh={() => refresh(false)} refreshAdvanced={() => refresh(true)} scanFolder={() => scanWith("scan")} scanDryRun={() => scanWith("dry")} scanAdvanced={() => scanWith("advanced")} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
 
   <SettingsDialog bind:this={settings} bind:open={shown.settings} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={shown.emu} bind:note {call} />
@@ -363,6 +363,7 @@
   <SearchDialog bind:this={search} bind:open={shown.search} bind:busy bind:note {selected} {call} {load} />
 
   <PatchDialog bind:this={patcher} bind:open={shown.patch} bind:note {call} {load} />
+  <RunOptions bind:this={runOpts} bind:open={shown.runopts} />
   <ScanPreview bind:this={previewer} bind:open={shown.preview} {statusLabel} {scanned} />
   <ArtPicker bind:this={artPicker} bind:open={shown.picker} bind:busy bind:note view={(kind, src) => (ui.viewer = { kind, src })} reload={(id) => open(id)} />
 

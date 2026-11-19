@@ -36,6 +36,27 @@ pub enum RowStatus {
     Patch,
 }
 
+impl RowStatus {
+    /// The status as the shells word it (also its name in the JSON the app
+    /// gets).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowStatus::Verified => "verified",
+            RowStatus::Incomplete => "incomplete",
+            RowStatus::Candidate => "candidate",
+            RowStatus::WrongSystem => "wrong_system",
+            RowStatus::Duplicate => "duplicate",
+            RowStatus::ByYou => "by_you",
+            RowStatus::Derivative => "derivative",
+            RowStatus::Detected => "detected",
+            RowStatus::Unknown => "unknown",
+            RowStatus::Firmware => "firmware",
+            RowStatus::Missing => "missing",
+            RowStatus::Patch => "patch",
+        }
+    }
+}
+
 /// Where a version sits under its game's original in [`super::listing`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -156,5 +177,31 @@ impl Derived {
     /// "translation of Dragon Quest III - ... (Japan)".
     pub fn label(&self) -> String {
         format!("{} of {}", self.relation.as_str(), self.base)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RowStatus;
+
+    #[test]
+    fn a_status_is_worded_as_the_app_gets_it() {
+        use RowStatus::*;
+        for s in [
+            Verified,
+            Incomplete,
+            Candidate,
+            WrongSystem,
+            Duplicate,
+            ByYou,
+            Derivative,
+            Detected,
+            Unknown,
+            Firmware,
+            Missing,
+            Patch,
+        ] {
+            assert_eq!(serde_json::to_string(&s).unwrap(), format!("\"{}\"", s.as_str()));
+        }
     }
 }
