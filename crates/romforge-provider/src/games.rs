@@ -137,7 +137,7 @@ impl Games {
         let games = self.clone();
         std::thread::spawn(move || {
             let end = session.wait();
-            games.end_hotkeys();
+            games.end_hotkeys(&session);
             if let Err(e) = games.with(|lib| lib.record_play(&end).map_err(|e| e.to_string())) {
                 eprintln!(
                     "romforge-provider: {}'s play time wasn't kept: {e}",
@@ -178,8 +178,16 @@ impl Games {
         }
     }
 
-    /// The game ended: the ring goes with it.
-    fn end_hotkeys(&self) {
+    /// The game `ended` ended: the ring goes with it, unless a new game
+    /// has been started since (the process can be gone, and Play accepted
+    /// again, before this runs): its hotkeys and ring are not ours to end.
+    /// Done under the lock of the game kept, which `play` holds while it
+    /// starts the hotkeys of a new one.
+    fn end_hotkeys(&self, ended: &Arc<Session>) {
+        let playing = lock(&self.playing);
+        if playing.as_ref().is_some_and(|s| !Arc::ptr_eq(s, ended)) {
+            return;
+        }
         self.hotkeys.store(false, Ordering::Relaxed);
         *lock(&self.overlay) = None;
     }
