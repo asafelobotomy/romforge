@@ -194,55 +194,32 @@
     if (v === "saves") saves.loadSaves();
   }
 
-  async function refresh() {
-    const r = await run("Rescanning your folders…", "refresh", {}, { key: "refresh" });
-    if (r) note = refreshNote(r);
-    await load();
-  }
-
-  // Refresh [advanced…]: the same job, with what the CLI's flags set.
-  async function refreshAdvanced() {
-    const go = await runOpts.ask("refresh");
+  // Refresh; `advanced` asks what the CLI's flags set first.
+  async function refresh(advanced) {
+    const go = advanced ? await runOpts.ask("refresh") : {};
     if (!go) return;
     const r = await run("Rescanning your folders…", "refresh", { options: go.options }, { key: "refresh" });
     if (r) note = refreshNote(r);
     await load();
   }
 
-  // Scan folder: any folder, without making it a setting, except the
-  // first one scanned while no Source is set, which becomes the Source.
+  // Scan folder: any folder; the first while no Source is set becomes it.
   async function chooseFolder(title) {
     const f = await pickFolder({ directory: true, multiple: false, title });
     return typeof f === "string" ? f : null;
   }
 
-  function scanned(r) {
-    note = scanNote(r);
-    return load();
-  }
+  const scanned = (r) => ((note = scanNote(r)), load());
 
-  async function scanFolder() {
-    const dir = await chooseFolder("A folder to scan");
+  // Scan folder: "scan", "dry" (see what it holds first) or "advanced".
+  async function scanWith(mode) {
+    const dir = await chooseFolder(mode === "dry" ? "A folder to scan (dry run: nothing is kept until you say so)" : "A folder to scan");
     if (!dir) return;
-    const r = await run(`Scanning ${dir}…`, "scan_folder", { dir });
-    if (r) await scanned(r);
-  }
-
-  // Scan folder [advanced…]: a platform or DAT to identify against, every
-  // file, rereading, threads; then the scan, or its dry run.
-  async function scanAdvanced() {
-    const dir = await chooseFolder("A folder to scan");
-    if (!dir) return;
-    const go = await runOpts.ask("scan", dir);
+    const go = mode === "advanced" ? await runOpts.ask("scan", dir) : { action: mode === "dry" ? "preview" : "scan" };
     if (!go) return;
     if (go.action === "preview") return previewer.show(dir, go.options);
     const r = await run(`Scanning ${dir}…`, "scan_folder", { dir, options: go.options });
     if (r) await scanned(r);
-  }
-
-  async function scanDryRun() {
-    const dir = await chooseFolder("A folder to scan (dry run: nothing is kept until you say so)");
-    if (dir) await previewer.show(dir);
   }
 
   // Rename & Cleanup [apply now]: the whole job without showing the plan.
@@ -373,7 +350,7 @@
 />
 
 <div class="app">
-  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} {refresh} {refreshAdvanced} {scanFolder} {scanDryRun} {scanAdvanced} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
+  <Toolbar {busy} {playing} {canRefresh} {homeRoot} {row} {chosen} {settings} {emulators} {cleanup} {search} {naming} refresh={() => refresh(false)} refreshAdvanced={() => refresh(true)} scanFolder={() => scanWith("scan")} scanDryRun={() => scanWith("dry")} scanAdvanced={() => scanWith("advanced")} {enrich} {renameCleanup} {play} fullscreen={enterFs} />
 
   <SettingsDialog bind:this={settings} bind:open={shown.settings} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={shown.emu} bind:note {call} />

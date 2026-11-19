@@ -2,14 +2,12 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
-
-use romforge_core::organize;
+use clap::{Parser, Subcommand};
 
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FavouriteCommand, FirmwareCommand,
-    HomeCommand, ManualCommand, OrganizeCommand, SavesCommand, ScummvmCommand, SearchCommand, SteamCommand,
-    ThemesCommand, UqSearchCommand,
+    HomeCommand, ManualCommand, OrganizeCommand, SavesCommand, ScopeArgs, ScummvmCommand, SearchCommand,
+    SteamCommand, ThemesCommand, UqSearchCommand,
 };
 
 #[derive(Parser)]
@@ -373,48 +371,4 @@ pub enum Command {
         #[arg(long, requires = "dat")]
         missing: bool,
     },
-}
-
-#[derive(Args)]
-pub struct OrganizeArgs {
-    /// Destination folder; files go to DEST/<system>/...
-    #[arg(long)]
-    pub dest: PathBuf,
-    /// Folder (or file) whose identified files move; nothing outside it does
-    #[arg(long)]
-    pub from: PathBuf,
-    /// Only files of this system
-    #[arg(long)]
-    pub system: Option<String>,
-    /// Keep one version per title (best region, then highest revision)
-    #[arg(long = "1g1r")]
-    pub one_g1r: bool,
-    /// Region preference for --1g1r, best first
-    #[arg(long, value_delimiter = ',', default_value = "USA,World,Europe,Japan")]
-    pub regions: Vec<String>,
-    /// Also list files that won't move, with the reason
-    #[arg(long, short)]
-    pub verbose: bool,
-}
-
-impl OrganizeArgs {
-    pub fn options(&self) -> organize::OrganizeOptions {
-        organize::OrganizeOptions {
-            system: self.system.clone(),
-            one_g1r: self.one_g1r,
-            regions: self.regions.clone(),
-            ..organize::OrganizeOptions::new(&self.from, &self.dest)
-        }
-    }
-}
-
-#[derive(Args)]
-#[group(multiple = false)]
-pub struct ScopeArgs {
-    /// Only identify against DATs of this system
-    #[arg(long)]
-    pub system: Option<String>,
-    /// Only identify against this DAT id
-    #[arg(long)]
-    pub dat: Option<i64>,
 }
