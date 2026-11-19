@@ -142,3 +142,48 @@ fn nothing_the_pad_does_counts_when_no_game_runs() {
     games.pad(&PadEvent::Tick);
     assert!(!games.playing());
 }
+
+#[test]
+fn a_game_started_just_after_one_ended_keeps_its_hotkeys_and_ring() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ran, got) = (dir.path().join("ran"), dir.path().join("got"));
+    let db = library(dir.path(), &ran, 60);
+    let games = Arc::new(Games::new(db.clone()).with_app(Some(fake_app(dir.path(), &got))));
+    let id = first_game(&db);
+    let (tx, ended) = std::sync::mpsc::channel();
+    // The first game is quit by its hotkeys, and a second is started the
+    // moment it has stopped, while the first's waiter may still be ending it.
+    games
+        .play(&id, {
+            let tx = tx.clone();
+            move |e| tx.send(e.clone()).unwrap()
+        })
+        .unwrap();
+    wait_for("the first game", || ran.exists());
+    games.pad(&button(Back, true));
+    games.pad(&button(Start, true));
+    // Play again the moment the first game has stopped running.
+    wait_for("the first game to stop", || !games.playing());
+    std::fs::remove_file(&ran).unwrap();
+    games.play(&id, move |e| tx.send(e.clone()).unwrap()).unwrap();
+    wait_for("the second game", || ran.exists());
+    // The first game's end-of-game work is done by now: the second still
+    // has its hotkeys (Select+Start quits it) and its overlay is open.
+    ended
+        .recv_timeout(Duration::from_secs(20))
+        .expect("the first game's end");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(games.playing(), "the second game still runs");
+    games.pad(&button(Start, false));
+    games.pad(&button(Back, false));
+    games.pad(&button(Back, true));
+    games.pad(&button(Start, true));
+    ended
+        .recv_timeout(Duration::from_secs(20))
+        .expect("quit by its hotkeys");
+    assert!(
+        std::fs::read_to_string(&got)
+            .unwrap()
+            .contains("--overlay=nesemu")
+    );
+}
