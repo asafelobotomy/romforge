@@ -35,6 +35,7 @@ mod start;
 mod steam;
 mod themes;
 mod tray;
+mod uq_search;
 mod uq_tokens;
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -138,6 +139,13 @@ fn main() {
             }
             // uQ's theme, when romforge runs on uQ.
             uq_tokens::watch(app.handle());
+            // An added uQ search follows a new romforge (a new AppImage
+            // carries a new provider); it never adds on its own.
+            std::thread::spawn(|| {
+                if let Err(e) = romforge_core::uq::user_provider::refresh() {
+                    eprintln!("romforge: uQ search: {e}");
+                }
+            });
             let handle = app.handle().clone();
             let listening = romforge_core::controller::listen(move |e| {
                 // Raw buttons, the stick and time are for the hotkeys; the
@@ -289,6 +297,9 @@ fn main() {
             steam::steam_plan,
             steam::steam_add,
             steam::steam_remove,
+            uq_search::uq_search_status,
+            uq_search::uq_search_add,
+            uq_search::uq_search_remove,
             themes::theme_install,
             themes::theme_remove,
             themes::theme_preview,

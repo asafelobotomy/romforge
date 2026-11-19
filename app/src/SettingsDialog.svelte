@@ -10,6 +10,7 @@
   import JobSettings from "./JobSettings.svelte";
   import { knowFsInfo } from "./fullscreen/fsinfo.js";
   import SteamSettings from "./SteamSettings.svelte";
+  import UqSearchSettings from "./UqSearchSettings.svelte";
 
   // `call` is the app's invoke that reports errors on the status line;
   // `load` reloads the library (its Media/ paths change with a move).
@@ -74,6 +75,7 @@
     ["display", "Display"],
     ["sources", "Sources"],
     ["steam", "Steam"],
+    ["uq", "uQ search"],
     ["credits", "Credits"],
   ];
   let stab = $state("folders");
@@ -315,6 +317,8 @@
       </section>
       {:else if stab === "steam"}
       <SteamSettings />
+      {:else if stab === "uq"}
+      <UqSearchSettings />
       {:else}
       <section class="setting credits">
         {#snippet link(url, text)}<button class="linkish" onclick={() => openUrl(url)}>{text}</button>{/snippet}

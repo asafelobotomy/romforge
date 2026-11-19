@@ -272,3 +272,14 @@ pub enum SteamCommand {
         user: Option<String>,
     },
 }
+
+#[derive(Subcommand)]
+pub enum UqSearchCommand {
+    /// Whether romforge's games are in uQ's search, and what adding would write
+    Status,
+    /// Add them: a copy of romforge-provider and two small files in your
+    /// own data folder (nothing in /usr)
+    Add,
+    /// Take those files away again
+    Remove,
+}

@@ -88,6 +88,11 @@ fn main() -> Result<()> {
         _ => {}
     }
 
+    // uQ search needs no library either.
+    if let Command::UqSearch(c) = &cli.command {
+        return cmd::uq_search::run(c);
+    }
+
     // Steam needs no library.
     if let Command::Steam(c) = &cli.command {
         return cmd::steam::run(c);
@@ -137,6 +142,7 @@ fn main() -> Result<()> {
         }
         Command::Themes(c) => cmd::themes::run(&lib, c)?,
         Command::Steam(_) => unreachable!("handled before the library opens"),
+        Command::UqSearch(_) => unreachable!("handled before the library opens"),
         Command::Home(_) => unreachable!("handled before the library opens"),
     }
     Ok(())
