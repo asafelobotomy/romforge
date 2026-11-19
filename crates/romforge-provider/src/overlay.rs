@@ -77,6 +77,22 @@ pub struct Overlay {
     stdin: Option<ChildStdin>,
 }
 
+/// Start the program, again a few times while it is "text file busy": a
+/// program that was only just written (an app being installed or updated,
+/// or a test's stand-in) can be held open for writing by another thread's
+/// fork until that child execs, which is over in moments.
+fn spawn_retrying(cmd: &mut Command) -> std::io::Result<Child> {
+    for _ in 0..50 {
+        match cmd.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            other => return other,
+        }
+    }
+    cmd.spawn()
+}
+
 impl Overlay {
     pub fn start(program: &Path, emulator: &str) -> std::io::Result<Overlay> {
         let mut cmd = Command::new(program);
@@ -86,7 +102,7 @@ impl Overlay {
         if use_x11(|k| std::env::var(k).ok()) {
             cmd.env("GDK_BACKEND", "x11");
         }
-        let mut child = cmd.spawn()?;
+        let mut child = spawn_retrying(&mut cmd)?;
         let stdin = child.stdin.take();
         Ok(Overlay {
             child: Some(child),

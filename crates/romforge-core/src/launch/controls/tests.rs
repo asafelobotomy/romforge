@@ -109,6 +109,14 @@ fn retroarch_hears_commands_and_held_ones_until_let_go() {
         ["SAVE_STATE", "QUIT", "QUIT"]
     );
 
+    for a in [Action::Pause, Action::Reset, Action::Screenshot, Action::Mute] {
+        r.start(a).unwrap();
+    }
+    assert_eq!(
+        heard(&sock, Duration::from_millis(100)),
+        ["PAUSE_TOGGLE", "RESET", "SCREENSHOT", "MUTE"]
+    );
+
     r.start(Action::FastForward).unwrap();
     r.start(Action::FastForward).unwrap();
     let held = heard(&sock, Duration::from_millis(200));

@@ -1,7 +1,7 @@
 //! The hotkeys as the app shows them: the Hotkeys tab, the radial ring
 //! and the short hints, all from the one table ([`HOTKEYS`]).
 
-use super::{Action, HOTKEYS, RADIAL, RADIAL_BUTTON, RADIAL_HOLD};
+use super::{Action, HOTKEYS, RADIAL, RADIAL_BUTTON, RADIAL_HOLD, label};
 use crate::launch::controls::{self, Route};
 
 /// What an emulator does of the hotkeys: Quit for every emulator
@@ -77,7 +77,6 @@ pub fn chord_label(a: Action) -> String {
 }
 
 pub fn view<'a>(emulators: impl IntoIterator<Item = &'a str>) -> HotkeysView {
-    let label = |a: Action| HOTKEYS.iter().find(|h| h.action == a).map_or("", |h| h.label);
     let quit_chord = chord_label(Action::Quit);
     HotkeysView {
         hotkeys: HOTKEYS

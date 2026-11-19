@@ -101,6 +101,11 @@ pub enum Action {
     Menu,
     FastForward,
     Rewind,
+    // The actions below are the radial ring's alone (no chord).
+    Pause,
+    Reset,
+    Screenshot,
+    Mute,
 }
 
 /// One hotkey: its chord, and whether it lasts while held.
@@ -155,10 +160,39 @@ pub const HOTKEYS: &[Hotkey] = &[
     },
 ];
 
+/// What the ring does that no chord does: its label (the one list, with
+/// [`HOTKEYS`], of what an action is called).
+pub const RING_ONLY: &[(Action, &str)] = &[
+    (Action::Pause, "Pause"),
+    (Action::Reset, "Reset"),
+    (Action::Screenshot, "Screenshot"),
+    (Action::Mute, "Mute"),
+];
+
+/// `a`'s name, from [`HOTKEYS`] or [`RING_ONLY`].
+pub fn label(a: Action) -> &'static str {
+    HOTKEYS
+        .iter()
+        .find(|h| h.action == a)
+        .map(|h| h.label)
+        .or_else(|| RING_ONLY.iter().find(|(r, _)| *r == a).map(|(_, l)| *l))
+        .unwrap_or("")
+}
+
 /// The radial menu's actions, clockwise from the top: one-shot actions
 /// only (a held one would have no chord to let go of, so it would never
-/// stop).
-pub const RADIAL: &[Action] = &[Action::Quit, Action::SaveState, Action::Menu, Action::LoadState];
+/// stop). Quit is on top, Save and Load state mirror each other, and Reset
+/// sits away from Quit.
+pub const RADIAL: &[Action] = &[
+    Action::Quit,
+    Action::SaveState,
+    Action::Screenshot,
+    Action::Reset,
+    Action::Menu,
+    Action::Mute,
+    Action::Pause,
+    Action::LoadState,
+];
 
 /// The button held alone to open the radial menu.
 pub const RADIAL_BUTTON: PadButton = LeftStick;

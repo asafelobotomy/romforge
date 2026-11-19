@@ -940,7 +940,10 @@ The toolbar:
   Select+Start quits, Select+R1 saves a state, Select+L1 loads it, L3+R3
   opens the emulator's menu, Select+R2 held fast-forwards and Select+L2
   held rewinds. Hold L3 for two seconds and a ring of the one-shot
-  actions (quit, save, load, the menu) shows over the game: point at one
+  actions shows over the game, each with an icon (quit, save, load, the
+  menu, and for RetroArch also pause, reset, screenshot and mute; those
+  four have no chord and are the ring's alone, `RING_ONLY` in
+  `hotkeys.rs`): point at one
   with the right stick and let go of L3 (or press A; B cancels). The ring
   dims what romforge can't do itself in that emulator (DuckStation's and
   PCSX2's own bindings answer the chords, not the ring). Quit works for every emulator; RetroArch,
@@ -1407,7 +1410,7 @@ standard input and quits when that closes, which the provider does when the
 game ends. The app is found as `$ROMFORGE_APP`, else `romforge-app` or
 `romforge` beside the provider, else on `PATH`; without it the game and its
 chords work and only the ring is missing (said on stderr). Where there is
-no layer-shell the ring is a small (480 px) window in the middle of the
+no layer-shell the ring is a small (600 px) window in the middle of the
 screen with an opaque backdrop, not a fullscreen one. In gamescope's own
 Wayland socket (no `wl_subcompositor`) a GTK window draws nothing, so the
 provider starts the overlay with `GDK_BACKEND=x11` there (its
