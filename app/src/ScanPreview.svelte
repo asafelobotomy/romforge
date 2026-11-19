@@ -14,6 +14,8 @@
   let busy = $state("");
 
   let dir = $state("");
+  // What the Advanced dialog asked for, for the dry run and the scan after it.
+  let options;
   let preview = $state(null);
   let failure = $state("");
   let sort = $state({ key: "status", dir: 1 });
@@ -24,13 +26,14 @@
     new: (g) => (g.new ? 0 : 1),
   };
 
-  export async function show(folder) {
+  export async function show(folder, asked) {
     dir = folder;
+    options = asked;
     preview = null;
     failure = "";
     open = true;
     busy = `Looking at ${folder} (a dry run: nothing is kept)…`;
-    preview = await run(`Looking at ${basename(folder)} (dry run)…`, "scan_preview", { dir: folder });
+    preview = await run(`Looking at ${basename(folder)} (dry run)…`, "scan_preview", { dir: folder, options });
     busy = "";
     // Failed (the status line says why), stopped or taken out of the queue.
     if (!preview && dir === folder) open = false;
@@ -38,9 +41,9 @@
 
   async function accept() {
     failure = "";
-    const folder = dir;
+    const [folder, asked] = [dir, options];
     open = false;
-    const r = await run(`Scanning ${folder}…`, "scan_folder", { dir: folder }, { key: `scan:${folder}` });
+    const r = await run(`Scanning ${folder}…`, "scan_folder", { dir: folder, options: asked }, { key: `scan:${folder}` });
     if (r) await scanned(r);
   }
 

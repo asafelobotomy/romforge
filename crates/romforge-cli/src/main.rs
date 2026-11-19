@@ -123,6 +123,10 @@ fn main() -> Result<()> {
         }
         c @ Command::Patch { .. } => cmd::patch::run(&mut lib, c)?,
         c @ (Command::Enrich { .. } | Command::Info { .. }) => cmd::enrich::run(&mut lib, c)?,
+        c @ (Command::Favourite(_)
+        | Command::Art { .. }
+        | Command::Hotkeys { .. }
+        | Command::Emulator(EmulatorCommand::Pick { .. })) => cmd::marks::run(&mut lib, c)?,
         Command::Emulator(c @ (EmulatorCommand::Config { .. } | EmulatorCommand::GameSettings { .. })) => {
             cmd::emulator_config::run(&mut lib, c)?
         }

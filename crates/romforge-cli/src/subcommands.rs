@@ -225,6 +225,27 @@ pub enum ManualCommand {
 pub enum ThemesCommand {
     /// The themes there are here, and whether each is usable
     List,
+    /// The pick the fullscreen mode applies: theme, colours, layout, text size
+    Show,
+    /// Pick a theme for the fullscreen mode (what its Themes screen does)
+    ///
+    /// Anything not given keeps its value when it suits the theme, else
+    /// the theme's own.
+    Use {
+        id: String,
+        /// A colour scheme the theme has (empty: follow the system's)
+        #[arg(long)]
+        scheme: Option<String>,
+        /// A layout the theme allows (empty: the theme's own)
+        #[arg(long)]
+        layout: Option<String>,
+        /// Text size in percent (90, 100, 115 or 130)
+        #[arg(long)]
+        text_size: Option<u32>,
+        /// One of the theme's own choices, KEY=VALUE (repeat)
+        #[arg(long = "option", value_name = "KEY=VALUE")]
+        options: Vec<String>,
+    },
     /// The community index's themes (romforge-themes), and which you have
     Available {
         /// Another index: a URL to themes.json, a themes.json, or its folder
@@ -250,6 +271,18 @@ pub enum ThemesCommand {
         /// Only check that themes.json is up to date (for CI)
         #[arg(long)]
         check: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum FavouriteCommand {
+    /// The favourites (the fullscreen mode's shelf), and what was played
+    List,
+    Add {
+        game: String,
+    },
+    Remove {
+        game: String,
     },
 }
 

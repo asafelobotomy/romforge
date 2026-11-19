@@ -19,6 +19,41 @@ pub async fn save_emulator_settings(
     edit(&db, move |lib| lib.save_emulator_settings(&settings)).await
 }
 
+/// The emulators added by hand (Advanced), and the two commands that
+/// add and remove them. `args` is one string split at spaces, `{rom}`
+/// standing for the file, as the CLI's `emulator add --args` takes it.
+#[tauri::command]
+pub async fn user_emulators(db: tauri::State<'_, Db>) -> Res<Vec<romforge_core::launch::UserEmulator>> {
+    read(&db, move |lib| lib.user_emulators()).await
+}
+
+#[tauri::command]
+pub async fn add_emulator(
+    db: tauri::State<'_, Db>,
+    name: String,
+    system: String,
+    program: String,
+    args: String,
+    archives: bool,
+) -> Res<()> {
+    edit(&db, move |lib| {
+        lib.add_emulator(&romforge_core::launch::UserEmulator {
+            name: name.trim().to_owned(),
+            system,
+            program: program.trim().to_owned(),
+            args: args.split_whitespace().map(str::to_owned).collect(),
+            archives,
+        })
+    })
+    .await
+}
+
+/// Remove one added by hand: whether there was one.
+#[tauri::command]
+pub async fn remove_emulator(db: tauri::State<'_, Db>, name: String) -> Res<bool> {
+    edit(&db, move |lib| Ok(lib.remove_emulator(&name)? > 0)).await
+}
+
 #[tauri::command]
 pub async fn import_emulator_setup(
     db: tauri::State<'_, Db>,

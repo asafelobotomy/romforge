@@ -6,7 +6,7 @@
   // dialogs' instances open theirs. Search, Enrich, Rename & Cleanup and
   // Convert take only the games selected in the list (`chosen`, row ids);
   // Refresh and Scan folder work on folders.
-  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, naming, refresh, scanFolder, scanDryRun, enrich, renameCleanup, play, fullscreen } = $props();
+  let { busy, playing, canRefresh, homeRoot, row, chosen, settings, emulators, cleanup, search, naming, refresh, refreshAdvanced, scanFolder, scanDryRun, scanAdvanced, enrich, renameCleanup, play, fullscreen } = $props();
   const n = $derived(chosen.length);
   const games = $derived(n === 1 ? "the selected game" : `the ${n} selected games`);
   const pickFirst = "Select games in the list first (Ctrl+A selects everything listed)";
@@ -14,16 +14,24 @@
 
 <header class="toolbar">
   <span class="brand"><Wordmark height="1.75rem" /></span>
-  <button class="tool" onclick={refresh} disabled={!!busy || !canRefresh} title={canRefresh ? "Rescan the Source and Library folders from Settings (and the RomForge folder)" : "Set a Source folder first: Scan folder makes the first folder you scan your Source"}>
-    <span class="glyph">⟳</span>Refresh
-  </button>
+  <SplitButton
+    glyph="⟳"
+    label="Refresh"
+    title={canRefresh ? "Rescan the Source and Library folders from Settings (and the RomForge folder)" : "Set a Source folder first: Scan folder makes the first folder you scan your Source"}
+    disabled={!!busy || !canRefresh}
+    onclick={refresh}
+    items={[{ label: "Refresh [advanced…]", title: "Skip the online lists, rescan every folder ever scanned, read every file again, or choose the threads", onclick: refreshAdvanced }]}
+  />
   <SplitButton
     glyph="＋"
     label="Scan folder"
     title="Scan any folder (it doesn't become a setting; the very first one becomes your Source)"
     disabled={!!busy}
     onclick={scanFolder}
-    items={[{ label: "Scan folder [dry run]", title: "See what a folder holds first, then scan it or not", onclick: scanDryRun }]}
+    items={[
+      { label: "Scan folder [dry run]", title: "See what a folder holds first, then scan it or not", onclick: scanDryRun },
+      { label: "Scan folder [advanced…]", title: "Identify against one platform or DAT, read every file or read them again, or choose the threads", onclick: scanAdvanced },
+    ]}
   />
   <SplitButton
     glyph="⌕"

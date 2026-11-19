@@ -5,6 +5,7 @@
   import { size } from "./lib.js";
   import SortButton from "./SortButton.svelte";
   import DatGames from "./DatGames.svelte";
+  import DatsAdvanced from "./DatsAdvanced.svelte";
   import { sorted, remembered, remember } from "./sort.js";
 
   // Always mounted, so the DAT picked and the filter last until the app
@@ -121,6 +122,7 @@
       <label class="toggle" title="Also fetch libretro's ROM hack and homebrew DATs"><input type="checkbox" bind:checked={extras} /> Include hacks and homebrew</label>
       <button onclick={mameDat} disabled={!!busy} title="Arcade: import your installed MAME's own list (mame -listxml), the DAT that matches it">Read MAME's list</button>
     </div>
+    <DatsAdvanced {busy} {extras} bind:note {run} reload={async () => { await loadDats(); await load(); }} />
     {#if statusLine}<p class="hint">Scanned files: {statusLine}</p>{/if}
     <section class="extdbs" aria-labelledby="extdb-title">
       <h3 id="extdb-title">Game databases <span class="hint">(optional, downloaded by you)</span></h3>

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use romforge_core::Library;
 use romforge_core::cleanup::{Batch as CleanupBatch, CleanupPlan, CleanupReport, CleanupUndone};
-use romforge_core::organize::{Applied, OrganizeOptions, Plan, Undone};
+use romforge_core::organize::{Applied, Batch as OrganizeBatch, OrganizeOptions, Plan, Undone};
 
 use crate::db::{Db, Res, read, with};
 use crate::jobs::Job;
@@ -44,9 +44,17 @@ pub async fn organize_apply(
     .await
 }
 
+/// Undo a batch of Organize: `batch` (Advanced: any earlier one), else the
+/// last.
 #[tauri::command]
-pub async fn organize_undo(db: tauri::State<'_, Db>) -> Res<Undone> {
-    with(&db, move |lib| lib.organize_undo(None)).await
+pub async fn organize_undo(db: tauri::State<'_, Db>, batch: Option<i64>) -> Res<Undone> {
+    with(&db, move |lib| lib.organize_undo(batch)).await
+}
+
+/// Every Organize batch, with whether it was undone.
+#[tauri::command]
+pub async fn organize_batches(db: tauri::State<'_, Db>) -> Res<Vec<OrganizeBatch>> {
+    read(&db, move |lib| lib.organize_batches()).await
 }
 
 /// `from`: the import plan for that folder (milestone 13); else `only`:
@@ -115,9 +123,11 @@ pub async fn convert_apply(
     .await
 }
 
+/// Undo a batch of Rename & Cleanup, Convert or Import: `batch` (Advanced:
+/// any earlier one), else the last.
 #[tauri::command]
-pub async fn cleanup_undo(db: tauri::State<'_, Db>) -> Res<CleanupUndone> {
-    with(&db, move |lib| lib.cleanup_undo(None)).await
+pub async fn cleanup_undo(db: tauri::State<'_, Db>, batch: Option<i64>) -> Res<CleanupUndone> {
+    with(&db, move |lib| lib.cleanup_undo(batch)).await
 }
 
 #[tauri::command]

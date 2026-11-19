@@ -3168,11 +3168,22 @@ CI: since 2026-11-17 `main` requires the CI checks (core, msrv, app, uQ
 Settings page) before a change lands. Left open, each a
 choice rather than a fault:
 
-- **CLI and app.** Only the app has favourites, a game's own emulator,
-  picking art, choosing a theme, the scan preview, music and hotkeys,
-  and patches beside a game; only the CLI has `refresh --no-lists`,
-  `--jobs`, `--rehash` and undoing an older organize batch (`--batch`).
-  To decide whether both should have all of them.
+- *(Decided and fixed 2026-11-19.)* **CLI and app** offer the same
+  features, the technical ones behind an Advanced fold in the app. The CLI
+  got favourites (`favourite`), a game's own emulator (`emulator pick`),
+  picking art (`art`), choosing a theme (`themes show|use`), the scan
+  preview (`scan --dry-run`), music, hotkeys (`hotkeys`) and the Display,
+  Playing and Fullscreen settings (`settings --…`), `saves
+  merge-states`/`of`. The app got Refresh [advanced…] (`--no-lists`,
+  every folder, `--jobs`, `--rehash`), Scan folder [advanced…] (platform
+  or DAT, every file, threads, rehash), undoing any earlier Organize or
+  Cleanup batch, DAT files from disk, one platform's DATs and No-Intro's
+  list (DATs → Advanced), and your own emulators (Emulator Settings →
+  Global → Advanced). Patches beside a game were in the CLI already
+  (`patch GAME`). The table is in GUIDE.md ("CLI and app: the same
+  features"). Left as they are, each by nature: the manual reader's marks
+  and OCR are screen things; `launch --dry-run`, `oysterav PATH` and the
+  read-only `games`/`overview`/`report` stay CLI-only, for scripts and uQ.
 - **Scans** re-read every file's row and stored matches on each scan,
   even for one file (`identify/run.rs`); scoping that to the files
   touched is a change of behaviour, so it waits for a measured need.

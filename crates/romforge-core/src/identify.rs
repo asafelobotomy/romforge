@@ -37,6 +37,20 @@ pub enum Scope {
 }
 
 impl Scope {
+    /// The scope a user asked for: a platform by its key
+    /// (`romforge-cli dat systems`), a DAT by its id, or neither (all).
+    /// The shells share this, so a scan means the same in both.
+    pub fn choose(system: Option<&str>, dat: Option<i64>) -> Result<Scope, crate::Error> {
+        match (system, dat) {
+            (Some(key), _) => match crate::systems::by_key(key) {
+                Some(s) => Ok(Scope::System(s.id)),
+                None => Err(crate::Error::UnknownSystem(key.to_owned())),
+            },
+            (None, Some(id)) => Ok(Scope::Dat(id)),
+            (None, None) => Ok(Scope::All),
+        }
+    }
+
     pub(crate) fn from_columns(system_id: Option<i64>, dat_id: Option<i64>) -> Self {
         match (dat_id, system_id) {
             (Some(d), _) => Scope::Dat(d),
@@ -138,4 +152,21 @@ pub(crate) fn resolve_dat(conn: &Connection, dat_id: i64) -> Result<i64, Error> 
     })
     .optional()?
     .ok_or(Error::UnknownDat(dat_id))
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::Scope;
+
+    #[test]
+    fn a_scope_is_a_platform_a_dat_or_all() {
+        assert_eq!(Scope::choose(None, None).unwrap(), Scope::All);
+        assert_eq!(Scope::choose(None, Some(7)).unwrap(), Scope::Dat(7));
+        let nes = crate::systems::by_key("nes").unwrap().id;
+        assert_eq!(Scope::choose(Some("nes"), Some(7)).unwrap(), Scope::System(nes));
+        assert!(matches!(
+            Scope::choose(Some("nope"), None),
+            Err(crate::Error::UnknownSystem(k)) if k == "nope"
+        ));
+    }
 }

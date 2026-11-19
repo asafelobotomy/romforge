@@ -300,6 +300,11 @@ impl Library {
         launch::add_emulator(&self.conn, e)
     }
 
+    /// The emulators the user added (`emulator add`), oldest first.
+    pub fn user_emulators(&self) -> Result<Vec<launch::UserEmulator>, Error> {
+        launch::user_emulators(&self.conn)
+    }
+
     pub fn remove_emulator(&mut self, name: &str) -> Result<usize, Error> {
         launch::remove_emulator(&self.conn, name)
     }

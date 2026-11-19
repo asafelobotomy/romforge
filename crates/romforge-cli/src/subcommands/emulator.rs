@@ -40,6 +40,16 @@ pub enum EmulatorCommand {
     },
     /// Remove an emulator you added
     Remove { name: String },
+    /// The emulator a game always starts in (what the fullscreen mode's
+    /// Emulator menu sets); no emulator: the ones it could be
+    Pick {
+        game: String,
+        /// One of the installed emulators that play its platform
+        emulator: Option<String>,
+        /// Let romforge choose again
+        #[arg(long, conflicts_with = "emulator")]
+        clear: bool,
+    },
     /// The RetroArch cores romforge's platforms use, and what the libretro
     /// buildbot has
     Cores {

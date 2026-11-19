@@ -13,6 +13,38 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
         return Ok(());
     };
     match c {
+        SavesCommand::Of { game } => {
+            let row = lib.find_row(&game)?;
+            let s = lib.game_saves(&row.id)?;
+            println!(
+                "{}: {} save(s), {} state(s){}",
+                row.title,
+                s.count,
+                s.states,
+                if s.latest > 0 {
+                    format!(", the newest {} s since 1970", s.latest)
+                } else {
+                    String::new()
+                }
+            );
+        }
+        SavesCommand::MergeStates { apply, undo } => {
+            if undo {
+                let n = lib.undo_merge_states()?;
+                println!("{n} file(s) went back into States/");
+                return Ok(());
+            }
+            let p = lib.merge_states_plan()?;
+            show_plan(&p);
+            match (&p.problem, apply) {
+                (Some(why), _) => println!("nothing to move: {why}"),
+                (None, false) => println!("run again with --apply to move them (--undo puts them back)"),
+                (None, true) => {
+                    let (id, n) = lib.merge_states()?;
+                    println!("{n} save state file(s) moved into Saves/ (move #{id})");
+                }
+            }
+        }
         SavesCommand::List { system } => {
             let saves: Vec<_> = lib
                 .list_saves()?
@@ -95,13 +127,7 @@ fn gather(lib: &mut Library, emulator: &str, apply: bool, undo: bool) -> Result<
         return Ok(());
     }
     let p = lib.gather_saves_plan(emulator)?;
-    for m in &p.moves {
-        let taken = if m.taken { "  (a file is there: stays)" } else { "" };
-        println!("{}\n    → {}{taken}", m.from.display(), m.to.display());
-    }
-    for u in &p.unplaced {
-        println!("{}\n    stays: its game isn't in the library", u.display());
-    }
+    show_plan(&p);
     match (&p.problem, apply) {
         (Some(why), _) => println!("{emulator}: nothing to gather: {why}"),
         (None, false) => println!("run again with --apply to move them (--undo puts them back)"),
@@ -111,6 +137,16 @@ fn gather(lib: &mut Library, emulator: &str, apply: bool, undo: bool) -> Result<
         }
     }
     Ok(())
+}
+
+fn show_plan(p: &romforge_core::saves::gather::GatherPlan) {
+    for m in &p.moves {
+        let taken = if m.taken { "  (a file is there: stays)" } else { "" };
+        println!("{}\n    → {}{taken}", m.from.display(), m.to.display());
+    }
+    for u in &p.unplaced {
+        println!("{}\n    stays: its game isn't in the library", u.display());
+    }
 }
 
 fn how_label(how: MatchedBy) -> &'static str {

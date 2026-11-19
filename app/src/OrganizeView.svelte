@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import SortButton from "./SortButton.svelte";
+  import Batches from "./Batches.svelte";
   import { sorted } from "./sort.js";
   // Always mounted, so the folders and the plan last while you look at other
   // screens; drawn only while `active`. `run` queues a long job (the
@@ -77,6 +78,7 @@
         <button onclick={() => (confirmUndo = true)} disabled={!!busy} title="Earlier Organize batches can still be undone">Undo last Organize batch…</button>
       {/if}
     </div>
+    <Batches kind="organize" {busy} {run} done={(m) => { note = m; return load(); }} />
   </section>
 {:else if active}
   <section class="wide">
@@ -94,6 +96,7 @@
         <button onclick={() => (confirmUndo = true)} disabled={!!busy}>Undo last batch…</button>
       {/if}
     </div>
+    <Batches kind="organize" {busy} {run} done={(m) => { note = m; replan(); return load(); }} />
     {#if planError}<p class="err" role="alert">{planError}</p>{/if}
     {#if plan}
       <p class="meta">Nothing has moved yet. {plan.moves.length} files would move; {plan.skipped.length} stay where they are.</p>
