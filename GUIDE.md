@@ -1392,6 +1392,38 @@ characters or more.
   holds a control character or isn't an offered row is `InvalidArgs`, as
   is any other action. Nothing from the bus reaches a shell or a path.
 
+**Hotkeys and the radial menu for those games.** The chords' logic is the
+core's `hotkeys::Watcher` (`hotkeys/watch.rs`): fed the pad's events and the
+game running, it does each chord (`launch::controls`) and returns the radial
+menu's events for whoever draws it. The app feeds it its own pad listener;
+`romforge-provider` feeds it a `controller::listen` of its own, started the
+first time a game starts with the hotkeys on (Emulator Settings, read when
+the game starts; the provider links the core's `controller` feature, so it
+needs libudev like the app). The ring is drawn by the app, run by the
+provider as `romforge-app --overlay=EMULATOR` (`app/src-tauri/src/companion.rs`):
+no main window, no library, only the overlay window and the commands it may
+call. It is sent the ring's events as one JSON `HotkeyEvent` per line on its
+standard input and quits when that closes, which the provider does when the
+game ends. The app is found as `$ROMFORGE_APP`, else `romforge-app` or
+`romforge` beside the provider, else on `PATH`; without it the game and its
+chords work and only the ring is missing (said on stderr). Where there is
+no layer-shell the ring is a small (480 px) window in the middle of the
+screen with an opaque backdrop, not a fullscreen one. In gamescope's own
+Wayland socket (no `wl_subcompositor`) a GTK window draws nothing, so the
+provider starts the overlay with `GDK_BACKEND=x11` there (its
+`WAYLAND_DISPLAY` is `gamescope-*` and there is an X display);
+`ROMFORGE_OVERLAY_BACKEND=x11|wayland` overrides it. gamescope draws
+only its focused window and ones marked as an external overlay, so the
+ring window is given `GAMESCOPE_EXTERNAL_OVERLAY` = 1 there
+(`overlay.rs`). **Known limit:** tried in headless gamescope 3.17.0, the
+hotkeys and quit work, but a small unfocused ring window is never drawn
+(only the focused window is), with the hint, `STEAM_OVERLAY` or an opacity
+property alike; only a window that takes the focus shows, which then
+replaces the game's picture. Steam-mode gamescope (`--steam`), where
+external overlays are meant to work, could not be tried without a Steam
+client. The ring floats over the game where the compositor has
+layer-shell (KWin, wlroots).
+
 **The game-mode rule.** `uq/integrations/romforge/rules.toml` holds two
 `[[window_rule]]`s: `romforge.emulators` (the app IDs of RetroArch,
 DuckStation, PPSSPP, Dolphin, PCSX2, RPCS3 and Azahar) and

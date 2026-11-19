@@ -8,11 +8,17 @@
 //! so romforge starts without it. Elsewhere the window is a plain
 //! fullscreen one: on KDE Plasma 6.7 Wayland that takes the focus
 //! (`focused`/`focusable` are ignored) and the game drops below the panel
-//! while it shows, so it is only the fallback.
+//! while it shows, so it is only the fallback; there the ring is a small
+//! window in the middle of the screen, not a fullscreen one, so it leaves
+//! the game its place where the compositor can't show it transparent
+//! (gamescope).
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const LABEL: &str = "overlay";
+
+/// The side of the window the ring has where there is no layer-shell.
+const PLAIN_SIZE: f64 = 480.0;
 
 /// Make the overlay, hidden, for a game starting (its page loads now, so
 /// it is ready when the ring opens).
@@ -44,15 +50,59 @@ pub fn show(app: &AppHandle, on: bool) {
             return;
         }
         let _ = win.show();
+        // The window is mapped by the event loop a moment after `show`.
+        let again = win.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let marked = again.clone();
+            let _ = again.run_on_main_thread(move || mark_external_overlay(&marked));
+        });
         // Clicks go through to the game. Only once shown: tao unwraps the
         // GDK window, which a hidden window doesn't have yet.
         let _ = win.set_ignore_cursor_events(true);
     });
 }
 
+/// In gamescope only the focused window and windows marked as an external
+/// overlay are drawn, and this one never takes the focus: mark it
+/// (`GAMESCOPE_EXTERNAL_OVERLAY` = 1, as MangoHud's does). Only where the
+/// session is gamescope's (the provider starts the overlay on its X11
+/// then, `romforge-provider`'s `overlay.rs`).
+#[cfg(target_os = "linux")]
+fn mark_external_overlay(win: &tauri::WebviewWindow) {
+    use gtk::gdk;
+    use gtk::prelude::WidgetExt;
+    if !std::env::var("WAYLAND_DISPLAY").is_ok_and(|w| w.starts_with("gamescope")) {
+        return;
+    }
+    let Some(window) = win.gtk_window().ok().and_then(|w| w.window()) else {
+        return;
+    };
+    gdk::property_change(
+        &window,
+        &gdk::Atom::intern("GAMESCOPE_EXTERNAL_OVERLAY"),
+        &gdk::Atom::intern("CARDINAL"),
+        32,
+        gdk::PropMode::Replace,
+        gdk::ChangeData::ULongs(&[1]),
+    );
+}
+
+#[cfg(not(target_os = "linux"))]
+fn mark_external_overlay(_: &tauri::WebviewWindow) {}
+
 fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let layered = layer::supported();
-    let win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
+    // Without layer-shell: a small window in the middle of the screen, on
+    // top, with an opaque page (`?plain`), because a fullscreen one takes
+    // the game's place and where the compositor ignores transparency
+    // (gamescope's Xwayland) it would hide the game.
+    let page = if layered {
+        "overlay.html"
+    } else {
+        "overlay.html?plain"
+    };
+    let mut win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(page.into()))
         .title("romforge overlay")
         .transparent(true)
         .decorations(false)
@@ -61,10 +111,12 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .focused(false)
         .focusable(false)
         .resizable(false)
-        .fullscreen(!layered)
         .shadow(false)
-        .visible(false)
-        .build()?;
+        .visible(false);
+    if !layered {
+        win = win.inner_size(PLAIN_SIZE, PLAIN_SIZE).center();
+    }
+    let win = win.build()?;
     if layered {
         #[cfg(target_os = "linux")]
         {

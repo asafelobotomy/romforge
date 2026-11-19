@@ -24,6 +24,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --all --check
+      # romforge-provider reads the pad for the hotkeys (gilrs: libudev).
+      - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       # romforge-provider's tests run its D-Bus interface on a private bus.
       - run: command -v dbus-daemon || (sudo apt-get update && sudo apt-get install -y dbus-daemon)
       # MAME's chdman, which tests/psp_chd_format.rs checks a PSP CHD with
@@ -55,6 +57,7 @@ jobs:
         with:
           toolchain: "1.93"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - run: cargo check --locked --all-targets
 
   app:

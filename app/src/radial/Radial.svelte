@@ -10,10 +10,15 @@
   let slots = $state([]);
   let can = $state(null);
   let button = $state("");
+  // A small window of its own, not a layer over the game: its own opaque
+  // backdrop (overlay.rs).
+  const plain = new URLSearchParams(location.search).has("plain");
 
   async function load() {
-    const now = await invoke("now_playing").catch(() => null);
-    const v = await invoke("hotkeys_view", { emulators: now ? [now.emulator] : [] }).catch(() => null);
+    // The game the app plays, or the one uQ's launcher started (the app is
+    // then only this overlay).
+    const emulator = await invoke("overlay_emulator").catch(() => null);
+    const v = await invoke("hotkeys_view", { emulators: emulator ? [emulator] : [] }).catch(() => null);
     if (!v) return;
     slots = v.radial;
     // What the ring can do in this emulator (its own bindings answer the
@@ -40,7 +45,7 @@
 </script>
 
 {#if open && slots.length}
-  <div class="ring" style="--step: {step}deg">
+  <div class="ring" class:plain style="--step: {step}deg">
     {#each slots as s, i}
       <div class="slot" class:on={slot === i} class:off={can && !can.includes(s.action)} style="--i: {i}">{s.label}</div>
     {/each}
@@ -67,6 +72,13 @@
     border-radius: 50%;
     background: rgb(10 12 20 / 0.78);
     box-shadow: 0 0 0 3px rgb(255 255 255 / 0.25);
+  }
+  .ring.plain {
+    width: 100vmin;
+    height: 100vmin;
+    border-radius: 0;
+    box-shadow: none;
+    background: rgb(10 12 20);
   }
   /* Clockwise from the top, as the stick picks them. */
   .slot {

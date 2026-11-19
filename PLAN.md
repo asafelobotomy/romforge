@@ -3123,9 +3123,14 @@ Still open:
   the tag existed) and the check is clean.
 - **The AppImage** has no provider: a launcher provider needs an installed
   service file, which an AppImage can't add.
-- **Games the provider starts** run without the app's hotkeys and radial
-  menu (they live in the app), and in the bus's own cgroup rather than a
+- **Games the provider starts** run in the bus's own cgroup rather than a
   scope of their own (romforge runs no `systemd-run`, house rule 7).
+  *(Built 2026-11-19.)* They have the hotkeys and the radial menu too: the
+  provider reads the pad and does the chords with the core's `Watcher`
+  (the app uses the same one), and draws the ring by running the app as
+  `romforge-app --overlay=EMULATOR`, which has no window or library and
+  quits when the provider closes its pipe. Without the app installed the
+  hotkeys still work and only the ring is missing. Detail in GUIDE.md.
 - *(Built 2026-11-19, to try.)* **More emulators in the rules**: mGBA,
   melonDS, xemu, Cemu, MAME and ScummVM are in a second rule,
   `romforge.more-emulators`, so `romforge.emulators` keeps its meaning

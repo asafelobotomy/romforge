@@ -28,8 +28,10 @@ call, but never while a game it started is running. The romforge app does not ne
 - **Play** (`play`, Enter) starts the game as the app's Play does: the emulator romforge picks for
   it (or the one set for that game), romforge's config for it written first, its play time
   recorded when it ends. One game at a time. If it won't start, or stops within seconds, a
-  desktop notification says why (uQ itself only says that romforge failed). Hotkeys and the
-  radial menu belong to the app, so they work only when the app started the game.
+  desktop notification says why (uQ itself only says that romforge failed). The hotkeys and the
+  radial menu work as they do in the app (Emulator Settings turns them off): the provider reads the
+  pad while the game runs, and the romforge app, started as `romforge-app --overlay`, draws the
+  ring and quits with the game. Without the app, only the ring is missing.
 - **Input checks.** Queries over 256 bytes or with control characters get no rows. `Activate`
   takes only the id of a game in the library that Play may start (never a path, never anything
   run through a shell) and only the `play` action; anything else is `InvalidArgs`. ROM files are
