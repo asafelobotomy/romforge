@@ -142,3 +142,58 @@ fn convert_makes_chds_where_the_discs_are() {
     // Nothing more to convert.
     assert!(lib.convert_plan(None).unwrap().items.is_empty());
 }
+
+/// A disc the DAT lists under two names is two library rows with the same
+/// file. Convert still writes one CHD, named after the game (not after its
+/// track file), takes the original to the trash (the twin row doesn't keep
+/// it), and a partial name launches the disc instead of being ambiguous.
+#[test]
+fn convert_handles_a_disc_listed_under_two_names() {
+    use romforge_core::launch::Env;
+    let dir = tempfile::tempdir().unwrap();
+    let (source, library) = (dir.path().join("source"), dir.path().join("library"));
+    std::fs::create_dir_all(&library).unwrap();
+    std::fs::create_dir_all(&source).unwrap();
+    let track = cd_tracks(3);
+    std::fs::write(source.join("Twin Disc (USA) (Track 1).bin"), &track).unwrap();
+    let dat = disc_dat(
+        dir.path(),
+        "Sony - PlayStation",
+        &[
+            (
+                "Twin Disc (USA)",
+                vec![("Twin Disc (USA) (Track 1).bin".into(), track.clone())],
+            ),
+            (
+                "Twin Disc (USA) (Alt)",
+                vec![("Twin Disc (USA) (Track 1).bin".into(), track)],
+            ),
+        ],
+    );
+    let mut lib = lib_with(dir.path(), &dat, &source, &library);
+    lib.scan(&source, Scope::All).unwrap();
+    let source = source.canonicalize().unwrap();
+
+    let plan = lib.convert_plan(None).unwrap();
+    assert_eq!(plan.items.len(), 1, "{plan:?}");
+    assert_eq!(plan.items[0].target, source.join("Twin Disc (USA).chd"));
+    let report = lib.convert_apply(None, |_, _| {}).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert!(source.join("Twin Disc (USA).chd").exists());
+    assert!(
+        !source.join("Twin Disc (USA) (Track 1).bin").exists(),
+        "the original goes to the trash"
+    );
+    lib.scan(&source, Scope::All).unwrap();
+    let v = lib.library_view().unwrap();
+    assert!(
+        !v.rows.iter().any(|r| r.status == RowStatus::Duplicate),
+        "no leftover duplicate"
+    );
+    let err = lib
+        .launch_plan(&Env::default(), "Twin Di", None)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(!err.contains("several games"), "{err}");
+}
