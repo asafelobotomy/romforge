@@ -1393,11 +1393,15 @@ characters or more.
   is any other action. Nothing from the bus reaches a shell or a path.
 
 **The game-mode rule.** `uq/integrations/romforge/rules.toml` holds one
-`[[window_rule]]`, `romforge.emulators`: the app IDs of RetroArch,
-DuckStation, PPSSPP, Dolphin, PCSX2, RPCS3 and Azahar go to the workspace
-`name:game`, full screen. uqd renders it only once the user turns it on
-(uQ Settings → Window rules → Rules from apps); the `game` workspace's
-layout, gaps and animations are the user's to set there.
+`[[window_rule]]`: `romforge.emulators` (the app IDs of RetroArch,
+DuckStation, PPSSPP, Dolphin, PCSX2, RPCS3 and Azahar) and
+`romforge.more-emulators` (mGBA, melonDS, xemu, Cemu, MAME and ScummVM,
+each by its native and its Flatpak app ID) go to the workspace
+`name:game`, full screen. The second is a rule of its own because uQ
+remembers what a user turned on by id, so the first keeps its meaning.
+uqd renders each only once the user turns it on (uQ Settings → Window
+rules → Rules from apps); the `game` workspace's layout, gaps and
+animations are the user's to set there.
 
 **uQ's theme.** The app vendors `uq-tokens` 1.0.0 in
 `app/src/vendor/uq-tokens/` (`uq-tokens.js` as uQ ships it,

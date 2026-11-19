@@ -7,3 +7,14 @@ id = "romforge.emulators"
 class = ["^(retroarch|duckstation-qt|PPSSPPSDL|dolphin-emu|pcsx2-qt|rpcs3|azahar)$"]
 workspace = "name:game"
 fullscreen = true
+
+# The other emulators romforge starts. A rule of its own, so that
+# "romforge.emulators", which people have turned on, keeps meaning what it
+# did; this one is off until it is turned on as well. Each emulator's
+# native app ID and its Flatpak's.
+[[window_rule]]
+id = "romforge.more-emulators"
+name = "More emulators open full screen"
+class = ['^(mgba-qt|mGBA|io\.mgba\.mGBA|melonDS|net\.kuribo64\.melonDS|xemu|app\.xemu\.xemu|Cemu|cemu|info\.cemu\.Cemu|mame|MAME|org\.mamedev\.MAME|scummvm|ScummVM|org\.scummvm\.ScummVM)$']
+workspace = "name:game"
+fullscreen = true
