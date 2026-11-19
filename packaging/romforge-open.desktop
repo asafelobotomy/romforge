@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Play with romforge
+Comment=Start a game in the emulator romforge picks for it
+Exec=romforge-cli launch %f
+Icon=romforge
+Categories=Game;
+Terminal=false
+NoDisplay=true
+MimeType=application/x-nes-rom;application/x-fds-disk;application/vnd.nintendo.snes.rom;application/x-n64-rom;application/x-gameboy-rom;application/x-gameboy-color-rom;application/x-gba-rom;application/x-virtual-boy-rom;application/x-pokemon-mini-rom;application/x-nintendo-ds-rom;application/x-nintendo-3ds-rom;application/x-gamecube-rom;application/x-wii-rom;application/x-wiiu-rom;application/x-nintendo-switch-rom;application/x-sg1000-rom;application/x-sms-rom;application/x-genesis-rom;application/x-genesis-32x-rom;application/x-gamegear-rom;application/x-sega-pico-rom;application/x-sega-cd-rom;application/x-saturn-rom;application/x-dreamcast-rom;application/x-playstation-pbp;application/x-psvita-vpk;application/x-xbox-iso;application/x-atari-2600-rom;application/x-atari-5200-rom;application/x-atari-7800-rom;application/x-atari-lynx-rom;application/x-atari-jaguar-rom;application/x-pc-engine-rom;application/x-neo-geo-pocket-rom;application/x-neo-geo-pocket-color-rom;application/x-wonderswan-rom;application/x-wonderswan-color-rom;application/x-msx-rom;application/x-colecovision-rom;application/x-intellivision-rom;application/x-vectrex-rom;application/x-channelf-rom;application/x-supervision-rom;application/x-pocket-challenge-rom;application/x-commodore-64-disk;application/x-amiga-disk-format;application/x-zx-spectrum-tape;application/x-atari-8bit-disk;application/x-pc98-disk;application/x-cue;application/x-mame-chd;application/x-neo-geo-rom;

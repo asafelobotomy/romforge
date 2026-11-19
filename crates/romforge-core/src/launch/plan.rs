@@ -49,6 +49,12 @@ fn candidates(conn: &Connection, query: &str) -> Result<Vec<(String, String, Pat
 pub fn plan(conn: &Connection, env: &Env, query: &str, emulator: Option<&str>) -> Result<LaunchSpec, Error> {
     let found = candidates(conn, query)?;
     if found.is_empty() {
+        // A file that isn't in the library (opened from a file manager): its
+        // extension names the system when only one uses it. Never a match
+        // (house rule 8), just enough to start it.
+        if let Some(spec) = loose_file(conn, env, query, emulator)? {
+            return Ok(spec);
+        }
         // A game that is a folder (ScummVM, DOS) by its title.
         let view = crate::view::library(conn)?;
         let q = query.to_lowercase();
@@ -205,4 +211,32 @@ pub fn plan_row_in(
         return Ok(spec);
     }
     start(conn, env, &row.title, &system, &files, emulator)
+}
+
+/// An existing file that no library row owns, started by its extension's
+/// system. `None` when `query` isn't a file or its extension is shared
+/// (`.bin`, `.iso`): those need the library's identification.
+fn loose_file(
+    conn: &Connection,
+    env: &Env,
+    query: &str,
+    emulator: Option<&str>,
+) -> Result<Option<LaunchSpec>, Error> {
+    let path = Path::new(query);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let Some(system) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(systems::by_extension)
+    else {
+        return Ok(None);
+    };
+    let path = std::fs::canonicalize(path).map_err(|e| Error::Launch(format!("{query}: {e}")))?;
+    let title = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| query.to_string());
+    start(conn, env, &title, system.key, &[(path, String::new())], emulator).map(Some)
 }

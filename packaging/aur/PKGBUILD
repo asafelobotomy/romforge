@@ -70,6 +70,9 @@ Icon=romforge
 Categories=Game;
 Terminal=false
 DESKTOP
+  # Opens a ROM from a file manager (romforge-cli launch FILE); hidden from menus.
+  install -Dm644 packaging/romforge-open.desktop \
+    "$pkgdir/usr/share/applications/romforge-open.desktop"
   local size
   for size in 32 64 128 256; do
     install -Dm644 "app/src-tauri/icons/${size}x${size}.png" \
