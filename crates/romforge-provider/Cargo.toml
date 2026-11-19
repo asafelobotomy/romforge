@@ -11,7 +11,9 @@ name = "romforge-provider"
 path = "src/main.rs"
 
 [dependencies]
-romforge-core.workspace = true
+# The pad, for the hotkeys (`controls.rs`).
+romforge-core = { workspace = true, features = ["controller"] }
+serde_json.workspace = true
 tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
 zbus = { version = "6", default-features = false, features = ["tokio", "service", "proxy"] }
 

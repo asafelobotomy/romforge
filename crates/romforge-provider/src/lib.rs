@@ -10,6 +10,7 @@
 
 pub mod games;
 pub mod notify;
+pub mod overlay;
 pub mod provider;
 
 pub use games::Games;

@@ -11,6 +11,7 @@
 
 mod art;
 mod cleanup;
+mod companion;
 mod dats;
 mod db;
 mod emulators;
@@ -44,6 +45,13 @@ use crate::art::{ArtPool, ArtRoots, serve_art};
 use crate::db::{Db, db_path};
 
 fn main() {
+    let context = tauri::generate_context!();
+    // `--overlay`: only the radial menu's overlay, for a game uQ's launcher
+    // provider started (`companion.rs`); no library, no main window.
+    if let Some(overlay) = companion::from_args(std::env::args().skip(1)) {
+        companion::run(context, overlay);
+        return;
+    }
     let path = db_path();
     // A library that can't open is said in a dialog, then romforge ends
     // (`setup`); meanwhile empty ones in memory stand in.
@@ -113,6 +121,7 @@ fn main() {
         .manage(play::Now::default())
         .manage(jobs::Jobs::default())
         .manage(hotkeys::Watcher::default())
+        .manage(companion::Companion::default())
         .manage(start::start_options(std::env::args().skip(1)))
         // Game pads, heard even while an emulator has the focus: "pad"
         // events for the page (no pads, or no access: the app works without).
@@ -265,6 +274,7 @@ fn main() {
             jobs::job_cancel,
             tray::tuck_away,
             hotkeys::hotkeys_view,
+            companion::overlay_emulator,
             themes::themes_view,
             themes::theme_set,
             themes::theme_stamp,
@@ -287,6 +297,6 @@ fn main() {
             search::forget_identity,
             library::all_systems
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running romforge");
 }

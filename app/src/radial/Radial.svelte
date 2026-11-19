@@ -12,8 +12,10 @@
   let button = $state("");
 
   async function load() {
-    const now = await invoke("now_playing").catch(() => null);
-    const v = await invoke("hotkeys_view", { emulators: now ? [now.emulator] : [] }).catch(() => null);
+    // The game the app plays, or the one uQ's launcher started (the app is
+    // then only this overlay).
+    const emulator = await invoke("overlay_emulator").catch(() => null);
+    const v = await invoke("hotkeys_view", { emulators: emulator ? [emulator] : [] }).catch(() => null);
     if (!v) return;
     slots = v.radial;
     // What the ring can do in this emulator (its own bindings answer the

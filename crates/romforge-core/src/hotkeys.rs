@@ -91,7 +91,7 @@ impl PadButton {
 }
 
 /// What a hotkey does in the running game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Quit,
@@ -167,7 +167,7 @@ pub const RADIAL_BUTTON: PadButton = LeftStick;
 pub const RADIAL_HOLD: Duration = Duration::from_secs(2);
 
 /// What [`Chords`] makes of the pad.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HotkeyEvent {
     /// Do it (a held one until [`HotkeyEvent::Stop`]).
@@ -353,7 +353,9 @@ fn slot_at(x: f32, y: f32, was: Option<usize>) -> Option<usize> {
 }
 
 mod view;
+mod watch;
 pub use view::*;
+pub use watch::Watcher;
 
 #[cfg(test)]
 mod tests;

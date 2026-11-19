@@ -3122,9 +3122,14 @@ Still open:
   uQ tags one with the Phase 4 checks (the spec's 2.7).
 - **The AppImage** has no provider: a launcher provider needs an installed
   service file, which an AppImage can't add.
-- **Games the provider starts** run without the app's hotkeys and radial
-  menu (they live in the app), and in the bus's own cgroup rather than a
+- **Games the provider starts** run in the bus's own cgroup rather than a
   scope of their own (romforge runs no `systemd-run`, house rule 7).
+  *(Built 2026-11-19.)* They have the hotkeys and the radial menu too: the
+  provider reads the pad and does the chords with the core's `Watcher`
+  (the app uses the same one), and draws the ring by running the app as
+  `romforge-app --overlay=EMULATOR`, which has no window or library and
+  quits when the provider closes its pipe. Without the app installed the
+  hotkeys still work and only the ring is missing. Detail in GUIDE.md.
 - **The rule's emulators** are the spec's seven; romforge starts more
   (mGBA, melonDS, Cemu, xemu, MAME, ScummVM …). Adding them is a new rule
   id or a changed one, to agree with uQ first.

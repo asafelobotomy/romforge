@@ -3594,6 +3594,7 @@ dependencies = [
  "notify",
  "romforge-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3652,6 +3653,7 @@ name = "romforge-provider"
 version = "0.18.8"
 dependencies = [
  "romforge-core",
+ "serde_json",
  "tempfile",
  "tokio",
  "zbus 6.2.1",
