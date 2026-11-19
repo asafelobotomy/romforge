@@ -1412,7 +1412,10 @@ screen with an opaque backdrop, not a fullscreen one. In gamescope's own
 Wayland socket (no `wl_subcompositor`) a GTK window draws nothing, so the
 provider starts the overlay with `GDK_BACKEND=x11` there (its
 `WAYLAND_DISPLAY` is `gamescope-*` and there is an X display);
-`ROMFORGE_OVERLAY_BACKEND=x11|wayland` overrides it.
+`ROMFORGE_OVERLAY_BACKEND=x11|wayland` overrides it. gamescope draws
+only its focused window and ones marked as an external overlay, so the
+ring window is given `GAMESCOPE_EXTERNAL_OVERLAY` = 1 there
+(`overlay.rs`).
 
 **The game-mode rule.** `uq/integrations/romforge/rules.toml` holds one
 `[[window_rule]]`, `romforge.emulators`: the app IDs of RetroArch,

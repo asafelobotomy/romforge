@@ -50,11 +50,46 @@ pub fn show(app: &AppHandle, on: bool) {
             return;
         }
         let _ = win.show();
+        // The window is mapped by the event loop a moment after `show`.
+        let again = win.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let marked = again.clone();
+            let _ = again.run_on_main_thread(move || mark_external_overlay(&marked));
+        });
         // Clicks go through to the game. Only once shown: tao unwraps the
         // GDK window, which a hidden window doesn't have yet.
         let _ = win.set_ignore_cursor_events(true);
     });
 }
+
+/// In gamescope only the focused window and windows marked as an external
+/// overlay are drawn, and this one never takes the focus: mark it
+/// (`GAMESCOPE_EXTERNAL_OVERLAY` = 1, as MangoHud's does). Only where the
+/// session is gamescope's (the provider starts the overlay on its X11
+/// then, `romforge-provider`'s `overlay.rs`).
+#[cfg(target_os = "linux")]
+fn mark_external_overlay(win: &tauri::WebviewWindow) {
+    use gtk::gdk;
+    use gtk::prelude::WidgetExt;
+    if !std::env::var("WAYLAND_DISPLAY").is_ok_and(|w| w.starts_with("gamescope")) {
+        return;
+    }
+    let Some(window) = win.gtk_window().ok().and_then(|w| w.window()) else {
+        return;
+    };
+    gdk::property_change(
+        &window,
+        &gdk::Atom::intern("GAMESCOPE_EXTERNAL_OVERLAY"),
+        &gdk::Atom::intern("CARDINAL"),
+        32,
+        gdk::PropMode::Replace,
+        gdk::ChangeData::ULongs(&[1]),
+    );
+}
+
+#[cfg(not(target_os = "linux"))]
+fn mark_external_overlay(_: &tauri::WebviewWindow) {}
 
 fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let layered = layer::supported();
