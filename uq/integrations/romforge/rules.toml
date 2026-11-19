@@ -22,10 +22,11 @@ fullscreen = true
 # did; this one is off until it is turned on as well. Each emulator's
 # native app ID and its Flatpak's. mGBA and melonDS set their desktop file
 # name themselves (io.mgba.mGBA, net.kuribo64.melonDS) on every Linux build;
-# the SDL ones (xemu, MAME, ScummVM) report their executable name.
+# the SDL ones (xemu, MAME, ScummVM) report their executable name, xemu its
+# Flatpak id. The Flathub Cemu build reports Cemu_relwithdebinfo.
 [[window_rule]]
 id = "romforge.more-emulators"
 name = "More emulators open full screen"
-class = ['^(mgba-qt|mGBA|io\.mgba\.mGBA|melonDS|net\.kuribo64\.melonDS|xemu|app\.xemu\.xemu|Cemu|cemu|info\.cemu\.Cemu|mame|MAME|org\.mamedev\.MAME|scummvm|ScummVM|org\.scummvm\.ScummVM)$']
+class = ['^(mgba-qt|mGBA|io\.mgba\.mGBA|melonDS|net\.kuribo64\.melonDS|xemu|app\.xemu\.xemu|Cemu|Cemu_relwithdebinfo|cemu|info\.cemu\.Cemu|mame|MAME|org\.mamedev\.MAME|scummvm|ScummVM|org\.scummvm\.ScummVM)$']
 workspace = "name:game"
 fullscreen = true
