@@ -3118,8 +3118,9 @@ Built (the detail is in GUIDE.md, "On the uQ desktop"):
 
 Still open:
 
-- **`uqctl integrations check uq/` in CI**, pinned to a uQ release, once
-  uQ tags one with the Phase 4 checks (the spec's 2.7).
+- *(Done 2026-11-19.)* **`uqctl integrations check uq/` in CI** now
+  builds uqctl from the uQ tag v0.3.14 (it ran from a bare commit until
+  the tag existed) and the check is clean.
 - **The AppImage** has no provider: a launcher provider needs an installed
   service file, which an AppImage can't add.
 - **Games the provider starts** run in the bus's own cgroup rather than a
@@ -3130,9 +3131,13 @@ Still open:
   `romforge-app --overlay=EMULATOR`, which has no window or library and
   quits when the provider closes its pipe. Without the app installed the
   hotkeys still work and only the ring is missing. Detail in GUIDE.md.
-- **The rule's emulators** are the spec's seven; romforge starts more
-  (mGBA, melonDS, Cemu, xemu, MAME, ScummVM …). Adding them is a new rule
-  id or a changed one, to agree with uQ first.
+- *(Built 2026-11-19, to try.)* **More emulators in the rules**: mGBA,
+  melonDS, xemu, Cemu, MAME and ScummVM are in a second rule,
+  `romforge.more-emulators`, so `romforge.emulators` keeps its meaning
+  for those who turned it on. Their app IDs (native and Flatpak) come
+  from the launch table and the Flathub ids, not from a compositor:
+  check them with `hyprctl clients` while each runs. uQ's spec (3.3)
+  still lists the seven; a proposal to uQ is open.
 
 ## oysterAV (2026-11-16, built)
 
@@ -3171,8 +3176,9 @@ choice rather than a fault:
 - **Scans** re-read every file's row and stored matches on each scan,
   even for one file (`identify/run.rs`); scoping that to the files
   touched is a change of behaviour, so it waits for a measured need.
-- **Saves gather undo** says how many files went back, not how many
-  stayed in `Saves/` because their old place was taken.
+- *(Fixed 2026-11-19.)* **Saves gather undo** now also says how many
+  files stayed in `Saves/` because their old place was taken, and how many
+  were no longer there (CLI and app).
 
 ## Real emulator runs (2026-11-17)
 
