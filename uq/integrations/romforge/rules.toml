@@ -2,16 +2,27 @@
 # package. Off until turned on in uQ Settings, Window rules, "Rules from
 # apps": the emulators romforge starts open full screen on the "game"
 # workspace.
+#
+# Two patterns: the executable names, and the app IDs the emulators set
+# themselves. Same seven emulators as before; DuckStation (Qt sets its
+# desktop file name to org.duckstation.DuckStation), Azahar
+# (org.azahar_emu.Azahar) and PPSSPP (org.ppsspp.PPSSPP) report those, not
+# their binary names, and the Flatpak ids are listed too.
 [[window_rule]]
 id = "romforge.emulators"
-class = ["^(retroarch|duckstation-qt|PPSSPPSDL|dolphin-emu|pcsx2-qt|rpcs3|azahar)$"]
+class = [
+  '^(retroarch|duckstation-qt|PPSSPPSDL|dolphin-emu|pcsx2-qt|rpcs3|azahar)$',
+  '^(org\.libretro\.RetroArch|com\.libretro\.RetroArch|org\.duckstation\.DuckStation|org\.ppsspp\.PPSSPP|org\.DolphinEmu\.dolphin-emu|net\.pcsx2\.PCSX2|net\.rpcs3\.RPCS3|org\.azahar_emu\.Azahar)$',
+]
 workspace = "name:game"
 fullscreen = true
 
 # The other emulators romforge starts. A rule of its own, so that
 # "romforge.emulators", which people have turned on, keeps meaning what it
 # did; this one is off until it is turned on as well. Each emulator's
-# native app ID and its Flatpak's.
+# native app ID and its Flatpak's. mGBA and melonDS set their desktop file
+# name themselves (io.mgba.mGBA, net.kuribo64.melonDS) on every Linux build;
+# the SDL ones (xemu, MAME, ScummVM) report their executable name.
 [[window_rule]]
 id = "romforge.more-emulators"
 name = "More emulators open full screen"
