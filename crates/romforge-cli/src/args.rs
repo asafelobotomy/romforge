@@ -9,6 +9,7 @@ use romforge_core::organize;
 use crate::subcommands::{
     CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FirmwareCommand, HomeCommand,
     ManualCommand, OrganizeCommand, SavesCommand, ScummvmCommand, SearchCommand, SteamCommand, ThemesCommand,
+    UqSearchCommand,
 };
 
 #[derive(Parser)]
@@ -179,6 +180,10 @@ pub enum Command {
     /// Steam Deck controller template. Steam must be closed
     #[command(subcommand)]
     Steam(SteamCommand),
+    /// romforge's games in uQ's search, for a romforge that no package
+    /// installed (the AppImage): your own files, added and removed here
+    #[command(subcommand, name = "uq-search")]
+    UqSearch(UqSearchCommand),
     /// The fullscreen mode's themes: yours, and the community's from the
     /// romforge-themes index
     #[command(subcommand)]

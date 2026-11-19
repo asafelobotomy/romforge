@@ -5,3 +5,4 @@
 
 pub mod launcher;
 pub mod tokens;
+pub mod user_provider;

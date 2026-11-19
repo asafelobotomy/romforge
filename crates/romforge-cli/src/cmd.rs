@@ -17,3 +17,4 @@ pub mod search;
 pub mod settings;
 pub mod steam;
 pub mod themes;
+pub mod uq_search;

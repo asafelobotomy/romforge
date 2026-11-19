@@ -41,6 +41,11 @@
     "license": "MIT",
     "homepage": "https://github.com/asafelobotomy/romforge",
     "linux": {
+      "appimage": {
+        "files": {
+          "/usr/bin/romforge-provider": "../../target/release/romforge-provider"
+        }
+      },
       "deb": {
         "files": {
           "/usr/bin/romforge-cli": "../../target/release/romforge-cli",

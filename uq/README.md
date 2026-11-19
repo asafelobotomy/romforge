@@ -95,3 +95,24 @@ By hand, with romforge installed:
 busctl --user call org.romforge.Provider /org/uq/Launcher1 org.uq.Launcher1.Provider Search s zelda
 busctl --user call org.romforge.Provider /org/uq/Launcher1 org.uq.Launcher1.Provider Activate ss 'g:…' play
 ```
+
+## For the AppImage: Settings → uQ search
+
+An AppImage can't install into `/usr`, so it carries `romforge-provider` and Settings → **uQ search**
+adds it for you, only when you press **Add to uQ search…** (it lists the files first) and takes it away
+again with **Remove from uQ search**. `romforge-cli uq-search status|add|remove` does the same.
+It writes three files under `$XDG_DATA_HOME` (else `~/.local/share`), each text file starting with a
+line saying romforge added it:
+
+| File | What it is |
+| --- | --- |
+| `romforge/provider/romforge-provider` | A copy of the provider at a path that stays put (an AppImage is mounted somewhere new on every run) |
+| `uq/launcher/romforge.provider` | The same `.provider` as the package's; uQ reads this folder |
+| `dbus-1/services/org.romforge.Provider.service` | `Exec=` that copy; uQ asks the session bus which names it can start, so the user's own services folder counts (uQ's integrating.md, "Launcher providers") |
+
+Nothing is added next to a package's files, nor over a file of yours with the same name, and removing
+only takes files that carry romforge's line. A new AppImage brings a new provider: if the files are
+there and the copy differs, romforge copies again at start-up (it never adds on its own). The folder
+can't hold a space (the service file's `Exec=` can't). Tested end to end on a private `dbus-daemon`
+(`crates/romforge-provider/tests/user_install.rs`): added, listed as startable, started from the
+copy, removed and no longer listed.

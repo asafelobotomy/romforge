@@ -1490,7 +1490,8 @@ releases them. Pushing a tag `vX.Y.Z` by hand does the same.
 To build the packages yourself: `cd app && npm ci && npx tauri build`
 (they land in `target/release/bundle/`). `tauri build` builds
 `romforge-cli` and `romforge-provider` first; the .deb and .rpm carry both
-and the `uq/` files (the AppImage only the app).
+and the `uq/` files (the AppImage the app and `romforge-provider`, which
+Settings → uQ search can add to your own folders: see "Launcher provider").
 
 `packaging/aur/PKGBUILD` is the AUR's `romforge`, built from a release's
 source tarball: `tauri build --no-bundle`, then the app, `romforge-cli`,
