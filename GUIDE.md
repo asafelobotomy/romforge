@@ -1406,7 +1406,13 @@ call. It is sent the ring's events as one JSON `HotkeyEvent` per line on its
 standard input and quits when that closes, which the provider does when the
 game ends. The app is found as `$ROMFORGE_APP`, else `romforge-app` or
 `romforge` beside the provider, else on `PATH`; without it the game and its
-chords work and only the ring is missing (said on stderr).
+chords work and only the ring is missing (said on stderr). Where there is
+no layer-shell the ring is a small (480 px) window in the middle of the
+screen with an opaque backdrop, not a fullscreen one. In gamescope's own
+Wayland socket (no `wl_subcompositor`) a GTK window draws nothing, so the
+provider starts the overlay with `GDK_BACKEND=x11` there (its
+`WAYLAND_DISPLAY` is `gamescope-*` and there is an X display);
+`ROMFORGE_OVERLAY_BACKEND=x11|wayland` overrides it.
 
 **The game-mode rule.** `uq/integrations/romforge/rules.toml` holds one
 `[[window_rule]]`, `romforge.emulators`: the app IDs of RetroArch,

@@ -19,6 +19,10 @@ const APP_NAMES: &[&str] = &["romforge-app", "romforge"];
 /// Testing aid, and for an app somewhere unusual: the app's program.
 pub const APP_ENV: &str = "ROMFORGE_APP";
 
+/// Testing aid and override: `x11` or `wayland` makes the overlay use that
+/// display protocol, whatever the session looks like.
+pub const BACKEND_ENV: &str = "ROMFORGE_OVERLAY_BACKEND";
+
 /// How long the app gets to quit once its pipe is closed.
 const QUIT_WITHIN: Duration = Duration::from_secs(3);
 
@@ -52,6 +56,21 @@ pub fn find_app(env: Option<PathBuf>, dirs: impl IntoIterator<Item = PathBuf>) -
         .find(|p| is_program(p))
 }
 
+/// Whether the overlay should be forced onto X11 (`GDK_BACKEND=x11`).
+/// gamescope's own Wayland socket has no `wl_subcompositor` (and no
+/// layer-shell), and a GTK window there draws nothing, while through its
+/// Xwayland it shows. So: `$ROMFORGE_OVERLAY_BACKEND` if it says, else
+/// when `WAYLAND_DISPLAY` is gamescope's and there is an X display.
+pub fn use_x11(var: impl Fn(&str) -> Option<String>) -> bool {
+    match var(BACKEND_ENV).as_deref() {
+        Some("x11") => return true,
+        Some("wayland") => return false,
+        _ => {}
+    }
+    var("WAYLAND_DISPLAY").is_some_and(|w| w.starts_with("gamescope"))
+        && var("DISPLAY").is_some_and(|d| !d.is_empty())
+}
+
 /// The app running as the overlay, for one game.
 pub struct Overlay {
     child: Option<Child>,
@@ -60,11 +79,14 @@ pub struct Overlay {
 
 impl Overlay {
     pub fn start(program: &Path, emulator: &str) -> std::io::Result<Overlay> {
-        let mut child = Command::new(program)
-            .arg(format!("--overlay={emulator}"))
+        let mut cmd = Command::new(program);
+        cmd.arg(format!("--overlay={emulator}"))
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .spawn()?;
+            .stdout(Stdio::null());
+        if use_x11(|k| std::env::var(k).ok()) {
+            cmd.env("GDK_BACKEND", "x11");
+        }
+        let mut child = cmd.spawn()?;
         let stdin = child.stdin.take();
         Ok(Overlay {
             child: Some(child),
@@ -116,6 +138,25 @@ mod tests {
     fn script(path: &Path, body: &str) {
         std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn gamescope_gets_the_overlay_on_x11() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string())
+        };
+        let on = |p| use_x11(env(p));
+        assert!(on(&[("WAYLAND_DISPLAY", "gamescope-0"), ("DISPLAY", ":1")]));
+        assert!(!on(&[("WAYLAND_DISPLAY", "gamescope-0")]), "no X display to use");
+        assert!(!on(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0")]));
+        assert!(!on(&[]));
+        // Asked for by name, whatever the session is.
+        assert!(on(&[(BACKEND_ENV, "x11")]));
+        assert!(!on(&[
+            (BACKEND_ENV, "wayland"),
+            ("WAYLAND_DISPLAY", "gamescope-0"),
+            ("DISPLAY", ":1")
+        ]));
     }
 
     #[test]

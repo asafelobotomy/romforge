@@ -8,11 +8,17 @@
 //! so romforge starts without it. Elsewhere the window is a plain
 //! fullscreen one: on KDE Plasma 6.7 Wayland that takes the focus
 //! (`focused`/`focusable` are ignored) and the game drops below the panel
-//! while it shows, so it is only the fallback.
+//! while it shows, so it is only the fallback; there the ring is a small
+//! window in the middle of the screen, not a fullscreen one, so it leaves
+//! the game its place where the compositor can't show it transparent
+//! (gamescope).
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const LABEL: &str = "overlay";
+
+/// The side of the window the ring has where there is no layer-shell.
+const PLAIN_SIZE: f64 = 480.0;
 
 /// Make the overlay, hidden, for a game starting (its page loads now, so
 /// it is ready when the ring opens).
@@ -52,7 +58,16 @@ pub fn show(app: &AppHandle, on: bool) {
 
 fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let layered = layer::supported();
-    let win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
+    // Without layer-shell: a small window in the middle of the screen, on
+    // top, with an opaque page (`?plain`), because a fullscreen one takes
+    // the game's place and where the compositor ignores transparency
+    // (gamescope's Xwayland) it would hide the game.
+    let page = if layered {
+        "overlay.html"
+    } else {
+        "overlay.html?plain"
+    };
+    let mut win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(page.into()))
         .title("romforge overlay")
         .transparent(true)
         .decorations(false)
@@ -61,10 +76,12 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .focused(false)
         .focusable(false)
         .resizable(false)
-        .fullscreen(!layered)
         .shadow(false)
-        .visible(false)
-        .build()?;
+        .visible(false);
+    if !layered {
+        win = win.inner_size(PLAIN_SIZE, PLAIN_SIZE).center();
+    }
+    let win = win.build()?;
     if layered {
         #[cfg(target_os = "linux")]
         {
