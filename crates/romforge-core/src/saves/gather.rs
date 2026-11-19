@@ -298,9 +298,37 @@ fn take_back(
     ))
 }
 
-/// Put the last gathering of `name`'s saves back where they were. Returns
-/// how many files went back; one whose old place is taken stays in Saves/.
-pub fn undo(conn: &Connection, home: &Home, name: &str) -> Result<usize, Error> {
+/// What undoing a gathering did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Undone {
+    /// Files put back where they were.
+    pub back: usize,
+    /// Files that stayed in `Saves/` because a file is in their old place.
+    pub stayed: usize,
+    /// Files that were no longer in `Saves/` (moved or deleted since).
+    pub missing: usize,
+}
+
+impl Undone {
+    /// The sentence both shells say, naming what didn't go back.
+    pub fn say(&self) -> String {
+        let mut s = format!("{} save file(s) put back where they were", self.back);
+        if self.stayed > 0 {
+            s += &format!(
+                "; {} stayed in Saves/ because a file is in their old place",
+                self.stayed
+            );
+        }
+        if self.missing > 0 {
+            s += &format!("; {} were no longer in Saves/", self.missing);
+        }
+        s
+    }
+}
+
+/// Put the last gathering of `name`'s saves back where they were. A file
+/// whose old place is taken stays in Saves/, and is counted as such.
+pub fn undo(conn: &Connection, home: &Home, name: &str) -> Result<Undone, Error> {
     let n = undo_moves(conn, name)?;
     // Back to its old place for its saves, unless an earlier gathering
     // still stands.
@@ -316,8 +344,8 @@ pub fn undo(conn: &Connection, home: &Home, name: &str) -> Result<usize, Error> 
 }
 
 /// Put the last gathering journaled as `name` back (an emulator's, or the
-/// States/ merge's): how many files went back.
-pub(crate) fn undo_moves(conn: &Connection, name: &str) -> Result<usize, Error> {
+/// States/ merge's).
+pub(crate) fn undo_moves(conn: &Connection, name: &str) -> Result<Undone, Error> {
     let id: i64 = conn
         .query_row(
             "SELECT gather_id FROM save_gathers WHERE emulator = ?1 AND undone_at IS NULL
@@ -330,15 +358,12 @@ pub(crate) fn undo_moves(conn: &Connection, name: &str) -> Result<usize, Error> 
         .prepare("SELECT original, moved_to FROM save_gather_files WHERE gather_id = ?1")?
         .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
-    let mut n = 0;
+    let mut n = Undone::default();
     for (original, moved) in &files {
         match crate::organize::move_file(Path::new(moved), Path::new(original)) {
-            Ok(_) => n += 1,
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
-                ) => {}
+            Ok(_) => n.back += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n.stayed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => n.missing += 1,
             Err(e) => return Err(e.into()),
         }
     }

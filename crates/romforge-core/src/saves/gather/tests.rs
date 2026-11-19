@@ -67,7 +67,16 @@ fn memory_cards_come_in_and_go_back() {
         "Saves/ from now on, though one stayed"
     );
 
-    assert_eq!(undo(&conn, &home, "duckstation").unwrap(), 1);
+    let u = undo(&conn, &home, "duckstation").unwrap();
+    assert_eq!(
+        u,
+        Undone {
+            back: 1,
+            stayed: 0,
+            missing: 0
+        }
+    );
+    assert_eq!(u.say(), "1 save file(s) put back where they were");
     assert!(cards.join("Final Fantasy VII_1.mcd").exists());
     assert!(!ps1.join("Final Fantasy VII_1.mcd").exists());
     assert!(undo(&conn, &home, "duckstation").is_err(), "nothing left to undo");
@@ -99,4 +108,40 @@ fn a_gathering_cut_short_moves_nothing() {
     assert!(!home.saves().join("PlayStation/A_1.mcd").exists());
     assert!(!gathered(&home, "duckstation"));
     assert!(undo(&conn, &home, "duckstation").is_err(), "nothing to undo");
+}
+
+/// A file put in a gathered save's old place since, or a gathered save
+/// removed since, is counted and named, not just left out of the count.
+#[test]
+fn undo_says_what_did_not_go_back() {
+    let t = tempfile::tempdir().unwrap();
+    let home = Home::create(&t.path().join("parent")).unwrap();
+    let conn = library(&[]);
+    let cards = home.emulator_config("duckstation").join("duckstation/memcards");
+    put(&cards.join("A_1.mcd"), b"a");
+    put(&cards.join("B_1.mcd"), b"b");
+    put(&cards.join("C_1.mcd"), b"c");
+    apply(&conn, "duckstation", &home, None).unwrap();
+    let saves = home.saves().join("PlayStation");
+    put(&cards.join("A_1.mcd"), b"new, same place"); // the old place is taken
+    std::fs::remove_file(saves.join("B_1.mcd")).unwrap(); // gone from Saves/
+    let u = undo(&conn, &home, "duckstation").unwrap();
+    assert_eq!(
+        u,
+        Undone {
+            back: 1,
+            stayed: 1,
+            missing: 1
+        }
+    );
+    assert_eq!(
+        std::fs::read(saves.join("A_1.mcd")).unwrap(),
+        b"a",
+        "stayed in Saves/"
+    );
+    assert_eq!(std::fs::read(cards.join("A_1.mcd")).unwrap(), b"new, same place");
+    assert_eq!(
+        u.say(),
+        "1 save file(s) put back where they were; 1 stayed in Saves/ because a file is in their old place; 1 were no longer in Saves/"
+    );
 }
