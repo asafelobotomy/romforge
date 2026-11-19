@@ -309,3 +309,16 @@ test("the overview says whether downloads are checked", () => {
   const on = { code: 0, output: { ...fx("overview"), scan_downloads: true } };
   assert.equal(L.overviewView(on).scanDownloads, true);
 });
+
+test("the open-with entry is installed and lists only ROM types", () => {
+  const desktop = readFileSync(join(repo, "packaging", "romforge-open.desktop"), "utf8");
+  assert.match(desktop, /^Exec=romforge-cli launch %f$/m);
+  assert.match(desktop, /^NoDisplay=true$/m);
+  assert.match(desktop, /^MimeType=application\/x-nes-rom;/m);
+  const pkgbuild = readFileSync(join(repo, "packaging", "aur", "PKGBUILD"), "utf8");
+  assert.ok(pkgbuild.includes("packaging/romforge-open.desktop"));
+  const conf = JSON.parse(readFileSync(join(repo, "app", "src-tauri", "tauri.conf.json"), "utf8"));
+  for (const kind of ["deb", "rpm"]) {
+    assert.equal(conf.bundle.linux[kind].files["/usr/share/applications/romforge-open.desktop"], "../../packaging/romforge-open.desktop", kind);
+  }
+});
