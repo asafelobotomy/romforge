@@ -26,6 +26,9 @@ jobs:
       - run: cargo fmt --all --check
       # romforge-provider's tests run its D-Bus interface on a private bus.
       - run: command -v dbus-daemon || (sudo apt-get update && sudo apt-get install -y dbus-daemon)
+      # MAME's chdman, which tests/psp_chd_format.rs checks a PSP CHD with
+      # (it is skipped where chdman is missing).
+      - run: sudo apt-get update && sudo apt-get install -y mame-tools
       # --locked: a Cargo.lock that doesn't fit Cargo.toml fails here.
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
