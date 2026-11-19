@@ -35,7 +35,7 @@ impl Library {
     }
 
     /// Put the last gathering of `emulator`'s saves back.
-    pub fn undo_gather_saves(&mut self, emulator: &str) -> Result<usize, Error> {
+    pub fn undo_gather_saves(&mut self, emulator: &str) -> Result<gather::Undone, Error> {
         let (home, e, _) = self.setup_target(emulator)?;
         not_running(e)?;
         gather::undo(&self.conn, home, e.settings_name())

@@ -65,8 +65,8 @@ pub async fn gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Res<(i6
 
 /// Put the last gathering back.
 #[tauri::command]
-pub async fn undo_gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Res<usize> {
-    with(&db, move |lib| lib.undo_gather_saves(&emulator)).await
+pub async fn undo_gather_saves(db: tauri::State<'_, Db>, emulator: String) -> Res<String> {
+    with(&db, move |lib| lib.undo_gather_saves(&emulator).map(|u| u.say())).await
 }
 
 /// Copy an emulator's saves that stay outside Saves/.

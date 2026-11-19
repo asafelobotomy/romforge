@@ -90,8 +90,8 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
 
 fn gather(lib: &mut Library, emulator: &str, apply: bool, undo: bool) -> Result<()> {
     if undo {
-        let n = lib.undo_gather_saves(emulator)?;
-        println!("{emulator}: {n} save file(s) put back where they were");
+        let u = lib.undo_gather_saves(emulator)?;
+        println!("{emulator}: {}", u.say());
         return Ok(());
     }
     let p = lib.gather_saves_plan(emulator)?;

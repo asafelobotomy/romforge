@@ -42,8 +42,8 @@
     const ok = await ask(`Put ${label}'s last gathered saves back where they were?`, { title: "Undo gathering", kind: "warning" });
     if (!ok) return;
     working = true;
-    const n = await run(`Putting ${label}'s saves back…`, "undo_gather_saves", { emulator });
-    if (n != null) note = `${n} of ${label}'s save files are back where they were.`;
+    const said = await run(`Putting ${label}'s saves back…`, "undo_gather_saves", { emulator });
+    if (said != null) note = `${label}: ${said}.`;
     working = false;
     await load();
   }
