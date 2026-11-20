@@ -3155,8 +3155,19 @@ Still open:
   | mGBA | `io.mgba.mGBA` | `setDesktopFileName` on every Unix build |
   | melonDS | `net.kuribo64.melonDS` | `setDesktopFileName` on every Unix build |
   | Cemu | its binary's name first (`Cemu_release` from a source build, `Cemu_relwithdebinfo` on Flathub, `cemu` where packaged so), then `info.cemu.Cemu` | `wxWlSetAppId`, called only after the main window is shown; `Cemu_release` added to the pattern |
-  | xemu, MAME, ScummVM | `xemu`, `mame`, `scummvm` | SDL with no app ID set: the binary's name |
+  | xemu | `app.xemu.xemu` (Wayland and X11) | seen running; it names itself |
+  | MAME, ScummVM | `mame`, `scummvm` | SDL with no app ID set: the binary's name |
 
+  *(Seen running 2026-11-20.)* The Arch builds, each started with no game
+  in a headless gamescope 3.17 and read with `WAYLAND_DEBUG=1` (Wayland)
+  and `xprop WM_CLASS` (Xwayland): mGBA (`mgba-qt` 0.10.5) `io.mgba.mGBA`,
+  X11 class `mGBA`; melonDS (`melonds-bin` 1.1) `net.kuribo64.melonDS`,
+  class `melonDS`; xemu (`xemu-bin` 0.8.139) `app.xemu.xemu` on both;
+  Cemu (`cemu-bin` 2.6) `cemu` then `info.cemu.Cemu`, class `Cemu`; MAME
+  (0.289) `mame` on both, and it stays on X11 unless given
+  `-videodriver wayland`; Dolphin (2609) never connects to Wayland, class
+  `dolphin-emu`. Every one is in the patterns. ScummVM is still to see
+  running.
   Dolphin's Flatpak runs the same code, so it reports `dolphin-emu` too,
   never `org.DolphinEmu.dolphin-emu`; the pattern already has both. The
   check is of source, not of a running window: a distribution that
