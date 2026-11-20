@@ -3184,9 +3184,19 @@ choice rather than a fault:
   features"). Left as they are, each by nature: the manual reader's marks
   and OCR are screen things; `launch --dry-run`, `oysterav PATH` and the
   read-only `games`/`overview`/`report` stay CLI-only, for scripts and uQ.
-- **Scans** re-read every file's row and stored matches on each scan,
-  even for one file (`identify/run.rs`); scoping that to the files
-  touched is a change of behaviour, so it waits for a measured need.
+- *(Measured 2026-11-19, left as it is.)* **Scans** re-read every file's
+  row and stored matches on each scan, even for one file
+  (`identify/run.rs`). `cargo test --release -p romforge-core --test
+  scan_cost -- --ignored --nocapture` times it on generated libraries
+  (small files, half of them in a DAT): a rescan with one new file takes
+  17 ms at 2,000 files, 105 ms at 10,000 and 454 ms at 40,000. The
+  re-reading (the identify step) is about 3 ms, 21 ms and 91 ms of that;
+  the rest is the folder walk and stat of every file, which scoping
+  wouldn't touch. Who owns a ROM and which copy is the duplicate depend
+  on every file, so a narrower pass would still need every file's matches.
+  A saving of under 0.1 s on a 40,000-file library doesn't pay for a
+  change of behaviour. Look again if a library of 200,000 files or more
+  rescans slowly.
 - *(Fixed 2026-11-19.)* **Saves gather undo** now also says how many
   files stayed in `Saves/` because their old place was taken, and how many
   were no longer there (CLI and app).
