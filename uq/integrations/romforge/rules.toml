@@ -7,7 +7,10 @@
 # themselves. Same seven emulators as before; DuckStation (Qt sets its
 # desktop file name to org.duckstation.DuckStation), Azahar
 # (org.azahar_emu.Azahar) and PPSSPP (org.ppsspp.PPSSPP) report those, not
-# their binary names, and the Flatpak ids are listed too.
+# their binary names, and the Flatpak ids are listed too. RetroArch sets
+# com.libretro.RetroArch on Wayland; Dolphin always runs under X11 (it
+# forces Qt's xcb platform) with the class dolphin-emu, Flatpak or not;
+# PCSX2 and RPCS3 set no app ID, so Qt reports pcsx2-qt and rpcs3.
 [[window_rule]]
 id = "romforge.emulators"
 class = [
@@ -23,10 +26,12 @@ fullscreen = true
 # native app ID and its Flatpak's. mGBA and melonDS set their desktop file
 # name themselves (io.mgba.mGBA, net.kuribo64.melonDS) on every Linux build;
 # the SDL ones (xemu, MAME, ScummVM) report their executable name, xemu its
-# Flatpak id. The Flathub Cemu build reports Cemu_relwithdebinfo.
+# Flatpak id. Cemu opens under its binary's name (the Flathub build
+# reports Cemu_relwithdebinfo, a source build Cemu_release) and only
+# then sets info.cemu.Cemu.
 [[window_rule]]
 id = "romforge.more-emulators"
 name = "More emulators open full screen"
-class = ['^(mgba-qt|mGBA|io\.mgba\.mGBA|melonDS|net\.kuribo64\.melonDS|xemu|app\.xemu\.xemu|Cemu|Cemu_relwithdebinfo|cemu|info\.cemu\.Cemu|mame|MAME|org\.mamedev\.MAME|scummvm|ScummVM|org\.scummvm\.ScummVM)$']
+class = ['^(mgba-qt|mGBA|io\.mgba\.mGBA|melonDS|net\.kuribo64\.melonDS|xemu|app\.xemu\.xemu|Cemu|Cemu_relwithdebinfo|Cemu_release|cemu|info\.cemu\.Cemu|mame|MAME|org\.mamedev\.MAME|scummvm|ScummVM|org\.scummvm\.ScummVM)$']
 workspace = "name:game"
 fullscreen = true

@@ -3134,10 +3134,33 @@ Still open:
 - *(Built 2026-11-19, to try.)* **More emulators in the rules**: mGBA,
   melonDS, xemu, Cemu, MAME and ScummVM are in a second rule,
   `romforge.more-emulators`, so `romforge.emulators` keeps its meaning
-  for those who turned it on. Their app IDs (native and Flatpak) come
-  from the launch table and the Flathub ids, not from a compositor:
-  check them with `hyprctl clients` while each runs. uQ's spec (3.3)
-  still lists the seven; a proposal to uQ is open.
+  for those who turned it on. uQ's spec (3.3) still lists the seven; a
+  proposal to uQ is open.
+  *(Checked against upstream sources 2026-11-20.)* The native app IDs of
+  both rules, read from each emulator's own code (main branches) and
+  the toolkits' rules for an app that sets none (Qt: its desktop file
+  name, else the binary's name with the organisation domain reversed in
+  front; SDL 2: `SDL_VIDEO_WAYLAND_WMCLASS`, else the binary's name;
+  SDL 3 and sdl2-compat: `SDL_HINT_APP_ID`, else `FLATPAK_ID`, else the
+  binary's name). Every emulator's native ID is in the patterns (one
+  added, Cemu's):
+
+  | Emulator | Native window reports | Where it is set |
+  |---|---|---|
+  | RetroArch | `com.libretro.RetroArch` (Wayland), `retroarch` (X11) | `gfx/common/wayland_common.h`, `x11_common.c` |
+  | DuckStation, PPSSPP, Azahar | as the rule's comment says | (checked before) |
+  | Dolphin | `dolphin-emu`, always under X11 | `DolphinQt/Main.cpp` forces `QT_QPA_PLATFORM=xcb`; Qt's X11 class is the application name `dolphin-emu` |
+  | PCSX2 | `pcsx2-qt` | no desktop file name or domain set, so the binary's name |
+  | RPCS3 | `rpcs3` | the same |
+  | mGBA | `io.mgba.mGBA` | `setDesktopFileName` on every Unix build |
+  | melonDS | `net.kuribo64.melonDS` | `setDesktopFileName` on every Unix build |
+  | Cemu | its binary's name first (`Cemu_release` from a source build, `Cemu_relwithdebinfo` on Flathub, `cemu` where packaged so), then `info.cemu.Cemu` | `wxWlSetAppId`, called only after the main window is shown; `Cemu_release` added to the pattern |
+  | xemu, MAME, ScummVM | `xemu`, `mame`, `scummvm` | SDL with no app ID set: the binary's name |
+
+  Dolphin's Flatpak runs the same code, so it reports `dolphin-emu` too,
+  never `org.DolphinEmu.dolphin-emu`; the pattern already has both. The
+  check is of source, not of a running window: a distribution that
+  renames a binary (MAME as `mame-sdl`, say) would need its name added.
 
 ## oysterAV (2026-11-16, built)
 
