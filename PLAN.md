@@ -3164,10 +3164,12 @@ Still open:
   X11 class `mGBA`; melonDS (`melonds-bin` 1.1) `net.kuribo64.melonDS`,
   class `melonDS`; xemu (`xemu-bin` 0.8.139) `app.xemu.xemu` on both;
   Cemu (`cemu-bin` 2.6) `cemu` then `info.cemu.Cemu`, class `Cemu`; MAME
-  (0.289) `mame` on both, and it stays on X11 unless given
-  `-videodriver wayland`; Dolphin (2609) never connects to Wayland, class
-  `dolphin-emu`. Every one is in the patterns. ScummVM is still to see
-  running.
+  (0.289) `mame` on both; Dolphin (2609) never connects to Wayland, class
+  `dolphin-emu`; ScummVM (2026.4.0, seen 2026-11-21) `scummvm` on both.
+  Every one is in the patterns. MAME and ScummVM draw on X11 unless
+  `SDL_VIDEODRIVER=wayland` reaches them, and gamescope 3.17 clears that
+  variable for the programs it starts, so set it inside (`gamescope --
+  env SDL_VIDEODRIVER=wayland …`) when testing there.
   Dolphin's Flatpak runs the same code, so it reports `dolphin-emu` too,
   never `org.DolphinEmu.dolphin-emu`; the pattern already has both. The
   check is of source, not of a running window: a distribution that
