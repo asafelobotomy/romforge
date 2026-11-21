@@ -26,7 +26,7 @@ fullscreen = true
 # native app ID and its Flatpak's. mGBA and melonDS set their desktop file
 # name themselves (io.mgba.mGBA, net.kuribo64.melonDS) on every Linux build;
 # xemu reports app.xemu.xemu, native or not; MAME and ScummVM (SDL) their
-# executable name. All but ScummVM seen running on Arch (2026-11-20). Cemu opens under its binary's name (the Flathub build
+# executable name. All seen running on Arch (2026-11-20 and 21). Cemu opens under its binary's name (the Flathub build
 # reports Cemu_relwithdebinfo, a source build Cemu_release) and only
 # then sets info.cemu.Cemu.
 [[window_rule]]
