@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: what software centres (GNOME Software, Discover, bindaru) show for the app. -->
+<component type="desktop-application">
+  <id>dev.romforge.app</id>
+  <name>romforge</name>
+  <summary>Identify, tidy and play your ROM collection</summary>
+  <description>
+    <p>romforge identifies the games in your ROM folders, names and sorts them, finds their cover art, and starts each one in the right emulator.</p>
+    <p>It knows dozens of systems, from home consoles and handhelds to arcade and home computers, and has a fullscreen mode for the couch.</p>
+  </description>
+  <launchable type="desktop-id">romforge.desktop</launchable>
+  <icon type="stock">romforge</icon>
+  <url type="homepage">https://github.com/asafelobotomy/romforge</url>
+  <url type="bugtracker">https://github.com/asafelobotomy/romforge/issues</url>
+  <developer id="io.github.asafelobotomy">
+    <name>asafelobotomy</name>
+  </developer>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <keywords>
+    <keyword>rom</keyword>
+    <keyword>emulator</keyword>
+    <keyword>retro</keyword>
+    <keyword>games</keyword>
+    <keyword>library</keyword>
+  </keywords>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.21.1" date="2026-11-21">
+      <description>
+        <p>One romforge per session: starting it again shows the window instead of a second copy.</p>
+      </description>
+    </release>
+    <release version="0.21.0" date="2026-11-21">
+      <description>
+        <p>New features and fixes.</p>
+      </description>
+    </release>
+    <release version="0.20.0" date="2026-11-19">
+      <description>
+        <p>New features and fixes.</p>
+      </description>
+    </release>
+  </releases>
+</component>
