@@ -55,6 +55,25 @@ fn scan_dry_run_keeps_nothing() {
 }
 
 #[test]
+fn scan_without_dats_says_how_to_get_them() {
+    // The app offers to download DATs before a scan when none is imported;
+    // off a terminal the CLI says how instead of asking, and scans anyway.
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("romforge.db");
+    let out = run_raw(&db, &["scan", ".", "-q"]);
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("no DATs are imported") && err.contains("dat download --all"),
+        "{err}"
+    );
+    // With one imported, nothing is said.
+    run(&db, &["dat", "import", "dats/nes.dat"]);
+    let out = run_raw(&db, &["scan", ".", "-q"]);
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("no DATs"));
+}
+
+#[test]
 fn favourites_are_added_listed_and_removed() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("romforge.db");

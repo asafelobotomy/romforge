@@ -34,6 +34,7 @@
   import { statusLabel } from "./labels.js";
   import { storedView, storeView, grouped, libraryRows, onPlatform, isGame } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
+  import { datsFirst } from "./datsFirst.js";
   import { ui, justBack } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
   import { padAction } from "./padnav.js";
@@ -127,9 +128,7 @@
 
   // A long job: queued behind the one running (footer, Jobs dialog);
   // resolves to its result, or null (failed, stopped or removed).
-  function run(label, cmd, args, opts) {
-    return queue(label, cmd, args, opts);
-  }
+  const run = (label, cmd, args, opts) => queue(label, cmd, args, opts);
 
   // The library's generation the page has: the list comes again only when
   // it changed.
@@ -215,9 +214,9 @@
   // Scan folder: "scan", "dry" (see what it holds first) or "advanced".
   async function scanWith(mode) {
     const dir = await chooseFolder(mode === "dry" ? "A folder to scan (dry run: nothing is kept until you say so)" : "A folder to scan");
-    if (!dir) return;
-    const go = mode === "advanced" ? await runOpts.ask("scan", dir) : { action: mode === "dry" ? "preview" : "scan" };
+    const go = dir && (mode === "advanced" ? await runOpts.ask("scan", dir) : { action: mode === "dry" ? "preview" : "scan" });
     if (!go) return;
+    await datsFirst(run); // no DAT yet: offer to download them first
     if (go.action === "preview") return previewer.show(dir, go.options);
     const r = await run(`Scanning ${dir}…`, "scan_folder", { dir, options: go.options });
     if (r) await scanned(r);
