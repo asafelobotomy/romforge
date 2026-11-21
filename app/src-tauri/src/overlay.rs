@@ -23,9 +23,6 @@ const PLAIN_SIZE: f64 = 600.0;
 /// Make the overlay, hidden, for a game starting (its page loads now, so
 /// it is ready when the ring opens).
 pub fn prepare(app: &AppHandle) {
-    if in_gamescope() {
-        fit_gamescope_output(app);
-    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if handle.get_webview_window(LABEL).is_none()
@@ -53,11 +50,6 @@ pub fn show(app: &AppHandle, on: bool) {
             return;
         }
         let _ = win.show();
-        if in_gamescope() {
-            // The game's output may have changed (a nested gamescope's
-            // window resized): measure it again and follow it.
-            fit_gamescope_output(&handle);
-        }
         // The window is mapped by the event loop a moment after `show`.
         let again = win.clone();
         std::thread::spawn(move || {
@@ -72,9 +64,12 @@ pub fn show(app: &AppHandle, on: bool) {
 }
 
 /// Whether the session is gamescope's (the provider starts the overlay on
-/// its X11 then, with gamescope's `WAYLAND_DISPLAY` left in place).
+/// its X11 then). gamescope 3.17 nested gives its programs only
+/// `GAMESCOPE_WAYLAND_DISPLAY`, no `WAYLAND_DISPLAY`; others set
+/// `WAYLAND_DISPLAY` to its socket.
 fn in_gamescope() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok_and(|w| w.starts_with("gamescope"))
+        || std::env::var("GAMESCOPE_WAYLAND_DISPLAY").is_ok_and(|w| !w.is_empty())
 }
 
 /// In gamescope only the focused window and windows marked as an external
@@ -105,32 +100,6 @@ fn mark_external_overlay(win: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "linux"))]
 fn mark_external_overlay(_: &tauri::WebviewWindow) {}
 
-/// gamescope's output size in pixels, last measured.
-static OUTPUT: std::sync::Mutex<Option<(u32, u32)>> = std::sync::Mutex::new(None);
-
-/// gamescope draws an external overlay unscaled, in its output's pixels,
-/// from the output's top-left corner. Its X screen (and so the monitor GDK
-/// reports) is the game's resolution (`-w`/`-h`), which is smaller than the
-/// output when the game is upscaled (720p on a 1080p screen): a window that
-/// size put the ring up and to the left of the middle. Measure the output
-/// off the main thread and size the window to it, so the ring (in the
-/// middle of the page) is in the middle of the screen.
-fn fit_gamescope_output(app: &AppHandle) {
-    let handle = app.clone();
-    std::thread::spawn(move || {
-        let Some(size) = gamescope_output() else {
-            return;
-        };
-        *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) = Some(size);
-        let again = handle.clone();
-        let _ = handle.run_on_main_thread(move || {
-            if let Some(win) = again.get_webview_window(LABEL) {
-                resize_to(&win, size);
-            }
-        });
-    });
-}
-
 fn resize_to(win: &tauri::WebviewWindow, (w, h): (u32, u32)) {
     let now = win.inner_size().ok().map(|s| (s.width, s.height));
     if now != Some((w, h)) {
@@ -139,13 +108,18 @@ fn resize_to(win: &tauri::WebviewWindow, (w, h): (u32, u32)) {
     }
 }
 
-/// gamescope's output size: `ROMFORGE_OVERLAY_SIZE` (`WIDTHxHEIGHT`) when
-/// set, else measured from a screenshot gamescope takes at the output's
-/// size (`gamescopectl screenshot PATH 2`: every real layer, which is
-/// drawn at the output's size; type 1 would be the game's own size). Only
-/// the PNG's header is read; the file, in `$XDG_RUNTIME_DIR`, is removed.
-/// gamescope publishes the size nowhere else a client can read: its X
-/// screen and its Wayland output are both the game's resolution.
+/// gamescope draws an external overlay unscaled, in its output's pixels,
+/// from the output's top-left corner. Its X screen (and so the monitor GDK
+/// reports) is the game's resolution (`-w`/`-h`), smaller than the output
+/// when the game is upscaled (720p on a 1080p screen): a window that size
+/// put the ring up and to the left of the middle. gamescope publishes the
+/// output's size nowhere a client can read (its X screen, its Wayland
+/// output and its screenshots are all the game's size), so it is worked
+/// out: `ROMFORGE_OVERLAY_SIZE` (`WIDTHxHEIGHT`) when set; else
+/// gamescope's own `-W`/`-H`; else, when it has `-w`/`-h` (and so may be
+/// upscaling), the connected screen's preferred mode, which gamescope
+/// takes on its own (DRM) and fills when fullscreen. `None`: the X
+/// screen's size, which is the output's when there is no `-w`/`-h`.
 fn gamescope_output() -> Option<(u32, u32)> {
     if let Some(size) = std::env::var("ROMFORGE_OVERLAY_SIZE")
         .ok()
@@ -153,60 +127,124 @@ fn gamescope_output() -> Option<(u32, u32)> {
     {
         return Some(size);
     }
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let path = dir.join(format!("romforge-overlay-{}.png", std::process::id()));
-    let _ = std::fs::remove_file(&path);
-    let ran = Command::new("gamescopectl")
-        .arg("screenshot")
-        .arg(&path)
-        .arg("2")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success());
-    if !ran {
-        return None;
+    let args = gamescope_args()?;
+    let size = GamescopeSize::from_args(&args);
+    if let Some(out) = size.output() {
+        return Some(out);
     }
-    // gamescope writes it on its own thread a frame or so later.
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let size = loop {
-        let mut head = [0u8; 24];
-        if let Ok(mut f) = std::fs::File::open(&path)
-            && f.read_exact(&mut head).is_ok()
-            && let Some(size) = png_size(&head)
-        {
-            break Some(size);
-        }
-        if Instant::now() > deadline {
-            break None;
-        }
-        std::thread::sleep(Duration::from_millis(40));
-    };
-    let _ = std::fs::remove_file(&path);
-    size
+    if size.nested {
+        return screen_mode();
+    }
+    None
 }
 
-/// `1920x1080` as (1920, 1080).
+/// The command line of the gamescope this runs in: the nearest ancestor
+/// process named `gamescope`.
+fn gamescope_args() -> Option<Vec<String>> {
+    let mut pid = std::process::id();
+    for _ in 0..64 {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // `pid (comm) state ppid ...`; comm may hold spaces and brackets.
+        let ppid: u32 = stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()?;
+        if ppid <= 1 {
+            return None;
+        }
+        pid = ppid;
+        let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+            continue;
+        };
+        let args: Vec<String> = cmdline
+            .split(|b| *b == 0)
+            .filter(|a| !a.is_empty())
+            .map(|a| String::from_utf8_lossy(a).into_owned())
+            .collect();
+        let name = args.first().map(|a| a.rsplit('/').next().unwrap_or(a));
+        if name == Some("gamescope") {
+            return Some(args);
+        }
+    }
+    None
+}
+
+/// What gamescope's command line says of its sizes.
+#[derive(Debug, Default, PartialEq)]
+struct GamescopeSize {
+    width: Option<u32>,
+    height: Option<u32>,
+    /// `-w`/`-h` given: the game's resolution may be below the output's.
+    nested: bool,
+}
+
+impl GamescopeSize {
+    /// Read up to `--`, after which is the game's own command line.
+    fn from_args(args: &[String]) -> Self {
+        let mut size = Self::default();
+        let mut it = args.iter().skip(1);
+        while let Some(arg) = it.next() {
+            if arg == "--" {
+                break;
+            }
+            let (flag, inline) = match arg.split_once('=') {
+                Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+                _ => match arg.as_str() {
+                    a if a.len() > 2 && a.starts_with('-') && !a.starts_with("--") => {
+                        (&a[..2], Some(a[2..].to_string()))
+                    }
+                    a => (a, None),
+                },
+            };
+            let which = match flag {
+                "-W" | "--output-width" => 'W',
+                "-H" | "--output-height" => 'H',
+                "-w" | "--nested-width" | "-h" | "--nested-height" => 'n',
+                _ => continue,
+            };
+            let value = inline.or_else(|| it.next().cloned());
+            let n = value.and_then(|v| v.parse::<u32>().ok()).filter(|n| *n > 0);
+            match which {
+                'W' => size.width = n,
+                'H' => size.height = n,
+                _ => size.nested |= n.is_some(),
+            }
+        }
+        size
+    }
+
+    /// The output's size as gamescope works it out from `-W`/`-H`: the
+    /// width is 16:9 of the height when only that is given.
+    fn output(&self) -> Option<(u32, u32)> {
+        let h = self.height?;
+        Some((self.width.unwrap_or(h * 16 / 9), h))
+    }
+}
+
+/// The preferred mode of the connected screen (DRM's sysfs: a connector
+/// that is connected and enabled, its first mode); the first one found
+/// where there are several.
+fn screen_mode() -> Option<(u32, u32)> {
+    let mut found: Vec<(bool, (u32, u32))> = std::fs::read_dir("/sys/class/drm")
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let dir = e.path();
+            let read = |f: &str| std::fs::read_to_string(dir.join(f)).ok();
+            if read("status")?.trim() != "connected" {
+                return None;
+            }
+            let enabled = read("enabled").is_some_and(|s| s.trim() == "enabled");
+            let mode = parse_size(read("modes")?.lines().next()?)?;
+            Some((enabled, mode))
+        })
+        .collect();
+    found.sort_by_key(|(enabled, _)| !enabled);
+    found.first().map(|(_, mode)| *mode)
+}
+
+/// `1920x1080` as (1920, 1080); a mode's `1920x1080i` too.
 fn parse_size(s: &str) -> Option<(u32, u32)> {
     let (w, h) = s.trim().split_once(['x', 'X'])?;
-    let (w, h) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
-    (w > 0 && h > 0).then_some((w, h))
-}
-
-/// A PNG's width and height, from its first 24 bytes (the signature, then
-/// the IHDR chunk).
-fn png_size(head: &[u8]) -> Option<(u32, u32)> {
-    if head.len() < 24 || &head[..8] != b"\x89PNG\r\n\x1a\n" || &head[12..16] != b"IHDR" {
-        return None;
-    }
-    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
-    let (w, h) = (be(&head[16..20]), be(&head[20..24]));
+    let h = h.trim().trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let (w, h) = (w.trim().parse().ok()?, h.parse().ok()?);
     (w > 0 && h > 0).then_some((w, h))
 }
 
@@ -215,8 +253,8 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     // In gamescope the ring is an external overlay, which gamescope draws
     // with its alpha, unscaled and at the output's origin whatever the
     // window's position (as MangoHud's mangoapp): a transparent window as
-    // big as the output, at 0,0, like the layer-shell one. Until the
-    // output is measured (`fit_gamescope_output`), the X screen's size.
+    // big as the output (`gamescope_output`), at 0,0, like the layer-shell
+    // one.
     let gamescope = !layered && in_gamescope();
     // Elsewhere without layer-shell: a small window in the middle of the
     // screen, on top, with an opaque page (`?plain`), because a fullscreen
@@ -252,7 +290,7 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         win = win.inner_size(PLAIN_SIZE, PLAIN_SIZE).center();
     }
     let win = win.build()?;
-    if gamescope && let Some(size) = *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) {
+    if gamescope && let Some(size) = gamescope_output() {
         resize_to(&win, size);
     }
     if layered {
@@ -350,27 +388,38 @@ mod layer {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_size, png_size};
+    use super::{GamescopeSize, parse_size};
+
+    fn args(line: &str) -> Vec<String> {
+        line.split(' ').map(String::from).collect()
+    }
 
     #[test]
     fn sizes_parse() {
         assert_eq!(parse_size("1920x1080"), Some((1920, 1080)));
         assert_eq!(parse_size(" 2560X1440 "), Some((2560, 1440)));
+        assert_eq!(parse_size("1920x1080i"), Some((1920, 1080)));
         assert_eq!(parse_size("1920"), None);
         assert_eq!(parse_size("0x1080"), None);
         assert_eq!(parse_size("wide x tall"), None);
     }
 
     #[test]
-    fn png_header_gives_the_size() {
-        let mut head = Vec::from(*b"\x89PNG\r\n\x1a\n");
-        head.extend_from_slice(&13u32.to_be_bytes());
-        head.extend_from_slice(b"IHDR");
-        head.extend_from_slice(&1920u32.to_be_bytes());
-        head.extend_from_slice(&1080u32.to_be_bytes());
-        assert_eq!(png_size(&head), Some((1920, 1080)));
-        assert_eq!(png_size(&head[..20]), None, "too short");
-        head[1] = b'J';
-        assert_eq!(png_size(&head), None, "not a PNG");
+    fn gamescope_args_give_the_output() {
+        let s = |l| GamescopeSize::from_args(&args(l));
+        let upscaled = s("gamescope --backend wayland -f -w 1280 -h 720 -W 1920 -H 1080 -- mpv -W 5");
+        assert_eq!(upscaled.output(), Some((1920, 1080)));
+        assert!(upscaled.nested);
+        let joined = s("/usr/bin/gamescope -w1280 -h720 --output-width=2560 --output-height=1440");
+        assert_eq!(joined.output(), Some((2560, 1440)));
+        // Only -H: 16:9 of it, as gamescope does.
+        assert_eq!(s("gamescope -H 1080 -- game").output(), Some((1920, 1080)));
+        // -w/-h without -W/-H: the screen's mode decides.
+        let nested = s("gamescope -w 1280 -h 720 -f -- game");
+        assert_eq!((nested.output(), nested.nested), (None, true));
+        // Nothing: the X screen is the output.
+        assert_eq!(s("gamescope -e -- steam -gamepadui"), GamescopeSize::default());
+        // The game's own flags after `--` are not gamescope's.
+        assert_eq!(s("gamescope -- game -H 600").output(), None);
     }
 }

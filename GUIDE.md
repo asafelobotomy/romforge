@@ -1464,13 +1464,16 @@ HUD. gamescope's X screen (and Wayland output) is the game's resolution
 (`-w`/`-h`), while it draws the overlay in the output's pixels, which are
 more when the game is upscaled (`-w 1280 -h 720` on a 1080p screen); a
 window the X screen's size put the ring up and to the left of the middle.
-gamescope publishes its output size nowhere a client can read, so the
-overlay measures it from a screenshot gamescope takes at the output's size
-(`gamescopectl screenshot PATH 2`, in `$XDG_RUNTIME_DIR`; only the PNG's
-header is read and the file is removed) when the game starts and each time
-the ring opens, and sizes its window to it.
-`ROMFORGE_OVERLAY_SIZE=WIDTHxHEIGHT` sets the size instead; without
-`gamescopectl` the window keeps the X screen's size. To check this, look
+gamescope publishes its output size nowhere a client can read (its
+screenshots are the game's size too), so the overlay works it out:
+`ROMFORGE_OVERLAY_SIZE=WIDTHxHEIGHT` when set; else gamescope's own
+`-W`/`-H`, read from its command line (the nearest ancestor process named
+`gamescope`); else, when gamescope has `-w`/`-h`, the connected screen's
+preferred mode (`/sys/class/drm`), which gamescope takes on its own and
+fills when fullscreen; else the X screen's size, which is the output's
+without `-w`/`-h`. The window is sized to it, at 0,0. gamescope 3.17
+nested gives its programs `GAMESCOPE_WAYLAND_DISPLAY` and no
+`WAYLAND_DISPLAY`; either one says the session is gamescope's. To check this, look
 at the screen (or `grim`): `gamescopectl screenshot` never includes
 external overlays, at any screenshot type, which is why earlier headless
 tests reported the ring as never drawn. The ring floats over the game

@@ -60,14 +60,17 @@ pub fn find_app(env: Option<PathBuf>, dirs: impl IntoIterator<Item = PathBuf>) -
 /// gamescope's own Wayland socket has no `wl_subcompositor` (and no
 /// layer-shell), and a GTK window there draws nothing, while through its
 /// Xwayland it shows. So: `$ROMFORGE_OVERLAY_BACKEND` if it says, else
-/// when `WAYLAND_DISPLAY` is gamescope's and there is an X display.
+/// when the session is gamescope's (`WAYLAND_DISPLAY` is its socket, or
+/// `GAMESCOPE_WAYLAND_DISPLAY` is set, all gamescope 3.17 nested gives its
+/// programs) and there is an X display.
 pub fn use_x11(var: impl Fn(&str) -> Option<String>) -> bool {
     match var(BACKEND_ENV).as_deref() {
         Some("x11") => return true,
         Some("wayland") => return false,
         _ => {}
     }
-    var("WAYLAND_DISPLAY").is_some_and(|w| w.starts_with("gamescope"))
+    (var("WAYLAND_DISPLAY").is_some_and(|w| w.starts_with("gamescope"))
+        || var("GAMESCOPE_WAYLAND_DISPLAY").is_some_and(|w| !w.is_empty()))
         && var("DISPLAY").is_some_and(|d| !d.is_empty())
 }
 
@@ -164,6 +167,11 @@ mod tests {
         let on = |p| use_x11(env(p));
         assert!(on(&[("WAYLAND_DISPLAY", "gamescope-0"), ("DISPLAY", ":1")]));
         assert!(!on(&[("WAYLAND_DISPLAY", "gamescope-0")]), "no X display to use");
+        // gamescope 3.17 nested: no WAYLAND_DISPLAY, only its own.
+        assert!(on(&[
+            ("GAMESCOPE_WAYLAND_DISPLAY", "gamescope-0"),
+            ("DISPLAY", ":1")
+        ]));
         assert!(!on(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0")]));
         assert!(!on(&[]));
         // Asked for by name, whatever the session is.
