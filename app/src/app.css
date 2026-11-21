@@ -78,13 +78,16 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .sortbar { display: flex; gap: 0.9rem; justify-content: center; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem; }
 .app .hint { color: var(--muted); font-size: 0.85rem; }
 .app .empty { padding: 2rem 1rem; color: var(--muted); text-align: center; }
-.app .badge { display: inline-block; padding: 0 0.4rem; border-radius: var(--radius-badge); font-size: 0.75rem; white-space: nowrap; background: var(--line); }
+/* A badge's background is a tint of its own text colour, so any status
+   colour stays readable on any theme's panels. */
+.app .badge { display: inline-block; padding: 0 0.4rem; border-radius: var(--radius-badge); font-size: 0.75rem; white-space: nowrap; background: color-mix(in srgb, currentColor 16%, transparent); }
 .app .badge.verified { color: var(--ok); }
 .app .badge.incomplete, .app .badge.candidate, .app .badge.duplicate { color: var(--warn); }
 .app .badge.unknown, .app .badge.wrong_system { color: var(--bad); }
 .app .wide { grid-column: 2 / 4; overflow: auto; padding: 0 0.75rem 1rem; }
 .app .bar { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; flex-wrap: wrap; }
 .app .bar input { flex: 1; min-width: 12rem; }
+.app .bar input:is([type="checkbox"], [type="radio"]) { flex: none; min-width: 0; }
 .app table { border-collapse: collapse; width: 100%; background: var(--panel); }
 .app th, .app td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.9rem; }
 .app th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 0.8rem; }
@@ -107,8 +110,10 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .app button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text, white); }
 .app .wide-dialog { width: min(48rem, calc(100vw - 2rem)); }
 /* A dialog with tabs: its title, tabs and buttons stay put; only the tab's
-   content scrolls, so a long tab never pushes Save out of reach. */
-.app .dialog.tall { display: flex; flex-direction: column; overflow: hidden; }
+   content scrolls, so a long tab never pushes Save out of reach. Its size is
+   fixed, so the tabs don't move as tabs of other lengths are picked, and wide
+   enough that the tabs keep to one or two rows. */
+.app .dialog.tall { display: flex; flex-direction: column; overflow: hidden; width: min(56rem, calc(100vw - 2rem)); height: min(46rem, calc(100vh - 2rem)); }
 .app .dialog.tall > .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -1.5rem; padding: 0 1.5rem; }
 .app .dialog.tall > .actions { flex: none; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .app .search-dialog { width: min(64rem, calc(100vw - 2rem)); }

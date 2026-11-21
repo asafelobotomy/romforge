@@ -32,7 +32,7 @@
   import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
-  import { storedView, storeView, grouped, libraryRows, isGame } from "./listing.js";
+  import { storedView, storeView, grouped, libraryRows, onPlatform, isGame } from "./listing.js";
   import { refreshNote, scanNote, cleanupNote, enrichNote } from "./notes.js";
   import { ui, justBack } from "./ui.svelte.js";
   import { listen } from "@tauri-apps/api/event";
@@ -183,6 +183,7 @@
 
   $effect(() => void (ui.biosPaths && untrack(() => show("bios")))); // "Import to BIOS…": its plan on the BIOS page
   $effect(() => void (ui.savesSystem && untrack(() => show("saves")))); // a game's saves: its system's tab
+  $effect(() => void (platform, untrack(() => selected && !onPlatform(sortedLib, platform, selected) && (selected = null)))); // another platform: Details empties unless its game is there too
 
   function show(v) {
     view = v;
