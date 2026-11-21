@@ -1,6 +1,7 @@
 <script>
   import { artSrc } from "./lib.js";
   import { iconSvg } from "./facts.js";
+  import UiIcon from "./UiIcon.svelte";
 
   // The platforms down the left (all games, each platform, the
   // unidentified files), and the Saves, DATs, BIOS and Organize screens at
@@ -46,10 +47,9 @@
     </button>
   {/each}
   <span class="spacer"></span>
-  <button class="plat small" class:active={view === "saves"} onclick={() => show("saves")}>Saves</button>
-  <button class="plat small" class:active={view === "dats"} onclick={() => show("dats")}>DATs</button>
-  <button class="plat small" class:active={view === "bios"} onclick={() => show("bios")}>BIOS</button>
-  <button class="plat small" class:active={view === "organize"} onclick={() => show("organize")}>Organize</button>
+  {#each [["saves", "Saves"], ["dats", "DATs"], ["bios", "BIOS"], ["organize", "Organize"]] as [key, label]}
+    <button class="plat small" class:active={view === key} onclick={() => show(key)}><UiIcon name={key} size={22} /><span class="pname">{label}</span></button>
+  {/each}
 </nav>
 
 <style>

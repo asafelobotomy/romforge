@@ -1,6 +1,7 @@
 <script>
   import SplitButton from "./SplitButton.svelte";
   import Wordmark from "./Wordmark.svelte";
+  import UiIcon from "./UiIcon.svelte";
 
   // The buttons along the top; the jobs themselves are App's, and the
   // dialogs' instances open theirs. Search, Enrich, Rename & Cleanup and
@@ -15,7 +16,7 @@
 <header class="toolbar">
   <span class="brand"><Wordmark height="1.75rem" /></span>
   <SplitButton
-    glyph="⟳"
+    icon="refresh"
     label="Refresh"
     title={canRefresh ? "Rescan the Source and Library folders from Settings (and the RomForge folder)" : "Set a Source folder first: Scan folder makes the first folder you scan your Source"}
     disabled={!!busy || !canRefresh}
@@ -23,7 +24,7 @@
     items={[{ label: "Refresh [advanced…]", title: "Skip the online lists, rescan every folder ever scanned, read every file again, or choose the threads", onclick: refreshAdvanced }]}
   />
   <SplitButton
-    glyph="＋"
+    icon="scan"
     label="Scan folder"
     title="Scan any folder (it doesn't become a setting; the very first one becomes your Source)"
     disabled={!!busy}
@@ -34,7 +35,7 @@
     ]}
   />
   <SplitButton
-    glyph="⌕"
+    icon="search"
     label="Search"
     title={n ? `Identify ${games} one by one: DAT title suggestions or your own title, and settle Wikidata matches` : pickFirst}
     disabled={!!busy || !n}
@@ -42,10 +43,10 @@
     items={[{ label: "Name as suggested…", title: "Name the selected files by their suggestions at once (translations as translations); you see the list first", onclick: () => naming.openNaming(chosen) }]}
   />
   <button class="tool" onclick={enrich} disabled={!!busy || !n} title={n ? `Fetch metadata and art for ${games}` : pickFirst}>
-    <span class="glyph">✦</span>Enrich
+    <UiIcon name="enrich" />Enrich
   </button>
   <SplitButton
-    glyph="✎"
+    icon="rename"
     label="Rename & Cleanup"
     title={n ? `See the plan to rename, repack and ${homeRoot ? "import" : "move"} ${games} (those identified), as Settings says; apply from the dialog, or use Apply now in the menu` : pickFirst}
     disabled={!!busy || !n}
@@ -53,27 +54,26 @@
     items={[{ label: "Rename & Cleanup [apply now]", title: "Do it straight away without showing the plan (Undo is in the dry-run dialog)", onclick: renameCleanup }]}
   />
   <button class="tool" onclick={() => cleanup.openCleanup(null, "convert", chosen)} disabled={!!busy || !n} title={n ? `Compress the disc images of ${games} where they are: CHD, RVZ, Z3DS or WUA (shows what it would do first)` : pickFirst}>
-    <span class="glyph">⇲</span>Convert
+    <UiIcon name="convert" />Convert
   </button>
   <span class="spacer"></span>
   <button class="tool" onclick={fullscreen} title="The fullscreen mode, for a game pad and a TV (F11; Back to desktop is in its Start menu)">
-    <span class="glyph">⛶</span>Fullscreen
+    <UiIcon name="fullscreen" />Fullscreen
   </button>
   <button class="tool" onclick={() => settings.openSettings()} disabled={!!busy} title="Source and Library folders, cleanup options">
-    <span class="glyph">⚙</span>Settings
+    <UiIcon name="settings" />Settings
   </button>
   <button class="tool" onclick={() => emulators.openEmulatorSettings()} disabled={!!busy} title="Settings for every emulator at once, and for each installed one">
-    <span class="glyph">⛭</span>Emulator Settings
+    <UiIcon name="emulators" />Emulator Settings
   </button>
   <button class="tool" onclick={play} disabled={!row || !row.playable || !!playing} title={playing ? "A game is running: stop it first" : "Start the selected game"}>
-    <span class="glyph">▶</span>Play
+    <UiIcon name="play" />Play
   </button>
 </header>
 
 <style>
   .brand { align-self: center; margin: 0 0.75rem 0 0.25rem; }
   .toolbar { display: flex; gap: 0.25rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--panel); }
-  .tool { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.2rem 0.6rem; font-size: 0.8rem; gap: 0.1rem; }
+  .tool { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.2rem 0.6rem; font-size: 0.8rem; gap: 0.2rem; }
   .tool:hover:not(:disabled) { background: var(--accent-bg); }
-  .glyph { font-size: 1.25rem; line-height: 1.2rem; }
 </style>
