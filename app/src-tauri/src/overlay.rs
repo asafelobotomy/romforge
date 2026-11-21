@@ -15,6 +15,8 @@
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+mod gamescope;
+
 const LABEL: &str = "overlay";
 
 /// The side of the window the ring has where there is no layer-shell.
@@ -64,9 +66,12 @@ pub fn show(app: &AppHandle, on: bool) {
 }
 
 /// Whether the session is gamescope's (the provider starts the overlay on
-/// its X11 then, with gamescope's `WAYLAND_DISPLAY` left in place).
+/// its X11 then). gamescope 3.17 nested gives its programs only
+/// `GAMESCOPE_WAYLAND_DISPLAY`, no `WAYLAND_DISPLAY`; others set
+/// `WAYLAND_DISPLAY` to its socket.
 fn in_gamescope() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok_and(|w| w.starts_with("gamescope"))
+        || std::env::var("GAMESCOPE_WAYLAND_DISPLAY").is_ok_and(|w| !w.is_empty())
 }
 
 /// In gamescope only the focused window and windows marked as an external
@@ -97,12 +102,21 @@ fn mark_external_overlay(win: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "linux"))]
 fn mark_external_overlay(_: &tauri::WebviewWindow) {}
 
+fn resize_to(win: &tauri::WebviewWindow, (w, h): (u32, u32)) {
+    let now = win.inner_size().ok().map(|s| (s.width, s.height));
+    if now != Some((w, h)) {
+        let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+        let _ = win.set_position(tauri::PhysicalPosition::new(0, 0));
+    }
+}
+
 fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let layered = layer::supported();
     // In gamescope the ring is an external overlay, which gamescope draws
     // with its alpha, unscaled and at the output's origin whatever the
     // window's position (as MangoHud's mangoapp): a transparent window as
-    // big as the screen, at 0,0, like the layer-shell one.
+    // big as the output (`gamescope::output`), at 0,0, like the layer-shell
+    // one.
     let gamescope = !layered && in_gamescope();
     // Elsewhere without layer-shell: a small window in the middle of the
     // screen, on top, with an opaque page (`?plain`), because a fullscreen
@@ -138,6 +152,9 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         win = win.inner_size(PLAIN_SIZE, PLAIN_SIZE).center();
     }
     let win = win.build()?;
+    if gamescope && let Some(size) = gamescope::output() {
+        resize_to(&win, size);
+    }
     if layered {
         #[cfg(target_os = "linux")]
         {
