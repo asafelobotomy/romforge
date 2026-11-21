@@ -79,6 +79,12 @@ fn main() {
         ArtRoots(Arc::new(RwLock::new(ArtRoots::of(&lib))))
     };
     tauri::Builder::default()
+        // First: a second start (the menu, a desktop launcher, while romforge
+        // sits in the tray) brings this window forward and exits, instead of
+        // a second library writer and a second tray icon.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tray::show_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol("art", {

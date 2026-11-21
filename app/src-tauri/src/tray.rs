@@ -89,7 +89,7 @@ fn tray(app: &AppHandle, game: &str) -> tauri::Result<()> {
 /// it still counts as minimised, it does nothing (tao). If the desktop
 /// still won't give it (Wayland's focus rules), its taskbar entry asks for
 /// attention.
-fn show_window(app: &AppHandle) {
+pub fn show_window(app: &AppHandle) {
     let Some(win) = window(app) else { return };
     let _ = win.show();
     let _ = win.unminimize();
