@@ -704,14 +704,18 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   libretro.
 - **ScummVM.** romforge asks the installed ScummVM (on `PATH` or the
   Flatpak) for its detection list once (Settings → **Read ScummVM's
-  list**) and keeps it in `Databases/`; it is ScummVM's data (GPL), made
+  list**; Scan folder, `romforge-cli scan` and Refresh read it by
+  themselves first when it is missing or another ScummVM made it, so its
+  games come out as one game each, not a row per data file) and keeps it
+  in `Databases/`; it is ScummVM's data (GPL), made
   on your machine and never shipped. A folder is a game when every file
   an entry lists is in it with that size and the MD5 of its first (or
   last) bytes, as ScummVM decides; such a game is "identified by
   ScummVM's list", never verified. The list leaves out the engines with
   their own detection (SCUMM: LucasArts and Humongous; SCI: Sierra; Beneath
   a Steel Sky; interactive fiction), so the same button also asks
-  ScummVM itself (`--detect --recursive`) about every scanned folder;
+  ScummVM itself (`--detect --recursive`) about every scanned folder
+  (a newly scanned one right after its scan);
   what it names is remembered with a fingerprint of the folder's files.
   Games are titled by libretro's `ScummVM.dat` name for their game id
   (with the version), which brings its box art, description, developer

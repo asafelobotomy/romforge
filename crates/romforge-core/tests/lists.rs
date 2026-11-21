@@ -189,3 +189,72 @@ fn refresh_reads_mame_s_list_when_mame_changed() {
     lists(&mut lib);
     assert_eq!(calls(&log, "-listxml"), 2, "a newer MAME");
 }
+
+/// Scan folder (and the CLI's `scan`) reads ScummVM's list first, so a
+/// game still in its zip, its files in a folder inside it as most
+/// downloads have them, is one game, not a row per data file; then
+/// ScummVM's --detect looks at the folder. The list isn't read again for
+/// the same ScummVM.
+#[test]
+fn scan_folder_reads_scummvm_s_list_first() {
+    use std::io::Write;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = Home::create(tmp.path()).unwrap();
+    let (unpacked, roms) = (tmp.path().join("unpacked"), tmp.path().join("roms"));
+    let list = tmp.path().join("list.dat");
+    std::fs::write(&list, sky(&unpacked)).unwrap();
+    std::fs::create_dir_all(&roms).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(roms.join("Steel Sky (CD).zip")).unwrap());
+    let opts = zip::write::SimpleFileOptions::default();
+    for (name, extra) in [
+        ("SKY.DNR", None),
+        ("SKY.DSK", None),
+        ("SETUP.EXE", Some(b"MZ".to_vec())),
+    ] {
+        zip.start_file(format!("Steel Sky (CD)/{name}"), opts).unwrap();
+        let data = extra.unwrap_or_else(|| std::fs::read(unpacked.join(name)).unwrap());
+        zip.write_all(&data).unwrap();
+    }
+    zip.finish().unwrap();
+    let (bin, log) = (tmp.path().join("bin"), tmp.path().join("calls"));
+    program(
+        &bin,
+        "scummvm",
+        &log,
+        &format!(
+            "case \"$1\" in\n--version) echo 'ScummVM 2.9.0 (Dec 2024)' ;;\n--dump-all-detection-entries) cat '{}' ;;\nesac",
+            list.display()
+        ),
+    );
+    let env = options(&bin).env.unwrap();
+    let mut lib = Library::open(home.db()).unwrap();
+
+    let scan = lib
+        .scan_folder_with_scummvm(&roms, None, &ScanOptions::default(), Some(&env), |_| {})
+        .unwrap();
+    assert!(
+        scan.lists.updated.iter().any(|u| u.starts_with("ScummVM's list")),
+        "{:?}",
+        scan.lists
+    );
+    assert_eq!(scan.report.hashed, 0, "{:?}", scan.report);
+    let rows = lib.library_view().unwrap().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].status, RowStatus::Detected);
+    assert!(rows[0].title.starts_with("Beneath a Steel Sky"), "{rows:?}");
+    // --detect was asked about the folder just scanned.
+    assert_eq!(calls(&log, "--detect"), 1);
+
+    let again = lib
+        .scan_folder_with_scummvm(
+            &roms,
+            Some(Scope::All),
+            &ScanOptions::default(),
+            Some(&env),
+            |_| {},
+        )
+        .unwrap();
+    assert!(again.lists.updated.is_empty(), "{:?}", again.lists);
+    assert_eq!(calls(&log, "--dump-all-detection-entries"), 1);
+    assert_eq!(lib.library_view().unwrap().rows.len(), 1);
+}

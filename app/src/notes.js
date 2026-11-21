@@ -13,9 +13,11 @@ export function refreshNote(r) {
 export function scanNote(r) {
   const report = r.report;
   const problems = [
+    ...(r.lists?.problems ?? []),
     ...report.errors.map(([path, member, e]) => `${member ? `${path}#${member}` : path}: ${e}`),
     ...report.sheet_problems.map(([path, e]) => `${path}: ${e}`),
   ];
+  const updated = r.lists?.updated ?? [];
   const kinds = report.skipped_kinds.slice(0, 6).map((k) => (k.ext ? `.${k.ext} ${k.count}` : `no extension ${k.count}`)).join(", ");
   // `became_source`: null (a Source was set already), {Ok: null}, or {Err: why}.
   const bs = r.became_source;
@@ -25,6 +27,7 @@ export function scanNote(r) {
       ? `; it couldn't become your Source folder: ${bs.Err}`
       : "";
   return (
+    (updated.length ? `Read ${updated.join(", ")}. ` : "") +
     `Scanned ${report.hashed} entries in ${report.root}${source}` +
     (report.in_games ? `; ${report.in_games} files of ScummVM games named by ScummVM's list, not hashed` : "") +
     (kinds ? `; skipped for their extension: ${kinds}${report.skipped_kinds.length > 6 ? ", …" : ""}` : "") +

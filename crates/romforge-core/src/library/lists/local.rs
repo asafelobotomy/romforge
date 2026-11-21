@@ -9,6 +9,35 @@ use super::{ListsReport, set_stamp, stamp};
 use crate::{Error, Library, launch, layout, scummvm, systems};
 
 impl Library {
+    /// ScummVM's part of a scan, run before it and again after it (Scan
+    /// folder in the app, `scan` in the CLI): its list when the installed
+    /// ScummVM isn't the one that made it (or there is none), so the scan
+    /// finds its games, a folder or the zip or 7z they came in, as one game
+    /// each instead of a row per data file; after the scan, ScummVM's
+    /// --detect of the folder just scanned (the engines its list leaves
+    /// out). Nothing without ScummVM, or for an in-memory library.
+    /// `env`: where to look for ScummVM; `None`, [`Library::env`].
+    pub fn scummvm_for_scan(&mut self, env: Option<&launch::Env>) -> ListsReport {
+        let mut report = ListsReport::default();
+        if self.extdb_dir().is_none() {
+            return report;
+        }
+        let env = match env {
+            Some(e) => e.clone(),
+            None => match self.env() {
+                Ok(e) => e,
+                Err(e) => {
+                    report.problems.push(format!("ScummVM: {e}"));
+                    return report;
+                }
+            },
+        };
+        if launch::installed(&env, "scummvm") {
+            self.scummvm_list_if_changed(&env, &mut report);
+        }
+        report
+    }
+
     /// ScummVM's list again when the installed ScummVM isn't the one that
     /// made it (or there is none); else only --detect for new folders.
     pub(super) fn scummvm_list_if_changed(&mut self, env: &launch::Env, report: &mut ListsReport) {
