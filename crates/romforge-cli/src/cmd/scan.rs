@@ -65,8 +65,18 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 );
                 return Ok(());
             }
+            // As the app's Scan folder: ScummVM's list first (and its
+            // --detect after), so its games are one game each.
+            let mut lists = lib.scummvm_for_scan(None);
             let report = lib.scan_with(&dir, scope, &opts, |p| meter.update(p))?;
             meter.finish();
+            lists.extend(lib.scummvm_for_scan(None));
+            for u in &lists.updated {
+                eprintln!("updated {u}");
+            }
+            for p in &lists.problems {
+                eprintln!("lists: {p}");
+            }
             print_problems(&report);
             let files = lib.files_under(&report.root)?;
             let root = report.root.to_string_lossy();

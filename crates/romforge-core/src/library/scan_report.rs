@@ -4,12 +4,14 @@ use std::path::PathBuf;
 
 use crate::view;
 
-/// What Scan folder did: the scan, and whether the folder became the
-/// Source (`Some(Err)`: it couldn't, and why).
+/// What Scan folder did: the scan, whether the folder became the Source
+/// (`Some(Err)`: it couldn't, and why), and what ScummVM's step read
+/// ([`Library::scummvm_for_scan`](crate::Library::scummvm_for_scan)).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FolderScan {
     pub report: ScanReport,
     pub became_source: Option<Result<(), String>>,
+    pub lists: crate::ListsReport,
 }
 
 /// What a scan would find ([`Library::scan_preview`](crate::Library::scan_preview)).

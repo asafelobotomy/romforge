@@ -31,6 +31,14 @@ pub struct ListsReport {
     pub problems: Vec<String>,
 }
 
+impl ListsReport {
+    /// Add what another step read and what failed in it.
+    pub fn extend(&mut self, other: ListsReport) {
+        self.updated.extend(other.updated);
+        self.problems.extend(other.problems);
+    }
+}
+
 /// How a lists step runs.
 #[derive(Debug, Clone, Default)]
 pub struct ListOptions {

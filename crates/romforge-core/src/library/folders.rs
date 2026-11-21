@@ -56,7 +56,27 @@ impl Library {
         Ok(FolderScan {
             report,
             became_source,
+            lists: Default::default(),
         })
+    }
+
+    /// The app's Scan folder: [`Library::scan_folder_scoped`] between the
+    /// two halves of [`Library::scummvm_for_scan`], so ScummVM's games come
+    /// out as one game each.
+    pub fn scan_folder_with_scummvm(
+        &mut self,
+        root: impl AsRef<Path>,
+        scope: Option<Scope>,
+        opts: &ScanOptions,
+        env: Option<&crate::launch::Env>,
+        progress: impl FnMut(ScanProgress),
+    ) -> Result<FolderScan, Error> {
+        let mut lists = self.scummvm_for_scan(env);
+        opts.cancel.check()?;
+        let mut scan = self.scan_folder_scoped(root, scope, opts, progress)?;
+        lists.extend(self.scummvm_for_scan(env));
+        scan.lists = lists;
+        Ok(scan)
     }
 
     /// Scan Folder's dry run: what scanning `root` would find, worked out on

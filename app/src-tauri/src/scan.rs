@@ -49,7 +49,8 @@ impl RunOptions {
     }
 }
 
-/// Scan folder: any folder (the first becomes the Source).
+/// Scan folder: any folder (the first becomes the Source), with ScummVM's
+/// list brought up to date around it so its games are one row each.
 #[tauri::command]
 pub async fn scan_folder(
     app: tauri::AppHandle,
@@ -61,7 +62,7 @@ pub async fn scan_folder(
     let mut job = Job::start(&app, job);
     let o = options.unwrap_or_default();
     with(&db, move |lib| {
-        lib.scan_folder_scoped(&dir, o.scope()?, &o.scan(&job), |p| job.step(p.step()))
+        lib.scan_folder_with_scummvm(&dir, o.scope()?, &o.scan(&job), None, |p| job.step(p.step()))
     })
     .await
 }
