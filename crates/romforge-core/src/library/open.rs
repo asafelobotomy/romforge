@@ -129,6 +129,15 @@ impl Library {
         report::summary(&self.conn)
     }
 
+    /// Whether any DAT is imported: without one a scan identifies nothing
+    /// (every file stays unknown), so the app and the CLI offer to download
+    /// them before a scan.
+    pub fn has_dats(&self) -> Result<bool, Error> {
+        Ok(self
+            .conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM dats)", [], |r| r.get(0))?)
+    }
+
     pub fn dat_games(&self, dat_id: i64) -> Result<Vec<DatGame>, Error> {
         identify::resolve_dat(&self.conn, dat_id)?;
         report::dat_games(&self.conn, dat_id)

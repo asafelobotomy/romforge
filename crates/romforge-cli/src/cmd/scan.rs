@@ -1,6 +1,6 @@
 //! `scan`, `refresh` and `report`.
 
-use std::io::IsTerminal;
+use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::{Result, bail};
 
@@ -8,6 +8,7 @@ use romforge_core::{Library, ScanOptions, Scope, Status};
 
 use crate::args::Command;
 use crate::print::{Progress, bytes, print_dats};
+use crate::subcommands::DatCommand;
 
 pub fn run(lib: &mut Library, command: Command) -> Result<()> {
     match command {
@@ -27,6 +28,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 }
                 Err(e) => return Err(e.into()),
             };
+            offer_dats(lib, quiet)?;
             let opts = ScanOptions {
                 all_files,
                 jobs: jobs.unwrap_or(0),
@@ -189,6 +191,44 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             print_dats(lib)?;
         }
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// With no DAT imported a scan identifies nothing (every file stays
+/// unknown), as the app's Scan folder warns too: at a terminal, offer to
+/// download them first (`dat download --all`); otherwise (a script, a pipe
+/// or `--quiet`), say how on stderr and scan as asked.
+fn offer_dats(lib: &mut Library, quiet: bool) -> Result<()> {
+    if lib.has_dats()? {
+        return Ok(());
+    }
+    let ask = !quiet && std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    if !ask {
+        eprintln!(
+            "note: no DATs are imported, so nothing can be identified; \
+             run `romforge-cli dat download --all` (files already scanned are identified then)"
+        );
+        return Ok(());
+    }
+    eprint!(
+        "No DATs are imported yet, so romforge can't identify any game: every file would \
+         stay unknown.\nDownload them first (a few minutes the first time)? [Y/n] "
+    );
+    std::io::stderr().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer)?;
+    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "" | "y" | "yes") {
+        return Ok(());
+    }
+    let download = Command::Dat(DatCommand::Download {
+        systems: Vec::new(),
+        all: true,
+        extras: false,
+    });
+    // Some sources failing still leaves the others' DATs: scan anyway.
+    if let Err(e) = super::dat::run(lib, download) {
+        eprintln!("warning: {e:#}; scanning with the DATs that did download");
     }
     Ok(())
 }

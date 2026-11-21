@@ -181,6 +181,7 @@ fn main() {
             library::summary,
             library::dat_games,
             dats::download_dats,
+            dats::has_dats,
             dats::import_dat_files,
             dats::nointro_status,
             dats::mame_dat,

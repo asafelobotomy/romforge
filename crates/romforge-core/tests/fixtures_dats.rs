@@ -17,6 +17,15 @@ use common::fixture_lib::*;
 use common::fixtures;
 
 #[test]
+fn has_dats_once_one_is_imported() {
+    // What Scan folder and `scan` ask before offering to download DATs.
+    let mut lib = Library::open_in_memory().unwrap();
+    assert!(!lib.has_dats().unwrap());
+    lib.import_dats(fixtures().join("dats/nes.dat"), None).unwrap();
+    assert!(lib.has_dats().unwrap());
+}
+
+#[test]
 fn zip_of_dats_imports_each_dat_from_memory() {
     let dir = tempfile::tempdir().unwrap();
     let pack = dir.path().join("pack.zip");

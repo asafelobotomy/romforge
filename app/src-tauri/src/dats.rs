@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use romforge_core::extdb::{ExtDb, ExtDbInfo};
 use romforge_core::{DatStatus, ImportedDat, Library};
 
-use crate::db::{Db, Res, in_folder, read_net, with, write_net};
+use crate::db::{Db, Res, in_folder, read, read_net, with, write_net};
 use crate::jobs::Job;
 
 #[derive(serde::Serialize)]
@@ -71,6 +71,13 @@ pub async fn mame_dat(db: tauri::State<'_, Db>) -> Res<romforge_core::ImportedDa
         lib.mame_dat(&env)
     })
     .await
+}
+
+/// Whether any DAT is imported; Scan folder offers to download them first
+/// when none is.
+#[tauri::command]
+pub async fn has_dats(db: tauri::State<'_, Db>) -> Res<bool> {
+    read(&db, move |lib| lib.has_dats()).await
 }
 
 /// `systems`: only these platforms (their keys; Advanced), else every

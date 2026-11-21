@@ -90,6 +90,11 @@ create` made one), else `$XDG_DATA_HOME/romforge/romforge.db`
 are new) on a throwaway copy of the library and keeps nothing, as the app's
 Scan folder [dry run] does.
 
+While no DAT is imported, `scan` (as the app's Scan folder) offers to
+download them first (`dat download --all`) at a terminal; in a script or
+with `-q` it only says so on stderr. Files scanned without DATs are
+identified once DATs are imported, without a rescan.
+
 Rescans are incremental: a file whose size and modification time haven't
 changed since it was hashed keeps its hashes (`--rehash` reads everything
 again). A scan writes each file (an archive with all its members) once it
@@ -929,6 +934,9 @@ The toolbar:
   throwaway copy of the library and lists what it holds (verified,
   candidate, unknown; what's new), then scans it for real or not as you
   say.
+  While no DAT is imported, Scan folder first offers to download them
+  (as **Download DATs for all systems** on the DATs page does), since without one every
+  file stays unidentified; either way the scan goes ahead after.
 - **Rename & Cleanup** shows the plan first (Undo and Empty trash are
   there too). **Rename & Cleanup [apply now]** on the ▾ menu does the
   whole job at once: every identified game renamed by its DAT, repacked
