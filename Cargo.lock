@@ -3575,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-app"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "gtk",
  "libloading 0.9.1",
@@ -3587,13 +3587,14 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tempfile",
  "zbus 5.19.0",
 ]
 
 [[package]]
 name = "romforge-cli"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3606,7 +3607,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-core"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "chd",
  "crc32fast",
@@ -3638,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-provider"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "romforge-core",
  "serde_json",
@@ -4644,6 +4645,22 @@ dependencies = [
  "thiserror 2.0.21",
  "url",
  "windows",
+ "zbus 5.19.0",
+]
+
+[[package]]
+name = "tauri-plugin-single-instance"
+version = "2.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "726b6da0dd5bd1344f84f4108a622c07d01923baacb5c803a605189672c5352f"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
  "zbus 5.19.0",
 ]
 
