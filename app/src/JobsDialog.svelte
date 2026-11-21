@@ -56,7 +56,7 @@
 {/if}
 
 <style>
-  .job { display: grid; gap: 0.35rem; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 8px; }
+  .job { display: grid; gap: 0.35rem; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: var(--radius); }
   .head { display: flex; align-items: center; gap: 0.5rem; }
   .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .num { color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -116,11 +116,11 @@
 <style>
   .picker { width: min(60rem, calc(100vw - 2rem)); }
   .now { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; margin-bottom: 0.6rem; }
-  .now img { max-height: 9rem; max-width: 100%; border-radius: 6px; }
+  .now img { max-height: 9rem; max-width: 100%; border-radius: var(--radius-control); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem; }
-  .choice { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.35rem; border: 2px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; }
+  .choice { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.35rem; border: 2px solid var(--line); border-radius: var(--radius); background: var(--panel); cursor: pointer; }
   .choice:hover:not(:disabled) { border-color: var(--accent); }
   .choice.current { border-color: var(--ok); cursor: default; }
-  .choice img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: #0003; }
+  .choice img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--radius-small); background: #0003; }
   .src { font-size: 0.75rem; color: var(--muted); text-align: center; }
 </style>

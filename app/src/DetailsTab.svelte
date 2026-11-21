@@ -206,16 +206,16 @@
   .shot img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   figure { margin: 0; }
   figcaption { font-size: 0.72rem; color: var(--muted); padding: 0.2rem 0.1rem 0; line-height: 1.3; }
-  figure.empty span { display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); font-size: 0.8rem; border: 1px dashed var(--line); border-radius: 6px; }
+  figure.empty span { display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); font-size: 0.8rem; border: 1px dashed var(--line); border-radius: var(--radius-control); }
   .fanart { margin-bottom: 0.75rem; }
   .fanart .shot { margin: 0 auto; }
   .shot.pick { position: relative; cursor: pointer; }
-  .shot.pick .change { position: absolute; right: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.55rem; border-radius: 4px; background: #000a; color: #fff; font-size: 0.75rem; line-height: 1.4; opacity: 0; transition: opacity 0.15s; }
+  .shot.pick .change { position: absolute; right: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-small); background: #000a; color: #fff; font-size: 0.75rem; line-height: 1.4; opacity: 0; transition: opacity 0.15s; }
   .shot.pick:hover .change, .shot.pick:focus-visible .change { opacity: 1; }
-  .emptypick { width: 100%; height: 3rem; border: 1px dashed var(--line); border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  .emptypick { width: 100%; height: 3rem; border: 1px dashed var(--line); border-radius: var(--radius-control); background: none; color: var(--muted); cursor: pointer; }
   .emptypick:hover { color: var(--accent); border-color: var(--accent); }
   .logo-pick { margin: 0 0 0.45rem; height: 2.5rem; }
-  .fanart .shot img { max-height: 16rem; border-radius: 6px; }
+  .fanart .shot img { max-height: 16rem; border-radius: var(--radius-control); }
   .fanart.empty span { height: 5rem; }
   /* Portrait (most boxes) and landscape (SNES, N64) both fit: the cover
      takes the width its own aspect needs, up to 45% of the panel. */
@@ -229,7 +229,7 @@
     .lead { grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem); }
     .lead .infobox { justify-self: stretch; }
   }
-  .infobox { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0.55rem 0.7rem 0.35rem; font-size: 0.85rem; }
+  .infobox { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 0.55rem 0.7rem 0.35rem; font-size: 0.85rem; }
   .infobox .logo { display: flex; justify-content: center; padding: 0.2rem 0 0.55rem; }
   .infobox .logo .shot img { max-height: 4.5rem; }
   .ibtitle { margin: 0 0 0.45rem; font-weight: 600; text-align: center; }
@@ -249,21 +249,21 @@
   .art .fanart { margin: 0; width: 100%; }
   .art .fanart .shot img { max-height: 12rem; }
   .cover { flex: 0 1 auto; max-width: 100%; }
-  .cover .shot img { border-radius: 4px; max-height: 15rem; margin: 0; }
+  .cover .shot img { border-radius: var(--radius-small); max-height: 15rem; margin: 0; }
   .cover.empty span { height: 14rem; }
   .facts dd.icons { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-  .genre { display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 6px; background: var(--accent-bg); color: var(--accent); cursor: help; }
+  .genre { display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: var(--radius-control); background: var(--accent-bg); color: var(--accent); cursor: help; }
   .gname { color: var(--muted); font-size: 0.85rem; }
   .flag { font-size: 1.35rem; line-height: 1; cursor: help; font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; }
   .logos { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-  .studio { max-height: 2.2rem; max-width: 8rem; object-fit: contain; background: #fff; border-radius: 4px; padding: 0.15rem 0.3rem; }
+  .studio { max-height: 2.2rem; max-width: 8rem; object-fit: contain; background: #fff; border-radius: var(--radius-small); padding: 0.15rem 0.3rem; }
   /* Drawn here, not the ESRB's own artwork: the letter in a white box with
      a black rim, as the rating marks look. */
   .facts dd.releases { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85em; }
   .credit { margin-top: -0.4rem; }
   .linkish { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; font: inherit; }
   .linkish:hover { text-decoration: underline; }
-  .esrb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 2rem; padding: 0 0.15rem; box-sizing: border-box; height: 2.6rem; background: #fff; color: #000; border: 2px solid #000; outline: 1px solid #fff; border-radius: 2px; line-height: 1; cursor: help; }
+  .esrb { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 2rem; padding: 0 0.15rem; box-sizing: border-box; height: 2.6rem; background: #fff; color: #000; border: 2px solid #000; outline: 1px solid #fff; border-radius: var(--radius-tiny); line-height: 1; cursor: help; }
   .esrb b { font-size: 1.15rem; font-family: Arial, Helvetica, sans-serif; font-weight: 900; }
   .esrb small { font-size: 0.45rem; font-weight: 700; letter-spacing: 0.03em; margin-top: 0.15rem; }
   .stars { position: relative; display: inline-block; color: var(--line); letter-spacing: 0.08em; font-size: 1.05rem; line-height: 1; }

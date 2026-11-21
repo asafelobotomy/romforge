@@ -84,11 +84,11 @@
   .tabs button.active { border-bottom-color: var(--accent); color: var(--accent); }
   .count { font-size: 0.75em; opacity: 0.75; }
   .files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; }
-  .files li { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.55rem; border: 1px solid var(--line); border-radius: 6px; }
+  .files li { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.55rem; border: 1px solid var(--line); border-radius: var(--radius-control); }
   .name { font-weight: 600; overflow-wrap: anywhere; }
   .meta { color: var(--muted); }
   .states { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.6rem; }
-  .state { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; font-size: 0.8rem; }
+  .state { margin: 0; border: 1px solid var(--line); border-radius: var(--radius-control); overflow: hidden; display: flex; flex-direction: column; font-size: 0.8rem; }
   .state img, .noshot { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: grid; place-items: center; background: var(--accent-bg, #8883); }
   .noshot { color: var(--muted); font-weight: 700; }
   figcaption { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.35rem 0.5rem; }

@@ -54,14 +54,14 @@
 
 <style>
   .platforms { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.4rem; border-right: 1px solid var(--line); overflow-y: auto; }
-  .plat { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.4rem 0.2rem; border-radius: 6px; gap: 0.15rem; }
+  .plat { display: flex; flex-direction: column; align-items: center; border: none; padding: 0.4rem 0.2rem; border-radius: var(--radius-control); gap: 0.15rem; }
   .plat:hover { background: var(--accent-bg); }
   .plat.active { background: var(--accent); color: var(--accent-text, white); }
   .plat.small { font-size: 0.8rem; padding: 0.3rem; }
-  .icon { width: 3rem; height: 2.2rem; border-radius: 6px; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; color: white; background: #6b7078; }
+  .icon { width: 3rem; height: 2.2rem; border-radius: var(--radius-control); display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; color: white; background: #6b7078; }
   .picon { width: 3rem; height: 2.4rem; object-fit: contain; }
   /* Logos are often dark lettering on nothing: on a light tile. */
-  .picon.logo { box-sizing: border-box; padding: 0.2rem 0.25rem; background: #f4f4f4; border-radius: 6px; }
+  .picon.logo { box-sizing: border-box; padding: 0.2rem 0.25rem; background: #f4f4f4; border-radius: var(--radius-control); }
   .icon[data-maker="Nintendo"] { background: #c62828; }
   .icon[data-maker="Sega"] { background: #1e5bb8; }
   .icon[data-maker="Sony"] { background: #3d3d48; }

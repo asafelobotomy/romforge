@@ -189,7 +189,7 @@
 {/if}
 
 <style>
-  .extdbs { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+  .extdbs { border: 1px solid var(--line); border-radius: var(--radius-control); padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
   .extdbs h3 { font-size: 0.95rem; margin: 0 0 0.2rem; }
   .extdbs ul { list-style: none; padding: 0; margin: 0.4rem 0 0; }
   .extdbs li { padding: 0.4rem 0; border-top: 1px solid var(--line); }

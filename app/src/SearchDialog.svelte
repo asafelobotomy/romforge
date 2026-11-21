@@ -305,14 +305,14 @@
   .sform label { font-weight: 600; font-size: 0.9rem; }
   .sform .pick select { max-width: 16rem; }
   .sgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) 9.5rem minmax(0, 1fr); gap: 0.75rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
-  .stable { border: 1px solid var(--line); border-radius: 4px; height: 17rem; overflow-y: auto; font-size: 0.85rem; }
+  .stable { border: 1px solid var(--line); border-radius: var(--radius-small); height: 17rem; overflow-y: auto; font-size: 0.85rem; }
   .srow { display: grid; grid-template-columns: minmax(0, 1fr) 3rem 5.5rem 5.5rem 2.6rem; gap: 0.4rem; padding: 0.2rem 0.5rem; cursor: default; align-items: baseline; }
   .srow:nth-child(even):not(.shead) { background: color-mix(in srgb, var(--line) 35%, transparent); }
   .srow.sel { background: var(--accent-bg); }
   .srow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .shead { position: sticky; top: 0; background: var(--panel); color: var(--muted); border-bottom: 1px solid var(--line); font-size: 0.8rem; }
   .stable .empty { padding: 0.5rem; }
-  .sposter { height: 13rem; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .sposter { height: 13rem; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--radius-small); overflow: hidden; }
   .sposter img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .sinfo { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; max-height: 17rem; overflow-y: auto; }
   .sinfo .desc { font-size: 0.85rem; color: var(--muted); }
@@ -322,7 +322,7 @@
   .own label { font-size: 0.85rem; font-weight: 600; }
   .flabel { font-weight: 600; font-size: 0.9rem; }
   .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0; }
-  .chip { padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.8rem; opacity: 0.6; }
+  .chip { padding: 0.1rem 0.5rem; border-radius: var(--radius-badge); font-size: 0.8rem; opacity: 0.6; }
   .chip.on { opacity: 1; background: var(--accent-bg); }
   @media (max-width: 52rem) {
     .sgrid { grid-template-columns: 1fr; }

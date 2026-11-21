@@ -98,7 +98,7 @@
 </section>
 
 <style>
-  .plan { padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .plan { padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--bg); }
   .plan ul { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.8rem; }
   .warn { color: var(--warn); }
   .bad { color: var(--bad); }

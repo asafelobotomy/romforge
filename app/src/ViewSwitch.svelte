@@ -13,7 +13,7 @@
 </div>
 
 <style>
-  .views { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .views { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-control); overflow: hidden; }
   .views button { border: none; border-radius: 0; padding: 0.25rem 0.55rem; font-size: 0.8rem; background: none; color: var(--muted); }
   .views button + button { border-left: 1px solid var(--line); }
   .views button.active { background: var(--accent); color: #fff; }

@@ -53,6 +53,6 @@
   .keys { border-collapse: collapse; margin: 0.4rem 0 0.8rem; }
   .keys td { padding: 0.3rem 0.7rem 0.3rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   .chord { white-space: nowrap; }
-  kbd { padding: 0.05rem 0.35rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: inherit; font-size: 0.85rem; font-weight: 600; }
+  kbd { padding: 0.05rem 0.35rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--panel); font: inherit; font-size: 0.85rem; font-weight: 600; }
   .support { margin: 0.2rem 0; padding-left: 1.1rem; }
 </style>

@@ -201,8 +201,8 @@
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   .marks { position: absolute; inset: 0; pointer-events: none; }
   .mark { position: absolute; }
-  .mark.highlight { mix-blend-mode: multiply; border-radius: 2px; }
-  .mark.area { border: 2px dashed; border-radius: 3px; }
+  .mark.highlight { mix-blend-mode: multiply; border-radius: var(--radius-tiny); }
+  .mark.area { border: 2px dashed; border-radius: var(--radius-badge); }
   .mark.highlight.yellow { background: #f0b81d80; }
   .mark.highlight.red { background: #d8312f55; }
   .mark.highlight.green { background: #1f9b4f55; }
@@ -218,13 +218,13 @@
   .blue { --c: #3b5ab0; }
   .pin, .dot { background: var(--c); }
   .drag { position: absolute; z-index: 3; border: 2px dashed var(--accent); background: #3b5ab022; pointer-events: none; }
-  .pop { position: absolute; z-index: 4; width: 240px; display: grid; gap: 0.4rem; padding: 0.5rem; border-radius: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); box-shadow: 0 6px 20px #0006; }
+  .pop { position: absolute; z-index: 4; width: 240px; display: grid; gap: 0.4rem; padding: 0.5rem; border-radius: var(--radius); background: var(--panel); color: var(--text); border: 1px solid var(--line); box-shadow: 0 6px 20px #0006; }
   .pop textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
   .dots { display: flex; gap: 0.35rem; }
   .dot { width: 1.3rem; height: 1.3rem; padding: 0; border-radius: 50%; border: 2px solid transparent; }
   .dot.on { border-color: var(--text); }
   .acts { display: flex; justify-content: flex-end; gap: 0.4rem; }
-  .reading { position: absolute; z-index: 3; top: 0.5rem; right: 0.5rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: #000a; color: #fff; font-size: 0.8rem; }
+  .reading { position: absolute; z-index: 3; top: 0.5rem; right: 0.5rem; padding: 0.15rem 0.5rem; border-radius: var(--radius-small); background: #000a; color: #fff; font-size: 0.8rem; }
 
   /* pdf.js's text layer: invisible text placed over the drawn page (its
      own rules, the part romforge needs). */
@@ -232,7 +232,7 @@
   .textLayer :global(span), .textLayer :global(br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
   .textLayer > :global(:not(.markedContent)), .textLayer :global(.markedContent span:not(.markedContent)) { --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
   .textLayer :global(.markedContent) { display: contents; }
-  .textLayer :global(span.hit) { background: #3b5ab055; border-radius: 2px; }
+  .textLayer :global(span.hit) { background: #3b5ab055; border-radius: var(--radius-tiny); }
   .textLayer :global(::selection) { background: #3b5ab055; color: transparent; }
   .textLayer :global(.endOfContent) { display: block; position: absolute; inset: 100% 0 0; user-select: none; cursor: default; }
   .textLayer:global(.selecting) :global(.endOfContent) { top: 0; }

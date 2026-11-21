@@ -56,7 +56,7 @@
   .role { margin: 0.5rem 0 0.3rem; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
   .cards { display: flex; flex-wrap: wrap; gap: 0.9rem; justify-content: center; margin-bottom: 0.4rem; }
   .credit { width: 7.5rem; display: flex; flex-direction: column; align-items: center; }
-  .credit .face { width: 6rem; height: 6rem; padding: 0.35rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; display: grid; place-items: center; cursor: pointer; }
+  .credit .face { width: 6rem; height: 6rem; padding: 0.35rem; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: #fff; display: grid; place-items: center; cursor: pointer; }
   .credit.photo .face { border-radius: 50%; padding: 0; overflow: hidden; }
   .credit img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .credit.photo img { width: 100%; height: 100%; object-fit: cover; object-position: top; }

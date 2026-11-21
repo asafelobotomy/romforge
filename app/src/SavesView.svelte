@@ -88,7 +88,7 @@
 <style>
   .saves { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.2rem 0 0.4rem; }
-  .tabs button { border-radius: 6px; padding: 0.25rem 0.6rem; }
+  .tabs button { border-radius: var(--radius-control); padding: 0.25rem 0.6rem; }
   .tabs button.active { background: var(--accent); color: var(--accent-text, white); }
   .count { font-size: 0.75em; opacity: 0.75; }
   .split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(16rem, 1fr); gap: 0.4rem; }

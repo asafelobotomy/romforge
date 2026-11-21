@@ -200,7 +200,7 @@
 </section>
 
 <style>
-  .manual { display: flex; flex-direction: column; min-height: 26rem; height: calc(100vh - 16rem); border: 2px dashed transparent; border-radius: 8px; }
+  .manual { display: flex; flex-direction: column; min-height: 26rem; height: calc(100vh - 16rem); border: 2px dashed transparent; border-radius: var(--radius); }
   .manual.over { border-color: var(--accent); background: var(--accent-bg); }
   .empty { padding: 1rem 0.5rem; display: grid; gap: 0.6rem; justify-items: start; }
   .empty p { margin: 0; }

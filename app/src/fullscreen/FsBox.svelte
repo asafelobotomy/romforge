@@ -110,7 +110,7 @@
   .drawn-back { display: grid; align-content: start; gap: calc(var(--bh) * 0.025); padding: 7%; background: color-mix(in srgb, var(--c) 35%, #111); color: #f4f0e8; font-size: calc(var(--bh) * 0.026); line-height: 1.4; }
   .drawn-back h2 { margin: 0; font-size: 1.8em; line-height: 1.1; }
   .shots { display: grid; grid-auto-flow: column; gap: 4%; }
-  .shots img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 2px; box-shadow: 0 2px 6px #0008; }
+  .shots img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-tiny); box-shadow: 0 2px 6px #0008; }
   .blurb { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 9; overflow: hidden; }
   .facts { margin: 0; opacity: 0.8; font-size: 0.9em; }
   @media (prefers-reduced-motion: reduce) {
