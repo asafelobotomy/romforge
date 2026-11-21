@@ -63,12 +63,25 @@ impl Session {
     pub fn start(spec: &LaunchSpec) -> Result<Session, Error> {
         super::running::not_twice(spec)?;
         prepare(&spec.prepare)?;
-        let child = std::process::Command::new(&spec.program)
-            .args(&spec.args)
+        let mut cmd = std::process::Command::new(&spec.program);
+        cmd.args(&spec.args)
             .envs(spec.env.iter().map(|(k, v)| (k, v)))
-            .stdin(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| Error::Launch(format!("{}: {e}", spec.program.display())))?;
+            .stdin(std::process::Stdio::null());
+        // Again a few times while it is "text file busy": a program only
+        // just written (an emulator being installed or updated, a test's
+        // stand-in) can be held open for writing by another thread's fork
+        // until that child execs, which is over in moments.
+        let mut tries = 0;
+        let child = loop {
+            match cmd.spawn() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
+                    tries += 1;
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                other => break other,
+            }
+        }
+        .map_err(|e| Error::Launch(format!("{}: {e}", spec.program.display())))?;
         let started = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
