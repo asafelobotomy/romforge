@@ -126,7 +126,7 @@
     padding: 0;
     overflow: hidden;
     border: 0;
-    border-radius: 2px;
+    border-radius: var(--radius-tiny);
     background: linear-gradient(90deg, color-mix(in srgb, var(--c) 70%, #000), var(--c) 20%, var(--c) 80%, color-mix(in srgb, var(--c) 60%, #000));
     box-shadow: inset 0 0 0 1px #0004;
     cursor: pointer;
@@ -151,7 +151,7 @@
   .box.focus { outline: 0.4vh solid var(--fs-focus); outline-offset: 0.3vh; }
   .star { position: absolute; top: 0.4vh; left: 50%; translate: -50% 0; color: var(--fs-accent); font-size: calc(1.8vh * var(--fs-scale)); text-shadow: 0 0 0.6vh #000; }
   /* A brass name plate on the board. */
-  .plate { padding: 0.2vh 1.2vw; border-radius: 2px; background: linear-gradient(180deg, var(--fs-shelf-plate, #e8cf8a), color-mix(in srgb, var(--fs-shelf-plate, #e8cf8a) 65%, #6b4400)); color: var(--fs-shelf-plate-text, #3a2a10); font-size: calc(1.6vh * var(--fs-scale)); font-weight: 600; white-space: nowrap; box-shadow: 0 1px 2px #0008, inset 0 1px 0 #fff8; }
+  .plate { padding: 0.2vh 1.2vw; border-radius: var(--radius-tiny); background: linear-gradient(180deg, var(--fs-shelf-plate, #e8cf8a), color-mix(in srgb, var(--fs-shelf-plate, #e8cf8a) 65%, #6b4400)); color: var(--fs-shelf-plate-text, #3a2a10); font-size: calc(1.6vh * var(--fs-scale)); font-weight: 600; white-space: nowrap; box-shadow: 0 1px 2px #0008, inset 0 1px 0 #fff8; }
   .none { margin: 6vh 0; text-align: center; color: var(--fs-shelf-text, #f3e6d2); font-size: calc(2.4vh * var(--fs-scale)); }
   @media (prefers-reduced-motion: reduce) {
     .box { transition: none; }

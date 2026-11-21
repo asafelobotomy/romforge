@@ -13,6 +13,16 @@
   --ok: #1f8a48;
   --warn: #a87a08;
   --bad: #c62a28;
+  /* Corner radii, all from --radius (uQ's ui.radius on uQ, below): panels and cards use
+     --radius, buttons and fields --radius-control (radius - 2, as uQ's own controls), and smaller
+     marks the steps below. Without uQ they are the 8/6/4/3/2 px romforge always had. */
+  --radius: 8px;
+  --radius-control: max(0px, calc(var(--radius) - 2px));
+  --radius-small: max(0px, calc(var(--radius) - 4px));
+  --radius-badge: max(0px, calc(var(--radius) - 5px));
+  --radius-tiny: max(0px, calc(var(--radius) - 6px));
+  --radius-dialog: calc(var(--radius) + 2px);
+  --radius-large: calc(var(--radius) + 4px);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -32,6 +42,7 @@
    data-uq-variant while they apply) stand in for these. Any value uQ's
    file leaves out falls back to the ones above (vendor/uq-tokens). */
 :root[data-uq-variant] {
+  --radius: var(--uq-radius);
   --bg: var(--uq-bg);
   --panel: var(--uq-surface);
   --line: var(--uq-border);
@@ -48,9 +59,9 @@
 :root[data-uq-variant="dark"] { color-scheme: dark; }
 body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); background: var(--bg); }
 :root[data-uq-variant] body { font-family: var(--uq-font-ui), system-ui, sans-serif; }
-.app button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.75rem; cursor: pointer; }
+.app button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: var(--radius-control); padding: 0.25rem 0.75rem; cursor: pointer; }
 .app button:disabled { opacity: 0.45; cursor: default; }
-.app input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
+.app input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-control); padding: 0.3rem 0.5rem; }
 .app h2 { font-size: 1rem; margin: 0 0 0.25rem; }
 .app h3 { font-size: 0.9rem; margin: 1rem 0 0.25rem; color: var(--muted); font-weight: 600; }
 .app .spacer { flex: 1; }
@@ -67,7 +78,7 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .sortbar { display: flex; gap: 0.9rem; justify-content: center; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0 0.6rem; }
 .app .hint { color: var(--muted); font-size: 0.85rem; }
 .app .empty { padding: 2rem 1rem; color: var(--muted); text-align: center; }
-.app .badge { display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.75rem; white-space: nowrap; background: var(--line); }
+.app .badge { display: inline-block; padding: 0 0.4rem; border-radius: var(--radius-badge); font-size: 0.75rem; white-space: nowrap; background: var(--line); }
 .app .badge.verified { color: var(--ok); }
 .app .badge.incomplete, .app .badge.candidate, .app .badge.duplicate { color: var(--warn); }
 .app .badge.unknown, .app .badge.wrong_system { color: var(--bad); }
@@ -80,7 +91,7 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--text); back
 .app .num { text-align: right; white-space: nowrap; }
 .app .meta { color: var(--muted); font-size: 0.85rem; }
 .app .scrim { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; z-index: 10; }
-.app .dialog { box-sizing: border-box; width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.5rem; }
+.app .dialog { box-sizing: border-box; width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-dialog); padding: 1.25rem 1.5rem; }
 .app .dialog h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
 .app .setting { padding: 0.6rem 0; border-top: 1px solid var(--line); }
 .app .setting > label { font-weight: 600; }

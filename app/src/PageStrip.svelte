@@ -44,7 +44,7 @@
 
 <style>
   .strip { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.4rem 0.2rem; border-top: 1px solid var(--line); }
-  .strip button { display: grid; justify-items: center; gap: 0.15rem; padding: 0.2rem; border: 2px solid transparent; border-radius: 4px; background: none; flex: none; }
+  .strip button { display: grid; justify-items: center; gap: 0.15rem; padding: 0.2rem; border: 2px solid transparent; border-radius: var(--radius-small); background: none; flex: none; }
   .strip button.on { border-color: var(--accent); }
   .strip canvas { width: auto; background: #fff; box-shadow: 0 1px 4px #0004; }
   .strip span { font-size: 0.75rem; color: var(--muted); }

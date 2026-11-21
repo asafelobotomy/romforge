@@ -128,7 +128,7 @@
   .tr.missing .title { font-style: italic; color: var(--muted); }
   .plat { display: grid; place-items: center; min-width: 0; }
   .plogo { width: 1.35rem; height: 1.35rem; object-fit: contain; }
-  .plogo.logo { padding: 1px; background: #f4f4f4; border-radius: 2px; box-sizing: border-box; }
+  .plogo.logo { padding: 1px; background: #f4f4f4; border-radius: var(--radius-tiny); box-sizing: border-box; }
   .pbadge { font-size: 0.55rem; font-weight: 700; color: var(--muted); letter-spacing: -0.02em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .nver { color: var(--muted); font-size: 0.8rem; }
   .ind { text-align: center; color: var(--muted); }

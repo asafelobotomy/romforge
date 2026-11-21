@@ -285,7 +285,7 @@
   .body { flex: 1; display: flex; gap: 0.6rem; min-height: 16rem; }
   /* The vertical scrollbar's room kept, so the measured width doesn't change
      once a page is taller than the view (no sideways scrollbar then). */
-  .view { flex: 1; min-width: 0; overflow: auto; scrollbar-gutter: stable; background: #0002; border-radius: 6px; outline: none; }
+  .view { flex: 1; min-width: 0; overflow: auto; scrollbar-gutter: stable; background: #0002; border-radius: var(--radius-control); outline: none; }
   .view:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
   .sheets { display: flex; justify-content: center; align-items: flex-start; gap: 12px; }
   .sheets.fitpage { align-items: center; min-height: 100%; }

@@ -101,7 +101,7 @@
     gap: 4px;
     font-size: 17px;
     text-align: center;
-    border-radius: 12px;
+    border-radius: var(--radius-large);
     transform: rotate(calc(var(--i) * var(--step) - 90deg)) translate(215px) rotate(calc(var(--i) * var(--step) * -1 + 90deg));
   }
   .slot svg {

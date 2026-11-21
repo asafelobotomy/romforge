@@ -36,10 +36,10 @@
 </button>
 
 <style>
-  .card { display: flex; gap: 0.7rem; padding: 0.55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel, transparent); min-width: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .card { display: flex; gap: 0.7rem; padding: 0.55rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel, transparent); min-width: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .card:hover { border-color: var(--accent); }
   .card.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .cover { flex: none; border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: var(--accent-bg, #8883); }
+  .cover { flex: none; border-radius: var(--radius-small); overflow: hidden; display: grid; place-items: center; background: var(--accent-bg, #8883); }
   .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .kind { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); }
   .about { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; font-size: 0.82rem; }

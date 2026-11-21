@@ -70,6 +70,7 @@ Icon=romforge
 Categories=Game;
 Terminal=false
 DESKTOP
+  install -Dm644 -t "$pkgdir/usr/share/metainfo" packaging/dev.romforge.app.metainfo.xml
   # Opens a ROM from a file manager (romforge-cli launch FILE); hidden from menus.
   install -Dm644 packaging/romforge-open.desktop \
     "$pkgdir/usr/share/applications/romforge-open.desktop"

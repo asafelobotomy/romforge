@@ -68,7 +68,7 @@
   /* Flat box art on a box: front and back the art, a dark spine. */
   .box { position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; animation: spin 14s linear infinite; }
   .face { position: absolute; display: block; backface-visibility: hidden; }
-  .front, .back { inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
+  .front, .back { inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-badge); }
   .front { transform: translateZ(calc(var(--d) / 2)); }
   .back { transform: rotateY(180deg) translateZ(calc(var(--d) / 2)); filter: brightness(0.55) saturate(0.7); }
   .side { top: 0; width: var(--d); height: 100%; left: calc(50% - var(--d) / 2); background: linear-gradient(90deg, #2b2b33, #44444f, #2b2b33); }
@@ -79,7 +79,7 @@
   .base { transform: rotateX(-90deg) translateZ(calc(var(--h) / 2)); }
   @keyframes spin { from { transform: rotateX(-6deg) rotateY(0deg); } to { transform: rotateX(-6deg) rotateY(360deg); } }
 
-  .nobox { display: grid; place-items: center; width: calc(var(--h) * 0.7); height: var(--h); padding: 1rem; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); font-size: 1.4rem; font-weight: 600; }
+  .nobox { display: grid; place-items: center; width: calc(var(--h) * 0.7); height: var(--h); padding: 1rem; border-radius: var(--radius-control); background: var(--panel); border: 1px solid var(--line); font-size: 1.4rem; font-weight: 600; }
 
   .foot { display: grid; justify-items: center; gap: 0.6rem; }
   /* The logo on nothing (its own transparency), large: the splash has the

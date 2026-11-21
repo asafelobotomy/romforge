@@ -179,10 +179,10 @@
 {/if}
 
 <style>
-  .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0; }
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; margin: 0.5rem 0; }
   .drop.over { border-color: var(--accent); background: var(--accent-bg); }
   .drop p { margin: 0 0 0.4rem; }
-  .plan { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.75rem; }
+  .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-bottom: 0.75rem; }
   .plan h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
   .item { padding: 0.2rem 0; }
   .src { font-weight: 600; }

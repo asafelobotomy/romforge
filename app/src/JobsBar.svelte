@@ -29,7 +29,7 @@
 
 <style>
   .foot { display: flex; align-items: center; gap: 0.75rem; min-height: 1.9rem; padding: 0.2rem 0.75rem; border-top: 1px solid var(--line); background: var(--panel); font-size: 0.85rem; }
-  .jobs { display: flex; align-items: center; gap: 0.5rem; flex: 0 1 auto; min-width: 0; max-width: 65%; padding: 0.15rem 0.5rem; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+  .jobs { display: flex; align-items: center; gap: 0.5rem; flex: 0 1 auto; min-width: 0; max-width: 65%; padding: 0.15rem 0.5rem; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; }
   .jobs:hover, .jobs:focus-visible { border-color: var(--line); }
   /* An explicit width: WebKitGTK sizes the box around it from widths,
      not flex-basis, and the bar has no content of its own. */

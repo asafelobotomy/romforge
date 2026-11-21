@@ -147,7 +147,7 @@
   .cell { position: relative; min-width: 0; display: flex; align-items: flex-end; justify-content: center; }
 
   /* Nothing but the picture: no card behind it, no title under it. */
-  .pic { position: relative; display: block; padding: 0; border: none; border-radius: 3px; background: none; cursor: pointer; user-select: none; overflow: hidden; box-shadow: 0 2px 8px #0005; transition: transform 0.12s, box-shadow 0.12s; }
+  .pic { position: relative; display: block; padding: 0; border: none; border-radius: var(--radius-badge); background: none; cursor: pointer; user-select: none; overflow: hidden; box-shadow: 0 2px 8px #0005; transition: transform 0.12s, box-shadow 0.12s; }
   .pic:hover { transform: translateY(-2px); box-shadow: 0 6px 14px #0006; }
   .pic.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
   .pic.focus:not(.sel) { outline: 2px dashed var(--accent); outline-offset: 2px; }
@@ -159,12 +159,12 @@
   .box3d .pic { box-shadow: none; }
   .box3d .pic:hover { box-shadow: none; }
   .mark { z-index: 2; position: absolute; top: 4px; right: 4px; min-width: 1.2rem; height: 1.2rem; border-radius: 50%; background: #000b; color: #fff; font-size: 0.7rem; line-height: 1.2rem; text-align: center; }
-  .more { position: absolute; top: 4px; left: 4px; padding: 0 0.4rem; height: 1.25rem; border: none; border-radius: 4px; background: #000b; color: #fff; font-size: 0.72rem; z-index: 1; }
+  .more { position: absolute; top: 4px; left: 4px; padding: 0 0.4rem; height: 1.25rem; border: none; border-radius: var(--radius-small); background: #000b; color: #fff; font-size: 0.72rem; z-index: 1; }
 
   /* Banners: every one the same wide shape, the fanart filling it, the
      game's logo over its left side. */
   .banner .cell { display: block; }
-  .banner .pic { width: 100%; height: 100%; border-radius: 6px; }
+  .banner .pic { width: 100%; height: 100%; border-radius: var(--radius-control); }
   .banner .art { object-fit: cover; }
   .banner .pic:has(.logo:not(:global(.broken)))::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, #000a 0%, #0004 40%, #0000 70%); }
   .banner .logo { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); max-height: 70%; max-width: 40%; z-index: 1; filter: drop-shadow(0 2px 6px #000a); }

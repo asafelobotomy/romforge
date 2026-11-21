@@ -114,12 +114,12 @@
 <style>
   .store { z-index: 60; }
   .theme { display: grid; grid-template-columns: 12rem 1fr; gap: 1rem; padding: 0.8rem 0; border-top: 1px solid var(--line); }
-  .pic { display: grid; place-items: center; aspect-ratio: 16 / 9; background: var(--bg); border-radius: 6px; overflow: hidden; color: var(--muted); }
+  .pic { display: grid; place-items: center; aspect-ratio: 16 / 9; background: var(--bg); border-radius: var(--radius-control); overflow: hidden; color: var(--muted); }
   .pic img { width: 100%; height: 100%; object-fit: cover; }
   h3 { margin: 0 0 0.3rem; font-size: 1rem; color: var(--text); }
   .ver { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
   .about p { margin: 0 0 0.35rem; }
-  .licence { padding: 0.5rem 0.7rem; border-radius: 6px; background: var(--accent-bg); }
+  .licence { padding: 0.5rem 0.7rem; border-radius: var(--radius-control); background: var(--accent-bg); }
   .bad { color: var(--bad); }
   .end { justify-content: flex-end; }
   .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
