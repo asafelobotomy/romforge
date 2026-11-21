@@ -229,6 +229,11 @@
     .lead { grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem); }
     .lead .infobox { justify-self: stretch; }
   }
+  /* No art to show (an unidentified file): the infobox alone, centred,
+     not beside an empty column. */
+  .lead:not(:has(> .art > *)) { grid-template-columns: minmax(0, 1fr); }
+  .lead:not(:has(> .art > *)) .art { display: none; }
+  .lead:not(:has(> .art > *)) .infobox { justify-self: center; }
   .infobox { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 0.55rem 0.7rem 0.35rem; font-size: 0.85rem; }
   .infobox .logo { display: flex; justify-content: center; padding: 0.2rem 0 0.55rem; }
   .infobox .logo .shot img { max-height: 4.5rem; }

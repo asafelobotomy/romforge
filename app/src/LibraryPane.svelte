@@ -60,6 +60,12 @@
       <h2>Add your first folder</h2>
       <p>Download DATs on the DATs screen, then add a folder of ROMs with the button above.</p>
     </div>
+  {:else if rows.length === 0}
+    <div class="empty">
+      {#if filter}<p>No games match “{filter}”.</p>
+      {:else if platform === "*"}<p>No games identified yet. Your files are under Unidentified: download DATs on the DATs screen, then Refresh.</p>
+      {:else}<p>Nothing here yet.</p>{/if}
+    </div>
   {:else if listMode !== "list"}
     <PictureGrid bind:this={table} {rows} mode={listMode} {selected} {picked} {isOpen} {open} {toggle} {statusLabel} {regionFlags} />
   {:else}

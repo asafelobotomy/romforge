@@ -171,6 +171,9 @@
             {/each}
           </tbody>
         </table>
+        {#if !summary.dats.length}
+          <p class="empty">No DATs yet. Download DATs for all systems gets them, and your games are identified against them.</p>
+        {/if}
       </div>
       {#if currentDat}
         <div class="datpane">

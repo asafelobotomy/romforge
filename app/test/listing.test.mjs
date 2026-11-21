@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { grouped, libraryRows } from "../src/listing.js";
+import { grouped, libraryRows, onPlatform } from "../src/listing.js";
 import { targets } from "../src/selection.js";
 import { sorted } from "../src/sort.js";
 
@@ -36,4 +36,12 @@ test("each value is read once when sorting", () => {
   assert.equal(reads, 200);
   assert.equal(out[0].n, 199);
   assert.equal(out.at(-1).n, 0);
+});
+
+test("a game is on a platform's list, folded versions too", () => {
+  const g = grouped([...lib, { ...row("u", "Unknown", null), unmatched: true }], { key: "title", dir: 1 });
+  assert.ok(onPlatform(g, "*", "b2"), "a folded version is still there");
+  assert.ok(onPlatform(g, "snes", "a"));
+  assert.ok(!onPlatform(g, "nes", "a"), "another platform's game");
+  assert.ok(!onPlatform(g, "*", "u") && onPlatform(g, "", "u"), "unmatched files only under Unidentified");
 });

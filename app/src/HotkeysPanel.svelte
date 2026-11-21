@@ -41,8 +41,8 @@
     <ul class="support">
       {#each v.support as s}
         <li>
-          <strong>{labelOf(s.emulator)}</strong>: {s.actions.length === v.hotkeys.length ? "all of them" : s.actions.map(actionLabel).join(", ")}
-          {#if s.note}<span class="hint">{s.note}</span>{/if}
+          <strong>{labelOf(s.emulator)}</strong>: {s.actions.length === v.hotkeys.length ? "all of them" : s.actions.map(actionLabel).join(", ")}{#if s.note}.
+          <span class="hint">{s.note}</span>{/if}
         </li>
       {/each}
     </ul>

@@ -78,6 +78,9 @@ export function libraryRows({ all, members }, platform, filter, isOpen) {
   return out;
 }
 
+// Whether a row is one of a platform's (its game's group, folded or not).
+export const onPlatform = (lib, platform, id) => libraryRows(lib, platform, "", () => true).some((r) => r.id === id);
+
 // Details' Versions tab: the shown game's whole group, its original
 // first.
 export function versionRows(r, libRows, listSort, isOpen) {
