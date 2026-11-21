@@ -22,7 +22,7 @@ notify = { version = "8", default-features = false }
 # opened at run time (`overlay.rs`), so romforge starts without it.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
-libloading = "0.7"
+libloading = "0.9"
 # Whether a tray (a StatusNotifier watcher) is on the session bus; the
 # version and features Tauri's opener already brings.
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
