@@ -23,6 +23,9 @@ const PLAIN_SIZE: f64 = 600.0;
 /// Make the overlay, hidden, for a game starting (its page loads now, so
 /// it is ready when the ring opens).
 pub fn prepare(app: &AppHandle) {
+    if in_gamescope() {
+        fit_gamescope_output(app);
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if handle.get_webview_window(LABEL).is_none()
@@ -50,6 +53,11 @@ pub fn show(app: &AppHandle, on: bool) {
             return;
         }
         let _ = win.show();
+        if in_gamescope() {
+            // The game's output may have changed (a nested gamescope's
+            // window resized): measure it again and follow it.
+            fit_gamescope_output(&handle);
+        }
         // The window is mapped by the event loop a moment after `show`.
         let again = win.clone();
         std::thread::spawn(move || {
@@ -97,12 +105,118 @@ fn mark_external_overlay(win: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "linux"))]
 fn mark_external_overlay(_: &tauri::WebviewWindow) {}
 
+/// gamescope's output size in pixels, last measured.
+static OUTPUT: std::sync::Mutex<Option<(u32, u32)>> = std::sync::Mutex::new(None);
+
+/// gamescope draws an external overlay unscaled, in its output's pixels,
+/// from the output's top-left corner. Its X screen (and so the monitor GDK
+/// reports) is the game's resolution (`-w`/`-h`), which is smaller than the
+/// output when the game is upscaled (720p on a 1080p screen): a window that
+/// size put the ring up and to the left of the middle. Measure the output
+/// off the main thread and size the window to it, so the ring (in the
+/// middle of the page) is in the middle of the screen.
+fn fit_gamescope_output(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let Some(size) = gamescope_output() else {
+            return;
+        };
+        *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) = Some(size);
+        let again = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Some(win) = again.get_webview_window(LABEL) {
+                resize_to(&win, size);
+            }
+        });
+    });
+}
+
+fn resize_to(win: &tauri::WebviewWindow, (w, h): (u32, u32)) {
+    let now = win.inner_size().ok().map(|s| (s.width, s.height));
+    if now != Some((w, h)) {
+        let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+        let _ = win.set_position(tauri::PhysicalPosition::new(0, 0));
+    }
+}
+
+/// gamescope's output size: `ROMFORGE_OVERLAY_SIZE` (`WIDTHxHEIGHT`) when
+/// set, else measured from a screenshot gamescope takes at the output's
+/// size (`gamescopectl screenshot PATH 2`: every real layer, which is
+/// drawn at the output's size; type 1 would be the game's own size). Only
+/// the PNG's header is read; the file, in `$XDG_RUNTIME_DIR`, is removed.
+/// gamescope publishes the size nowhere else a client can read: its X
+/// screen and its Wayland output are both the game's resolution.
+fn gamescope_output() -> Option<(u32, u32)> {
+    if let Some(size) = std::env::var("ROMFORGE_OVERLAY_SIZE")
+        .ok()
+        .and_then(|v| parse_size(&v))
+    {
+        return Some(size);
+    }
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let path = dir.join(format!("romforge-overlay-{}.png", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let ran = Command::new("gamescopectl")
+        .arg("screenshot")
+        .arg(&path)
+        .arg("2")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ran {
+        return None;
+    }
+    // gamescope writes it on its own thread a frame or so later.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let size = loop {
+        let mut head = [0u8; 24];
+        if let Ok(mut f) = std::fs::File::open(&path)
+            && f.read_exact(&mut head).is_ok()
+            && let Some(size) = png_size(&head)
+        {
+            break Some(size);
+        }
+        if Instant::now() > deadline {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(40));
+    };
+    let _ = std::fs::remove_file(&path);
+    size
+}
+
+/// `1920x1080` as (1920, 1080).
+fn parse_size(s: &str) -> Option<(u32, u32)> {
+    let (w, h) = s.trim().split_once(['x', 'X'])?;
+    let (w, h) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+/// A PNG's width and height, from its first 24 bytes (the signature, then
+/// the IHDR chunk).
+fn png_size(head: &[u8]) -> Option<(u32, u32)> {
+    if head.len() < 24 || &head[..8] != b"\x89PNG\r\n\x1a\n" || &head[12..16] != b"IHDR" {
+        return None;
+    }
+    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    let (w, h) = (be(&head[16..20]), be(&head[20..24]));
+    (w > 0 && h > 0).then_some((w, h))
+}
+
 fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let layered = layer::supported();
     // In gamescope the ring is an external overlay, which gamescope draws
     // with its alpha, unscaled and at the output's origin whatever the
     // window's position (as MangoHud's mangoapp): a transparent window as
-    // big as the screen, at 0,0, like the layer-shell one.
+    // big as the output, at 0,0, like the layer-shell one. Until the
+    // output is measured (`fit_gamescope_output`), the X screen's size.
     let gamescope = !layered && in_gamescope();
     // Elsewhere without layer-shell: a small window in the middle of the
     // screen, on top, with an opaque page (`?plain`), because a fullscreen
@@ -138,6 +252,9 @@ fn build(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         win = win.inner_size(PLAIN_SIZE, PLAIN_SIZE).center();
     }
     let win = win.build()?;
+    if gamescope && let Some(size) = *OUTPUT.lock().unwrap_or_else(|e| e.into_inner()) {
+        resize_to(&win, size);
+    }
     if layered {
         #[cfg(target_os = "linux")]
         {
@@ -228,5 +345,32 @@ mod layer {
 mod layer {
     pub fn supported() -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_size, png_size};
+
+    #[test]
+    fn sizes_parse() {
+        assert_eq!(parse_size("1920x1080"), Some((1920, 1080)));
+        assert_eq!(parse_size(" 2560X1440 "), Some((2560, 1440)));
+        assert_eq!(parse_size("1920"), None);
+        assert_eq!(parse_size("0x1080"), None);
+        assert_eq!(parse_size("wide x tall"), None);
+    }
+
+    #[test]
+    fn png_header_gives_the_size() {
+        let mut head = Vec::from(*b"\x89PNG\r\n\x1a\n");
+        head.extend_from_slice(&13u32.to_be_bytes());
+        head.extend_from_slice(b"IHDR");
+        head.extend_from_slice(&1920u32.to_be_bytes());
+        head.extend_from_slice(&1080u32.to_be_bytes());
+        assert_eq!(png_size(&head), Some((1920, 1080)));
+        assert_eq!(png_size(&head[..20]), None, "too short");
+        head[1] = b'J';
+        assert_eq!(png_size(&head), None, "not a PNG");
     }
 }
