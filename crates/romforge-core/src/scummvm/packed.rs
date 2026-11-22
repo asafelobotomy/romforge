@@ -11,7 +11,7 @@ use super::*;
 use crate::scan::Stamp;
 
 /// (member name, size) as the archive lists them.
-type Members = Vec<(String, u64)>;
+pub(super) type Members = Vec<(String, u64)>;
 /// (member index, bytes, from the end) -> MD5 (`None`: unreadable).
 type Md5s = HashMap<(usize, u64, bool), Option<String>>;
 
@@ -26,6 +26,22 @@ pub fn is_archive(path: &Path) -> bool {
         .is_some_and(|e| crate::scan::is_archive(&e.to_string_lossy().to_ascii_lowercase()))
 }
 
+/// An archive's members by name and size, read once while its size and
+/// time stay the same.
+pub(super) fn members(archive: &Path) -> Option<(Stamp, Arc<Members>)> {
+    let stamp = Stamp::of(archive)?;
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = seen.get_or_insert_with(HashMap::new);
+    match seen.get(archive) {
+        Some((s, m, _)) if *s == stamp => Some((stamp, m.clone())),
+        _ => {
+            let m = Arc::new(crate::cleanup::archive_entries(archive).ok()?);
+            seen.insert(archive.to_owned(), (stamp, m.clone(), HashMap::new()));
+            Some((stamp, m))
+        }
+    }
+}
+
 /// The game of `entries` an archive holds (in any folder of it), if any:
 /// of several, the one listing the most files. `by_name`: the entries
 /// listing each file name.
@@ -34,19 +50,7 @@ pub(super) fn found_in(
     by_name: &HashMap<&str, Vec<usize>>,
     archive: &Path,
 ) -> Option<Found> {
-    let stamp = Stamp::of(archive)?;
-    let members = {
-        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-        let seen = seen.get_or_insert_with(HashMap::new);
-        match seen.get(archive) {
-            Some((s, m, _)) if *s == stamp => m.clone(),
-            _ => {
-                let m = Arc::new(crate::cleanup::archive_entries(archive).ok()?);
-                seen.insert(archive.to_owned(), (stamp, m.clone(), HashMap::new()));
-                m
-            }
-        }
-    };
+    let (stamp, members) = members(archive)?;
     // Folder inside the archive -> relative path (lower case) -> member.
     // As on disk, a file is also filed under the folder above its own.
     let mut dirs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
@@ -154,40 +158,53 @@ fn md5s(archive: &Path, stamp: Stamp, members: &Members, need: &BTreeSet<(usize,
     all
 }
 
-/// Read the members `need` names once each (a 7z is one stream: the
-/// members before them are read through, nothing is written).
+/// Read the members `need` names once each.
 fn read_md5s(archive: &Path, members: &Members, need: &[(usize, u64, bool)]) -> Md5s {
     let mut by_member: BTreeMap<usize, Vec<(u64, bool)>> = BTreeMap::new();
     for &(m, bytes, tail) in need {
         by_member.entry(m).or_default().push((bytes, tail));
     }
     let mut out = Md5s::new();
-    let mut put = |m: usize, specs: &[(u64, bool)], r: &mut dyn Read| {
+    let want: BTreeSet<usize> = by_member.keys().copied().collect();
+    read_members(archive, members, &want, &mut |m, r| {
+        let specs = &by_member[&m];
         let sums = ranged_md5s(r, members[m].1, specs).ok();
         for (j, &(bytes, tail)) in specs.iter().enumerate() {
             out.insert((m, bytes, tail), sums.as_ref().map(|s| s[j].clone()));
         }
-    };
+    });
+    out
+}
+
+/// Hand each member in `want` to `got` as a stream, once (a 7z is one
+/// stream: the members before them are read through, nothing is
+/// written). One that can't be opened is left out.
+pub(super) fn read_members(
+    archive: &Path,
+    members: &Members,
+    want: &BTreeSet<usize>,
+    got: &mut dyn FnMut(usize, &mut dyn Read),
+) {
     if archive.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         let Ok(mut zip) = File::open(archive)
             .map_err(Error::from)
             .and_then(|f| zip::ZipArchive::new(std::io::BufReader::new(f)).map_err(Error::from))
         else {
-            return out;
+            return;
         };
-        for (m, specs) in &by_member {
-            if let Ok(mut r) = zip.by_name(&members[*m].0) {
-                put(*m, specs, &mut r);
+        for &m in want {
+            if let Ok(mut r) = zip.by_name(&members[m].0) {
+                got(m, &mut r);
             }
         }
-        return out;
+        return;
     }
-    let by_name: HashMap<&str, usize> = by_member.keys().map(|&m| (members[m].0.as_str(), m)).collect();
+    let by_name: HashMap<&str, usize> = want.iter().map(|&m| (members[m].0.as_str(), m)).collect();
     let mut left = by_name.len();
     if let Ok(mut a) = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty()) {
         let _ = a.for_each_entries(|entry, reader| {
             if let Some(&m) = by_name.get(entry.name()) {
-                put(m, &by_member[&m], reader);
+                got(m, reader);
                 left -= 1;
             }
             // A solid archive is one stream: each member is read to its end.
@@ -195,7 +212,6 @@ fn read_md5s(archive: &Path, members: &Members, need: &[(usize, u64, bool)]) -> 
             Ok(left > 0)
         });
     }
-    out
 }
 
 /// The MD5 of the first (or last) `bytes` of a stream of `size` bytes, for

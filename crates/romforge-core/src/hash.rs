@@ -75,8 +75,12 @@ impl Prefix {
         self.0.extend_from_slice(&data[..room.min(data.len())]);
     }
 
+    /// What the bytes say, read as a game's own header or, failing that,
+    /// as a container's (WBFS, RVZ, CISO, ...): a container inside a zip
+    /// or 7z can't be seeked, but the header and first block its ID is in
+    /// are in the prefix.
     fn id(&self) -> Option<crate::ident::GameId> {
-        ident::read(&self.0)
+        ident::read(&self.0).or_else(|| ident::read_container(&mut io::Cursor::new(&self.0[..])))
     }
 }
 

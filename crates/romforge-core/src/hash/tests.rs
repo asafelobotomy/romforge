@@ -86,3 +86,19 @@ fn big_streams_hash_the_same_split() {
 fn size_mismatch_is_an_error() {
     assert!(hash_stream(&b"abc"[..], 4).is_err());
 }
+
+#[test]
+fn a_container_read_as_a_stream_gives_its_id() {
+    // A Wii disc's head inside a WBFS, as a zip member is read: a stream
+    // that can't be seeked.
+    let mut disc = vec![0u8; 0x100];
+    disc[..6].copy_from_slice(b"RMGE01");
+    disc[0x18..0x1C].copy_from_slice(&[0x5D, 0x1C, 0x9E, 0xA3]);
+    disc[0x20..0x2B].copy_from_slice(b"Mario Kart ");
+    let mut wbfs = vec![0u8; 0x4000];
+    wbfs[..4].copy_from_slice(b"WBFS");
+    wbfs[8] = 9;
+    wbfs[0x200..0x300].copy_from_slice(&disc);
+    let id = hash_stream(&wbfs[..], wbfs.len() as u64).unwrap().id.unwrap();
+    assert_eq!((id.kind, id.serial.as_deref()), ("wii", Some("RMGE01")));
+}

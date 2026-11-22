@@ -147,12 +147,16 @@ pub(crate) fn games_under(
             .map(|f| (f.dir, f.files))
             .collect()
     };
-    let named: Vec<PathBuf> = out.iter().map(|(p, _)| p.clone()).collect();
+    let mut named: Vec<PathBuf> = out.iter().map(|(p, _)| p.clone()).collect();
     for (dir, _, _) in asked_before(conn, &roots, &named)? {
         if dir.starts_with(root) {
             let files = folder_stats(&dir).0;
+            named.push(dir.clone());
             out.push((dir, files));
         }
+    }
+    for r in recognise(&roots, &listed_names(&entries), &named) {
+        out.push((r.place, r.files));
     }
     Ok(out)
 }
@@ -212,5 +216,23 @@ pub(crate) fn refresh(conn: &Connection, list: Option<&Path>) -> Result<usize, E
         };
         insert.execute(params![dir.to_string_lossy(), system, title, code, n, size])?;
     }
-    Ok(found.len() + asked.len())
+    // What neither names but holds an engine's files (in an archive,
+    // where --detect never looks, or a folder it wasn't shown).
+    let named: Vec<PathBuf> = named
+        .into_iter()
+        .chain(asked.iter().map(|(d, _, _)| d.clone()))
+        .collect();
+    let recognised = recognise(&top, &listed_names(&entries), &named);
+    for r in &recognised {
+        let (title, code) = title_of(r, &names);
+        insert.execute(params![
+            r.place.to_string_lossy(),
+            system,
+            title,
+            code,
+            r.files,
+            r.size
+        ])?;
+    }
+    Ok(found.len() + asked.len() + recognised.len())
 }
