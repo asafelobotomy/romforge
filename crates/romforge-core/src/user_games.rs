@@ -100,5 +100,7 @@ pub fn marks(conn: &Connection) -> Result<Marks, Error> {
     })
 }
 
+pub mod versions;
+
 #[cfg(test)]
 mod tests;

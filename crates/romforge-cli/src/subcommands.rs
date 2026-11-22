@@ -287,6 +287,18 @@ pub enum FavouriteCommand {
 }
 
 #[derive(Subcommand)]
+pub enum AlwaysRunCommand {
+    /// Every game whose Play starts one version without asking
+    List,
+    /// A game's playable versions, numbered, and the one Play always runs
+    Show { game: String },
+    /// Have Play always run one version (its number from `show`, or title)
+    Set { game: String, version: String },
+    /// Have Play ask which version again
+    Clear { game: String },
+}
+
+#[derive(Subcommand)]
 pub enum SteamCommand {
     /// Steam's folder, its users, and whether romforge is in their library
     Status,

@@ -8,6 +8,7 @@
   import CleanupDialog from "./CleanupDialog.svelte";
   import SearchDialog from "./SearchDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
+  import PlayPicker from "./PlayPicker.svelte";
   import PatchDialog from "./PatchDialog.svelte";
   import ArtPicker from "./ArtPicker.svelte";
   import ScanPreview from "./ScanPreview.svelte";
@@ -28,7 +29,7 @@
   import Fullscreen from "./fullscreen/Fullscreen.svelte";
   import { fs, enter as enterFs, leave as leaveFs, toggle as toggleFs } from "./fullscreen/fs.svelte.js";
   import { desktopPad } from "./desktopKeys.js";
-  import { startGame } from "./play.js";
+  import { playChoice, startGame } from "./play.js";
   import { edit, run as queue, reportTo } from "./jobs.svelte.js";
   import { remembered, remember } from "./sort.js";
   import { statusLabel } from "./labels.js";
@@ -48,7 +49,7 @@
   let note = $state("");
   // Which dialogs are open (Escape closes the top one; the list keys stay
   // out of their way).
-  let shown = $state({ jobs: false, preview: false, runopts: false, home: false, settings: false, emu: false, clean: false, search: false, naming: false, patch: false, picker: false });
+  let shown = $state({ jobs: false, preview: false, runopts: false, home: false, settings: false, emu: false, clean: false, search: false, naming: false, patch: false, picker: false, play: false });
   reportTo((e) => (error = e), (n) => (note = n));
 
   let lib = $state({ platforms: [], rows: [] });
@@ -112,6 +113,7 @@
   // Systems whose emulator lacks a required BIOS file (the sidebar's badge).
   let biosNeeds = $state([]);
   let naming = $state(null);
+  let playPicker = $state(null);
   let confirmUndo = $state(false);
 
   // `quiet`: a reload after an action, which keeps the action's error on
@@ -248,10 +250,12 @@
   }
 
   const playRow = (r, art) => startGame(r, art, { call, nowPlaying, setNote: (n) => (note = n) });
-  function play() {
+  // Play: the selected game, or the version picked (PlayPicker).
+  async function play() {
     const r = lib.rows.find((x) => x.id === selected);
     const mine = detail?.row?.id === r?.id ? detail.art : {};
-    playRow(r, { box3d: mine.box3d, boxart: mine.boxart });
+    const art = { box3d: mine.box3d, boxart: mine.boxart };
+    playRow(await playChoice(r, call, lib.rows, (vs) => playPicker.ask(r, vs, (v) => playRow(v, art))), art);
   }
 
   // Details: empty media boxes only when Settings says so.
@@ -311,7 +315,7 @@
   }
 
   // The open dialog Escape closes first (the art picker not while busy).
-  const escapable = () => ["jobs", "settings", "emu", "clean", "search", "naming", "patch", "picker", "preview", "runopts", "home"].find((d) => shown[d] && !(d === "picker" && busy));
+  const escapable = () => ["jobs", "settings", "emu", "clean", "search", "naming", "patch", "picker", "play", "preview", "runopts", "home"].find((d) => shown[d] && !(d === "picker" && busy));
 
   // Game pads: the fullscreen mode's when it is on, else the library's.
   const padLibrary = (a) => desktopPad(a, { view, rows, row, busy, platforms: lib.platforms, platform, setPlatform: (p) => (platform = p), pick, play, listKeys, settings, emulators });
@@ -354,11 +358,8 @@
 
   <SettingsDialog bind:this={settings} bind:open={shown.settings} bind:note bind:showEmpty bind:regionFlags bind:homeRoot {call} {load} />
   <EmulatorSettingsDialog bind:this={emulators} bind:open={shown.emu} bind:note {call} />
-
   <CleanupDialog bind:this={cleanup} bind:open={shown.clean} bind:note {homeRoot} {call} {load} />
-
   <HomeDialog bind:this={home} bind:open={shown.home} bind:root={homeRoot} bind:note {load} />
-
   <NameDialog bind:this={naming} bind:open={shown.naming} bind:note {call} {load} />
   <SearchDialog bind:this={search} bind:open={shown.search} bind:busy bind:note {selected} {call} {load} />
 
@@ -368,7 +369,7 @@
   <ArtPicker bind:this={artPicker} bind:open={shown.picker} bind:busy bind:note view={(kind, src) => (ui.viewer = { kind, src })} reload={(id) => open(id)} />
 
   <ImageViewer {detail} {row} />
-
+  <PlayPicker bind:this={playPicker} bind:open={shown.play} {call} />
 
   <NowPlaying bind:this={nowPlaying} bind:playing bind:note bind:error stayFullscreen={fs.on} ended={() => selected && open(selected, true)} />
 

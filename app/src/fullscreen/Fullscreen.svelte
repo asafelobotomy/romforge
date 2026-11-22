@@ -7,7 +7,7 @@
   import Wordmark from "../Wordmark.svelte";
   import { fs, leave, remembered, remember } from "./fs.svelte.js";
   import { homeAction, keyAction, listMove } from "./fsnav.js";
-  import { ask, contextMenu, emulatorMenu, mainMenu, optionsMenu, storeMenu } from "./fsmenus.js";
+  import { alwaysRunMenu, ask, contextMenu, emulatorMenu, mainMenu, optionsMenu, playMenu, storeMenu } from "./fsmenus.js";
   import { run } from "../jobs.svelte.js";
   import FsCarousel from "./FsCarousel.svelte";
   import FsGrid from "./FsGrid.svelte";
@@ -169,7 +169,10 @@
     sort: (s) => void (sort = s),
     art: (a) => void (art = a),
     desktop: (g) => void desktop(g.id),
-    play: (g) => void start(g),
+    play: (g) => void choose(g),
+    playVersion: (g, v, always) => void (always ? invoke("set_always_run", { rowId: g.id, version: v.id }).catch(() => {}) : Promise.resolve()).then(() => start(v)),
+    alwaysRun: (g) => later("Always run", "Looking…", () => invoke("always_run", { rowId: g.id }).then((k) => alwaysRunMenu(act, g, k))),
+    forgetAlwaysRun: (g) => void invoke("set_always_run", { rowId: g.id, version: null }).catch(() => {}),
     favourite: (g) => void toggleFavourite(g),
     search: () => void (screen = "search"),
     music: () => (music.tracks.length ? music : null),
@@ -194,6 +197,14 @@
     return holder;
   }
 
+  // Play: a game with several versions asks which (unless one is kept
+  // with "Always run"); anything else starts at once.
+  async function choose(g) {
+    if (!g?.playable) return;
+    const c = await invoke("play_choice", { rowId: g.id }).catch(() => ({ run: g.id }));
+    if (c.run) start(lib.rows.find((r) => r.id === c.run) ?? g);
+    else if (!menu && !playing) menu = playMenu(act, g, c.versions);
+  }
   function start(g) {
     if (!g?.playable) return;
     const p = g.pictures ?? {};
@@ -203,7 +214,7 @@
   let buttons = $derived(
     game
       ? [
-          ...(game.playable ? [{ id: "play", label: "Play", primary: true, run: () => start(game) }] : []),
+          ...(game.playable ? [{ id: "play", label: "Play", primary: true, run: () => choose(game) }] : []),
           ...(versionsOf(game).length ? [{ id: "versions", label: "Versions", run: () => (menu = optionsMenu(act, game, versionsOf(game))) }] : []),
           { id: "favourite", label: isFavourite(game) ? "★ Favourite" : "☆ Favourite", run: () => toggleFavourite(game) },
           ...(game.playable ? [{ id: "emulator", label: "Emulator…", run: () => (menu = act.emulator(game)) }] : []),

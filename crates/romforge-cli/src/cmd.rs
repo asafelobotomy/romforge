@@ -1,5 +1,6 @@
 //! The command handlers, by command group.
 
+pub mod always_run;
 pub mod cleanup;
 pub mod dat;
 pub mod emulator_config;

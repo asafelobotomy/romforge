@@ -35,3 +35,17 @@ export function versionLines(group, others, isOpen, depth = 1) {
   out.push(...others.filter((m) => !m.category).map((m) => ({ ...m, depth })));
   return out;
 }
+
+const KIND = {
+  region: "Other region",
+  edition: "Edition",
+  translation: "Translation",
+  hack: "Hack",
+  patch_translation: "Translation",
+  patch_hack: "Hack",
+};
+
+/// A version as Play's picker names it: its whole title (regions,
+/// revision, edition: what tells it apart), and what kind it is.
+export const versionName = (v) => v.label ?? v.title;
+export const versionKind = (v) => (v.main ? "Main version" : KIND[v.category] ?? "");
