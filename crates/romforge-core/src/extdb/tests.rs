@@ -41,3 +41,16 @@ fn wikipedia_titles_are_decoded_once() {
         "stray % kept"
     );
 }
+
+/// The app sends back the `db` it was listed with to download or remove
+/// one: what it serializes to must be what [`ExtDb::parse`] takes.
+#[test]
+fn serialized_name_parses_back() {
+    for db in ExtDb::ALL {
+        let json = serde_json::to_value(db).unwrap();
+        assert_eq!(json, db.key());
+        assert_eq!(ExtDb::parse(json.as_str().unwrap()), Some(db));
+    }
+    let old: ExtDb = serde_json::from_str("\"launch_box\"").unwrap();
+    assert_eq!(old, ExtDb::LaunchBox);
+}

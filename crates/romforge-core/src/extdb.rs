@@ -33,10 +33,13 @@ pub use import::*;
 pub use launchbox::*;
 pub use openvgdb::*;
 
+/// Serialized as its [`ExtDb::key`], which is what the app hands back to
+/// name it ([`ExtDb::parse`]); the older "open_vgdb"/"launch_box" still read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ExtDb {
+    #[serde(rename = "openvgdb", alias = "open_vgdb")]
     OpenVgdb,
+    #[serde(rename = "launchbox", alias = "launch_box")]
     LaunchBox,
 }
 
