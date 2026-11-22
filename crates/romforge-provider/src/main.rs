@@ -43,7 +43,7 @@ async fn main() -> ExitCode {
     let _conn = match built {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("romforge-provider: cannot own {BUS_NAME} on the session bus: {e}");
+            eprintln!("romforge-provider: [ROMFORGE-005] cannot own {BUS_NAME} on the session bus: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
     let warming = games.clone();
     tokio::task::spawn_blocking(move || {
         if let Err(e) = warming.warm() {
-            eprintln!("romforge-provider: {e}");
+            eprintln!("romforge-provider: [ROMFORGE-006] {e}");
         }
     });
     // Exit once a whole idle period passes without a call and with no

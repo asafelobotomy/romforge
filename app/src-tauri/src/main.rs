@@ -46,6 +46,8 @@ use crate::art::{ArtPool, ArtRoots, serve_art};
 use crate::db::{Db, db_path};
 
 fn main() {
+    // A crash leaves a record that uQ lists on Settings › Problems.
+    romforge_core::uq_diag::install_panic_hook("romforge");
     let context = tauri::generate_context!();
     // `--overlay`: only the radial menu's overlay, for a game uQ's launcher
     // provider started (`companion.rs`); no library, no main window.
@@ -62,7 +64,7 @@ fn main() {
         Err(e) => {
             let stand_in = || Library::open_in_memory().expect("a library in memory");
             let why = format!("romforge couldn't open its library {}:\n\n{e}", path.display());
-            eprintln!("romforge: {why}");
+            eprintln!("romforge: [ROMFORGE-001] {why}");
             (stand_in(), stand_in(), Some(why))
         }
     };
@@ -149,7 +151,7 @@ fn main() {
             // carries a new provider); it never adds on its own.
             std::thread::spawn(|| {
                 if let Err(e) = romforge_core::uq::user_provider::refresh() {
-                    eprintln!("romforge: uQ search: {e}");
+                    eprintln!("romforge: [ROMFORGE-007] uQ search: {e}");
                 }
             });
             let handle = app.handle().clone();
@@ -172,7 +174,7 @@ fn main() {
                 }
             });
             if let Err(e) = listening {
-                eprintln!("romforge: {e}");
+                eprintln!("romforge: [ROMFORGE-003] {e}");
             }
             Ok(())
         })

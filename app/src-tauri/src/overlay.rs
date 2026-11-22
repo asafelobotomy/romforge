@@ -30,7 +30,7 @@ pub fn prepare(app: &AppHandle) {
         if handle.get_webview_window(LABEL).is_none()
             && let Err(e) = build(&handle)
         {
-            eprintln!("romforge: overlay: {e}");
+            eprintln!("romforge: [ROMFORGE-004] overlay: {e}");
         }
     });
 }
@@ -43,7 +43,7 @@ pub fn show(app: &AppHandle, on: bool) {
             Some(w) => w,
             None if on => match build(&handle) {
                 Ok(w) => w,
-                Err(e) => return eprintln!("romforge: overlay: {e}"),
+                Err(e) => return eprintln!("romforge: [ROMFORGE-004] overlay: {e}"),
             },
             None => return,
         };

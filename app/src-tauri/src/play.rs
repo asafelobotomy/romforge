@@ -149,7 +149,7 @@ pub async fn launch(
             let mut lib = write.lock().unwrap_or_else(|e| e.into_inner());
             if let Err(e) = lib.record_play(&ended) {
                 eprintln!(
-                    "romforge: {}'s play time wasn't kept ({first}; then {e})",
+                    "romforge: [ROMFORGE-002] {}'s play time wasn't kept ({first}; then {e})",
                     ended.playing.game
                 );
             }

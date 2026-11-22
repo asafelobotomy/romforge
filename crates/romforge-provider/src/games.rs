@@ -140,7 +140,7 @@ impl Games {
             games.end_hotkeys(&session);
             if let Err(e) = games.with(|lib| lib.record_play(&end).map_err(|e| e.to_string())) {
                 eprintln!(
-                    "romforge-provider: {}'s play time wasn't kept: {e}",
+                    "romforge-provider: [ROMFORGE-002] {}'s play time wasn't kept: {e}",
                     end.playing.game
                 );
             }
@@ -164,7 +164,9 @@ impl Games {
             let games = self.clone();
             match romforge_core::controller::listen(move |e| games.pad(&e)) {
                 Ok(()) => *listening = true,
-                Err(e) => eprintln!("romforge-provider: no hotkeys, the pad can't be read: {e}"),
+                Err(e) => {
+                    eprintln!("romforge-provider: [ROMFORGE-003] no hotkeys, the pad can't be read: {e}")
+                }
             }
         }
         drop(listening);
@@ -172,9 +174,14 @@ impl Games {
         match program {
             Some(p) => match Overlay::start(&p, &session.playing.emulator) {
                 Ok(o) => *lock(&self.overlay) = Some(o),
-                Err(e) => eprintln!("romforge-provider: no radial menu, {}: {e}", p.display()),
+                Err(e) => eprintln!(
+                    "romforge-provider: [ROMFORGE-004] no radial menu, {}: {e}",
+                    p.display()
+                ),
             },
-            None => eprintln!("romforge-provider: no radial menu, the romforge app wasn't found"),
+            None => {
+                eprintln!("romforge-provider: [ROMFORGE-004] no radial menu, the romforge app wasn't found")
+            }
         }
     }
 

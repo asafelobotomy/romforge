@@ -24,6 +24,9 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --all --check
+      # The vendored uq-diag is uQ's release, and the logged problem codes match uq/diag/romforge.toml.
+      - run: scripts/check-uq-diag.sh 1.0.1 crates/romforge-core/src/uq_diag.rs
+      - run: scripts/check-diag-codes.sh uq/diag/romforge.toml crates app/src-tauri/src
       # romforge-provider reads the pad for the hotkeys (gilrs: libudev).
       - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       # romforge-provider's tests run its D-Bus interface on a private bus.
@@ -97,7 +100,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       # The uQ release whose `uqctl` checks the uq/ folder (its Phase 4 checks included).
-      UQ_TAG: v0.3.28
+      UQ_TAG: v0.3.35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
