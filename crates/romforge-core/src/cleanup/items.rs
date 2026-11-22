@@ -152,8 +152,10 @@ pub(super) fn folder_item(
         Some(id) => Some(conn.query_row(
             "SELECT code FROM folder_games WHERE folder_id = ?1",
             [id],
-            |r| r.get(0),
-        )?),
+            |r| r.get::<_, String>(0),
+        )?)
+        // A game recognised by its engine's files has no id yet.
+        .filter(|c| !c.is_empty()),
         None => None,
     };
     Ok(Ok(Some(Item {

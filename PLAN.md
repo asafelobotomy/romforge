@@ -3401,6 +3401,20 @@ found about 65 items; they are fixed one area per PR, worst first.
   per file beside each unknown sheet; it now works out each folder or
   archive once.
 
+- *(Fixed 2026-11-22.)* **Games still in their zip or 7z, identified
+  there.** A SCUMM (LucasArts, Humongous), SCI (Sierra) or Beneath a
+  Steel Sky game in an archive stayed a row per data file: ScummVM's list
+  leaves those engines out and its `--detect` only looks at folders. Now
+  such an archive (or a folder `--detect` hasn't named) is recognised by
+  its engine's files (`scummvm/engines.rs`) and is one ScummVM game,
+  titled by the index file's game id where libretro's names know it.
+  And a compressed disc image inside an archive (WBFS, RVZ, CISO, CSO)
+  gave no ID, since its header was read only from a plain file; the
+  member's first MiB is now read for it too. Open: an SCI game, or a
+  SCUMM game numbered by `.lfl` rooms, is titled by its archive until it
+  is unpacked and `--detect` names it; a Wii game in an archive is
+  identified but Dolphin still can't play it from there (no Wii RVZ yet).
+
 ## Later ideas (parked, do not build yet)
 
 - Online lookups for files that stay unknown: RetroAchievements hashes

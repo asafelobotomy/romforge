@@ -4,7 +4,7 @@ export function refreshNote(r) {
   return (
     (r.lists?.length ? `Updated ${r.lists.join("; ")}. ` : "") +
     `Rescanned ${r.folders} folders, ${r.entries} entries` +
-    (r.in_games ? `; ${r.in_games} files of ScummVM games named by ScummVM's list, not hashed` : "") +
+    (r.in_games ? `; ${r.in_games} files of ScummVM games, not hashed one by one` : "") +
     (r.skipped ? `; skipped for their extension: ${r.skipped}` : "") +
     (r.problems.length ? `; ${r.problems.length} problems: ${r.problems.join("; ")}` : "")
   );
@@ -29,7 +29,7 @@ export function scanNote(r) {
   return (
     (updated.length ? `Read ${updated.join(", ")}. ` : "") +
     `Scanned ${report.hashed} entries in ${report.root}${source}` +
-    (report.in_games ? `; ${report.in_games} files of ScummVM games named by ScummVM's list, not hashed` : "") +
+    (report.in_games ? `; ${report.in_games} files of ScummVM games, not hashed one by one` : "") +
     (kinds ? `; skipped for their extension: ${kinds}${report.skipped_kinds.length > 6 ? ", …" : ""}` : "") +
     (problems.length ? `. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join("; ")}${problems.length > 3 ? "; …" : ""}` : "")
   );

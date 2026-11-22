@@ -117,7 +117,10 @@ for romforge runs them.
 ## How identification works
 
 - Every file, and every member of a `.zip` or `.7z`, is hashed as a stream
-  (CRC32, MD5, SHA1). Archives are never unpacked to disk.
+  (CRC32, MD5, SHA1). Archives are never unpacked to disk. A member's
+  first bytes are read for the game's own ID as a plain file's are,
+  including a compressed disc image's header (a `.wbfs`, `.rvz`, `.ciso`
+  or `.cso` in a zip or 7z gives its game's ID and platform).
 - A `.chd` is read as its tracks: each CD track is rebuilt as the Redump
   `.bin` it came from and hashed as a member; a DVD CHD as one `.iso`.
 - A Z3DS file (Azahar's compressed 3DS games: `.zcci`, `.zcia`, `.zcxi`,
@@ -728,7 +731,18 @@ DOS and ScummVM games are folders of many files, so a folder is one game:
   ScummVM can't play from an archive, so it isn't playable until Rename &
   Cleanup unpacks it into its folder (each file read back and checked, the
   archive to the trash for undo; in place, beside the archive). ScummVM's
-  own `--detect` only looks at folders.
+  own `--detect` only looks at folders, so a game of the engines its list
+  leaves out is recognised by its engine's files, in a zip or 7z or a
+  folder `--detect` hasn't named: SCUMM by its index file (`<id>.000`,
+  `.la0` or `.he0` beside its data file, whose first 8 bytes must be a
+  SCUMM block; or numbered `.lfl` rooms), SCI by `resource.map` and its
+  volumes (`resmap`/`ressci` for SCI32), Beneath a Steel Sky by `sky.dnr`
+  and `sky.dsk`. Only names, sizes and those 8 bytes are read. It is one
+  game, titled by libretro's name for the game id the index file gives
+  (`tentacle.000`: Day of the Tentacle) when there is one, else by the
+  archive's or folder's name; import unpacks it as above, and ScummVM's
+  `--detect` names the folder after. Files the list names are left to the
+  list.
 - **Disk sets.** When every disk of a set ("Disk 1 of 4", "Disc 2") is
   imported, a `<Set>.m3u` lists them next to the files, and Play starts
   the playlist so the emulator can swap disks. Undo sets it aside with the rest. The floppy

@@ -19,7 +19,8 @@
 //!
 //! A game still in its zip or 7z is found by the list too (`packed`): the
 //! archive stands for its folder until cleanup unpacks it. ScummVM's own
-//! --detect only looks at folders.
+//! --detect only looks at folders, so a SCUMM, SCI or Sky game it hasn't
+//! named, packed or not, is recognised by its engine's files (`engines`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
@@ -34,6 +35,9 @@ use crate::{Error, systems};
 
 mod detect;
 pub use detect::*;
+mod engines;
+pub use engines::Recognised;
+pub(crate) use engines::{listed_names, recognise, title_of};
 mod packed;
 pub use packed::is_archive;
 mod store;
