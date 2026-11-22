@@ -17,8 +17,10 @@ use crate::games::{Games, PlayError};
 use crate::notify::{self, ICON};
 
 pub const BUS_NAME: &str = "org.romforge.Provider";
-pub const PATH: &str = "/org/uq/Launcher1";
-pub const INTERFACE: &str = "org.uq.Launcher1.Provider";
+pub const PATH: &str = romforge_core::uq_consts::dbus::LAUNCHER_PROVIDER_PATH;
+/// uQ's `LAUNCHER_PROVIDER_INTERFACE`; `#[zbus::interface]` below needs it as a literal, and a test
+/// keeps the two the same.
+pub const INTERFACE: &str = romforge_core::uq_consts::dbus::LAUNCHER_PROVIDER_INTERFACE;
 pub const ACTIONS_JSON: &str = r#"["play"]"#;
 /// Longer actions are refused unread.
 const MAX_ACTION_BYTES: usize = 32;
@@ -121,6 +123,12 @@ mod tests {
         assert!(check_action("Play").is_err());
         assert!(check_action("rm -rf /").is_err());
         assert!(check_action(&"x".repeat(5000)).unwrap_err().len() < 64);
+    }
+
+    #[test]
+    fn the_interface_is_uqs() {
+        let src = include_str!("provider.rs");
+        assert!(src.contains(&format!("#[zbus::interface(name = \"{INTERFACE}\")]")));
     }
 
     #[test]

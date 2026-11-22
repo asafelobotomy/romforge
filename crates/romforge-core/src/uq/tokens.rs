@@ -12,11 +12,7 @@ pub const MAX_BYTES: u64 = 64 * 1024;
 /// uQ's state folder (`$XDG_STATE_HOME/uq`, else `~/.local/state/uq`),
 /// whether or not it exists.
 pub fn dir() -> Option<PathBuf> {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-        .map(|state| state.join("uq"))
+    crate::uq_consts::paths::uq_dir()
 }
 
 /// Whether a change at `path`, seen by a watch on [`dir`], may be the

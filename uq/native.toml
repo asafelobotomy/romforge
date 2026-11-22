@@ -1,0 +1,15 @@
+# uQ kits this repo vendors unchanged (uQ's native/README.md). CI: scripts/check-uq-native.sh
+
+[uq-diag]
+version = "1.0.1"
+files = ["crates/romforge-core/src/uq_diag.rs"]
+codes = "uq/diag/romforge.toml"
+sources = ["crates", "app/src-tauri/src"]
+
+[uq-tokens]
+version = "1.0.0"
+files = ["app/src/vendor/uq-tokens/uq-tokens.js"]
+
+[uq-consts]
+version = "1.0.0"
+files = ["crates/romforge-core/src/uq_consts.rs"]
