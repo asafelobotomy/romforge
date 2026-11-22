@@ -7,6 +7,7 @@ import { listLabel } from "../listLabel.js";
 import { displayTitle } from "../labels.js";
 import { themeChoices, themeList, withTheme } from "./theme.svelte.js";
 import { detailsMenu } from "./fsdetails.js";
+import { versionKind, versionName } from "../versions.js";
 import { bookshelfMenu } from "./fsshelf.js";
 
 export function mainMenu(act, { sort, art }) {
@@ -41,6 +42,7 @@ export function optionsMenu(act, game, versions) {
   const items = [];
   if (game.playable) items.push({ label: "Play", run: () => act.play(game) });
   if (versions.length) items.push({ label: `Play another version (${versions.length})`, run: () => versionsMenu(act, game, versions) });
+  if (versions.length && game.playable) items.push({ label: "Always run…", run: () => act.alwaysRun(game) });
   if (game.playable) items.push({ label: "Emulator…", run: () => act.emulator(game) });
   items.push({ label: "Show in desktop", run: () => act.desktop(game) });
   return { title: displayTitle(game), index: 0, items };
@@ -55,6 +57,29 @@ export function versionsMenu(act, game, versions) {
       run: () => (v.playable ? act.play(v) : undefined),
     })),
   };
+}
+
+// Play on a game with several versions: "Always run" (off to start;
+// ticked, the version played starts without asking next time), then each
+// playable version, the main one first and focused.
+export function playMenu(act, game, versions, always = false, index = 1) {
+  return {
+    title: `Play ${displayTitle(game)}`,
+    index,
+    items: [
+      { label: `${always ? "☑" : "☐"} Always run`, run: () => playMenu(act, game, versions, !always, 0) },
+      ...versions.map((v) => ({ label: `Play ${versionName(v)} · ${versionKind(v)}`, run: () => act.playVersion(game, v, always) })),
+    ],
+  };
+}
+
+// North → Always run…: the version Play always runs for a game (`kept`,
+// or none), and asking again.
+export function alwaysRunMenu(act, game, kept) {
+  const items = kept
+    ? [{ label: `Ask which version each time (now ${versionName(kept)})`, run: () => act.forgetAlwaysRun(game) }]
+    : [{ label: "Play asks which version: tick Always run there to keep one", run: () => undefined }];
+  return { title: `${displayTitle(game)}: Always run`, index: 0, items };
 }
 
 export function ask(title, yes) {

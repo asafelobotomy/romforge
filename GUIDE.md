@@ -296,6 +296,25 @@ uses yours (PATH, Flatpak or AppImage). A decrypted dump doesn't match
 No-Intro by hash; Search names it by the product code in its header
 (`CTR-P-AREE`), as "identified by you", never verified.
 
+**A game with several versions.** Play on a game whose group has two or
+more playable versions (other regions, revisions, editions, translations,
+hacks) lists each, its main one first, with its own Play button and an
+"Always run" box, unticked to start. Ticked, the version played is kept
+(`user_games`, key `always_run`, under the group's key, by the version's
+title, so a rescan keeps it) and the next Play starts it without asking;
+if it has gone from the library, Play asks again. A version picked on its
+own in the list, or a game with one playable version, starts as it is.
+Details → Versions shows the kept one with "Ask each time"; the
+fullscreen mode asks in a menu, and North → Always run… asks again. The
+core decides (`play_choice`), so the desktop, fullscreen and CLI agree:
+
+```bash
+romforge-cli always-run show "Super Mario World (USA)"
+romforge-cli always-run set "Super Mario World (USA)" 2
+romforge-cli always-run clear "Super Mario World (USA)"
+romforge-cli always-run list
+```
+
 ## Emulator settings, cores and installs
 
 ```bash
@@ -893,6 +912,7 @@ tray; and not carried over to the app because they are for scripts: `games`,
 | Refresh without the online lists, of every folder ever scanned, threads, rehash | `refresh --no-lists/--jobs/--rehash` (the CLI always rescans every folder) | Refresh [advanced…] |
 | Undo any earlier batch | `organize undo --batch N`, `cleanup undo --batch N` | Advanced: earlier batches, on Organize and in the Rename & Cleanup dialog |
 | Favourites and play time | `favourite add/remove/list` | the fullscreen mode |
+| The version Play always runs for a game with several | `always-run show/set/clear/list` | Play's "Always run" box; Details → Versions |
 | The emulator a game always uses | `emulator pick GAME [NAME \| --clear]` | the fullscreen mode's Emulator menu |
 | Picking a game's art | `art GAME KIND [--pick N]` | Details → the art picker |
 | The fullscreen theme | `themes show`, `themes use ID …` | Settings → Display → Themes |

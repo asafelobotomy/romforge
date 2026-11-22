@@ -1,5 +1,6 @@
 //! [`Library`](crate::Library)'s methods, by what they do.
 
+mod always_run;
 mod art;
 mod contents;
 mod dat_import;

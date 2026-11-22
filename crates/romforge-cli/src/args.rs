@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use crate::subcommands::{
-    CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FavouriteCommand, FirmwareCommand,
-    HomeCommand, ManualCommand, OrganizeCommand, SavesCommand, ScopeArgs, ScummvmCommand, SearchCommand,
-    SteamCommand, ThemesCommand, UqSearchCommand,
+    AlwaysRunCommand, CleanupCommand, DatCommand, DatabasesCommand, EmulatorCommand, FavouriteCommand,
+    FirmwareCommand, HomeCommand, ManualCommand, OrganizeCommand, SavesCommand, ScopeArgs, ScummvmCommand,
+    SearchCommand, SteamCommand, ThemesCommand, UqSearchCommand,
 };
 
 #[derive(Parser)]
@@ -181,6 +181,9 @@ pub enum Command {
     /// Favourite games: the fullscreen mode's Favourites shelf
     #[command(subcommand)]
     Favourite(FavouriteCommand),
+    /// The version Play starts for a game with several (Always run)
+    #[command(subcommand)]
+    AlwaysRun(AlwaysRunCommand),
     /// Pick a game's picture from the ones the sources have
     ///
     /// Without --pick, lists them. Asks the network; a pick is kept even

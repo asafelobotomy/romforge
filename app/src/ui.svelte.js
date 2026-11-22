@@ -12,6 +12,9 @@ export const ui = $state({
   // (list or pictures, kept for next time).
   vexpanded: {},
   versionsMode: storedView("versions"),
+  // Bumped when Play's "Always run" choice changes (the Versions tab
+  // shows it).
+  alwaysRun: 0,
   // The Series tab's sort.
   seriesSort: remembered("series", { key: "order", dir: 1 }),
   // BIOS files to plan an import of on the BIOS page ("Import to BIOS").

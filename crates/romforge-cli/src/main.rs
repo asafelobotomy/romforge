@@ -131,6 +131,7 @@ fn main() -> Result<()> {
             cmd::emulator_config::run(&mut lib, c)?
         }
         c @ (Command::Launch { .. } | Command::Emulator(_)) => cmd::launch::run(&mut lib, c)?,
+        Command::AlwaysRun(c) => cmd::always_run::run(&lib, c)?,
         c @ Command::Firmware(_) => cmd::firmware::run(&mut lib, c)?,
         Command::Oysterav(a) => {
             if cmd::oysterav::run(&lib, a)? {
