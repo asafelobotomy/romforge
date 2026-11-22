@@ -67,7 +67,7 @@ impl Provider {
         match found {
             Ok(Ok(hits)) => hits.into_iter().map(row).collect(),
             Ok(Err(e)) => {
-                eprintln!("romforge-provider: {e}");
+                eprintln!("romforge-provider: [ROMFORGE-006] {e}");
                 Vec::new()
             }
             Err(_) => Vec::new(),

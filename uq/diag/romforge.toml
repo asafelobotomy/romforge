@@ -1,0 +1,53 @@
+# romforge's problem codes for uQ (`uqctl log`, `uqctl explain`, Settings › Problems). Installed as
+# /usr/share/uq/diag/romforge.toml. A code never changes meaning: set `retired = true` on one nothing
+# logs any more, and give a new problem the next number.
+app = "romforge"
+
+[[code]]
+id = "ROMFORGE-001"
+severity = "error"
+title = "romforge couldn't open its library"
+means = "romforge couldn't open its game library database, so it said so in a dialog and closed. Your ROM files are untouched."
+fix = "Check that the folder holding romforge's library (the dialog names the file) can be written and that your disk isn't full. If the file is damaged, move it aside and let romforge scan again."
+
+[[code]]
+id = "ROMFORGE-002"
+severity = "warn"
+title = "A game's play time wasn't kept"
+means = "A game ended but romforge couldn't write how long it was played to the library, so that session is missing from its play time."
+fix = "Check that the folder holding romforge's library can be written and that your disk isn't full; the next session is recorded as usual."
+
+[[code]]
+id = "ROMFORGE-003"
+severity = "warn"
+title = "romforge can't read the game pad"
+means = "romforge couldn't listen to your controllers, so its pad hotkeys (and pad navigation in the window) don't work. Games still play with the pad."
+fix = "Check that you can read /dev/input/event* (the input group, or a udev rule for your pad), then start the game again."
+
+[[code]]
+id = "ROMFORGE-004"
+severity = "warn"
+title = "romforge's radial menu couldn't open"
+means = "The in-game radial menu (save, load, quit) couldn't start over the game, so the hotkey that opens it does nothing for this session."
+fix = "Check that romforge is installed where uQ's launcher expects it, then start the game again from romforge."
+
+[[code]]
+id = "ROMFORGE-005"
+severity = "error"
+title = "romforge's search for uQ couldn't start"
+means = "romforge's launcher provider couldn't take its name on the session bus, so your games don't show in uQ's launcher. Another copy may already be running."
+fix = "Log out and back in, or end the other romforge-provider."
+
+[[code]]
+id = "ROMFORGE-006"
+severity = "warn"
+title = "romforge couldn't list games for uQ's launcher"
+means = "romforge's launcher provider couldn't read the game library, so searching for games in uQ's launcher found nothing."
+fix = "Open romforge once to check that the library opens, then search again."
+
+[[code]]
+id = "ROMFORGE-007"
+severity = "warn"
+title = "romforge couldn't update its uQ search"
+means = "romforge couldn't refresh the launcher provider that uQ's search uses, so a new romforge's search may still run the old one."
+fix = "Turn romforge's uQ search off and on again in its settings."

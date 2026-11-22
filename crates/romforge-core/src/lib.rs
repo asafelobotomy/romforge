@@ -53,6 +53,9 @@ pub mod thumbs;
 pub mod titles;
 pub mod uq;
 pub mod user_games;
+/// uQ's log format and crash records (uQ's `native/uq-diag`, vendored unchanged).
+#[rustfmt::skip]
+pub mod uq_diag;
 mod vcdiff;
 pub mod view;
 pub mod wikidata;
