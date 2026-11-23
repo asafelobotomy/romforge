@@ -26,6 +26,20 @@ jobs:
       - run: cargo fmt --all --check
       # uQ's kits (uq/native.toml) are the pinned releases, and the logged problem codes match uq/diag/romforge.toml.
       - run: scripts/check-uq-native.sh
+      # The .deb and .rpm (and so romforge-bin) ship every uQ file the source
+      # package installs: launcher, D-Bus, rules, Settings page, problem codes.
+      - name: Packages carry all of uq/
+        run: |
+          fail=0
+          for f in $(find uq -type f ! -name README.md ! -name native.toml | sort); do
+            for kind in deb rpm; do
+              jq -e --arg f "../../$f" --arg k "$kind" \
+                '.bundle.linux[$k].files | to_entries | any(.value == $f)' \
+                app/src-tauri/tauri.conf.json >/dev/null \
+                || { echo "::error::$f is missing from bundle.linux.$kind.files in tauri.conf.json"; fail=1; }
+            done
+          done
+          exit $fail
       # romforge-provider reads the pad for the hotkeys (gilrs: libudev).
       - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       # romforge-provider's tests run its D-Bus interface on a private bus.
