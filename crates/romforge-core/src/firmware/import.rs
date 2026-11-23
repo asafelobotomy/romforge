@@ -131,17 +131,12 @@ fn sets(places: &BTreeMap<PathBuf, Place>) -> HashSet<String> {
         .collect()
 }
 
-fn accepts(f: &FileReq, d: &crate::hash::Digest) -> bool {
-    f.size.is_none_or(|s| s == d.size) && (f.sha1.contains(&d.sha1) || f.md5.contains(&d.md5))
-}
-
 /// What dropping `paths` would do.
 pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<ImportPlan, Error> {
     let (profiles, _) = load(dir)?;
     let slots = slots(&profiles, home, env);
     let places = places(&slots);
     let mut out = ImportPlan::default();
-    let mut claimed: HashSet<PathBuf> = HashSet::new();
     let mut found = Vec::new();
     let sets = sets(&places);
     walk(
@@ -161,6 +156,7 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
             members_of.entry(parent).or_default().push((id.name(), d.clone()));
         }
     }
+    let mut rows = Vec::new();
     for (id, d) in found {
         let name = id.name();
         let mut matched = Match::Unknown;
@@ -180,7 +176,7 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
         } else {
             places
                 .iter()
-                .filter(|(_, p)| p.reqs.iter().any(|f| accepts(f, &d)))
+                .filter(|(_, p)| p.reqs.iter().any(|f| f.accepts(&d)))
                 .collect()
         };
         if whole && hits.is_empty() && !sets.contains(&name.to_ascii_lowercase()) {
@@ -197,15 +193,41 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
         } else {
             matched = Match::Accepted;
         }
+        rows.push((id, d, matched, hits));
+    }
+    // What is at each place now, and which accepted file fills an empty
+    // one: one of the place's own name first (`CM32L_CONTROL.ROM` over a
+    // `CM32LN_CONTROL.ROM` that DOSBox also accepts there), else the first.
+    let there: BTreeMap<&PathBuf, Option<crate::hash::Digest>> = rows
+        .iter()
+        .flat_map(|r| &r.3)
+        .map(|(place, _)| *place)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|place| (place, digest(place)))
+        .collect();
+    let mut claim: BTreeMap<&PathBuf, usize> = BTreeMap::new();
+    for own_name in [true, false] {
+        for (i, (id, _, matched, hits)) in rows.iter().enumerate() {
+            for (place, _) in hits.iter().filter(|_| *matched == Match::Accepted) {
+                let named = place
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(&id.name()));
+                if named == own_name && there[place].is_none() {
+                    claim.entry(place).or_insert(i);
+                }
+            }
+        }
+    }
+    for (i, (id, d, matched, hits)) in rows.into_iter().enumerate() {
+        let name = id.name();
         let targets = hits
             .into_iter()
             .map(|(place, p)| {
-                let state = match digest(place) {
-                    Some(there) if there.sha1 == d.sha1 => TargetState::AlreadyThere,
+                let state = match &there[place] {
+                    Some(t) if t.sha1 == d.sha1 => TargetState::AlreadyThere,
                     Some(_) => TargetState::Taken,
-                    None if matched == Match::Accepted && !claimed.insert(place.clone()) => {
-                        TargetState::Claimed
-                    }
+                    None if matched == Match::Accepted && claim[place] != i => TargetState::Claimed,
                     None => TargetState::New,
                 };
                 if matched == Match::Accepted && state == TargetState::New {

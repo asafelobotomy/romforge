@@ -586,10 +586,14 @@ list (MIT; only the list is fetched, never a BIOS file), against what is in
 `RomForge/Bios/`: `Bios/RetroArch/` for RetroArch's cores, `Bios/<emulator>/`
 for the others. A file is *accepted* when its size and SHA1 or MD5 are
 ones the emulator's code accepts; that says the emulator takes it, not
-that it is a verified dump. A file with no hash in the list can only be
-*present*. Drop folders, files, zips or 7z on the page (or `firmware
+that it is a verified dump. A file the emulator's profile lists with no
+hash borrows the hashes other profiles give a file of its name for the
+same system: a dump matching one is *accepted*, any other only *present*.
+A file a profile lists more than once (one entry per accepted version) is
+one line. Drop folders, files, zips or 7z on the page (or `firmware
 import`): each file is matched by its contents and copied where every
-emulator that wants it looks; a file whose name fits but whose hash isn't
+emulator that wants it looks (where two dropped files are accepted at one
+place, the one of that place's name goes there); a file whose name fits but whose hash isn't
 known is placed only when you tick it (`--also NAME`), and stays *placed
 by you* on the page, never "accepted". A BIOS zip (MAME-style, `neogeo.zip`)
 is checked by its members, as RetroBIOS lists them by size and SHA1/MD5:

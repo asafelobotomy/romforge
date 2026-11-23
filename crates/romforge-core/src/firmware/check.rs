@@ -82,10 +82,9 @@ impl Checker {
             None => State::Missing,
             Some(d) => {
                 let size_ok = f.size.is_none_or(|s| s == d.size);
-                let hashed = !f.sha1.is_empty() || !f.md5.is_empty();
-                if size_ok && (f.sha1.contains(&d.sha1) || f.md5.contains(&d.md5)) {
+                if f.accepts(&d) {
                     State::Accepted
-                } else if size_ok && !hashed {
+                } else if size_ok && !f.hashed() {
                     State::Present
                 } else {
                     State::WrongHash

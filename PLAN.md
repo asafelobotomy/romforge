@@ -2133,6 +2133,25 @@ other than RetroArch's (romforge launches RetroArch and standalone
 emulators, whose BIOS folders come from their profiles in
 `emulators.json`).
 
+*Audit against a real BIOS folder (2026-11-23).* An import plan of a
+16,700-file pack showed three faults, fixed (`firmware/known.rs`,
+`import.rs`): (1) a file a profile lists without a hash took no dump as
+accepted, so the usual GBA, GB/GBC, 32X, Saturn, FDS and Intellivision
+BIOS files were only "name fits": such a file now borrows, as known
+hashes, those other profiles give its name on its system (a match is
+accepted, any other dump stays present); (2) a profile listing one file
+several times (DOSBox's `MT32_CONTROL.ROM` nine times, blueMSX's files once
+with and once without hashes) showed it as many lines, one accepted and
+the rest wrong: repeats are now one file; (3) where two dropped files were
+both accepted at one place, the first read won (`CM32LN_CONTROL.ROM` over
+the real `CM32L_CONTROL.ROM`): a file of the place's own name now does.
+Still open: a file whose name fits a hashless place and whose contents
+RetroBIOS knows only under another name (melonDS's `bios7.bin`, Flycast's
+`dc_boot.bin`, ProSystem's `7800 BIOS (U).rom`, Genesis Plus GX's
+`bios_CD_U.bin`) stays name-only, since nothing in the list says the two
+names are one file; and the label "hash unknown" also covers a file whose
+hash is listed but differs.
+
 ## Emulator settings (milestone 21; decided 2026-10-19, built 2026-10-25)
 
 romforge has full control of its own copy of each emulator's config
