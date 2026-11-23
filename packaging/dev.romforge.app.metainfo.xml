@@ -30,6 +30,11 @@
   <project_license>MIT</project_license>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.21.4" date="2026-11-22">
+      <description>
+        <p>uQ's folder and D-Bus names come from uQ's shared constants; no visible change.</p>
+      </description>
+    </release>
     <release version="0.21.3" date="2026-11-22">
       <description>
         <p>Warnings and errors carry problem codes that uQ explains, and a crash leaves a report uQ lists.</p>

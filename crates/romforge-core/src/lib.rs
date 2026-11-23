@@ -52,6 +52,9 @@ pub mod themes;
 pub mod thumbs;
 pub mod titles;
 pub mod uq;
+/// uQ's shared values (uQ's native/uq-consts), vendored unchanged.
+#[rustfmt::skip]
+pub mod uq_consts;
 pub mod user_games;
 /// uQ's log format and crash records (uQ's `native/uq-diag`, vendored unchanged).
 #[rustfmt::skip]
