@@ -194,8 +194,10 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
         again.shown
     );
     assert!(again.targets.iter().all(|t| t.state == TargetState::New));
+    assert_eq!(renamed.systems, ["Sony PlayStation"]);
     assert_eq!(by("ps1_rom.bin").matched, Match::NameOnly);
     assert_eq!(by("notes.txt").matched, Match::Unknown);
+    assert!(by("notes.txt").systems.is_empty());
     assert!(
         p.skipped
             .iter()

@@ -35,6 +35,7 @@ pub use journal::undo;
 pub mod find;
 mod members;
 mod originals;
+mod places;
 pub use import::*;
 mod ready;
 use ready::{is_chip, same_core};

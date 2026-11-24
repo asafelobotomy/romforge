@@ -8,8 +8,9 @@
   // Dropping BIOS files on the BIOS page (milestone 20, step 3): a folder,
   // files, zips or 7z. The core matches each file by its contents and says
   // where it goes; nothing is written until "Import". `done` reloads the
-  // page's report.
-  let { active, busy, note = $bindable(""), error = $bindable(""), done } = $props();
+  // page's report. `order`: the systems' names as the page lists them, so
+  // the plan's groups follow the same order.
+  let { active, busy, note = $bindable(""), error = $bindable(""), done, order = [] } = $props();
 
   let over = $state(false);
   let paths = $state([]);
@@ -117,6 +118,19 @@
   const nameOnly = $derived(plan?.files.filter((f) => f.matched === "name_only") ?? []);
   const unknown = $derived(plan?.files.filter((f) => f.matched === "unknown") ?? []);
   const fills = $derived(plan ? plan.new_places + nameOnly.filter((f) => also.includes(f.shown)).reduce((n, f) => n + f.targets.filter((t) => t.state === "new").length, 0) : 0);
+  // The recognised and name-only files by system (a file several systems'
+  // emulators load is under all of their names), in the page's order.
+  const groups = $derived.by(() => {
+    const m = new Map();
+    for (const f of [...accepted, ...nameOnly]) {
+      const name = f.systems.join(" / ") || "Other";
+      if (!m.has(name)) m.set(name, { name, rank: rank(f.systems[0]), accepted: [], nameOnly: [] });
+      m.get(name)[f.matched === "accepted" ? "accepted" : "nameOnly"].push(f);
+    }
+    return [...m.values()].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+  });
+  const rank = (system) => (order.includes(system) ? order.indexOf(system) : order.length);
+  const tick = (f, on) => (also = on ? [...also, f.shown] : also.filter((s) => s !== f.shown));
   const STATE = { new: "goes to", already_there: "already in", taken: "another file is in", claimed: "another dropped file goes to" };
   const rel = (p) => p.replace(/^.*\/Bios\//, "Bios/");
 </script>
@@ -142,26 +156,34 @@
     <h3>
       {accepted.length} recognised, {nameOnly.length} by name only, {unknown.length} not BIOS files
     </h3>
-    {#each accepted as f}
-      <div class="item">
-        <span class="src" title={f.shown}>{f.name}</span>
-        <ul>
-          {#each f.targets as t}
-            <li class={t.state}>{STATE[t.state]} {rel(t.place)} <span class="hint">· {t.used_by.join(", ")}</span></li>
-          {/each}
-        </ul>
-      </div>
-    {/each}
     {#if nameOnly.length}
-      <p class="hint">These match a file an emulator loads by name only (the list gives no hash to check them by). Tick the ones to place anyway.</p>
-      {#each nameOnly as f}
-        <label class="toggle item">
-          <input type="checkbox" checked={also.includes(f.shown)} onchange={(e) => (also = e.currentTarget.checked ? [...also, f.shown] : also.filter((s) => s !== f.shown))} />
-          <span class="src" title={f.shown}>{f.name}</span>
-          <span class="hint">{f.targets.some((t) => t.state === "new") ? "→ " + f.targets.filter((t) => t.state === "new").map((t) => rel(t.place)).join(", ") : "· its places are filled"}</span>
-        </label>
-      {/each}
+      <p class="hint">Files marked "by name only" match a file an emulator loads by name alone (the list gives no hash to check them by). Tick the ones to place anyway.</p>
     {/if}
+    {#each groups as g (g.name)}
+      <details class="group" open>
+        <summary>
+          <strong>{g.name}</strong>
+          <span class="hint">· {g.accepted.length} recognised{#if g.nameOnly.length}, {g.nameOnly.length} by name only{/if}</span>
+        </summary>
+        {#each g.accepted as f}
+          <div class="item">
+            <span class="src" title={f.shown}>{f.name}</span>
+            <ul>
+              {#each f.targets as t}
+                <li class={t.state}>{STATE[t.state]} {rel(t.place)} <span class="hint">· {t.used_by.join(", ")}</span></li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
+        {#each g.nameOnly as f}
+          <label class="toggle item">
+            <input type="checkbox" checked={also.includes(f.shown)} onchange={(e) => tick(f, e.currentTarget.checked)} />
+            <span class="src" title={f.shown}>{f.name}</span>
+            <span class="hint">by name only {f.targets.some((t) => t.state === "new") ? "→ " + f.targets.filter((t) => t.state === "new").map((t) => rel(t.place)).join(", ") : "· its places are filled"}</span>
+          </label>
+        {/each}
+      </details>
+    {/each}
     {#if unknown.length}
       <details><summary class="hint">{unknown.length} file{unknown.length === 1 ? "" : "s"} no emulator here loads</summary>
         <ul class="hint">{#each unknown as f}<li title={f.shown}>{f.shown}</li>{/each}</ul>
@@ -181,6 +203,9 @@
   .drop p { margin: 0 0 0.4rem; }
   .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-bottom: 0.75rem; }
   .plan h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
+  .group { border-top: 1px solid var(--line); padding: 0.3rem 0; }
+  .group summary { cursor: pointer; padding: 0.1rem 0; }
+  .group > .item { margin-left: 1rem; }
   .item { padding: 0.2rem 0; }
   .src { font-weight: 600; }
   .item ul { margin: 0.1rem 0 0.2rem 1rem; padding: 0; list-style: none; font-size: 0.85rem; }

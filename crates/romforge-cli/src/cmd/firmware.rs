@@ -116,7 +116,10 @@ fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[
             Match::NameOnly => "name fits, hash unknown",
             Match::Unknown => "unknown",
         };
-        println!("{}  ({what})", f.shown);
+        match f.systems.as_slice() {
+            [] => println!("{}  ({what})", f.shown),
+            s => println!("{}  ({what}; {})", f.shown, s.join(", ")),
+        }
         for t in &f.targets {
             let state = match t.state {
                 TargetState::New => "goes to",
