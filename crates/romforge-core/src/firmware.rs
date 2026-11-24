@@ -24,6 +24,7 @@ mod data;
 pub mod gate;
 pub use data::{FileReq, Member, Profile};
 mod check;
+mod fit;
 mod import;
 use check::{Checker, digest};
 mod index;

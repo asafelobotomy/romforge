@@ -622,7 +622,11 @@ import`): each file is matched by its contents and copied where every
 emulator that wants it looks (where two dropped files are accepted at one
 place, the one of that place's name goes there); a file whose name fits but whose hash isn't
 known is placed only when you tick it (`--also NAME`), and stays *placed
-by you* on the page, never "accepted". A BIOS zip (MAME-style, `neogeo.zip`)
+by you* on the page, never "accepted". Such a file is offered only where
+its own folders point when they name an emulator (`Cemu/keys.txt` for
+Cemu, not Azahar) or one of sibling folders (`GC/JAP/IPL.bin` for the
+`JAP` places, not `EUR` or `USA`; `firmware/fit.rs`), and never for a
+place a dropped file matched by its contents fills. A BIOS zip (MAME-style, `neogeo.zip`)
 is checked by its members, as RetroBIOS lists them by size and SHA1/MD5:
 *accepted* when it holds them all, *incomplete* (with what it lacks) when
 some; a dropped zip that holds them all is placed whole, whatever its name.

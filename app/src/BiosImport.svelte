@@ -158,7 +158,7 @@
         <label class="toggle item">
           <input type="checkbox" checked={also.includes(f.shown)} onchange={(e) => (also = e.currentTarget.checked ? [...also, f.shown] : also.filter((s) => s !== f.shown))} />
           <span class="src" title={f.shown}>{f.name}</span>
-          <span class="hint">→ {f.targets.map((t) => rel(t.place)).join(", ")}</span>
+          <span class="hint">{f.targets.some((t) => t.state === "new") ? "→ " + f.targets.filter((t) => t.state === "new").map((t) => rel(t.place)).join(", ") : "· its places are filled"}</span>
         </label>
       {/each}
     {/if}

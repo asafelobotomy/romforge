@@ -194,6 +194,7 @@ pub fn plan(
                 .iter()
                 .filter(|(_, p)| p.reqs.iter().any(|f| f.name.eq_ignore_ascii_case(&name)))
                 .collect();
+            hits = super::fit::narrow(&id, paths, &home.bios(), hits, |p| &p.used_by);
             if !hits.is_empty() {
                 matched = Match::NameOnly;
             }
@@ -234,7 +235,9 @@ pub fn plan(
                 let state = match &there[place] {
                     Some(t) if t.sha1 == d.sha1 => TargetState::AlreadyThere,
                     Some(_) => TargetState::Taken,
-                    None if matched == Match::Accepted && claim[place] != i => TargetState::Claimed,
+                    // An accepted file fills it, even when this one is only
+                    // name-only (Cemu's `keys.txt` at Azahar's place).
+                    None if claim.get(place).is_some_and(|c| *c != i) => TargetState::Claimed,
                     None => TargetState::New,
                 };
                 if matched == Match::Accepted && state == TargetState::New {
