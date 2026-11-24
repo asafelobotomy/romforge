@@ -373,6 +373,7 @@ fn a_badge_for_a_system_whose_first_installed_emulator_lacks_a_file() {
     );
 }
 
+mod claims;
 mod library;
 mod originals;
 mod sets;

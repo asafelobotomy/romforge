@@ -29,6 +29,7 @@ use check::{Checker, digest};
 mod index;
 pub(crate) use index::{BiosIndex, index};
 mod journal;
+mod known;
 pub use journal::undo;
 pub mod find;
 mod members;

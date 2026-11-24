@@ -43,6 +43,11 @@ pub struct FileReq {
     /// Accepted hashes, lower case.
     pub sha1: Vec<String>,
     pub md5: Vec<String>,
+    /// For a file listed without a hash: the hashes other profiles give a
+    /// file of its name for its system (`known.rs`). A dump matching one is
+    /// accepted; another is still present, not wrong.
+    pub known_sha1: Vec<String>,
+    pub known_md5: Vec<String>,
     /// The RetroBIOS system it is for, when the profile covers several.
     pub system: Option<String>,
     /// An archive of several files (MAME-style BIOS zips).
@@ -63,6 +68,21 @@ impl FileReq {
             .as_deref()
             .filter(|p| !p.is_empty())
             .unwrap_or(&self.name)
+    }
+
+    /// The emulator's code checks its hash.
+    pub fn hashed(&self) -> bool {
+        !self.sha1.is_empty() || !self.md5.is_empty()
+    }
+
+    /// `d` is a dump of it that is accepted: its size, and a SHA1 or MD5
+    /// the emulator or (for a file it checks no hash of) another one knows.
+    pub fn accepts(&self, d: &crate::hash::Digest) -> bool {
+        self.size.is_none_or(|s| s == d.size)
+            && (self.sha1.contains(&d.sha1)
+                || self.md5.contains(&d.md5)
+                || self.known_sha1.contains(&d.sha1)
+                || self.known_md5.contains(&d.md5))
     }
 }
 
@@ -110,6 +130,7 @@ pub fn parse(bytes: &[u8]) -> Result<(Vec<Profile>, String), Error> {
             t.cores.extend(cores);
         }
     }
+    super::known::tidy(&mut out);
     Ok((out, generated))
 }
 
@@ -163,6 +184,7 @@ fn file(v: &Value) -> Option<FileReq> {
             .collect(),
         regions: strings(v.get("region")),
         variant_group: v.get("variant_group").and_then(Value::as_str).map(str::to_owned),
+        ..FileReq::default()
     })
 }
 
