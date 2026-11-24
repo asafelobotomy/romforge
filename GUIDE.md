@@ -631,7 +631,10 @@ is checked by its members, as RetroBIOS lists them by size and SHA1/MD5:
 *accepted* when it holds them all, *incomplete* (with what it lacks) when
 some; a dropped zip that holds them all is placed whole, whatever its name.
 One named like a machine's set but holding other members is offered, as a
-name-only file.
+name-only file. The plan lists the files by system (PlayStation, Saturn,
+Game Boy Advance…), in the order of the page's platform list: each file
+under the systems whose emulators load it (`ImportFile::systems`), the
+files no emulator loads apart at the end.
 
 romforge keeps every BIOS file in `RomForge/Bios/`. **Find BIOS on this
 computer** (on the page, or `firmware find`) looks in the usual places

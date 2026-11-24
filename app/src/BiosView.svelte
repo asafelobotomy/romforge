@@ -79,7 +79,7 @@
       Which files each emulator loads comes from RetroBIOS, read from the emulators' own source. romforge fetches that list
       only, never BIOS files: bring your own dumps. A file is accepted when its size and hash are ones the emulator takes.
     </p>
-    {#if report}<BiosImport {active} {busy} bind:note bind:error done={loadBios} />{/if}
+    {#if report}<BiosImport {active} {busy} bind:note bind:error done={loadBios} order={report.systems.map((s) => s.name)} />{/if}
     {#if problem}
       <p class="hint" role="status">{problem}</p>
     {:else if report}

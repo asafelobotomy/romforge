@@ -17,8 +17,9 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
+use super::places::{Place, in_table_order, is_zip, places, sets};
 use super::walk::{Progress, SourceId, walk};
-use super::{FileReq, Slot, digest, load, slots};
+use super::{digest, load, slots};
 use crate::Error;
 use crate::home::Home;
 use crate::launch::Env;
@@ -53,6 +54,8 @@ pub struct ImportTarget {
     pub place: PathBuf,
     /// The cores and emulators that load it from there.
     pub used_by: Vec<String>,
+    /// The systems (as the systems table names them) they load it for.
+    pub systems: Vec<&'static str>,
     pub state: TargetState,
 }
 
@@ -66,6 +69,9 @@ pub struct ImportFile {
     pub sha1: String,
     pub matched: Match,
     pub targets: Vec<ImportTarget>,
+    /// Its targets' systems, in the systems table's order: what the app
+    /// groups the plan by. Empty for a file no emulator loads.
+    pub systems: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -88,47 +94,6 @@ pub struct Imported {
     /// Further places given a hard link (or a copy) of one.
     pub linked: usize,
     pub batch: Option<i64>,
-}
-
-/// One place an emulator loads a file from: what it accepts there and who
-/// loads it.
-struct Place<'a> {
-    reqs: Vec<&'a FileReq>,
-    used_by: Vec<String>,
-}
-
-fn places<'a>(slots: &'a [Slot<'a>]) -> BTreeMap<PathBuf, Place<'a>> {
-    let mut out: BTreeMap<PathBuf, Place> = BTreeMap::new();
-    for slot in slots {
-        for f in slot.files() {
-            let p = out.entry(slot.place(f)).or_insert(Place {
-                reqs: Vec::new(),
-                used_by: Vec::new(),
-            });
-            p.reqs.push(f);
-            let label = slot.label();
-            if !p.used_by.contains(&label) {
-                p.used_by.push(label);
-            }
-        }
-    }
-    out
-}
-
-/// A zip, which is offered whole as well as by its members.
-fn is_zip(name: &str) -> bool {
-    name.to_ascii_lowercase().ends_with(".zip")
-}
-
-/// The archives emulators load as they are (a MAME machine's `fm7.zip`): a
-/// dropped one of these names is also offered whole, not only its members.
-fn sets(places: &BTreeMap<PathBuf, Place>) -> HashSet<String> {
-    places
-        .values()
-        .flat_map(|p| &p.reqs)
-        .filter(|f| f.archive)
-        .map(|f| f.name.to_ascii_lowercase())
-        .collect()
 }
 
 /// What dropping `paths` would do; `progress` as each file is read.
@@ -246,10 +211,12 @@ pub fn plan(
                 ImportTarget {
                     place: place.clone(),
                     used_by: p.used_by.clone(),
+                    systems: p.systems.clone(),
                     state,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let systems = in_table_order(targets.iter().flat_map(|t| &t.systems));
         out.files.push(ImportFile {
             shown: id.shown(),
             source: id,
@@ -258,6 +225,7 @@ pub fn plan(
             sha1: d.sha1,
             matched,
             targets,
+            systems,
         });
     }
     Ok(out)
