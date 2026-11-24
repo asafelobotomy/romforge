@@ -2152,6 +2152,18 @@ RetroBIOS knows only under another name (melonDS's `bios7.bin`, Flycast's
 names are one file; and the label "hash unknown" also covers a file whose
 hash is listed but differs.
 
+*Second audit (2026-11-24, after 0.22.0).* The three fixes hold on the
+same pack (1172 accepted, MT32 one line, `CM32L_CONTROL.ROM` wins). Two
+more faults with name-only files, fixed (`firmware/fit.rs`, `import.rs`):
+(1) one was offered for a place an accepted dropped file fills, and if
+ticked could take it first (Cemu's Wii U `keys.txt` at Azahar's place
+ahead of the accepted 3DS one; MAME's `disk.rom` and `kanji.rom` at
+fMSX's): such a place is now "another dropped file goes there"; (2) one
+was offered for every place of its name, whatever its folders said
+(`GC/JAP/IPL.bin` for the EUR and USA places, Cemu's `otp.bin` for
+Azahar's): its folders now narrow it to the emulator or sibling folder
+they name. Still open as above.
+
 ## Emulator settings (milestone 21; decided 2026-10-19, built 2026-10-25)
 
 romforge has full control of its own copy of each emulator's config
