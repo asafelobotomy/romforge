@@ -3590,7 +3590,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-app"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "gtk",
  "libloading 0.9.1",
@@ -3609,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-cli"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3622,7 +3622,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-core"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "chd",
  "crc32fast",
@@ -3656,7 +3656,7 @@ dependencies = [
 
 [[package]]
 name = "romforge-provider"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "romforge-core",
  "serde_json",

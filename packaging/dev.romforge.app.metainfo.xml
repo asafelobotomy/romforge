@@ -30,6 +30,11 @@
   <project_license>MIT</project_license>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.22.1" date="2026-11-24">
+      <description>
+        <p>BIOS import: a file that only matches by name is offered only where its folders point (the right emulator or region), and never in place of a file recognised by its contents.</p>
+      </description>
+    </release>
     <release version="0.22.0" date="2026-11-24">
       <description>
         <p>BIOS files are recognised by their hashes even when DATs list none, each file is listed once, and the same-named file wins its slot. Reading and importing BIOS files show their progress in the footer.</p>
