@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
-use super::walk::{SourceId, walk};
+use super::walk::{Progress, SourceId, walk};
 use super::{FileReq, Slot, digest, load, slots};
 use crate::Error;
 use crate::home::Home;
@@ -131,8 +131,14 @@ fn sets(places: &BTreeMap<PathBuf, Place>) -> HashSet<String> {
         .collect()
 }
 
-/// What dropping `paths` would do.
-pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<ImportPlan, Error> {
+/// What dropping `paths` would do; `progress` as each file is read.
+pub fn plan(
+    dir: &Path,
+    home: &Home,
+    env: &Env,
+    paths: &[PathBuf],
+    progress: &mut Progress,
+) -> Result<ImportPlan, Error> {
     let (profiles, _) = load(dir)?;
     let slots = slots(&profiles, home, env);
     let places = places(&slots);
@@ -148,6 +154,7 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
             Ok(())
         },
         &mut out.skipped,
+        progress,
     );
     // Each zip's members, for a BIOS zip matched by what it holds.
     let mut members_of: BTreeMap<SourceId, Vec<(String, crate::hash::Digest)>> = BTreeMap::new();
@@ -255,6 +262,8 @@ pub fn plan(dir: &Path, home: &Home, env: &Env, paths: &[PathBuf]) -> Result<Imp
 
 /// Do what [`plan`] says, plus the name-only files whose `shown` is in
 /// `also`. Returns what was written; the batch is journaled for [`undo`].
+/// `progress` counts both passes: reading every file, then copying.
+#[allow(clippy::too_many_arguments)]
 pub fn apply(
     conn: &Connection,
     dir: &Path,
@@ -263,8 +272,9 @@ pub fn apply(
     paths: &[PathBuf],
     also: &[String],
     move_originals: bool,
+    progress: &mut Progress,
 ) -> Result<Imported, Error> {
-    let plan = plan(dir, home, env, paths)?;
+    let plan = plan(dir, home, env, paths, &mut |n, all, f| progress(n, 2 * all, f))?;
     let originals = if move_originals {
         super::originals::taken(&plan, also)
     } else {
@@ -350,6 +360,7 @@ pub fn apply(
             Ok(())
         },
         &mut skipped,
+        &mut |n, all, f| progress(all + n, 2 * all, f),
     );
     if let Some((what, why)) = skipped.into_iter().next() {
         failure = Some(Error::Launch(format!("{what}: {why}")));

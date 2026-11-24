@@ -30,7 +30,7 @@ fn a_file_of_the_place_s_own_name_fills_it_and_known_hashes_count() {
     std::fs::write(drop.join("scph5501.bin"), &us).unwrap();
     std::fs::write(drop.join("ps1_rom.bin"), &rom).unwrap();
 
-    let p = plan(&dir, &home, &Env::default(), &[drop]).unwrap();
+    let p = plan(&dir, &home, &Env::default(), &[drop], &mut |_, _, _| {}).unwrap();
     let by = |n: &str| p.files.iter().find(|f| f.name == n).unwrap();
     let ra = home.bios().join("RetroArch/scph5501.bin");
     let state = |n: &str| by(n).targets.iter().find(|t| t.place == ra).unwrap().state;

@@ -61,14 +61,48 @@ pub type Each<'a> = dyn FnMut(&SourceId, &mut dyn Read, u64) -> Result<(), Error
 /// members).
 pub type Whole<'a> = dyn Fn(&str) -> bool + 'a;
 
+/// How far a walk is: `(done, total, file)` before each file on disk (an
+/// archive counts as one).
+pub type Progress<'a> = dyn FnMut(usize, usize, &Path) + 'a;
+
 /// Walk `paths`; a part that can't be read is reported in `skipped` and
 /// the rest go on.
-pub fn walk(paths: &[PathBuf], whole: &Whole, each: &mut Each, skipped: &mut Vec<(String, String)>) {
-    let mut w = Walker { whole, each, skipped };
+pub fn walk(
+    paths: &[PathBuf],
+    whole: &Whole,
+    each: &mut Each,
+    skipped: &mut Vec<(String, String)>,
+    progress: &mut Progress,
+) {
+    let mut files = Vec::new();
     for p in paths {
-        if let Err(e) = w.path(p) {
-            w.skipped.push((p.display().to_string(), e.to_string()));
+        list(p, &mut files, skipped);
+    }
+    let mut w = Walker { whole, each, skipped };
+    for (i, f) in files.iter().enumerate() {
+        progress(i, files.len(), f);
+        if let Err(e) = w.file(f) {
+            w.skipped.push((f.display().to_string(), e.to_string()));
         }
+    }
+}
+
+/// The files on disk in `p` (itself, or a folder's, all the way down, in
+/// order).
+fn list(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<(String, String)>) {
+    if !p.is_dir() {
+        out.push(p.to_path_buf());
+        return;
+    }
+    match std::fs::read_dir(p) {
+        Ok(rd) => {
+            let mut entries: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            entries.sort();
+            for e in entries {
+                list(&e, out, skipped);
+            }
+        }
+        Err(e) => skipped.push((p.display().to_string(), e.to_string())),
     }
 }
 
@@ -79,19 +113,7 @@ struct Walker<'w, 'a, 'b> {
 }
 
 impl Walker<'_, '_, '_> {
-    fn path(&mut self, p: &Path) -> Result<(), Error> {
-        if p.is_dir() {
-            let mut entries: Vec<PathBuf> = std::fs::read_dir(p)?
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .collect();
-            entries.sort();
-            for e in entries {
-                if let Err(err) = self.path(&e) {
-                    self.skipped.push((e.display().to_string(), err.to_string()));
-                }
-            }
-            return Ok(());
-        }
+    fn file(&mut self, p: &Path) -> Result<(), Error> {
         let id = SourceId {
             file: p.to_path_buf(),
             members: Vec::new(),

@@ -19,7 +19,7 @@ fn moved_originals_come_back_with_undo_and_go_with_the_trash() {
     std::fs::write(found.join("notes.txt"), b"mine").unwrap();
     let paths = vec![found.clone()];
 
-    let done = apply(&conn, &dir, &home, &env, &paths, &[], true).unwrap();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[], true, &mut |_, _, _| {}).unwrap();
     assert!(done.written >= 1 && done.moved == 1, "{done:?}");
     assert!(!found.join("scph5501.bin").exists(), "moved to the trash");
     assert!(found.join("notes.txt").exists(), "what isn't a BIOS file stays");
@@ -41,7 +41,7 @@ fn moved_originals_come_back_with_undo_and_go_with_the_trash() {
     );
 
     // Moved again, then the trash emptied: gone for good, no undo.
-    apply(&conn, &dir, &home, &env, &paths, &[], true).unwrap();
+    apply(&conn, &dir, &home, &env, &paths, &[], true, &mut |_, _, _| {}).unwrap();
     let emptied = crate::cleanup::empty_trash(&conn, None).unwrap();
     assert_eq!(emptied.files, 1);
     assert!(!found.join("scph5501.bin").exists());
@@ -49,7 +49,7 @@ fn moved_originals_come_back_with_undo_and_go_with_the_trash() {
     // Left where they are (the default): copied, nothing moves.
     std::fs::write(found.join("scph5501.bin"), &us).unwrap();
     std::fs::remove_dir_all(home.bios()).unwrap();
-    let done = apply(&conn, &dir, &home, &env, &paths, &[], false).unwrap();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[], false, &mut |_, _, _| {}).unwrap();
     assert_eq!(done.moved, 0);
     assert!(found.join("scph5501.bin").exists());
 }

@@ -169,7 +169,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
     std::fs::write(drop.join("big.zip.001"), b"slice").unwrap();
     let paths = vec![drop.clone()];
 
-    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let p = plan(&dir, &home, &env, &paths, &mut |_, _, _| {}).unwrap();
     let by = |n: &str| p.files.iter().find(|f| f.name == n).unwrap();
     let renamed = by("renamed.bin");
     assert_eq!(renamed.matched, Match::Accepted);
@@ -206,8 +206,12 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
 
     // Apply, with the name-only file picked too.
     let ps1 = by("ps1_rom.bin").shown.clone();
-    let done = apply(&conn, &dir, &home, &env, &paths, &[ps1], false).unwrap();
+    let mut steps = Vec::new();
+    let mut seen = |n, all, _: &Path| steps.push((n, all));
+    let done = apply(&conn, &dir, &home, &env, &paths, &[ps1], false, &mut seen).unwrap();
     assert_eq!((done.written, done.linked), (2, 1));
+    // Four files on disk, each read to plan, then again to copy.
+    assert_eq!(steps, (0..8).map(|n| (n, 8)).collect::<Vec<_>>());
     assert_eq!(std::fs::read(&ra).unwrap(), us);
     assert_eq!(std::fs::read(&duck).unwrap(), us);
     assert_eq!(
@@ -226,7 +230,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
     );
 
     // Again: everything is there already.
-    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let p = plan(&dir, &home, &env, &paths, &mut |_, _, _| {}).unwrap();
     assert_eq!(p.new_places, 0);
     assert!(
         p.files
@@ -242,7 +246,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
     assert_eq!(undo(&conn).unwrap(), 3);
     assert!(!ra.exists() && !duck.exists());
     std::fs::write(&duck, b"someone else's").unwrap();
-    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let p = plan(&dir, &home, &env, &paths, &mut |_, _, _| {}).unwrap();
     let states: Vec<TargetState> = p
         .files
         .iter()
@@ -253,7 +257,7 @@ fn a_drop_is_matched_by_contents_and_placed_once() {
         .map(|t| t.state)
         .collect();
     assert_eq!(states, [TargetState::New, TargetState::Taken]);
-    apply(&conn, &dir, &home, &env, &paths, &[], false).unwrap();
+    apply(&conn, &dir, &home, &env, &paths, &[], false, &mut |_, _, _| {}).unwrap();
     assert_eq!(std::fs::read(&duck).unwrap(), b"someone else's");
     assert!(
         undo(&conn).is_ok() && undo(&conn).is_err(),

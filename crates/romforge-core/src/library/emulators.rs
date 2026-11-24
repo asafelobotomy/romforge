@@ -87,20 +87,37 @@ impl Library {
     }
 
     /// What importing the BIOS files in `paths` would do; nothing is written.
-    pub fn firmware_import_plan(&self, paths: &[std::path::PathBuf]) -> Result<firmware::ImportPlan, Error> {
+    /// `progress(n, total, file)` before each file on disk is read.
+    pub fn firmware_import_plan(
+        &self,
+        paths: &[std::path::PathBuf],
+        mut progress: impl FnMut(usize, usize, &std::path::Path),
+    ) -> Result<firmware::ImportPlan, Error> {
         let (home, dir) = self.firmware_dirs()?;
-        firmware::plan(&dir, home, &self.env()?, paths)
+        firmware::plan(&dir, home, &self.env()?, paths, &mut progress)
     }
 
     /// Import them: accepted files, and the name-only ones in `also`.
+    /// `progress` over both passes (every file read, then copied).
     pub fn firmware_import(
         &mut self,
         paths: &[std::path::PathBuf],
         also: &[String],
+        mut progress: impl FnMut(usize, usize, &std::path::Path),
     ) -> Result<firmware::Imported, Error> {
         let (home, dir) = self.firmware_dirs()?;
         let move_originals = !crate::settings::load(&self.conn)?.bios_leave_in_place;
-        firmware::apply(&self.conn, &dir, home, &self.env()?, paths, also, move_originals)
+        let env = self.env()?;
+        firmware::apply(
+            &self.conn,
+            &dir,
+            home,
+            &env,
+            paths,
+            also,
+            move_originals,
+            &mut progress,
+        )
     }
 
     /// Install the PS3 firmware in `Bios/rpcs3/` into RPCS3.

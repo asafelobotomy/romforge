@@ -43,14 +43,11 @@
     if (busy || working) return;
     working = true;
     error = "";
-    try {
-      paths = p;
-      also = [];
-      plan = await invoke("firmware_import_plan", { paths: p });
-    } catch (e) {
-      plan = null;
-      error = String(e).replace(/^(launch|settings): /, "");
-    }
+    paths = p;
+    also = [];
+    // A job in the queue (footer), each file read a step; its error goes
+    // to the status line.
+    plan = await run("Reading BIOS files…", "firmware_import_plan", { paths: p });
     working = false;
   }
 
