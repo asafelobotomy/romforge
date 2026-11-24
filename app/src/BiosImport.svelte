@@ -10,11 +10,10 @@
   // where it goes; nothing is written until "Import". `done` reloads the
   // page's report. `order`: the systems' names as the page lists them, so
   // the plan's groups follow the same order.
-  let { active, busy, note = $bindable(""), error = $bindable(""), done, order = [] } = $props();
+  let { active, busy, note = $bindable(""), error = $bindable(""), done, order = [], plan = $bindable(null) } = $props();
 
   let over = $state(false);
   let paths = $state([]);
-  let plan = $state(null);
   let also = $state([]);
   let working = $state(false);
 

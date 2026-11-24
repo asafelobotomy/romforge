@@ -2,24 +2,33 @@
   import { invoke } from "@tauri-apps/api/core";
   import { ask } from "@tauri-apps/plugin-dialog";
   import BiosImport from "./BiosImport.svelte";
+  import BiosDialog from "./BiosDialog.svelte";
+  import { planPlaces, summary } from "./biosCards.js";
+  import { artSrc } from "./lib.js";
 
   // The BIOS page (milestone 20): what each system's emulators load, from
   // RetroBIOS's list, against the files in the RomForge folder's Bios/.
-  // Always mounted, so the system picked lasts; drawn only while `active`.
+  // Always mounted, so the import plan on screen lasts; drawn only while
+  // `active`.
   // `needs`: the library's BIOS badges, kept current from each report.
-  let { active, busy, note = $bindable(""), error = $bindable(""), run, needs = $bindable([]) } = $props();
+  // `icons`, `iconStyle`: the sidebar's platform pictures (system key ->
+  // file) and their theme, for the cards.
+  let { active, busy, note = $bindable(""), error = $bindable(""), run, needs = $bindable([]), icons = {}, iconStyle = "" } = $props();
 
   let report = $state(null);
   let problem = $state("");
+  // The system whose dialog is open.
   let key = $state(null);
-  let showAll = $state(false);
+  // The import plan on screen, if any: the cards count what it would fill.
+  let plan = $state(null);
+  let failed = $state(new Set());
 
   export async function loadBios() {
     problem = "";
     try {
       report = await invoke("firmware_report");
       needs = report.needs;
-      if (!report.systems.some((s) => s.key === key)) key = report.systems[0]?.key ?? null;
+      if (!report.systems.some((s) => s.key === key)) key = null;
     } catch (e) {
       report = null;
       problem = String(e).replace(/^(launch|settings): /, "");
@@ -44,28 +53,16 @@
     await loadBios();
   }
 
-  // An emulator's state in a few words.
-  function readiness(e) {
-    if (!e.profiled) return "not in RetroBIOS's list";
-    if (!e.ready) return "missing required files";
-    return e.regions.length ? `ready for ${e.regions.join(", ")}` : "ready";
-  }
-  const STATES = {
-    accepted: "Accepted",
-    present: "Present (no hash to check)",
-    wrong_hash: "Wrong file",
-    incomplete: "Incomplete zip",
-    placed_by_you: "Placed by you",
-    missing: "Missing",
-  };
-  const need = (f) =>
-    !f.required ? "Optional"
-    : f.only_for ? `Only ${f.only_for}`
-    : f.hle ? "Required, runs without"
-    : "Required";
-  // Where a file goes, from Bios/ on.
-  const where = (f) => (report && f.place.startsWith(report.bios_dir) ? "Bios" + f.place.slice(report.bios_dir.length) : f.place);
-  const readyCount = (s) => s.emulators.filter((e) => e.ready && e.profiled).length;
+  const planned = $derived(planPlaces(plan));
+  // Each card's numbers, and whether the system can start its games:
+  // ready (an emulator is), lacking (none is) or unknown (no list for it).
+  const cards = $derived(
+    (report?.systems ?? []).map((s) => {
+      const n = summary(s, planned);
+      const mood = n.ready ? "ready" : s.emulators.some((e) => e.profiled) ? "lacking" : "unknown";
+      return { s, n, mood };
+    }),
+  );
   let system = $derived(report?.systems.find((s) => s.key === key));
 </script>
 
@@ -79,76 +76,44 @@
       Which files each emulator loads comes from RetroBIOS, read from the emulators' own source. romforge fetches that list
       only, never BIOS files: bring your own dumps. A file is accepted when its size and hash are ones the emulator takes.
     </p>
-    {#if report}<BiosImport {active} {busy} bind:note bind:error done={loadBios} order={report.systems.map((s) => s.name)} />{/if}
+    {#if report}<BiosImport {active} {busy} bind:note bind:error bind:plan done={loadBios} order={report.systems.map((s) => s.name)} />{/if}
     {#if problem}
       <p class="hint" role="status">{problem}</p>
     {:else if report}
-      <div class="bios">
-        <div class="syspane">
-          <table>
-            <thead><tr><th>Platform</th><th class="num">Ready</th></tr></thead>
-            <tbody>
-              {#each report.systems as s}
-                <tr class:selected={s.key === key} tabindex="0" aria-selected={s.key === key} onclick={() => (key = s.key)} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), (key = s.key))}>
-                  <td>{s.name}</td>
-                  <td class="num" class:none={readyCount(s) === 0}>{readyCount(s)} / {s.emulators.length}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-        <div class="emupane">
-          {#if system}
-            <label class="toggle"><input type="checkbox" bind:checked={showAll} /> Show optional files you don't have</label>
-            {#each system.emulators as e}
-              {@const files = e.files.filter((f) => showAll || f.required || f.state !== "missing")}
-              <section class="emu">
-                <h3>{e.label}</h3>
-                <p class="hint">
-                  <span class:good={e.ready && e.profiled} class:bad={!e.ready}>{readiness(e)}</span>
-                  · {e.installed ? "installed" : "not installed"} · {e.files.length} file{e.files.length === 1 ? "" : "s"} in its list
-                </p>
-                {#if e.name === "rpcs3" && e.files.some((f) => f.name === "PS3UPDAT.PUP" && f.state !== "missing")}
-                  <button onclick={installPs3} disabled={!!busy || !e.installed} title="Runs RPCS3's own firmware installer (it goes into the dev_flash romforge's RPCS3 setup uses: your own RPCS3's when it has one)">Install into RPCS3</button>
-                {/if}
-                {#if files.length}
-                  <table>
-                    <thead><tr><th>File</th><th>State</th><th>Needed</th><th>Goes in</th></tr></thead>
-                    <tbody>
-                      {#each files as f}
-                        <tr>
-                          <td>{f.name}{#if f.regions.length}<span class="hint"> · {f.regions.join(", ")}</span>{/if}</td>
-                          <td class={f.state} title={f.missing?.length ? `Lacks ${f.missing.join(", ")}` : undefined}>{STATES[f.state]}{#if f.missing?.length}<span class="lacks"> · lacks {f.missing.length}</span>{/if}</td>
-                          <td>{need(f)}</td>
-                          <td class="path" title={f.place}>{where(f)}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                {:else if e.profiled}
-                  <p class="hint">{e.files.length ? "Only optional files, none here yet." : "Needs no BIOS files."}</p>
-                {/if}
-              </section>
-            {/each}
-          {/if}
-        </div>
+      <div class="cards">
+        {#each cards as { s, n, mood } (s.key)}
+          <button class="card {mood}" onclick={() => (key = s.key)} title="{s.name}: every BIOS file, where it is and how it matched">
+            {#if icons[s.key] && !failed.has(icons[s.key])}
+              <img class="picon" class:logo={iconStyle === "logo"} src={artSrc(icons[s.key])} alt="" onerror={() => (failed = new Set(failed).add(icons[s.key]))} />
+            {:else}
+              <span class="picon short">{s.key}</span>
+            {/if}
+            <span class="name">{s.name}</span>
+            {#if n.places}
+              <span class="hint">{n.files} BIOS file{n.files === 1 ? "" : "s"} · {n.places} place{n.places === 1 ? "" : "s"}</span>
+              <span class="count"><strong>{n.have}</strong> / {n.places} matched{#if n.incoming}<span class="incoming">&nbsp;· +{n.incoming} in this import</span>{/if}</span>
+              <span class="hint">{n.ready} / {n.emulators} emulator{n.emulators === 1 ? "" : "s"} ready</span>
+            {:else}
+              <span class="hint">{mood === "unknown" ? "Not in RetroBIOS's list" : "Needs no BIOS files"}</span>
+            {/if}
+          </button>
+        {/each}
       </div>
+      {#if system}<BiosDialog {system} {report} {planned} {busy} {installPs3} onclose={() => (key = null)} />{/if}
     {/if}
   </section>
 {/if}
 
 <style>
-  .bios { display: grid; grid-template-columns: minmax(12rem, 0.6fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
-  .syspane, .emupane { overflow-x: auto; min-width: 0; }
-  .syspane tbody tr { cursor: pointer; }
-  tr.selected { background: var(--accent-bg); }
-  .emu { border-top: 1px solid var(--line); padding: 0.5rem 0; }
-  .emu h3 { font-size: 0.95rem; margin: 0; }
-  .emu .hint { margin: 0.15rem 0 0.35rem; }
-  .good, .accepted { color: var(--ok); }
-  .bad, .wrong_hash { color: var(--bad); }
-  .missing, .none { color: var(--muted); }
-  .incomplete { color: var(--warn, #b8860b); }
-  .lacks { font-size: 0.75rem; color: var(--muted); }
-  .path { font-size: 0.8rem; word-break: break-all; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem; }
+  .card { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; text-align: left; padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); background: var(--panel); cursor: pointer; font: inherit; color: inherit; }
+  .card:hover, .card:focus-visible { background: var(--accent-bg); }
+  .card.ready { border-left-color: var(--ok); }
+  .card.lacking { border-left-color: var(--bad); }
+  .picon { width: 3rem; height: 2.4rem; object-fit: contain; margin-bottom: 0.2rem; }
+  .picon.logo { box-sizing: border-box; padding: 0.2rem 0.25rem; background: #f4f4f4; border-radius: var(--radius-control); }
+  .picon.short { display: grid; place-items: center; width: auto; min-width: 3rem; padding: 0 0.3rem; font-size: 0.75rem; font-weight: 700; border: 1px solid var(--line); border-radius: var(--radius-control); }
+  .name { font-weight: 600; }
+  .card .hint { margin: 0; font-size: 0.8rem; }
+  .incoming { color: var(--accent); }
 </style>
