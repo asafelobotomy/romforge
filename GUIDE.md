@@ -621,7 +621,8 @@ one line. Drop folders, files, zips or 7z on the page (or `firmware
 import`): each file is matched by its contents and copied where every
 emulator that wants it looks (where two dropped files are accepted at one
 place, the one of that place's name goes there); a file whose name fits but whose hash isn't
-known is placed only when you tick it (`--also NAME`), and stays *placed
+known is placed only when you tick it (`--also NAME`; the page's **Select all**, overall
+or per system, ticks every such file that has an empty place to fill), and stays *placed
 by you* on the page, never "accepted". Such a file is offered only where
 its own folders point when they name an emulator (`Cemu/keys.txt` for
 Cemu, not Azahar) or one of sibling folders (`GC/JAP/IPL.bin` for the

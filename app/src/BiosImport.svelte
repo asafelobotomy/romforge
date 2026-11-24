@@ -131,6 +131,19 @@
   });
   const rank = (system) => (order.includes(system) ? order.indexOf(system) : order.length);
   const tick = (f, on) => (also = on ? [...also, f.shown] : also.filter((s) => s !== f.shown));
+  // "Select all" ticks only name-only files with an empty place to fill: one
+  // whose places hold a file already, or that a recognised file fills, stays
+  // unticked.
+  const fillsAny = (f) => f.targets.some((t) => t.state === "new");
+  const tickAll = (files, on) => {
+    const shown = files.filter(fillsAny).map((f) => f.shown);
+    also = on ? [...new Set([...also, ...shown])] : also.filter((s) => !shown.includes(s));
+  };
+  const ticked = (files) => {
+    const open = files.filter(fillsAny);
+    const n = open.filter((f) => also.includes(f.shown)).length;
+    return { open: open.length, all: open.length > 0 && n === open.length, some: n > 0 && n < open.length };
+  };
   const STATE = { new: "goes to", already_there: "already in", taken: "another file is in", claimed: "another dropped file goes to" };
   const rel = (p) => p.replace(/^.*\/Bios\//, "Bios/");
 </script>
@@ -157,7 +170,12 @@
       {accepted.length} recognised, {nameOnly.length} by name only, {unknown.length} not BIOS files
     </h3>
     {#if nameOnly.length}
+      {@const t = ticked(nameOnly)}
       <p class="hint">Files marked "by name only" match a file an emulator loads by name alone (the list gives no hash to check them by). Tick the ones to place anyway.</p>
+      <label class="toggle all">
+        <input type="checkbox" checked={t.all} indeterminate={t.some} disabled={!t.open} onchange={(e) => tickAll(nameOnly, e.currentTarget.checked)} />
+        Select all by name only <span class="hint">({t.open} with an empty place)</span>
+      </label>
     {/if}
     {#each groups as g (g.name)}
       <details class="group" open>
@@ -175,6 +193,13 @@
             </ul>
           </div>
         {/each}
+        {#if g.nameOnly.length > 1}
+          {@const t = ticked(g.nameOnly)}
+          <label class="toggle item">
+            <input type="checkbox" checked={t.all} indeterminate={t.some} disabled={!t.open} onchange={(e) => tickAll(g.nameOnly, e.currentTarget.checked)} />
+            <span class="hint">Select all {g.name} files by name only ({t.open})</span>
+          </label>
+        {/if}
         {#each g.nameOnly as f}
           <label class="toggle item">
             <input type="checkbox" checked={also.includes(f.shown)} onchange={(e) => tick(f, e.currentTarget.checked)} />
@@ -205,8 +230,9 @@
   .plan h3 { font-size: 0.95rem; margin: 0 0 0.4rem; }
   .group { border-top: 1px solid var(--line); padding: 0.3rem 0; }
   .group summary { cursor: pointer; padding: 0.1rem 0; }
-  .group > .item { margin-left: 1rem; }
+  .group > .item { display: block; margin-left: 1rem; }
   .item { padding: 0.2rem 0; }
+  .all { display: block; margin: 0.2rem 0 0.4rem; }
   .src { font-weight: 600; }
   .item ul { margin: 0.1rem 0 0.2rem 1rem; padding: 0; list-style: none; font-size: 0.85rem; }
   .new { color: var(--ok); }
