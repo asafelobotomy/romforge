@@ -1,6 +1,6 @@
 //! The BIOS page (milestone 20).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use romforge_core::firmware::{FirmwareReport, ImportPlan, Imported};
 
@@ -43,19 +43,41 @@ pub async fn firmware_download(
     .await
 }
 
-/// What importing dropped files would do.
-#[tauri::command]
-pub async fn firmware_import_plan(db: tauri::State<'_, Db>, paths: Vec<PathBuf>) -> Res<ImportPlan> {
-    read(&db, move |lib| lib.firmware_import_plan(&paths)).await
+/// A file's name, as a job's step.
+fn named(p: &Path) -> String {
+    p.file_name()
+        .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
+/// What importing dropped files would do (a job: each file read is a step).
+#[tauri::command]
+pub async fn firmware_import_plan(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    paths: Vec<PathBuf>,
+    job: Option<u64>,
+) -> Res<ImportPlan> {
+    let mut job = crate::jobs::Job::start(&app, job);
+    read(&db, move |lib| {
+        lib.firmware_import_plan(&paths, |n, all, f| job.count(n, all, named(f)))
+    })
+    .await
+}
+
+/// Import them (a job: every file read again, then copied).
 #[tauri::command]
 pub async fn firmware_import(
+    app: tauri::AppHandle,
     db: tauri::State<'_, Db>,
     paths: Vec<PathBuf>,
     also: Vec<String>,
+    job: Option<u64>,
 ) -> Res<Imported> {
-    with(&db, move |lib| lib.firmware_import(&paths, &also)).await
+    let mut job = crate::jobs::Job::start(&app, job);
+    with(&db, move |lib| {
+        lib.firmware_import(&paths, &also, |n, all, f| job.count(n, all, named(f)))
+    })
+    .await
 }
 
 #[tauri::command]

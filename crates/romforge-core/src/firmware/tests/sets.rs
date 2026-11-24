@@ -22,7 +22,7 @@ fn a_dropped_machine_set_is_offered_whole() {
     std::fs::write(drop.join("other.zip"), zip_of(&[("x.rom", b"x")])).unwrap();
     let paths = vec![drop.clone()];
 
-    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let p = plan(&dir, &home, &env, &paths, &mut |_, _, _| {}).unwrap();
     let whole: Vec<_> = p.files.iter().filter(|f| f.source.members.is_empty()).collect();
     assert_eq!(whole.len(), 1, "only the set is offered whole: {:?}", p.files);
     let f = whole[0];
@@ -35,7 +35,7 @@ fn a_dropped_machine_set_is_offered_whole() {
         "its members too"
     );
 
-    let done = apply(&conn, &dir, &home, &env, &paths, &[], false).unwrap();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[], false, &mut |_, _, _| {}).unwrap();
     assert_eq!(done.written, 0, "not placed unless picked");
     let done = apply(
         &conn,
@@ -45,6 +45,7 @@ fn a_dropped_machine_set_is_offered_whole() {
         &paths,
         std::slice::from_ref(&f.shown),
         false,
+        &mut |_, _, _| {},
     )
     .unwrap();
     assert_eq!(done.written, 1);
@@ -101,7 +102,7 @@ fn a_bios_zip_is_checked_and_matched_by_its_members() {
     ]);
     std::fs::write(drop.join("my set.zip"), &zip).unwrap();
     let paths = vec![drop.clone()];
-    let p = plan(&dir, &home, &env, &paths).unwrap();
+    let p = plan(&dir, &home, &env, &paths, &mut |_, _, _| {}).unwrap();
     let whole = p
         .files
         .iter()
@@ -109,7 +110,7 @@ fn a_bios_zip_is_checked_and_matched_by_its_members() {
         .expect("the zip itself");
     assert_eq!(whole.matched, Match::Accepted);
     assert_eq!(whole.targets[0].place, place);
-    let done = apply(&conn, &dir, &home, &env, &paths, &[], false).unwrap();
+    let done = apply(&conn, &dir, &home, &env, &paths, &[], false, &mut |_, _, _| {}).unwrap();
     assert_eq!(done.written, 1);
     assert_eq!(std::fs::read(&place).unwrap(), zip, "copied as it is");
     assert_eq!(state(), (State::Accepted, Vec::new()));

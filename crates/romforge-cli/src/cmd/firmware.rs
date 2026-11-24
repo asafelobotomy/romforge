@@ -109,7 +109,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
 
 /// What importing `paths` would do, or doing it.
 fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[String]) -> Result<()> {
-    let plan = lib.firmware_import_plan(paths)?;
+    let plan = lib.firmware_import_plan(paths, |_, _, _| {})?;
     for f in &plan.files {
         let what = match f.matched {
             Match::Accepted => "accepted",
@@ -131,7 +131,7 @@ fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[
         println!("skipped {what}: {why}");
     }
     if apply {
-        let done = lib.firmware_import(paths, also)?;
+        let done = lib.firmware_import(paths, also, |_, _, _| {})?;
         println!("wrote {} file(s), linked {} more", done.written, done.linked);
         if done.moved > 0 {
             println!(
