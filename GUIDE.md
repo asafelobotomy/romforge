@@ -617,7 +617,13 @@ that it is a verified dump. A file the emulator's profile lists with no
 hash borrows the hashes other profiles give a file of its name for the
 same system: a dump matching one is *accepted*, any other only *present*.
 A file a profile lists more than once (one entry per accepted version) is
-one line. Drop folders, files, zips or 7z on the page (or `firmware
+one line. Each system is a card with its platform icon: how many BIOS
+files its emulators load and in how many places, how many of those places
+hold a file now, how many an import plan on screen would fill with a file
+matched by its hash, and how many emulators are ready. A card opens a
+dialog of every file: where it is now (at its place, or where the plan has
+it), where it goes, and how it matched (hash, or name only; `biosCards.js`).
+Drop folders, files, zips or 7z on the page (or `firmware
 import`): each file is matched by its contents and copied where every
 emulator that wants it looks (where two dropped files are accepted at one
 place, the one of that place's name goes there); a file whose name fits but whose hash isn't
