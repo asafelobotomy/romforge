@@ -62,6 +62,14 @@ fn main() -> Result<()> {
                 Created::New { .. } => {}
             }
             println!("using {}", new.root().display());
+            // --db or ROMFORGE_DB would still open the old place next time
+            // (an empty library, made anew), not the one moved in.
+            if let Some(d) = cli.db.as_ref().filter(|d| **d != new.db()) {
+                eprintln!(
+                    "note: --db or ROMFORGE_DB names {}; leave it out (unset ROMFORGE_DB) to use the RomForge folder's library",
+                    d.display()
+                );
+            }
             return Ok(());
         }
         Command::Home(HomeCommand::Move { new_parent }) => {

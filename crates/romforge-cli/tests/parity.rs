@@ -167,3 +167,32 @@ fn display_playing_and_fullscreen_settings() {
     assert!(fails(&db, &["settings", "--shelf-sort", "random"]).contains("title, released, newest, played"));
     assert!(fails(&db, &["settings", "--fs-details", "nonsense"]).contains("no detail"));
 }
+
+#[test]
+fn bios_files_from_the_library_as_the_bios_page_offers() {
+    // The BIOS page's "From your library": none among these games.
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("romforge.db");
+    library(&db);
+    let said = run(&db, &["firmware", "library"]);
+    assert!(said.contains("no BIOS files among your scanned games"), "{said}");
+}
+
+#[test]
+fn overview_lines_up_long_platform_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("romforge.db");
+    library(&db);
+    let said = run(&db, &["overview"]);
+    // Every count starts in one column, past the longest name.
+    let columns: Vec<usize> = said
+        .lines()
+        .filter(|l| l.starts_with("  ") && l.ends_with("verified)"))
+        .map(|l| {
+            let name_and_count = &l[..l.rfind(" (").unwrap()];
+            name_and_count.rfind(' ').unwrap()
+        })
+        .collect();
+    assert!(columns.len() > 1, "{said}");
+    assert!(columns.windows(2).all(|w| w[0] == w[1]), "{said}");
+}

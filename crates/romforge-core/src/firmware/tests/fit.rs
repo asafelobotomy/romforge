@@ -72,6 +72,16 @@ fn a_name_only_file_goes_where_its_folders_point_and_never_over_an_accepted_one(
         ]
     );
     assert_eq!(places("IPL.bin").len(), 6);
+    // Two name-only files for one place fill it once.
+    let both = [by("Cemu/keys.txt").shown.clone(), by("keys.txt").shown.clone()];
+    assert_eq!(p.fills(&both), p.new_places + 1);
+    let open = p.name_only_open();
+    assert!(open.contains(&both[0]) && open.contains(&both[1]), "{open:?}");
+    assert_eq!(
+        p.fills(&open),
+        p.new_places + 1 + 6,
+        "cemu's keys.txt, IPL.bin's six"
+    );
 
     // Both Wii U files ticked: Azahar's place still gets the 3DS file.
     let also = [by("Cemu/keys.txt").shown.clone(), by("keys.txt").shown.clone()];

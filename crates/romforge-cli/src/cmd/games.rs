@@ -18,8 +18,15 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 "{} games ({} verified, {} incomplete), {} unidentified files, {} BIOS files",
                 t.games, t.verified, t.incomplete, t.unidentified, t.bios_files
             );
+            // As wide as the longest name, so no number reads as part of one.
+            let w = o
+                .platforms
+                .iter()
+                .map(|p| p.name.chars().count())
+                .max()
+                .unwrap_or(0);
             for p in &o.platforms {
-                println!("  {:<28} {} ({} verified)", p.name, p.games, p.verified);
+                println!("  {:<w$}  {} ({} verified)", p.name, p.games, p.verified);
             }
             for r in &o.recent {
                 println!(

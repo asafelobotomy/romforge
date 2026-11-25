@@ -71,10 +71,29 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
                 }
             }
         }
-        Command::Firmware(FirmwareCommand::Import { paths, apply, also }) => {
-            import(lib, &paths, apply, &also)?
+        Command::Firmware(FirmwareCommand::Import {
+            paths,
+            apply,
+            also,
+            all_names,
+        }) => import(lib, &paths, apply, also, all_names)?,
+        Command::Firmware(FirmwareCommand::Library {
+            apply,
+            also,
+            all_names,
+        }) => {
+            let paths = lib.firmware_in_library(None)?;
+            if paths.is_empty() {
+                println!("no BIOS files among your scanned games (with RetroBIOS's list downloaded)");
+                return Ok(());
+            }
+            import(lib, &paths, apply, also, all_names)?;
         }
-        Command::Firmware(FirmwareCommand::Find { apply, also }) => {
+        Command::Firmware(FirmwareCommand::Find {
+            apply,
+            also,
+            all_names,
+        }) => {
             let paths = lib.firmware_found()?;
             if paths.is_empty() {
                 println!("no BIOS folders in their usual places on this computer");
@@ -83,7 +102,7 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
             for p in &paths {
                 println!("looking in {}", p.display());
             }
-            import(lib, &paths, apply, &also)?;
+            import(lib, &paths, apply, also, all_names)?;
         }
         Command::Firmware(FirmwareCommand::InstallPs3 { apply }) => {
             if !apply {
@@ -108,8 +127,18 @@ pub fn run(lib: &mut Library, command: Command) -> Result<()> {
 }
 
 /// What importing `paths` would do, or doing it.
-fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[String]) -> Result<()> {
+/// `all_names`: also every name-only file with an empty place.
+fn import(
+    lib: &mut Library,
+    paths: &[std::path::PathBuf],
+    apply: bool,
+    mut also: Vec<String>,
+    all_names: bool,
+) -> Result<()> {
     let plan = lib.firmware_import_plan(paths, |_, _, _| {})?;
+    if all_names {
+        also.extend(plan.name_only_open());
+    }
     for f in &plan.files {
         let what = match f.matched {
             Match::Accepted => "accepted",
@@ -134,7 +163,7 @@ fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[
         println!("skipped {what}: {why}");
     }
     if apply {
-        let done = lib.firmware_import(paths, also, |_, _, _| {})?;
+        let done = lib.firmware_import(paths, &also, |_, _, _| {})?;
         println!("wrote {} file(s), linked {} more", done.written, done.linked);
         if done.moved > 0 {
             println!(
@@ -145,7 +174,7 @@ fn import(lib: &mut Library, paths: &[std::path::PathBuf], apply: bool, also: &[
     } else {
         println!(
             "{} place(s) would be filled; run again with --apply",
-            plan.new_places
+            plan.fills(&also)
         );
     }
     Ok(())

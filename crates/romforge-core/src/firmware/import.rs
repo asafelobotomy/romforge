@@ -83,6 +83,35 @@ pub struct ImportPlan {
     pub new_places: usize,
 }
 
+impl ImportPlan {
+    /// The name-only files with an empty place to fill, by `shown`: what
+    /// the app's "Select all" ticks (`firmware import --all-names`).
+    pub fn name_only_open(&self) -> Vec<String> {
+        self.files
+            .iter()
+            .filter(|f| f.matched == Match::NameOnly && f.targets.iter().any(|t| t.state == TargetState::New))
+            .map(|f| f.shown.clone())
+            .collect()
+    }
+
+    /// Places an apply with the name-only files in `also` would fill: each
+    /// place once, though two of them go there (only the first is written).
+    pub fn fills(&self, also: &[String]) -> usize {
+        let mut places = HashSet::new();
+        for f in &self.files {
+            if f.matched == Match::NameOnly && also.contains(&f.shown) {
+                places.extend(
+                    f.targets
+                        .iter()
+                        .filter(|t| t.state == TargetState::New)
+                        .map(|t| &t.place),
+                );
+            }
+        }
+        self.new_places + places.len()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Imported {
     /// Files written.
