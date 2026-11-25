@@ -101,7 +101,8 @@
     gap: 4px;
     font-size: 17px;
     text-align: center;
-    border-radius: var(--radius-large);
+    /* The overlay page has no app.css: its 12px unless one is set. */
+    border-radius: var(--radius-large, 12px);
     transform: rotate(calc(var(--i) * var(--step) - 90deg)) translate(215px) rotate(calc(var(--i) * var(--step) * -1 + 90deg));
   }
   .slot svg {

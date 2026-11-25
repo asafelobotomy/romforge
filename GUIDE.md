@@ -603,6 +603,7 @@ romforge-cli firmware check [--system "PlayStation"] [--core duckstation] [--all
 romforge-cli firmware import ~/bios ~/bios.zip  # the plan: what goes where
 romforge-cli firmware import ~/bios --apply     # copies; never replaces a file
 romforge-cli firmware find [--apply]            # BIOS files already on this computer
+romforge-cli firmware library [--apply]         # BIOS files among your scanned games
 romforge-cli firmware undo --yes                # takes the last import back
 romforge-cli firmware install-ps3 [--apply]     # Bios/rpcs3/PS3UPDAT.PUP into RPCS3
 ```
@@ -628,7 +629,8 @@ import`): each file is matched by its contents and copied where every
 emulator that wants it looks (where two dropped files are accepted at one
 place, the one of that place's name goes there); a file whose name fits but whose hash isn't
 known is placed only when you tick it (`--also NAME`; the page's **Select all**, overall
-or per system, ticks every such file that has an empty place to fill), and stays *placed
+or per system, or `--all-names`, ticks every such file that has an empty place to fill;
+two ticked for one place fill it once, the first, and the plan's count says so), and stays *placed
 by you* on the page, never "accepted". Such a file is offered only where
 its own folders point when they name an emulator (`Cemu/keys.txt` for
 Cemu, not Azahar) or one of sibling folders (`GC/JAP/IPL.bin` for the
@@ -691,7 +693,7 @@ xemu) is held back, when its folder in `Bios/` has no file.
 in RetroBIOS's list (size and SHA1 or MD5, for a platform other than
 arcade) shows in Unidentified as a **BIOS file** for its platform instead
 of unknown, with **Import to BIOS…**, which opens its plan on the BIOS
-page. **From your library** on the BIOS page plans all of them at once.
+page. **From your library** on the BIOS page (or `firmware library`) plans all of them at once.
 A file a Redump BIOS DAT verifies stays verified.
 
 ## Manuals

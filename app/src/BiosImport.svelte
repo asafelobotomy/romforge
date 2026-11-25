@@ -116,7 +116,9 @@
   const accepted = $derived(plan?.files.filter((f) => f.matched === "accepted") ?? []);
   const nameOnly = $derived(plan?.files.filter((f) => f.matched === "name_only") ?? []);
   const unknown = $derived(plan?.files.filter((f) => f.matched === "unknown") ?? []);
-  const fills = $derived(plan ? plan.new_places + nameOnly.filter((f) => also.includes(f.shown)).reduce((n, f) => n + f.targets.filter((t) => t.state === "new").length, 0) : 0);
+  // Each place once: two ticked name-only files for one place fill it once
+  // (the first is written), as the core's `ImportPlan::fills` counts.
+  const fills = $derived(plan ? plan.new_places + new Set(nameOnly.filter((f) => also.includes(f.shown)).flatMap((f) => f.targets.filter((t) => t.state === "new").map((t) => t.place))).size : 0);
   // The recognised and name-only files by system (a file several systems'
   // emulators load is under all of their names), in the page's order.
   const groups = $derived.by(() => {

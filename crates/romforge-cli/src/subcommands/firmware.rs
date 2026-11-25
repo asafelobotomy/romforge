@@ -32,6 +32,10 @@ pub enum FirmwareCommand {
         /// (as the plan shows it); may be given several times
         #[arg(long)]
         also: Vec<String>,
+        /// Also place every file whose name fits and that has an empty
+        /// place to fill (the app's "Select all")
+        #[arg(long)]
+        all_names: bool,
     },
     /// Look for BIOS files in their usual places on this computer
     /// (RetroArch's system folder, EmuDeck's, RetroDECK's, the emulators'
@@ -45,6 +49,23 @@ pub enum FirmwareCommand {
         /// Also place this file whose name fits but whose hash isn't known
         #[arg(long)]
         also: Vec<String>,
+        /// Also place every file whose name fits and that has an empty place
+        #[arg(long)]
+        all_names: bool,
+    },
+    /// Import the BIOS files among your scanned games (shown as "BIOS
+    /// file" among the unidentified), like `import` (shows the plan unless
+    /// --apply)
+    Library {
+        /// Do it
+        #[arg(long)]
+        apply: bool,
+        /// Also place this file whose name fits but whose hash isn't known
+        #[arg(long)]
+        also: Vec<String>,
+        /// Also place every file whose name fits and that has an empty place
+        #[arg(long)]
+        all_names: bool,
     },
     /// Take away what the last import wrote (and put back originals it
     /// moved)
