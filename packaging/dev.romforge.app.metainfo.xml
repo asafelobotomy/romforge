@@ -30,6 +30,11 @@
   <project_license>MIT</project_license>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.22.2" date="2026-11-26">
+      <description>
+        <p>The BIOS page shows each system as a card with its platform icon, opening a dialog of every file: where it is, where it goes and how it matched. The import plan lists files by system, with Select all for files matched by name only, and counts each place once. The command line gains firmware library and --all-names, and the radial menu's highlight has round corners again.</p>
+      </description>
+    </release>
     <release version="0.22.1" date="2026-11-24">
       <description>
         <p>BIOS import: a file that only matches by name is offered only where its folders point (the right emulator or region), and never in place of a file recognised by its contents.</p>
