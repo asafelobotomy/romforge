@@ -130,6 +130,8 @@ jobs:
           sha256sums=('$sum'
                       '$(sha256sum LICENSE | cut -d' ' -f1)')
 
+          conflicts+=('oysterav<0.5.0' 'uq<0.3.41')  # uq-compat: from uQ's compat/family.toml
+
           package() {
             bsdtar -xf data.tar.* -C "\$pkgdir"
             install -Dm644 "LICENSE-\$pkgver" "\$pkgdir/usr/share/licenses/\$pkgname/LICENSE"

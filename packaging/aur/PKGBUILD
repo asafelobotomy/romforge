@@ -31,6 +31,8 @@ options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('be69347bbdf69dfc997557e1709a3fd4a10498401d9ec21e014a0a73e0156377')
 
+conflicts+=('oysterav<0.5.0' 'uq<0.3.41')  # uq-compat: from uQ's compat/family.toml
+
 prepare() {
   cd "$pkgname-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
