@@ -13,3 +13,7 @@ files = ["app/src/vendor/uq-tokens/uq-tokens.js"]
 [uq-consts]
 version = "1.0.0"
 files = ["crates/romforge-core/src/uq_consts.rs"]
+
+[uq-loc]
+version = "1.0.0"
+files = ["scripts/check-loc.sh"]
