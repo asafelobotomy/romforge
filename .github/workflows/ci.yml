@@ -26,6 +26,8 @@ jobs:
       - run: cargo fmt --all --check
       # uQ's kits (uq/native.toml) are the pinned releases, and the logged problem codes match uq/diag/romforge.toml.
       - run: scripts/check-uq-native.sh
+      # Every source file is within 400 lines of code (uQ's uq-loc)
+      - run: scripts/check-loc.sh
       # The .deb and .rpm (and so romforge-bin) ship every uQ file the source
       # package installs: launcher, D-Bus, rules, Settings page, problem codes.
       - name: Packages carry all of uq/
