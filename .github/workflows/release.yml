@@ -34,6 +34,7 @@ concurrency:
 jobs:
   version:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     outputs:
       version: ${{ steps.v.outputs.version }}
       release: ${{ steps.v.outputs.release }}
@@ -68,6 +69,7 @@ jobs:
       contents: write
     # The oldest supported Ubuntu: its glibc is older than every target's.
     runs-on: ubuntu-22.04
+    timeout-minutes: 25
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: v${{ needs.version.outputs.version }}
