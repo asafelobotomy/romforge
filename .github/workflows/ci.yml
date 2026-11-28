@@ -56,7 +56,7 @@ jobs:
       # unmaintained crates Tauri pulls in with no upgrade are named, with
       # why, in deny.toml.
       - name: Licences, bans, sources and advisories
-        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9 # v2
+        uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2
         with:
           command: check
       - name: Quick start from the guide
