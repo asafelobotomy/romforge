@@ -38,7 +38,7 @@ shiratsu-naming = "1.1"
 strsim = "0.11"
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-decode"] }
 oxidelta = { version = "0.1.4", default-features = false, features = ["adler32", "lzma-secondary"] }
 
 # Asking an emulator to quit (SIGTERM) before stopping it hard (unix), and
